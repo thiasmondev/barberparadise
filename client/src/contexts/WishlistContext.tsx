@@ -11,16 +11,16 @@ interface WishlistState {
 
 type WishlistAction =
   | { type: "ADD_ITEM"; product: Product }
-  | { type: "REMOVE_ITEM"; productId: number }
+  | { type: "REMOVE_ITEM"; productId: string }
   | { type: "TOGGLE_ITEM"; product: Product }
   | { type: "CLEAR" };
 
 interface WishlistContextValue {
   items: Product[];
   addItem: (product: Product) => void;
-  removeItem: (productId: number) => void;
+  removeItem: (productId: string) => void;
   toggleItem: (product: Product) => void;
-  isWishlisted: (productId: number) => boolean;
+  isWishlisted: (productId: string) => boolean;
   count: number;
 }
 

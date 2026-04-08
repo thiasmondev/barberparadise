@@ -18,8 +18,8 @@ interface CartState {
 
 type CartAction =
   | { type: "ADD_ITEM"; product: Product; quantity?: number }
-  | { type: "REMOVE_ITEM"; productId: number }
-  | { type: "UPDATE_QUANTITY"; productId: number; quantity: number }
+  | { type: "REMOVE_ITEM"; productId: string }
+  | { type: "UPDATE_QUANTITY"; productId: string; quantity: number }
   | { type: "CLEAR_CART" }
   | { type: "TOGGLE_CART" }
   | { type: "OPEN_CART" }
@@ -28,15 +28,15 @@ type CartAction =
 interface CartContextValue {
   state: CartState;
   addItem: (product: Product, quantity?: number) => void;
-  removeItem: (productId: number) => void;
-  updateQuantity: (productId: number, quantity: number) => void;
+  removeItem: (productId: string) => void;
+  updateQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
   toggleCart: () => void;
   openCart: () => void;
   closeCart: () => void;
   totalItems: number;
   totalPrice: number;
-  itemCount: (productId: number) => number;
+  itemCount: (productId: string) => number;
 }
 
 const CartContext = createContext<CartContextValue | null>(null);

@@ -1,319 +1,425 @@
 // ============================================================
 // BARBER PARADISE — Header
-// Couleurs: Primary #4EAADB | Secondary #252525 | BG #FFFFFF
-// Navigation: Nouveautés, Produits, Matériel, Marques, Promo, Contact
+// Couleurs: Primary #4EAADB | Secondary #252525
+// Menu: Nouveautés, Produits, Matériel, Marques, PROMO, Contact
 // ============================================================
 
 import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  Search, ShoppingCart, User, Heart, Menu, X, ChevronDown,
-  Package, Scissors, Zap, Tag, Phone, Star
+  Search,
+  ShoppingCart,
+  User,
+  Menu,
+  X,
+  ChevronDown,
+  Heart,
+  ChevronRight,
 } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useWishlist } from "@/contexts/WishlistContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { searchProducts } from "@/lib/data";
-import type { Product } from "@/lib/data";
-import CartDrawer from "@/components/cart/CartDrawer";
-
-const navLinks = [
-  { label: "Nouveautés", href: "/catalogue?filter=new", icon: Star },
-  {
-    label: "Produits",
-    href: "/catalogue?category=produits",
-    icon: Package,
-    submenu: [
-      { label: "Tous les produits", href: "/catalogue?category=produits" },
-      { label: "Cheveux", href: "/catalogue?subcategory=cheveux" },
-      { label: "Barbe", href: "/catalogue?subcategory=barbe" },
-      { label: "Rasage", href: "/catalogue?subcategory=rasage" },
-      { label: "Parfums", href: "/catalogue?subcategory=parfums" },
-      { label: "Corps", href: "/catalogue?subcategory=corps" },
-    ],
-  },
-  {
-    label: "Matériel",
-    href: "/catalogue?category=materiel",
-    icon: Scissors,
-    submenu: [
-      { label: "Tout le matériel", href: "/catalogue?category=materiel" },
-      { label: "Tondeuses", href: "/catalogue?subcategory=tondeuse" },
-      { label: "Ciseaux", href: "/catalogue?subcategory=ciseaux" },
-      { label: "Brosses & Peignes", href: "/catalogue?subcategory=brosse-peigne" },
-      { label: "Sèche-cheveux", href: "/catalogue?subcategory=seche-cheveux" },
-      { label: "Accessoires", href: "/catalogue?subcategory=accessoire" },
-    ],
-  },
-  {
-    label: "Marques",
-    href: "/marques",
-    icon: Zap,
-    submenu: [
-      { label: "Andis", href: "/catalogue?brand=andis" },
-      { label: "Babyliss Pro", href: "/catalogue?brand=babyliss-pro" },
-      { label: "JRL", href: "/catalogue?brand=jrl" },
-      { label: "Style Craft", href: "/catalogue?brand=stylecraft" },
-      { label: "Wahl", href: "/catalogue?brand=wahl" },
-      { label: "Osaka", href: "/catalogue?brand=osaka" },
-      { label: "Lockhart's", href: "/catalogue?brand=lockharts" },
-      { label: "Hey Joe!", href: "/catalogue?brand=hey-joe" },
-    ],
-  },
-  { label: "PROMO", href: "/catalogue?filter=promo", icon: Tag, isPromo: true },
-  { label: "Contact", href: "/contact", icon: Phone },
-];
+import { menuStructure } from "@/lib/menuData";
 
 export default function Header() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<Product[]>([]);
-  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [mobileExpanded, setMobileExpanded] = useState<string[]>([]);
   const [, navigate] = useLocation();
-  const searchRef = useRef<HTMLDivElement>(null);
   const { totalItems, openCart } = useCart();
-  const { count: wishlistCount } = useWishlist();
-  const { user, isAuthenticated } = useAuth();
+  const { items: wishlistItems } = useWishlist();
+  const { user } = useAuth();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (searchQuery.length >= 2) {
-      setSearchResults(searchProducts(searchQuery).slice(0, 6));
-    } else {
-      setSearchResults([]);
-    }
-  }, [searchQuery]);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setSearchOpen(false);
-        setSearchQuery("");
-        setSearchResults([]);
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setActiveMenu(null);
       }
-    }
+    };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (searchOpen && searchRef.current) {
+      searchRef.current.focus();
+    }
+  }, [searchOpen]);
+
+  const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      navigate(`/catalogue?q=${encodeURIComponent(searchQuery)}`);
+      navigate(`/catalogue?q=${encodeURIComponent(searchQuery.trim())}`);
       setSearchOpen(false);
       setSearchQuery("");
     }
   };
 
+  const toggleMobileExpand = (slug: string) => {
+    setMobileExpanded((prev) =>
+      prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]
+    );
+  };
+
+  const getMenuHref = (item: { slug: string; label: string }) => {
+    if (item.slug === "contact") return "/contact";
+    if (item.slug === "nouveautes") return "/catalogue?badge=nouveau";
+    if (item.slug === "promo") return "/catalogue?promo=true";
+    return `/catalogue?category=${item.slug}`;
+  };
+
   return (
-    <>
-      {/* Announcement Bar */}
-      <div className="announcement-bar">
-        LIVRAISON GRATUITE DÈS 54€ EN POINTS RELAIS !
+    <header className="sticky top-0 z-50 bg-white shadow-sm border-b border-gray-200">
+      {/* Barre d'annonce */}
+      <div
+        className="text-white text-xs py-2 text-center font-medium tracking-wide"
+        style={{ backgroundColor: "#252525" }}
+      >
+        🚚 Livraison gratuite en point relais dès 54€ d'achat &nbsp;|&nbsp; 📦 Expédition sous 24-48h
       </div>
 
-      {/* Main Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-        <div className="container">
-          <div className="flex items-center justify-between h-16 gap-4">
-            {/* Mobile menu button */}
-            <button
-              className="lg:hidden p-2 text-gray-700 hover:text-primary transition-colors"
-              onClick={() => setMobileOpen(!mobileOpen)}
-              aria-label="Menu"
-            >
-              {mobileOpen ? <X size={22} /> : <Menu size={22} />}
-            </button>
-
-            {/* Logo */}
-            <Link href="/" className="flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="w-10 h-10 bg-secondary rounded-full flex items-center justify-center">
-                  <span className="text-white font-black text-sm" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>BP</span>
-                </div>
-                <span className="hidden sm:block font-black text-xl text-secondary tracking-tight" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
-                  BARBER<span className="text-primary">PARADISE</span>
-                </span>
+      {/* Header principal */}
+      <div className="container">
+        <div className="flex items-center justify-between h-16 gap-4">
+          {/* Logo */}
+          <Link href="/" className="flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <div
+                className="w-9 h-9 flex items-center justify-center text-white font-black text-sm"
+                style={{ backgroundColor: "#4EAADB", fontFamily: "'Barlow Condensed', sans-serif" }}
+              >
+                BP
               </div>
-            </Link>
-
-            {/* Desktop Navigation */}
-            <nav className="hidden lg:flex items-center gap-1 flex-1 justify-center">
-              {navLinks.map((link) => (
+              <div className="hidden sm:block">
                 <div
-                  key={link.label}
-                  className="relative"
-                  onMouseEnter={() => link.submenu && setActiveDropdown(link.label)}
-                  onMouseLeave={() => setActiveDropdown(null)}
+                  className="text-lg font-black leading-none text-gray-900"
+                  style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
                 >
-                  <Link
-                    href={link.href}
-                    className={`flex items-center gap-1 px-3 py-2 text-sm font-semibold uppercase tracking-wider transition-colors ${
-                      link.isPromo
-                        ? "text-red-600 hover:text-red-700"
-                        : "text-gray-800 hover:text-primary"
-                    }`}
-                    style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.08em" }}
-                  >
-                    {link.label}
-                    {link.submenu && <ChevronDown size={14} className={`transition-transform ${activeDropdown === link.label ? "rotate-180" : ""}`} />}
-                  </Link>
-
-                  {/* Dropdown */}
-                  {link.submenu && activeDropdown === link.label && (
-                    <div className="absolute top-full left-0 bg-white border border-gray-200 shadow-xl min-w-[200px] z-50 py-2">
-                      {link.submenu.map((sub) => (
-                        <Link
-                          key={sub.href}
-                          href={sub.href}
-                          className="block px-4 py-2 text-sm text-gray-700 hover:bg-primary/10 hover:text-primary transition-colors font-medium"
-                          onClick={() => setActiveDropdown(null)}
-                        >
-                          {sub.label}
-                        </Link>
-                      ))}
-                    </div>
-                  )}
+                  BARBER
                 </div>
-              ))}
-            </nav>
-
-            {/* Right actions */}
-            <div className="flex items-center gap-1">
-              {/* Search */}
-              <div ref={searchRef} className="relative">
-                <button
-                  className="p-2 text-gray-700 hover:text-primary transition-colors"
-                  onClick={() => setSearchOpen(!searchOpen)}
-                  aria-label="Recherche"
+                <div
+                  className="text-xs font-bold leading-none tracking-widest"
+                  style={{ color: "#4EAADB", fontFamily: "'Barlow Condensed', sans-serif" }}
                 >
-                  <Search size={20} />
-                </button>
+                  PARADISE
+                </div>
+              </div>
+            </div>
+          </Link>
 
-                {searchOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-gray-200 shadow-xl z-50">
-                    <form onSubmit={handleSearchSubmit} className="flex items-center border-b border-gray-200">
-                      <Search size={16} className="ml-3 text-gray-400 flex-shrink-0" />
-                      <input
-                        autoFocus
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Qu'est-ce que tu cherches..."
-                        className="flex-1 px-3 py-3 text-sm focus:outline-none"
-                      />
-                      <button type="submit" className="px-3 py-3 bg-primary text-white text-xs font-bold uppercase">
-                        GO
-                      </button>
-                    </form>
-                    {searchResults.length > 0 && (
-                      <div>
-                        {searchResults.map((p) => (
+          {/* Navigation desktop */}
+          <nav ref={menuRef} className="hidden lg:flex items-center gap-0">
+            {menuStructure.map((item) => (
+              <div
+                key={item.slug}
+                className="relative"
+                onMouseEnter={() => item.children ? setActiveMenu(item.slug) : undefined}
+                onMouseLeave={() => setActiveMenu(null)}
+              >
+                {item.children ? (
+                  <button
+                    className={`flex items-center gap-1 px-3 py-5 text-sm font-semibold transition-colors whitespace-nowrap ${
+                      activeMenu === item.slug
+                        ? "border-b-2 border-primary"
+                        : "text-gray-700 hover:text-primary"
+                    } ${item.slug === "promo" ? "!text-red-500 hover:!text-red-600" : ""}`}
+                    style={{
+                      fontFamily: "'Barlow', sans-serif",
+                      color: activeMenu === item.slug && item.slug !== "promo" ? "#4EAADB" : undefined,
+                    }}
+                    onClick={() => setActiveMenu(activeMenu === item.slug ? null : item.slug)}
+                  >
+                    {item.label}
+                    <ChevronDown
+                      size={14}
+                      className={`transition-transform ${activeMenu === item.slug ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                ) : (
+                  <Link
+                    href={getMenuHref(item)}
+                    className={`flex items-center px-3 py-5 text-sm font-semibold transition-colors whitespace-nowrap ${
+                      item.slug === "promo"
+                        ? "text-red-500 hover:text-red-600 font-black"
+                        : "text-gray-700 hover:text-primary"
+                    }`}
+                    style={{ fontFamily: "'Barlow', sans-serif" }}
+                  >
+                    {item.label}
+                  </Link>
+                )}
+
+                {/* Mega Menu dropdown */}
+                {item.children && activeMenu === item.slug && (
+                  <div
+                    className="absolute top-full left-0 bg-white shadow-xl border border-gray-200 z-50"
+                    style={{ marginTop: "-1px" }}
+                  >
+                    {item.slug === "marques" ? (
+                      /* Grille de 29 marques */
+                      <div className="p-3 grid grid-cols-3 gap-0.5 w-80">
+                        {item.children.map((brand) => (
                           <Link
-                            key={p.id}
-                            href={`/produit/${p.slug}`}
-                            className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors"
-                            onClick={() => { setSearchOpen(false); setSearchQuery(""); }}
+                            key={brand.slug}
+                            href={`/catalogue?brand=${encodeURIComponent(brand.label)}`}
+                            className="px-2 py-1.5 text-xs text-gray-700 hover:text-primary hover:bg-blue-50 transition-colors truncate"
+                            onClick={() => setActiveMenu(null)}
                           >
-                            <img src={p.images[0]} alt={p.name} className="w-10 h-10 object-cover flex-shrink-0" />
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-gray-800 truncate">{p.name}</p>
-                              <p className="text-xs text-primary font-bold">{p.price.toFixed(2)} €</p>
-                            </div>
+                            {brand.label}
                           </Link>
                         ))}
+                      </div>
+                    ) : (
+                      /* Menu avec sous-catégories et sous-sous-catégories */
+                      <div className="flex">
+                        <div className="py-2 min-w-[200px]">
+                          {item.children.map((child) => (
+                            <div key={child.slug} className="group/sub relative">
+                              <Link
+                                href={`/catalogue?category=${item.slug}&sub=${child.slug}`}
+                                className="flex items-center justify-between px-4 py-2 text-sm text-gray-700 hover:text-primary hover:bg-blue-50 transition-colors"
+                                onClick={() => setActiveMenu(null)}
+                              >
+                                <span className="font-medium">{child.label}</span>
+                                {child.children && (
+                                  <ChevronRight size={12} className="text-gray-400 flex-shrink-0 ml-2" />
+                                )}
+                              </Link>
+                              {/* Sous-sous-catégories au survol */}
+                              {child.children && (
+                                <div className="absolute left-full top-0 bg-white shadow-xl border border-gray-200 hidden group-hover/sub:block min-w-[180px] py-2 z-50">
+                                  {child.children.map((sub) => (
+                                    <Link
+                                      key={sub.slug}
+                                      href={`/catalogue?category=${item.slug}&sub=${child.slug}&subsub=${sub.slug}`}
+                                      className="block px-4 py-2 text-sm text-gray-600 hover:text-primary hover:bg-blue-50 transition-colors whitespace-nowrap"
+                                      onClick={() => setActiveMenu(null)}
+                                    >
+                                      {sub.label}
+                                    </Link>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
                 )}
               </div>
+            ))}
+          </nav>
 
-              {/* Wishlist */}
-              <Link href="/wishlist" className="relative p-2 text-gray-700 hover:text-primary transition-colors" aria-label="Wishlist">
-                <Heart size={20} />
-                {wishlistCount > 0 && (
-                  <span className="cart-badge">{wishlistCount}</span>
-                )}
-              </Link>
+          {/* Actions droite */}
+          <div className="flex items-center gap-1">
+            {/* Recherche */}
+            <div className="relative">
+              {searchOpen ? (
+                <form onSubmit={handleSearch} className="flex items-center">
+                  <input
+                    ref={searchRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Rechercher..."
+                    className="w-40 md:w-56 px-3 py-1.5 text-sm border border-gray-300 focus:outline-none focus:border-primary"
+                    onBlur={() => !searchQuery && setSearchOpen(false)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => { setSearchOpen(false); setSearchQuery(""); }}
+                    className="p-2 text-gray-500 hover:text-gray-700"
+                  >
+                    <X size={16} />
+                  </button>
+                </form>
+              ) : (
+                <button
+                  onClick={() => setSearchOpen(true)}
+                  className="p-2 text-gray-600 hover:text-primary transition-colors"
+                  title="Rechercher"
+                >
+                  <Search size={20} />
+                </button>
+              )}
+            </div>
 
-              {/* Account */}
-              <Link
-                href={isAuthenticated ? "/compte" : "/connexion"}
-                className="relative p-2 text-gray-700 hover:text-primary transition-colors hidden sm:flex items-center gap-1"
-                aria-label="Compte"
-              >
-                <User size={20} />
-                {isAuthenticated && (
-                  <span className="text-xs font-semibold text-gray-600 hidden md:block">
-                    {user?.firstName}
-                  </span>
-                )}
-              </Link>
+            {/* Wishlist */}
+            <Link
+              href="/wishlist"
+              className="relative p-2 text-gray-600 hover:text-primary transition-colors hidden sm:flex"
+            >
+              <Heart size={20} />
+              {wishlistItems.length > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                  {wishlistItems.length > 9 ? "9+" : wishlistItems.length}
+                </span>
+              )}
+            </Link>
 
-              {/* Cart */}
+            {/* Compte */}
+            <Link
+              href="/compte"
+              className="p-2 text-gray-600 hover:text-primary transition-colors hidden sm:flex items-center gap-1"
+            >
+              <User size={20} />
+              {user && (
+                <span className="text-xs font-medium text-gray-700 hidden md:block max-w-16 truncate">
+                  {user.firstName}
+                </span>
+              )}
+            </Link>
+
+            {/* Panier */}
+            <button
+              onClick={() => openCart()}
+              className="relative p-2 text-gray-600 hover:text-primary transition-colors"
+              title="Panier"
+            >
+              <ShoppingCart size={20} />
+              {totalItems > 0 && (
+                <span
+                  className="absolute -top-0.5 -right-0.5 w-5 h-5 text-white text-xs rounded-full flex items-center justify-center font-bold"
+                  style={{ backgroundColor: "#4EAADB" }}
+                >
+                  {totalItems > 99 ? "99+" : totalItems}
+                </span>
+              )}
+            </button>
+
+            {/* Menu hamburger mobile */}
+            <button
+              onClick={() => setMobileOpen(!mobileOpen)}
+              className="lg:hidden p-2 text-gray-600 hover:text-primary transition-colors"
+            >
+              {mobileOpen ? <X size={22} /> : <Menu size={22} />}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Menu mobile */}
+      {mobileOpen && (
+        <div className="lg:hidden bg-white border-t border-gray-200 max-h-[80vh] overflow-y-auto">
+          <div className="container py-2">
+            {/* Recherche mobile */}
+            <form onSubmit={handleSearch} className="flex gap-2 mb-3">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Rechercher un produit..."
+                className="flex-1 px-3 py-2 text-sm border border-gray-300 focus:outline-none focus:border-primary"
+              />
               <button
-                onClick={openCart}
-                className="relative p-2 text-gray-700 hover:text-primary transition-colors"
-                aria-label="Panier"
+                type="submit"
+                className="px-3 py-2 text-white text-sm"
+                style={{ backgroundColor: "#4EAADB" }}
               >
-                <ShoppingCart size={20} />
-                {totalItems > 0 && (
-                  <span className="cart-badge">{totalItems}</span>
-                )}
+                <Search size={16} />
               </button>
+            </form>
+
+            {menuStructure.map((item) => (
+              <div key={item.slug} className="border-b border-gray-100 last:border-0">
+                {item.children ? (
+                  <>
+                    <button
+                      onClick={() => toggleMobileExpand(item.slug)}
+                      className={`flex items-center justify-between w-full py-3 text-sm font-semibold text-left ${
+                        item.slug === "promo" ? "text-red-500" : "text-gray-800"
+                      }`}
+                    >
+                      {item.label}
+                      <ChevronDown
+                        size={16}
+                        className={`transition-transform ${mobileExpanded.includes(item.slug) ? "rotate-180" : ""}`}
+                      />
+                    </button>
+                    {mobileExpanded.includes(item.slug) && (
+                      <div className="pb-2 pl-3 space-y-0.5">
+                        {item.slug === "marques" ? (
+                          <div className="grid grid-cols-2 gap-x-2">
+                            {item.children.map((brand) => (
+                              <Link
+                                key={brand.slug}
+                                href={`/catalogue?brand=${encodeURIComponent(brand.label)}`}
+                                className="py-1.5 text-xs text-gray-600 hover:text-primary"
+                                onClick={() => setMobileOpen(false)}
+                              >
+                                {brand.label}
+                              </Link>
+                            ))}
+                          </div>
+                        ) : (
+                          item.children.map((child) => (
+                            <div key={child.slug}>
+                              <Link
+                                href={`/catalogue?category=${item.slug}&sub=${child.slug}`}
+                                className="block py-1.5 text-sm text-gray-700 hover:text-primary font-medium"
+                                onClick={() => setMobileOpen(false)}
+                              >
+                                {child.label}
+                              </Link>
+                              {child.children && (
+                                <div className="pl-3 space-y-0.5">
+                                  {child.children.map((sub) => (
+                                    <Link
+                                      key={sub.slug}
+                                      href={`/catalogue?category=${item.slug}&sub=${child.slug}&subsub=${sub.slug}`}
+                                      className="block py-1 text-xs text-gray-500 hover:text-primary"
+                                      onClick={() => setMobileOpen(false)}
+                                    >
+                                      — {sub.label}
+                                    </Link>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <Link
+                    href={getMenuHref(item)}
+                    className={`block py-3 text-sm font-semibold ${
+                      item.slug === "promo" ? "text-red-500 font-black" : "text-gray-800"
+                    }`}
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    {item.label}
+                  </Link>
+                )}
+              </div>
+            ))}
+
+            {/* Liens compte mobile */}
+            <div className="pt-3 flex gap-4 text-sm text-gray-600">
+              <Link
+                href="/compte"
+                className="flex items-center gap-1 hover:text-primary"
+                onClick={() => setMobileOpen(false)}
+              >
+                <User size={16} /> Compte
+              </Link>
+              <Link
+                href="/wishlist"
+                className="flex items-center gap-1 hover:text-primary"
+                onClick={() => setMobileOpen(false)}
+              >
+                <Heart size={16} /> Wishlist{wishlistItems.length > 0 ? ` (${wishlistItems.length})` : ""}
+              </Link>
             </div>
           </div>
         </div>
-
-        {/* Mobile Menu */}
-        {mobileOpen && (
-          <div className="lg:hidden bg-white border-t border-gray-200 shadow-lg">
-            <nav className="container py-4 space-y-1">
-              {navLinks.map((link) => (
-                <div key={link.label}>
-                  <Link
-                    href={link.href}
-                    className={`block px-4 py-3 text-sm font-bold uppercase tracking-wider transition-colors ${
-                      link.isPromo ? "text-red-600" : "text-gray-800 hover:text-primary hover:bg-primary/5"
-                    }`}
-                    style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
-                    onClick={() => setMobileOpen(false)}
-                  >
-                    {link.label}
-                  </Link>
-                  {link.submenu && (
-                    <div className="pl-4 space-y-1">
-                      {link.submenu.map((sub) => (
-                        <Link
-                          key={sub.href}
-                          href={sub.href}
-                          className="block px-4 py-2 text-sm text-gray-600 hover:text-primary transition-colors"
-                          onClick={() => setMobileOpen(false)}
-                        >
-                          {sub.label}
-                        </Link>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-              <div className="border-t border-gray-200 pt-3 mt-3">
-                <Link
-                  href={isAuthenticated ? "/compte" : "/connexion"}
-                  className="flex items-center gap-2 px-4 py-3 text-sm font-medium text-gray-700 hover:text-primary"
-                  onClick={() => setMobileOpen(false)}
-                >
-                  <User size={16} />
-                  {isAuthenticated ? `Mon compte (${user?.firstName})` : "Se connecter"}
-                </Link>
-              </div>
-            </nav>
-          </div>
-        )}
-      </header>
-
-      {/* Cart Drawer */}
-      <CartDrawer />
-    </>
+      )}
+    </header>
   );
 }
