@@ -9,7 +9,7 @@ import {
   Star, ShoppingCart, Heart, Share2, Truck, Shield, RotateCcw,
   ChevronRight, Minus, Plus, Check, Package
 } from "lucide-react";
-import { getProductBySlug, getFeaturedProducts, reviews } from "@/lib/data";
+import { getProductBySlug, getFeaturedProducts } from "@/lib/data";
 import { useCart } from "@/contexts/CartContext";
 import { useWishlist } from "@/contexts/WishlistContext";
 import ProductCard from "@/components/products/ProductCard";

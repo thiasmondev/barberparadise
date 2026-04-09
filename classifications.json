@@ -1,0 +1,2027 @@
+{
+  "eponge-twist-locks-barber": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "accessoires"
+  },
+  "finger-brush-barber-professionnelle": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "accessoires"
+  },
+  "peigne-texturisant-barber-professionnel": {
+    "category": "materiel",
+    "subcategory": "brosse-et-peigne",
+    "subsubcategory": "peigne"
+  },
+  "cape-barber-baroque-luxe": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "capes"
+  },
+  "cape-coiffure-barber-100-dollars-noir-professionnelle": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "capes"
+  },
+  "cape-de-coupe-professionnelle-barber-camouflage-usa-army": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "capes"
+  },
+  "cape-de-coupe-barber-luxe-money-coiffure": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "capes"
+  },
+  "cape-de-coupe-coiffure-barber-graffiti-professionnelle": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "capes"
+  },
+  "cape-de-coupe-barber-bandana-noir-streetwear-professionnelle": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "capes"
+  },
+  "cape-barber-serpent-rouge-professionnelle": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "capes"
+  },
+  "cape-barber-camouflage-professionnelle": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "capes"
+  },
+  "stylecraft-instinct-tete-lames-shaver-origine": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "shaver"
+  },
+  "pulverisateur-coiffure-barber-noir": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "vaporisateur-et-nebuliseur"
+  },
+  "pack-10-peignes-coiffure-noirs-pas-cher": {
+    "category": "materiel",
+    "subcategory": "brosse-et-peigne",
+    "subsubcategory": "peigne"
+  },
+  "shavette-gentleman-inox-parker-barber": {
+    "category": "materiel",
+    "subcategory": "rasoir-et-accessoire-de-rasage",
+    "subsubcategory": "rasoir"
+  },
+  "lames-effilage-barber-styling-blades": {
+    "category": "materiel",
+    "subcategory": "ciseaux",
+    "subsubcategory": "sculpteur"
+  },
+  "seche-cheveux-professionnel-gamma-piu-xcell-s": {
+    "category": "materiel",
+    "subcategory": "seche-cheveux",
+    "subsubcategory": ""
+  },
+  "sac-a-dos-coiffure-barber-haircut-noir-orange": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "balai-a-cou-professionnel-en-bois-poils-ultra-doux": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "balai-a-cou-et-brosse"
+  },
+  "kit-sabots-magnetiques-professionnels-pour-tondeuses-de-coupe": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "brosse-professionnelle-7-rangs-brushing-stylisation": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "brosse-araignee-professionnelle": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "gamma-xceed-foil-shaver-in2-vector": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "shaver"
+  },
+  "stylecraft-saber-white-professionel-tondeuse-finition": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "dauntless-pomade": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "dauntless-wax-cream": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "dauntless-matte-paste": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "tapis-et-organisateur"
+  },
+  "lockharts-anti-gravity-beard-oil": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "huile-a-barbe"
+  },
+  "lockharts-mariana-trench-beard-oil": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "huile-a-barbe"
+  },
+  "lockharts-paradox-beard-oil": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "huile-a-barbe"
+  },
+  "lockharts-barbershop-beard-oil": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "huile-a-barbe"
+  },
+  "lockharts-goon-grease-beard-oil": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "huile-a-barbe"
+  },
+  "lockhart-s-fire-brimstone-matte-clay": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "tapis-et-organisateur"
+  },
+  "lockharts-big-fatte-beard-huile": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "huile-a-barbe"
+  },
+  "lockharts-fire-brimstone-pomade-water-based": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "pack-ciseaux-coiffure-osaka-aosen-ats314": {
+    "category": "materiel",
+    "subcategory": "ciseaux",
+    "subsubcategory": "sculpteur"
+  },
+  "stylecraft-saber-2-white-edition-limitee-tondeuse": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "jrl-ez-gap-m-lame-precision-trimmer-metal-noir": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "lockharts-light-hold-pomade": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "produits-jrl-forte-ghost-seche-cheveux": {
+    "category": "materiel",
+    "subcategory": "seche-cheveux",
+    "subsubcategory": ""
+  },
+  "porte-seche-cheveux-universel-jrl-support-mural-pro": {
+    "category": "materiel",
+    "subcategory": "seche-cheveux",
+    "subsubcategory": ""
+  },
+  "tondeuse-stylecraft-saber-2": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "jrl-diamante-clipper-trimmer-set-ex-lamborghini": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "ys-park-336-edition-limitee": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "hey-joe-magic-white-creme-oxydante-20-vol": {
+    "category": "produits",
+    "subcategory": "couleur",
+    "subsubcategory": ""
+  },
+  "hey-joe-magic-white-cream-developer-30-vol": {
+    "category": "produits",
+    "subcategory": "couleur",
+    "subsubcategory": ""
+  },
+  "tondeuse-gamma-piu-xceed-trimmer-in2": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "tondeuse-gamma-xceed-clipper-professionnelle": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "rasoir-pro-jrl-onyx-ghost-sf-pro-levitation": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "shaver"
+  },
+  "tondeuse-pro-jrl-onyx-ghost-trimmer-moteur-8200": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "tondeuse-professionnelle-jrl-onyx-ghost-clipper-moteur-7500-tpm": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "tondeuse-professionnelle-gamma-piu-boosted-up": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "ciseaux-gaucher-sculpteur-osaka-ats314l-6-pouces": {
+    "category": "materiel",
+    "subcategory": "ciseaux",
+    "subsubcategory": "sculpteur"
+  },
+  "gamma-boosted-foil-tete-de-remplacement-shaver": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "shaver"
+  },
+  "gamma-boosted-lames-de-rechange-shaver": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "babyliss-pro-lame-skeleton-dlc-titanium-1-6": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "ciseaux-de-coupe-osaka-yls-5-5-pouces": {
+    "category": "materiel",
+    "subcategory": "ciseaux",
+    "subsubcategory": "ciseaux-droits"
+  },
+  "ciseaux-incurve-barbier-osaka-curvy-6-pouces": {
+    "category": "materiel",
+    "subcategory": "ciseaux",
+    "subsubcategory": "ciseaux-droits"
+  },
+  "babyliss-pro-lame-skeleton-dlc-titanium-gold-copie": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "echosline-oxydant-revelateur-10vol-3-150-ml": {
+    "category": "produits",
+    "subcategory": "couleur",
+    "subsubcategory": ""
+  },
+  "dandy-couleur-barbe-et-cheveux": {
+    "category": "produits",
+    "subcategory": "couleur",
+    "subsubcategory": ""
+  },
+  "hair-gripper-barber": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "entretien-barbe"
+  },
+  "col-crepe-papier-barber-noir-autocollant-5-x-100": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "entretien-barbe"
+  },
+  "col-crepe-papier-barber-blanc-autocollant-5-x-100": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "entretien-barbe"
+  },
+  "tasse-savon-a-raser-ceramique-noir": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "tasse-savon-a-raser-plastique-rouge": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "peigne-barber-dent-large": {
+    "category": "materiel",
+    "subcategory": "brosse-et-peigne",
+    "subsubcategory": "peigne"
+  },
+  "set-de-peigne-l3vel3-copie": {
+    "category": "materiel",
+    "subcategory": "brosse-et-peigne",
+    "subsubcategory": "peigne"
+  },
+  "rasoir-shavette-en-bois-professionnel": {
+    "category": "materiel",
+    "subcategory": "rasoir-et-accessoire-de-rasage",
+    "subsubcategory": "rasoir"
+  },
+  "rasoir-shavette-professionnel-a-glissiere-acier": {
+    "category": "materiel",
+    "subcategory": "rasoir-et-accessoire-de-rasage",
+    "subsubcategory": "rasoir"
+  },
+  "rasoir-shavette-professionnel-a-glissiere": {
+    "category": "materiel",
+    "subcategory": "rasoir-et-accessoire-de-rasage",
+    "subsubcategory": "rasoir"
+  },
+  "rasoir-shavette-professionnel-bleu": {
+    "category": "materiel",
+    "subcategory": "rasoir-et-accessoire-de-rasage",
+    "subsubcategory": "rasoir"
+  },
+  "peigne-a-queue-pinceau-3-en-1": {
+    "category": "materiel",
+    "subcategory": "brosse-et-peigne",
+    "subsubcategory": "peigne"
+  },
+  "rasoir-effileur-professionnel-acier-type-feather": {
+    "category": "materiel",
+    "subcategory": "ciseaux",
+    "subsubcategory": "sculpteur"
+  },
+  "miroir-double-pliant-coiffure": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "miroir-a-main"
+  },
+  "cape-de-coupe-barber-rayee-noir-et-blanc": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "capes"
+  },
+  "cape-noir-avec-col-en-neoprene": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "capes"
+  },
+  "organiseur-rangement-ciseaux-peignes-et-outils-de-coiffure": {
+    "category": "materiel",
+    "subcategory": "ciseaux",
+    "subsubcategory": "ciseaux-droits"
+  },
+  "lames-de-rasoir-en-acier-japonais-silvermax": {
+    "category": "materiel",
+    "subcategory": "rasoir-et-accessoire-de-rasage",
+    "subsubcategory": "lames-de-rasoir"
+  },
+  "peigne-flat-cutter-26-5-cm": {
+    "category": "materiel",
+    "subcategory": "brosse-et-peigne",
+    "subsubcategory": "peigne"
+  },
+  "distributeur-de-talc": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "balai-a-cou-et-brosse"
+  },
+  "ys-hs281-peigne-large-peigne-tondeuse-y-s-park": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "ys-282-peigne-large-peigne-tondeuse-y-s-park": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "ys-park-hs280-peigne-antistatique": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "ciseaux-sculpteur-osaka-sen-6-3-pouces": {
+    "category": "materiel",
+    "subcategory": "ciseaux",
+    "subsubcategory": "ciseaux-droits"
+  },
+  "ciseaux-sculpteur-osaka-fader-6-pouces": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "ciseaux-de-coupe-osaka-c4-4-5-pouces": {
+    "category": "materiel",
+    "subcategory": "ciseaux",
+    "subsubcategory": "ciseaux-droits"
+  },
+  "ciseaux-de-coupe-osaka-zeta-5-5-pouces": {
+    "category": "materiel",
+    "subcategory": "ciseaux",
+    "subsubcategory": "ciseaux-droits"
+  },
+  "tete-de-coupe-haircut-slim-speed-th57-tondeuse-de-finition-trimmer": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "tete-de-coupe-haircut-gt-speed-th40-tondeuse-de-coupe-clipper": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "king-brown-beard-grooming-oil": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "huile-a-barbe"
+  },
+  "hey-joe-rubber-tool-mat-brown-attitude": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "tapis-et-organisateur"
+  },
+  "hey-joe-rubber-tool-mat-tapis-antiderapant": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "tapis-et-organisateur"
+  },
+  "babyliss-pro-fxone-shaver-gold-all-metal": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "shaver"
+  },
+  "babyliss-pro-fxone-shaver-black-all-metal": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "shaver"
+  },
+  "rasoir-de-surete-librido-chrome-fatip": {
+    "category": "materiel",
+    "subcategory": "rasoir-et-accessoire-de-rasage",
+    "subsubcategory": "rasoir"
+  },
+  "spray-lame-jacques-seban-haircut-steril-cleaner-300-ml": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "gamma-blade-therapy-nettoyant-lame-tondeuse": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "gamma-boosted-skin-edition-limitee-clipper-tondeuse-de-coupe-professionnelle": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "lame-fixe-gamma-trimmer-ultimate-blade-2": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "gamma-shorty-clipper-tondeuse-de-coupe": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "tondeuse-a-cheveux-stylecraft-trimmer-pro-instinct-metal-edition-housse": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "tondeuse-a-cheveux-stylecraft-instinct-pro-metal-edition-housses": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "tondeuse-shaver-instinct-pro-metal-edition": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "shaver"
+  },
+  "parfums-dubai": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "hey-joe-grooming-tonic-250ml": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "seche-cheveux-x-horizon-gamma": {
+    "category": "materiel",
+    "subcategory": "seche-cheveux",
+    "subsubcategory": ""
+  },
+  "pack-jrl-ghost-1-clipper-trimmer-copie": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "shaver"
+  },
+  "pack-jrl-ghost-1-clipper-trimmer": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "hey-joe-beard-balm-no-8-classic-gold": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "baume-a-barbe"
+  },
+  "hey-joe-beard-oil-no-8-classic-gold": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "huile-a-barbe"
+  },
+  "hey-joe-beard-oil-no-2-red-mandarin": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "connecteur-de-charge-gamma-connect-3": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "midnghit-in-paris": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "tondeuse-stylecraft-instinct-x": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "pack-jrl-gold-collection": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "jrl-cape-de-coupe": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "capes"
+  },
+  "vitos-gel-a-raser-500ml": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "vitos-shampoing-1l": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "shampooing-cheveux"
+  },
+  "bloc-dalun-naturel-en-potassium-100g": {
+    "category": "materiel",
+    "subcategory": "rasoir-et-accessoire-de-rasage",
+    "subsubcategory": "accessoires-de-rasage"
+  },
+  "cape-avec-col-en-caoutchouc-l3vel3": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "capes"
+  },
+  "lames-de-recharge-shaver-resurge-andis": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "gamma-skin-blade-lame-fixe-black-diamond": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "jrl-lame-fade-clipper": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "jrl-lame-standard-clipper": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "pack-jrl-onyx": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "babyliss-pro-lo-pro-fxone-trimmer-tondeuse-de-finition": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "babyliss-pro-lo-pro-fxone-clipper-tondeuse-de-coupe": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "oud-wonder": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "lockharts-nevermore-hi-volume-paste": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "lockharts-phantasm-sculpting-cream": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "transcend": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "shaver-stylecraft-rebel": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "shaver"
+  },
+  "shaver-babyliss-pro-fx3": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "shaver"
+  },
+  "miroir-a-main-l3vel3": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "miroir-a-main"
+  },
+  "lame-fixe-gamma-taper-dlc-black-diamond-tondeuse-de-coupe-clipper-copy": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "lame-fixe-gamma-dlc-black-diamond": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "gamma-nano-evo-mister-nebuliseur-electronique-blanc-copy": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "vaporisateur-et-nebuliseur"
+  },
+  "gamma-nano-evo-mister-nebuliseur-electronique-gold": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "vaporisateur-et-nebuliseur"
+  },
+  "tapis-magnetique-barber": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "tapis-et-organisateur"
+  },
+  "babyliss-pro-lames-et-grilles-rechange-shaver-fx02-titanium-gunsteel": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "potio": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "gamma-blowvac-souffleur-aspirateur": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "souffleur"
+  },
+  "nettoyeur-de-brosse-professionnel-electrique-clean-pro": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "timor-lame-double": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "hey-joe-barber-cape-square-green": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "capes"
+  },
+  "wahl-hi-viz-blade-set-lames-rechange": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "brosse-degrade-denman-fade-by-jack-dean": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "andis-bespoke-trimmer-tondeuse-de-finition": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "shavette-hey-joe-carbon-edition-acier-inoxydable-finition-noir-mat-fermeture-securisee-compatible-demi-lames-ideale-contours-barbe-rasage-traditionnel": {
+    "category": "materiel",
+    "subcategory": "rasoir-et-accessoire-de-rasage",
+    "subsubcategory": "rasoir"
+  },
+  "figurine-bubblehead-hey-joe": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "nova-rouge": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "hey-joe-premium-classic-razor-shavette-inox": {
+    "category": "materiel",
+    "subcategory": "rasoir-et-accessoire-de-rasage",
+    "subsubcategory": "rasoir"
+  },
+  "jrl-foil-tete-de-remplacement-shaver-onyx": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "shaver"
+  },
+  "jrl-lame-fade-gold-clipper-copie": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "jrl-ez-gap-lame-precision-trimmer-silver-copie": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "jrl-neckfitter": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "gamma-lame-mobile-shallow-dlc-blade-clipper-black-diamond": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "gamma-lame-mobile-slim-deep-dlc-blade-clipper-black-diamond": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "gamma-lame-mobile-the-one-deep-dlc-blade-trimmer": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "gamma-lame-mobile-deep-tooth-blade-clipper-gold-titanium": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "gamma-lame-mobile-deep-steel-blade-trimmer": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "babyliss-pro-lame-grille-shaver-fx2-titanium": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "gamma-cape": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "capes"
+  },
+  "clubman-pinaud-classic-vanilla-after-shave": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "rasoir-shavette-a-lame-unique-camo-metal": {
+    "category": "materiel",
+    "subcategory": "rasoir-et-accessoire-de-rasage",
+    "subsubcategory": "rasoir"
+  },
+  "rasoir-shavette-a-lame-unique-magic-white": {
+    "category": "materiel",
+    "subcategory": "rasoir-et-accessoire-de-rasage",
+    "subsubcategory": "rasoir"
+  },
+  "beubar-baume-a-barbe-port-royal-coco-peche-50-ml": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "baume-a-barbe"
+  },
+  "beubar-huile-a-barbe-port-royal-coco-peche-30-ml": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "huile-a-barbe"
+  },
+  "beubar-baume-a-barbe-seville-patchouli-bergamote-50-ml": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "baume-a-barbe"
+  },
+  "beubar-huile-a-barbe-seville-patchouli-bergamotte-30-ml": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "huile-a-barbe"
+  },
+  "beubar-baume-a-barbe-angkor-citron-citronnelle-50-ml": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "baume-a-barbe"
+  },
+  "beubar-huile-a-barbe-angkor-citron-lemongrass-30-ml": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "huile-a-barbe"
+  },
+  "dr-k-soap-beard-brush-brosse-barbe": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "lockharts-paradox-pomade": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "ys-park-yspc-339-edition-limitee": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "beubar-baume-a-barbe-havana-tabac-vanille-50-ml": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "baume-a-barbe"
+  },
+  "beubar-huile-a-barbe-havana-tabac-vanille-30-ml": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "huile-a-barbe"
+  },
+  "gros-blaireau-de-rasage-omega-argent": {
+    "category": "materiel",
+    "subcategory": "rasoir-et-accessoire-de-rasage",
+    "subsubcategory": "accessoires-de-rasage"
+  },
+  "gros-blaireau-de-rasage-omega-dore": {
+    "category": "materiel",
+    "subcategory": "rasoir-et-accessoire-de-rasage",
+    "subsubcategory": "accessoires-de-rasage"
+  },
+  "brosse-seban": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "babyliss-pro-lame-skeleton-gold": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "derby-100pcs-lames-de-rasoir-interchangeables": {
+    "category": "materiel",
+    "subcategory": "rasoir-et-accessoire-de-rasage",
+    "subsubcategory": "lames-de-rasoir"
+  },
+  "gamma-boosted-trimmer-tondeuse-de-finition": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "gamma-boosted-shaver-rasoir-electrique": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "shaver"
+  },
+  "set-de-peigne-l3vel3": {
+    "category": "materiel",
+    "subcategory": "brosse-et-peigne",
+    "subsubcategory": "peigne"
+  },
+  "pompes-vaporisateur-after-shave-400ml": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "vaporisateur-et-nebuliseur"
+  },
+  "babyliss-pro-skeleton-boost-gold-trimmer-tondeuse-de-finition": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "babyliss-pro-lo-pro-gold-clipper-tondeuse-de-coupe-1": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "babyliss-pro-lo-pro-clipper-tondeuse-de-coupe": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "babyliss-pro-lo-pro-gold-clipper-tondeuse-de-coupe": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "panasonic-er-fgp86-fading-tondeuse-de-coupe": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "wahl-hi-viz-tondeuse-de-finition-trimmer": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "y-s-park-diffuseur-seche-cheveux": {
+    "category": "materiel",
+    "subcategory": "seche-cheveux",
+    "subsubcategory": ""
+  },
+  "y-s-park-clip-l-pinces-a-cheveux-separation-et-section": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "ys-235-peigne-fin-peigne-tondeuse-y-s-park": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "ys-231-peigne-fin-peigne-tondeuse-y-s-park": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "ys-238-peigne-fin-peigne-tondeuse-y-s-park": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "ys-236-peigne-fin-peigne-tondeuse-y-s-park": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "ys-233-peigne-fin-peigne-tondeuse-y-s-park": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "ys-h239-peigne-fin-peigne-tondeuse-y-s-park": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "ys-h246-peigne-fin-peigne-tondeuse-y-s-park": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "ys-park-246-peigne-professionnel": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "ys-234-peigne-de-finition-souple-y-s-park": {
+    "category": "materiel",
+    "subcategory": "brosse-et-peigne",
+    "subsubcategory": "peigne"
+  },
+  "ys-332-peigne-de-coupe-y-s-park": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "ys-hs339-peigne-de-coupe-cheveux-courts-a-tres-court-antistatique": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "ys-s339-peigne-de-coupe-cheveux-courts-a-moyens-y-s-park": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "jrl-lame-fade-gold-clipper": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "jrl-lame-standard-gold-clipper": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "jrl-ez-gap-lame-precision-trimmer": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "jrl-dock-socle-de-charge-tondeuse-2020c-2020t": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "jrl-forte-seche-cheveux": {
+    "category": "materiel",
+    "subcategory": "seche-cheveux",
+    "subsubcategory": ""
+  },
+  "jrl-2020t-clipper-tondeuse-de-finition-copie": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "jrl-2020t-gold-clipper-tondeuse-de-finition": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "jrl-2020c-gold-clipper-tondeuse-de-coupe": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "jrl-onyx-clipper-tondeuse-de-coupe-copie-1": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "jrl-onyx-shaver-rasoir-electrique": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "shaver"
+  },
+  "jrl-onyx-clipper-tondeuse-de-coupe-copie": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "jrl-onyx-clipper-tondeuse-de-coupe": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "lockharts-blue-lagoon-texture-tonic": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "lockharts-enigma": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "lockharts-muck-dead-sea-salt-spray": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "lockharts-heavy-hold-pomade-copie": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "lockharts-matte-clay": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "tapis-et-organisateur"
+  },
+  "lockharts-paradox-pomade-x-sex-machine-edition-limitee": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "lockharts-goon-grease-unorthodox-water-based-copie-1": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "lockharts-anti-gravity-matte-paste-copie": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "lockharts-goon-grease-unorthodox-water-based-copie": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "tapis-et-organisateur"
+  },
+  "lockharts-goon-grease-unorthodox-water-based": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "lockharts-goon-grease-copie": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "lockharts-goon-grease": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "gamma-hybrid-seche-cheveux-professionnel": {
+    "category": "materiel",
+    "subcategory": "seche-cheveux",
+    "subsubcategory": ""
+  },
+  "gamma-cable-de-charge-magnetique-tondeuse": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "gamma-hair-grippers": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "gamma-grip-trimmer": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "gamma-grip-clipper-et-shaver": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "shaver"
+  },
+  "gamma-cable-block-chargeur-multi-tondeuse": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "gamma-tapis-barber-organisateur-rechargeable": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "tapis-et-organisateur"
+  },
+  "gamma-barber-mat-tapis-materiel-tondeuse-barber": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "gamma-sabot-tondeuse-professionnel-aimante-bleu": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "gamma-nano-evo-mister-nebuliseur-electronique": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "vaporisateur-et-nebuliseur"
+  },
+  "lames-de-rechange-shaver-forged-gamma": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "l": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "shaver"
+  },
+  "gamma-halftone-foil-tete-de-remplacement-shaver-prodigy": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "shaver"
+  },
+  "lame-mobile-gamma-staggered-ceramic-cutting-blade-tondeuse-de-coupe-clipper-1": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "lame-mobile-gamma-staggered-ceramic-cutting-blade-tondeuse-de-coupe-clipper": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "lame-fixe-gamma-taper-dlc-black-diamond-tondeuse-de-coupe-clipper": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "lame-fixe-gamma-faper-dlc-black-diamond-tondeuse-de-coupe-clipper": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "lame-fixe-gamma-x-pro-dlc-black-diamond": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "gamma-prodigy": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "shaver"
+  },
+  "style-craft-mythic": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "style-craft-saber-clipper-tondeuse-de-coupe-professionnelle": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "style-craft-instinct-clipper-tondeuse-de-coupe-professionnelle": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "style-craft-instinct-trimmer-tondeuse-de-finition-professionnelle": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "style-craft-saber-noir-trimmer-tondeuse-de-finition-professionnelle": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "style-craft-saber-trimmer-tondeuse-de-finition-professionnelle": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "tondeuse-de-finition-professionnelle-gamma-skin": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "gamma-x-evo": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "gamma-cyborg-trimmer-tondeuse-de-finition-professionnelle-1": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "gamma-cyborg-trimmer-tondeuse-de-finition-professionnelle": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "gamma-x-ergo-clipper-tondeuse-de-coupe-professionnelle-1": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "style-craft-ergo-tondeuse-de-coupe-ergonomique": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "gamma-x-ergo-clipper-tondeuse-de-coupe-professionnelle": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "gamma-cyborg-clipper-tondeuse-de-coupe-professionnelle-gaucher-droitier": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "clubman-pinaud-original-after-shave-177ml": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "clubman-pinaud-reserve-bay-rum-after-shave-177ml": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "clubman-pinaud-reserve-brandy-spice-after-shave-177ml": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "clubman-pinaud-reserve-gents-gin-after-shave-177ml": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "clubman-shave-soap-59g": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "clubman-shave-oil-30ml": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "clubman-head-shave-gel-177ml": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "clubman-classic-barber-shave-cream-453ml": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "entretien-barbe"
+  },
+  "clubman-reserve-tequila-tease-177g": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "clubman-reserve-cognac-neat-177g": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "clubman-reserve-sweet-rum-after-177g": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "clubman-reserve-whiskey-woods-177g": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "clubman-finest-powder-255g": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "clubman-nick-safe-styptic-powder-7g": {
+    "category": "materiel",
+    "subcategory": "rasoir-et-accessoire-de-rasage",
+    "subsubcategory": "accessoires-de-rasage"
+  },
+  "clubman-pinaud-beard-tattoo-oil-30ml": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "huile-a-barbe"
+  },
+  "clubman-supreme-deodorant-pump-118ml": {
+    "category": "produits",
+    "subcategory": "corps",
+    "subsubcategory": "deodorant"
+  },
+  "clubman-pinaud-finest-powder-255g": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "clubman-pinaud-greaseless-hair-370ml": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "clubman-pinaud-eau-de-quinine-tonic-370ml": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "clubman-moustache-wax-14g": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "brosse-degrade": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "seban-vapo-rond-color-350ml": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "vaporisateur-et-nebuliseur"
+  },
+  "balai-a-cou-seban": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "balai-a-cou-et-brosse"
+  },
+  "seban-pince-croco-11cm-x6": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "seban-bol-teinture": {
+    "category": "produits",
+    "subcategory": "couleur",
+    "subsubcategory": ""
+  },
+  "seban-pinceau-couleur": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "outils-coloration"
+  },
+  "peigne-hercules-sagemann-h602": {
+    "category": "materiel",
+    "subcategory": "brosse-et-peigne",
+    "subsubcategory": "peigne"
+  },
+  "peigne-hercules-sagemann-h903": {
+    "category": "materiel",
+    "subcategory": "brosse-et-peigne",
+    "subsubcategory": "peigne"
+  },
+  "kit-5-peignes-seban": {
+    "category": "materiel",
+    "subcategory": "brosse-et-peigne",
+    "subsubcategory": "peigne"
+  },
+  "peigne-seban-cc07-demeloir": {
+    "category": "materiel",
+    "subcategory": "brosse-et-peigne",
+    "subsubcategory": "peigne"
+  },
+  "peigne-seban-cc05-coupe": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "peigne-seban-cc01-precision": {
+    "category": "materiel",
+    "subcategory": "brosse-et-peigne",
+    "subsubcategory": "peigne"
+  },
+  "peigne-afro-denman": {
+    "category": "materiel",
+    "subcategory": "brosse-et-peigne",
+    "subsubcategory": "peigne"
+  },
+  "denman-brosse-ronde-d300-hyflex": {
+    "category": "materiel",
+    "subcategory": "brosse-et-peigne",
+    "subsubcategory": "brosse"
+  },
+  "denman-brosse-d3-rouge-noir": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "denman-d3pan-panthere": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "haircut-sculpteur-noir-chssm55": {
+    "category": "materiel",
+    "subcategory": "ciseaux",
+    "subsubcategory": "sculpteur"
+  },
+  "haircut-ciseaux-droit-noir-chsm55": {
+    "category": "materiel",
+    "subcategory": "ciseaux",
+    "subsubcategory": "ciseaux-droits"
+  },
+  "haircut-ciseaux-droit-acier-ch70": {
+    "category": "materiel",
+    "subcategory": "ciseaux",
+    "subsubcategory": "ciseaux-droits"
+  },
+  "haircut-sculpteur-acier-chs55": {
+    "category": "materiel",
+    "subcategory": "ciseaux",
+    "subsubcategory": "sculpteur"
+  },
+  "haircut-ciseaux-droit-acier-ch55": {
+    "category": "materiel",
+    "subcategory": "ciseaux",
+    "subsubcategory": "ciseaux-droits"
+  },
+  "haircut-souffleur-noir-gris": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "souffleur"
+  },
+  "haircut-slimspeed-th60": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "haircut-gt-speed-th40": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "ys-park-neckfitter-0-6mm-noir-noir": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "ys-park-vaporisateurs-professionnels": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "vaporisateur-et-nebuliseur"
+  },
+  "ys-park-335-peigne-professionnel": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "ys-640-230mm-peigne-pinceau-noir": {
+    "category": "materiel",
+    "subcategory": "brosse-et-peigne",
+    "subsubcategory": "peigne"
+  },
+  "ys-park-282-peigne-professionnel-carbone": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "clipper"
+  },
+  "ys-254-187mm-souple-finition-blanc": {
+    "category": "materiel",
+    "subcategory": "brosse-et-peigne",
+    "subsubcategory": "peigne"
+  },
+  "ys-park-339-peigne-professionnel": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "ys-park-334-peigne-professionnel": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "ys-331-230mm-blanc": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "vitos-moisturizing-crema-dopobarba-karite-100ml": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "vitos-crema-pre-e-dopo-barba-100ml-menthe": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "pre-rasage"
+  },
+  "vitos-crema-rasatura-500ml-menthe": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "vitos-crema-istant-1l-menthe": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "vitos-acqua-di-colonia-400ml-sandal": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "vitos-after-shave-400ml-bleu-aqua-di-gio": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "vitos-cire-liquide-100ml": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "vitos-grease-100ml": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "vitos-wh2o-100ml": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "vitos-wax-100ml": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "tapis-et-organisateur"
+  },
+  "vitos-gel-flash-breeze-500-ml": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "king-brown-powder-wax-15g": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "king-brown-grooming-spray-177ml": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "king-brown-paste-pomade-75g": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "king-brown-premium-pomade-75g": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "king-brown-cream-pomade-75g": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "king-brown-original-pomade-71g": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "king-brown-matte-pomade-75g": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "tapis-et-organisateur"
+  },
+  "hey-joe-dessata-beard-brush": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "entretien-barbe"
+  },
+  "hey-joe-magic-white-creme-oxydante-40-vol": {
+    "category": "produits",
+    "subcategory": "couleur",
+    "subsubcategory": ""
+  },
+  "hey-joe-magic-white-bleaching-powder": {
+    "category": "produits",
+    "subcategory": "couleur",
+    "subsubcategory": ""
+  },
+  "hey-joe-clear-shaving-gel-xxl-classic-gold": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "hey-joe-clear-shaving-gel-xxl-fresh": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "hey-joe-clear-shaving-gel-xxl": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "hey-joe-clear-shaving-gel-classic-gold": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "hey-joe-clear-shaving-gel-fresh": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "hey-joe-gel-rasage-transparent": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "hey-joe-creme-de-rasage-premium": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "huile-pre-rasage-premium-pre-shave-oil-hey-joe": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "pre-rasage"
+  },
+  "hey-joe-after-shave-no-9-green-moss-100ml": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "hey-joe-after-shave-no-8-classic-gold-100ml": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "hey-joe-after-shave-no-3-acid-melon-100ml": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "hey-joe-shaving-survival-kit-delux-pro": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "hey-joe-shaving-survival-kit-delux": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "rasage-produits"
+  },
+  "hey-joe-lotion-apres-rasage-premium": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "hey-joe-after-shave-no-9-green-moss-400ml": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "hey-joe-after-shave-no-8-classic-gold-400ml": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "hey-joe-after-shave-no-3-acid-melon-400ml": {
+    "category": "produits",
+    "subcategory": "rasage",
+    "subsubcategory": "apres-rasage"
+  },
+  "hey-joe-power-hair-lotion-anti-chute-150ml": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "shampooing-cheveux"
+  },
+  "hey-joe-shampooing-power-hair-anti-chute": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "shampooing-cheveux"
+  },
+  "hey-joe-silver-hair-shampoo-cheveux-blancs-gris": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "shampooing-cheveux"
+  },
+  "hey-joe-purify-hair-shampoo-antipelliculaire": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "shampooing-cheveux"
+  },
+  "hey-joe-daily-hair-shampoo-xl-usage-frequent": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "shampooing-cheveux"
+  },
+  "hey-joe-daily-hair-shampoo-usage-frequent-250ml": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "shampooing-cheveux"
+  },
+  "hey-joe-beard-shampoo-no-3-acid-melon": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "shampooing-cheveux"
+  },
+  "hey-joe-beard-shampoo-no-2": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "shampooing-cheveux"
+  },
+  "hey-joe-beard-shampoo-no-1": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "shampooing-cheveux"
+  },
+  "hey-joe-deluxe-roller-beard-growth": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "entretien-barbe"
+  },
+  "hey-joe-serum-premium-elixir-pousse-barbe": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "hey-joe-beard-growth-system-kit-pousse-barbe": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "entretien-barbe"
+  },
+  "hey-joe-bearded-survival-kit-delux-n3": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "kit"
+  },
+  "hey-joe-bearded-survival-kit-delux-no2-soap": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "kit"
+  },
+  "hey-joe-bearded-survival-kit-delux-n7": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "kit"
+  },
+  "hey-joe-bearded-survival-kit-delux-n6": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "kit"
+  },
+  "hey-joe-bearded-survival-kit-delux-no-5-sweet-chufa": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "kit"
+  },
+  "hey-joe-bearded-survival-kit-delux-n4": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "kit"
+  },
+  "hey-joe-bearded-survival-kit-delux-n3-pack-soin-barbe": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "kit"
+  },
+  "hey-joe-bearded-survival-kit-delux-n2": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "kit"
+  },
+  "hey-joe-bearded-survival-kit-delux-n1": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "kit"
+  },
+  "hey-joe-absolute-pack-huiles-barbe": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "huile-a-barbe"
+  },
+  "hey-joe-huile-n-7-fresh-mint-60mlhey-joe-beard-oil-no-7-fresh-mint": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "huile-a-barbe"
+  },
+  "hey-joe-beard-oil-no-6-citric-forest": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "hey-joe-beard-oil-no-5-sweet-chufa": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "hey-joe-beard-oil-no-4-feel-wood": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "hey-joe-beard-oil-no-3-acid-melon": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "hey-joe-beard-oil-no-1-classic-joe": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "hey-joe-beard-balm-no-7-fresh-mint": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "baume-a-barbe"
+  },
+  "hey-joe-beard-balm-no-6-citric-forest": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "baume-a-barbe"
+  },
+  "hey-joe-beard-balm-no-5-sweet-chufa": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "hey-joe-beard-balm-no-4-feel-wood": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "hey-joe-beard-balm-no-3-acid-melon": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "hey-joe-beard-balm-no-2-red-mandarin": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "hey-joe-beard-balm-no-1-classic-joe": {
+    "category": "produits",
+    "subcategory": "barbe",
+    "subsubcategory": "baume-a-barbe"
+  },
+  "hey-joe-sea-salt-spray": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "hey-joe-super-strong-hairspray": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "coiffant"
+  },
+  "hey-joe-genuine-hair-mattifying-powder": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "tapis-et-organisateur"
+  },
+  "hey-joe-genuine-hair-pomade-kids-75ml": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "hey-joe-genuine-hair-pomade-matt": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "tapis-et-organisateur"
+  },
+  "hey-joe-pomade-super-strong-100ml": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "hey-joe-genuine-hair-pomade-classic-gold": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "hey-joe-genuine-hair-pomade-black-deluxe": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "hey-joe-genuine-hair-pomade-matt-clay": {
+    "category": "materiel",
+    "subcategory": "accessoire",
+    "subsubcategory": "tapis-et-organisateur"
+  },
+  "hey-joe-genuine-hair-pomade-strong": {
+    "category": "produits",
+    "subcategory": "cheveux",
+    "subsubcategory": "cire"
+  },
+  "disicide-trimmercide-4-in-1-blade-spray-400ml": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "lames-et-accessoires"
+  },
+  "disicide-trimmercide-oil-150ml": {
+    "category": "materiel",
+    "subcategory": "tondeuse",
+    "subsubcategory": "trimmer"
+  },
+  "disicide-desinfectant-spray-1000ml": {
+    "category": "produits",
+    "subcategory": "hygiene-et-entretien",
+    "subsubcategory": "hygiene"
+  },
+  "disicide-bocal-desinfection-1100ml": {
+    "category": "produits",
+    "subcategory": "hygiene-et-entretien",
+    "subsubcategory": "hygiene"
+  },
+  "discide-desinfectant-1500ml": {
+    "category": "produits",
+    "subcategory": "hygiene-et-entretien",
+    "subsubcategory": "hygiene"
+  }
+}

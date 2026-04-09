@@ -1,6 +1,6 @@
 import { Link, useParams } from "wouter";
 import { ArrowRight, Clock, User, ChevronRight } from "lucide-react";
-import { blogPosts } from "@/lib/data";
+
 
 export default function Blog() {
   const { slug } = useParams<{ slug?: string }>();
