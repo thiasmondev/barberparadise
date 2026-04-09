@@ -14,9 +14,10 @@ import { toast } from "sonner";
 interface ProductCardProps {
   product: Product;
   className?: string;
+  listView?: boolean;
 }
 
-export default function ProductCard({ product, className = "" }: ProductCardProps) {
+export default function ProductCard({ product, className = "", listView = false }: ProductCardProps) {
   const [imgLoaded, setImgLoaded] = useState(false);
   const { addItem, openCart } = useCart();
   const { toggleItem, isWishlisted } = useWishlist();

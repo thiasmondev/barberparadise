@@ -8,6 +8,7 @@ import { Link } from "wouter";
 import { ArrowRight, ChevronLeft, ChevronRight, Star, Truck, Shield, Headphones, RotateCcw } from "lucide-react";
 import { getFeaturedProducts, getPromoProducts, getNewProducts, categories } from "@/lib/data";
 import ProductCard from "@/components/products/ProductCard";
+import { useProducts } from "@/hooks/useApi";
 
 // Hero slides
 const heroSlides = [
@@ -71,9 +72,13 @@ const testimonials = [
 
 export default function Home() {
   const [currentSlide, setCurrentSlide] = useState(0);
-  const featuredProducts = getFeaturedProducts();
-  const promoProducts = getPromoProducts();
-  const newProducts = getNewProducts();
+  // Données API dynamiques avec fallback sur les données mockées
+  const { products: apiFeatured } = useProducts({ sort: "popular", limit: 8 });
+  const { products: apiPromo } = useProducts({ isPromo: true, limit: 8 });
+  const { products: apiNew } = useProducts({ isNew: true, limit: 8 });
+  const featuredProducts = apiFeatured.length > 0 ? apiFeatured as any[] : getFeaturedProducts();
+  const promoProducts = apiPromo.length > 0 ? apiPromo as any[] : getPromoProducts();
+  const newProducts = apiNew.length > 0 ? apiNew as any[] : getNewProducts();
 
   useEffect(() => {
     const interval = setInterval(() => {

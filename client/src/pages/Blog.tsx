@@ -1,6 +1,7 @@
-import { blogPosts, BlogPost } from "@/lib/data";
+import { blogPosts } from "@/lib/data";
 import { Link, useParams } from "wouter";
-import { ArrowRight, Clock, User, ChevronRight } from "lucide-react";
+import { ArrowRight, Clock, User, ChevronRight, Loader2 } from "lucide-react";
+import { useBlogPosts } from "@/hooks/useApi";
 
 
 export default function Blog() {
@@ -95,9 +96,9 @@ export default function Blog() {
             <h2 className="section-title mb-8">Articles Similaires</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {blogPosts
-                .filter((p) => p.id !== post.id)
+                .filter((p: typeof blogPosts[0]) => p.id !== post!.id)
                 .slice(0, 3)
-                .map((p) => (
+                .map((p: typeof blogPosts[0]) => (
                   <Link key={p.id} href={`/blog/${p.slug}`} className="group">
                     <div className="overflow-hidden bg-gray-200 aspect-video mb-4 border border-gray-200 group-hover:border-primary/30 transition-colors">
                       <img src={p.image} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
@@ -127,7 +128,7 @@ export default function Blog() {
 
       <div className="container py-12">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {blogPosts.map((post) => (
+          {blogPosts.map((post: typeof blogPosts[0]) => (
             <Link key={post.id} href={`/blog/${post.slug}`} className="group">
               <div className="overflow-hidden bg-gray-200 aspect-video mb-4 border border-gray-200 group-hover:border-primary/30 transition-colors">
                 <img src={post.image} alt={post.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
