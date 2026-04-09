@@ -1,5 +1,5 @@
 // ============================================================
-// BARBER PARADISE — Schéma Prisma (SQLite)
+// BARBER PARADISE — Schéma Prisma (PostgreSQL)
 // ============================================================
 
 generator client {
@@ -7,7 +7,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

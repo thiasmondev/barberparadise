@@ -100,8 +100,9 @@ jspm_packages/
 tmp/
 temp/
 
-# Database
-*.db
+# Database (SQLite dev only)
+backend/prisma/dev.db
+# Keep *.db pattern but exclude migrations
 *.sqlite
 *.sqlite3
 
