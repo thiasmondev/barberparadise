@@ -1,0 +1,195 @@
+// ============================================================
+// BARBER PARADISE — Schéma Prisma (SQLite)
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── PRODUITS ────────────────────────────────────────────────
+model Product {
+  id              String   @id @default(cuid())
+  handle          String   @unique
+  name            String
+  slug            String   @unique
+  brand           String
+  category        String
+  subcategory     String
+  subsubcategory  String   @default("")
+  price           Float
+  originalPrice   Float?
+  images          String   // JSON array
+  description     String
+  shortDescription String
+  features        String   @default("[]") // JSON array
+  inStock         Boolean  @default(true)
+  stockCount      Int      @default(0)
+  rating          Float    @default(0)
+  reviewCount     Int      @default(0)
+  isNew           Boolean  @default(false)
+  isPromo         Boolean  @default(false)
+  tags            String   @default("[]") // JSON array
+  status          String   @default("active") // active, draft, archived
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  orderItems OrderItem[]
+  reviews    Review[]
+
+  @@index([category])
+  @@index([subcategory])
+  @@index([brand])
+  @@index([status])
+}
+
+// ─── CLIENTS ─────────────────────────────────────────────────
+model Customer {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  addresses Address[]
+  orders    Order[]
+  wishlist  WishlistItem[]
+}
+
+// ─── ADRESSES ────────────────────────────────────────────────
+model Address {
+  id         String   @id @default(cuid())
+  customerId String
+  firstName  String
+  lastName   String
+  address    String
+  city       String
+  postalCode String
+  country    String   @default("France")
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+}
+
+// ─── COMMANDES ───────────────────────────────────────────────
+model Order {
+  id         String      @id @default(cuid())
+  orderNumber String     @unique
+  customerId String?
+  email      String
+  status     String      @default("pending") // pending, processing, shipped, delivered, cancelled
+  subtotal   Float
+  shipping   Float       @default(0)
+  total      Float
+  notes      String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  customer       Customer?   @relation(fields: [customerId], references: [id])
+  items          OrderItem[]
+  shippingAddress ShippingAddress?
+
+  @@index([status])
+  @@index([customerId])
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String
+  name      String
+  price     Float
+  quantity  Int
+  image     String  @default("")
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+}
+
+model ShippingAddress {
+  id         String @id @default(cuid())
+  orderId    String @unique
+  firstName  String
+  lastName   String
+  address    String
+  city       String
+  postalCode String
+  country    String @default("France")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+// ─── AVIS ────────────────────────────────────────────────────
+model Review {
+  id        String   @id @default(cuid())
+  productId String
+  author    String
+  email     String?
+  rating    Int
+  comment   String
+  verified  Boolean  @default(false)
+  approved  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+// ─── WISHLIST ────────────────────────────────────────────────
+model WishlistItem {
+  id         String   @id @default(cuid())
+  customerId String
+  productId  String
+  createdAt  DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, productId])
+}
+
+// ─── ADMIN ───────────────────────────────────────────────────
+model Admin {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("admin") // admin, superadmin
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── BLOG ────────────────────────────────────────────────────
+model BlogPost {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  excerpt   String
+  content   String
+  image     String
+  author    String
+  category  String
+  readTime  Int      @default(5)
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── CATÉGORIES ──────────────────────────────────────────────
+model Category {
+  id          String @id @default(cuid())
+  name        String
+  slug        String @unique
+  description String @default("")
+  image       String @default("")
+  parentSlug  String @default("")
+  order       Int    @default(0)
+}
