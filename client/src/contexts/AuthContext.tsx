@@ -3,7 +3,7 @@
 // ============================================================
 
 import React, { createContext, useContext, useState, useEffect } from "react";
-import type { Order } from "@/lib/data";
+import { type Order, mockOrders } from "@/lib/data";
 
 
 export interface User {

@@ -323,7 +323,7 @@ export default function Account() {
                     ))}
                   </div>
 
-                  <p className="text-xs text-gray-500">Livraison à : {order.shippingAddress}</p>
+                  <p className="text-xs text-gray-500">Livraison à : {typeof order.shippingAddress === 'string' ? order.shippingAddress : `${(order.shippingAddress as any).address}, ${(order.shippingAddress as any).city} ${(order.shippingAddress as any).postalCode}`}</p>
                 </div>
               ))
             )}

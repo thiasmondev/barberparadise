@@ -22,6 +22,7 @@ import Blog from "./pages/Blog";
 import Contact from "./pages/Contact";
 import Legal from "./pages/Legal";
 import NotFound from "./pages/NotFound";
+import Admin from "./pages/Admin";
 
 function Router() {
   return (
@@ -41,6 +42,8 @@ function Router() {
           <Route path="/blog" component={Blog} />
           <Route path="/blog/:slug" component={Blog} />
           <Route path="/contact" component={Contact} />
+          <Route path="/admin" component={Admin} />
+          <Route path="/admin/:section" component={Admin} />
           <Route path="/:page" component={Legal} />
           <Route path="/404" component={NotFound} />
           <Route component={NotFound} />

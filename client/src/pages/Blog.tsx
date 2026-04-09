@@ -1,3 +1,4 @@
+import { blogPosts, BlogPost } from "@/lib/data";
 import { Link, useParams } from "wouter";
 import { ArrowRight, Clock, User, ChevronRight } from "lucide-react";
 

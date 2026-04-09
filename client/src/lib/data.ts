@@ -10,6 +10,7 @@ export interface Product {
   brand: string;
   category: string;
   subcategory: string;
+  subsubcategory?: string;
   price: number;
   originalPrice?: number;
   images: string[];
@@ -52,7 +53,7 @@ export interface Review {
 }
 
 export interface BlogPost {
-  id: number;
+  id: string | number;
   slug: string;
   title: string;
   excerpt: string;
@@ -68,9 +69,11 @@ export interface Order {
   id: string;
   date: string;
   status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
-  items: { productId: string; name: string; quantity: number; price: number }[];
+  items: { productId: string; name: string; quantity: number; price: number; image?: string }[];
+  subtotal?: number;
+  shipping?: number;
   total: number;
-  shippingAddress: string;
+  shippingAddress: string | { firstName: string; lastName: string; address: string; city: string; postalCode: string; country: string };
 }
 
 // ─── CATÉGORIES ──────────────────────────────────────────────
@@ -82,12 +85,12 @@ export const categories: Category[] = [
     description: "Tondeuses, ciseaux, rasoirs et tout le matériel professionnel",
     image: "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=600&q=80",
     subcategories: [
-      { id: "tondeuse", name: "Tondeuses, slug: tondeuse" },
-      { id: "ciseaux", name: "Ciseaux, slug: ciseaux" },
-      { id: "rasoir-et-accessoire-de-rasage", name: "Rasoirs & Accessoires, slug: rasoir-et-accessoire-de-rasage" },
-      { id: "brosse-et-peigne", name: "Brosses & Peignes, slug: brosse-et-peigne" },
-      { id: "seche-cheveux", name: "Sèche-cheveux, slug: seche-cheveux" },
-      { id: "accessoire", name: "Accessoires, slug: accessoire" },
+      { id: "tondeuse", name: "Tondeuses", slug: "tondeuse" },
+      { id: "ciseaux", name: "Ciseaux", slug: "ciseaux" },
+      { id: "rasoir-et-accessoire-de-rasage", name: "Rasoirs & Accessoires", slug: "rasoir-et-accessoire-de-rasage" },
+      { id: "brosse-et-peigne", name: "Brosses & Peignes", slug: "brosse-et-peigne" },
+      { id: "seche-cheveux", name: "Sèche-cheveux", slug: "seche-cheveux" },
+      { id: "accessoire", name: "Accessoires", slug: "accessoire" },
     ],
   },
   {
@@ -97,47 +100,47 @@ export const categories: Category[] = [
     description: "Soins capillaires, produits de barbe et hygiène",
     image: "https://images.unsplash.com/photo-1621607512022-6aecc4fed814?w=600&q=80",
     subcategories: [
-      { id: "cheveux", name: "Cheveux, slug: cheveux" },
-      { id: "barbe", name: "Barbe, slug: barbe" },
-      { id: "rasage", name: "Rasage, slug: rasage" },
-      { id: "corps", name: "Corps, slug: corps" },
-      { id: "hygiene-et-entretien", name: "Hygiène & Entretien, slug: hygiene-et-entretien" },
-      { id: "couleur", name: "Couleur, slug: couleur" },
+      { id: "cheveux", name: "Cheveux", slug: "cheveux" },
+      { id: "barbe", name: "Barbe", slug: "barbe" },
+      { id: "rasage", name: "Rasage", slug: "rasage" },
+      { id: "corps", name: "Corps", slug: "corps" },
+      { id: "hygiene-et-entretien", name: "Hygiène & Entretien", slug: "hygiene-et-entretien" },
+      { id: "couleur", name: "Couleur", slug: "couleur" },
     ],
   },
 ];
 
 // ─── MARQUES ──────────────────────────────────────────────────
 export const brands: Brand[] = [
-  { id: "andis", name: "Andis\", slug: \"andis, logo: " },
-  { id: "babyliss-pro", name: "Babyliss Pro\", slug: \"babyliss-pro, logo: " },
-  { id: "barber-paradise", name: "Barber Paradise\", slug: \"barber-paradise, logo: " },
-  { id: "beubar", name: "Beubar\", slug: \"beubar, logo: " },
-  { id: "clubman-pinaud", name: "Clubman Pinaud\", slug: \"clubman-pinaud, logo: " },
-  { id: "dauntless", name: "DAUNTLESS MODERN GROOMING\", slug: \"dauntless, logo: " },
-  { id: "denman", name: "Denman\", slug: \"denman, logo: " },
-  { id: "derby", name: "Derby\", slug: \"derby, logo: " },
-  { id: "disicide", name: "Disicide\", slug: \"disicide, logo: " },
-  { id: "dr-k-soap", name: "Dr K Soap\", slug: \"dr-k-soap, logo: " },
-  { id: "euromax", name: "Euromax\", slug: \"euromax, logo: " },
-  { id: "fatip", name: "Fatip\", slug: \"fatip, logo: " },
-  { id: "gamma-plus", name: "Gamma+\", slug: \"gamma-plus, logo: " },
-  { id: "haircut", name: "Haircut\", slug: \"haircut, logo: " },
-  { id: "hercules-sagemann", name: "Hercules Sägemann\", slug: \"hercules-sagemann, logo: " },
-  { id: "hey-joe", name: "Hey joe !\", slug: \"hey-joe, logo: " },
-  { id: "jacques-seban", name: "Jacques SEBAN\", slug: \"jacques-seban, logo: " },
-  { id: "jrl", name: "JRL\", slug: \"jrl, logo: " },
-  { id: "king-brown", name: "King Brown\", slug: \"king-brown, logo: " },
-  { id: "l3vel3", name: "L3VEL3\", slug: \"l3vel3, logo: " },
-  { id: "lockharts", name: "Lockhart's\", slug: \"lockharts, logo: " },
-  { id: "omega", name: "OMEGA\", slug: \"omega, logo: " },
-  { id: "osaka", name: "Osaka\", slug: \"osaka, logo: " },
-  { id: "panasonic", name: "Panasonic\", slug: \"panasonic, logo: " },
-  { id: "style-craft", name: "Style Craft\", slug: \"style-craft, logo: " },
-  { id: "trimmercide", name: "Trimmercide\", slug: \"trimmercide, logo: " },
-  { id: "vitos", name: "Vitos\", slug: \"vitos, logo: " },
-  { id: "wahl", name: "Wahl\", slug: \"wahl, logo: " },
-  { id: "ys-park", name: "Y/S PARK\", slug: \"ys-park, logo: " },
+  { id: "andis", name: "Andis", slug: "andis", logo: "" },
+  { id: "babyliss-pro", name: "Babyliss Pro", slug: "babyliss-pro", logo: "" },
+  { id: "barber-paradise", name: "Barber Paradise", slug: "barber-paradise", logo: "" },
+  { id: "beubar", name: "Beubar", slug: "beubar", logo: "" },
+  { id: "clubman-pinaud", name: "Clubman Pinaud", slug: "clubman-pinaud", logo: "" },
+  { id: "dauntless", name: "DAUNTLESS MODERN GROOMING", slug: "dauntless", logo: "" },
+  { id: "denman", name: "Denman", slug: "denman", logo: "" },
+  { id: "derby", name: "Derby", slug: "derby", logo: "" },
+  { id: "disicide", name: "Disicide", slug: "disicide", logo: "" },
+  { id: "dr-k-soap", name: "Dr K Soap", slug: "dr-k-soap", logo: "" },
+  { id: "euromax", name: "Euromax", slug: "euromax", logo: "" },
+  { id: "fatip", name: "Fatip", slug: "fatip", logo: "" },
+  { id: "gamma-plus", name: "Gamma+", slug: "gamma-plus", logo: "" },
+  { id: "haircut", name: "Haircut", slug: "haircut", logo: "" },
+  { id: "hercules-sagemann", name: "Hercules Sägemann", slug: "hercules-sagemann", logo: "" },
+  { id: "hey-joe", name: "Hey joe !", slug: "hey-joe", logo: "" },
+  { id: "jacques-seban", name: "Jacques SEBAN", slug: "jacques-seban", logo: "" },
+  { id: "jrl", name: "JRL", slug: "jrl", logo: "" },
+  { id: "king-brown", name: "King Brown", slug: "king-brown", logo: "" },
+  { id: "l3vel3", name: "L3VEL3", slug: "l3vel3", logo: "" },
+  { id: "lockharts", name: "Lockhart's", slug: "lockharts", logo: "" },
+  { id: "omega", name: "OMEGA", slug: "omega", logo: "" },
+  { id: "osaka", name: "Osaka", slug: "osaka", logo: "" },
+  { id: "panasonic", name: "Panasonic", slug: "panasonic", logo: "" },
+  { id: "style-craft", name: "Style Craft", slug: "style-craft", logo: "" },
+  { id: "trimmercide", name: "Trimmercide", slug: "trimmercide", logo: "" },
+  { id: "vitos", name: "Vitos", slug: "vitos", logo: "" },
+  { id: "wahl", name: "Wahl", slug: "wahl", logo: "" },
+  { id: "ys-park", name: "Y/S PARK", slug: "ys-park", logo: "" },
 ];
 
 // ─── PRODUITS (405 produits réels Shopify - classification précise) ────────────────────
@@ -8774,7 +8777,7 @@ export const mockOrders: Order[] = [
     date: "2024-11-15",
     status: "delivered",
     items: [
-      { productId: "tondeuse-wahl-magic-clip", productName: "Tondeuse Wahl Magic Clip", quantity: 1, price: 89.90, image: "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=100&q=80" },
+      { productId: "tondeuse-wahl-magic-clip", name: "Tondeuse Wahl Magic Clip", quantity: 1, price: 89.90, image: "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=100&q=80" },
     ],
     subtotal: 89.90,
     shipping: 0,
@@ -8786,7 +8789,7 @@ export const mockOrders: Order[] = [
     date: "2024-12-03",
     status: "shipped",
     items: [
-      { productId: "cire-lockhart", productName: "Cire Lockhart's Goon Grease", quantity: 2, price: 18.90, image: "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=100&q=80" },
+      { productId: "cire-lockhart", name: "Cire Lockhart's Goon Grease", quantity: 2, price: 18.90, image: "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=100&q=80" },
     ],
     subtotal: 37.80,
     shipping: 4.90,
@@ -8794,3 +8797,47 @@ export const mockOrders: Order[] = [
     shippingAddress: { firstName: "Mathias", lastName: "Client", address: "12 rue de la Paix", city: "Paris", postalCode: "75001", country: "France" },
   },
 ];
+
+
+// ─── BLOG POSTS MOCKÉS ────────────────────────────────────────
+export const blogPosts: BlogPost[] = [
+  {
+    id: "1",
+    slug: "comment-choisir-tondeuse-professionnelle",
+    title: "Comment choisir sa tondeuse professionnelle",
+    excerpt: "Guide complet pour choisir la tondeuse adaptée à votre pratique de barbier.",
+    content: "Le choix d'une tondeuse professionnelle est crucial pour tout barbier. Découvrez les critères essentiels pour faire le bon choix selon votre niveau et votre pratique.",
+    image: "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?w=800&q=80",
+    category: "Conseils",
+    author: "Barber Paradise",
+    date: "2024-11-10",
+    readTime: 5,
+  },
+  {
+    id: "2",
+    slug: "tendances-coiffure-2024",
+    title: "Les tendances coiffure homme 2024",
+    excerpt: "Découvrez les coupes et styles qui dominent cette année.",
+    content: "2024 marque le retour des coupes classiques revisitées avec une touche moderne. Du fade ultra-propre au pompadour texturé, voici les styles incontournables.",
+    image: "https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=800&q=80",
+    category: "Tendances",
+    author: "Barber Paradise",
+    date: "2024-12-01",
+    readTime: 4,
+  },
+  {
+    id: "3",
+    slug: "entretien-barbe-guide-complet",
+    title: "Guide complet d'entretien de la barbe",
+    excerpt: "Tous les conseils pour une barbe parfaitement entretenue au quotidien.",
+    content: "Une barbe bien entretenue nécessite les bons produits et les bonnes techniques. Découvrez notre guide complet pour prendre soin de votre barbe.",
+    image: "https://images.unsplash.com/photo-1621605815971-fbc98d665033?w=800&q=80",
+    category: "Soins",
+    author: "Barber Paradise",
+    date: "2024-12-15",
+    readTime: 6,
+  },
+];
+
+// ─── REVIEWS MOCKÉS ────────────────────────────────────────────
+export const reviews: Review[] = [];

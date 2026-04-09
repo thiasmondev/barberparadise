@@ -188,3 +188,166 @@ adminRouter.put("/reviews/:id/approve", requireAdmin, async (req: Request, res: 
     res.status(500).json({ error: "Erreur approbation avis" });
   }
 });
+
+// PATCH /api/admin/products/:id — Modifier un produit
+adminRouter.patch("/products/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { name, brand, category, subcategory, price, originalPrice, stock, description, isActive } = req.body;
+    const product = await prisma.product.update({
+      where: { id: req.params.id },
+      data: {
+        name: name || undefined,
+        brand: brand || undefined,
+        category: category || undefined,
+        subcategory: subcategory || undefined,
+        price: price !== undefined ? parseFloat(price) : undefined,
+        originalPrice: originalPrice ? parseFloat(originalPrice) : undefined,
+        inStock: stock !== undefined ? parseInt(stock) : undefined,
+        description: description || undefined,
+        status: isActive !== undefined ? (isActive ? "active" : "inactive") : undefined,
+      },
+    });
+    res.json(product);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur mise à jour produit" });
+  }
+});
+
+// DELETE /api/admin/products/:id — Supprimer un produit
+adminRouter.delete("/products/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    await prisma.product.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur suppression produit" });
+  }
+});
+
+// POST /api/admin/products — Créer un produit
+adminRouter.post("/products", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { name, brand, category, subcategory, price, originalPrice, stock, description, isActive } = req.body;
+    const product = await prisma.product.create({
+      data: {
+        name,
+        brand,
+        category,
+        subcategory,
+        price: parseFloat(price),
+        originalPrice: originalPrice ? parseFloat(originalPrice) : null,
+        inStock: stock !== undefined ? parseInt(stock) : undefined || 0,
+        description,
+        status: isActive ? "active" : "inactive",
+        images: "[]",
+        tags: "[]",
+      },
+    });
+    res.json(product);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur création produit" });
+  }
+});
+
+// GET /api/admin/orders/:id — Détail d'une commande
+adminRouter.get("/orders/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: req.params.id },
+      include: { items: true, shippingAddress: true, customer: true },
+    });
+    if (!order) {
+      res.status(404).json({ error: "Commande non trouvée" });
+      return;
+    }
+    res.json(order);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// PATCH /api/admin/orders/:id/status — Changer le statut d'une commande
+adminRouter.patch("/orders/:id/status", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { status } = req.body;
+    const order = await prisma.order.update({
+      where: { id: req.params.id },
+      data: { status },
+    });
+    res.json(order);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur mise à jour statut" });
+  }
+});
+
+// GET /api/admin/blog — Liste articles blog
+adminRouter.get("/blog", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const posts = await prisma.blogPost.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+    res.json({ posts });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// POST /api/admin/blog — Créer article blog
+adminRouter.post("/blog", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { title, slug, excerpt, content, category, isPublished } = req.body;
+    const post = await prisma.blogPost.create({
+      data: {
+        title,
+        slug: slug || title.toLowerCase().replace(/\s+/g, "-"),
+        excerpt,
+        content,
+        category,
+        published: isPublished !== undefined ? isPublished : false,
+      },
+    });
+    res.json(post);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur création article" });
+  }
+});
+
+// PATCH /api/admin/blog/:id — Modifier article blog
+adminRouter.patch("/blog/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { title, slug, excerpt, content, category, isPublished } = req.body;
+    const post = await prisma.blogPost.update({
+      where: { id: req.params.id },
+      data: {
+        title: title || undefined,
+        slug: slug || undefined,
+        excerpt: excerpt || undefined,
+        content: content || undefined,
+        category: category || undefined,
+        published: isPublished !== undefined ? isPublished : undefined,
+      },
+    });
+    res.json(post);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur mise à jour article" });
+  }
+});
+
+// DELETE /api/admin/blog/:id — Supprimer article blog
+adminRouter.delete("/blog/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    await prisma.blogPost.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur suppression article" });
+  }
+});
