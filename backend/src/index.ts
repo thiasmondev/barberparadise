@@ -36,7 +36,28 @@ app.use("/api/admin", adminRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/blog", blogRouter);
 
-// ─── Health Check ────────────────────────────────────────────
+// ─── Root & Health Check ─────────────────────────────────────
+app.get("/", (_req, res) => {
+  res.json({
+    name: "Barber Paradise API",
+    version: "1.0.0",
+    status: "running",
+    endpoints: {
+      health: "/health",
+      products: "/api/products",
+      categories: "/api/categories",
+      orders: "/api/orders",
+      auth: "/api/auth",
+      blog: "/api/blog",
+      admin: "/api/admin",
+    },
+  });
+});
+
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", version: "1.0.0", timestamp: new Date().toISOString() });
+});
+
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", version: "1.0.0", timestamp: new Date().toISOString() });
 });
