@@ -1,4 +1,5 @@
-export function parseImages(imagesStr: string): string[] {
+export function parseImages(imagesStr: string | string[]): string[] {
+  if (Array.isArray(imagesStr)) return imagesStr;
   try {
     const parsed = JSON.parse(imagesStr);
     if (Array.isArray(parsed)) return parsed;

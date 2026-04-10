@@ -242,6 +242,32 @@ adminRouter.get("/customers", requireAdmin, async (req: Request, res: Response):
   }
 });
 
+// GET /api/admin/customers/:id — Détail d'un client
+adminRouter.get("/customers/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const customer = await prisma.customer.findUnique({
+      where: { id: req.params.id },
+      include: {
+        orders: {
+          include: { items: true, shippingAddress: true },
+          orderBy: { createdAt: "desc" },
+        },
+        addresses: true,
+        _count: { select: { orders: true, wishlist: true } },
+      },
+    });
+    if (!customer) {
+      res.status(404).json({ error: "Client non trouvé" });
+      return;
+    }
+    const { password: _, ...safeCustomer } = customer;
+    res.json(safeCustomer);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
 // GET /api/admin/reviews — Avis en attente de modération
 adminRouter.get("/reviews", requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {

@@ -9,17 +9,17 @@ export interface Product {
   subsubcategory: string;
   price: number;
   originalPrice: number | null;
-  images: string;
+  images: string | string[];
   description: string;
   shortDescription: string;
-  features: string;
+  features: string | string[];
   inStock: boolean;
   stockCount: number;
   rating: number;
   reviewCount: number;
   isNew: boolean;
   isPromo: boolean;
-  tags: string;
+  tags: string | string[];
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -38,4 +38,96 @@ export interface Category {
   image: string;
   parentSlug: string;
   order: number;
+}
+
+// ─── Admin Types ────────────────────────────────────────────
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+}
+
+export interface DashboardStats {
+  totalProducts: number;
+  totalOrders: number;
+  totalCustomers: number;
+  totalRevenue: number;
+  recentOrders: {
+    id: string;
+    total: number;
+    status: string;
+    createdAt: string;
+  }[];
+  ordersByStatus: {
+    status: string;
+    count: number;
+    revenue: number;
+  }[];
+}
+
+export interface Order {
+  id: string;
+  orderNumber: string;
+  customerId: string | null;
+  email: string;
+  status: string;
+  subtotal: number;
+  shipping: number;
+  total: number;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  customer?: {
+    firstName: string;
+    lastName: string;
+    email: string;
+  } | null;
+  items: OrderItem[];
+  shippingAddress?: ShippingAddress | null;
+}
+
+export interface OrderItem {
+  id: string;
+  orderId: string;
+  productId: string;
+  name: string;
+  price: number;
+  quantity: number;
+  image: string;
+}
+
+export interface ShippingAddress {
+  id: string;
+  orderId: string;
+  firstName: string;
+  lastName: string;
+  address: string;
+  city: string;
+  postalCode: string;
+  country: string;
+}
+
+export interface Customer {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  createdAt: string;
+  updatedAt?: string;
+  _count?: {
+    orders: number;
+    wishlist?: number;
+  };
+  orders?: Order[];
+  addresses?: {
+    id: string;
+    address: string;
+    city: string;
+    postalCode: string;
+    country: string;
+    isDefault: boolean;
+  }[];
 }
