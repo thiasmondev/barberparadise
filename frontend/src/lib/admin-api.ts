@@ -154,3 +154,95 @@ export function deleteCategory(id: string) {
     method: "DELETE",
   });
 }
+
+// ─── SEO Agent ──────────────────────────────────────────────
+
+export interface SeoOptimization {
+  optimizedTitle: string;
+  metaDescription: string;
+  seoDescription: string;
+  suggestedTags: string[];
+  imageAlts: string[];
+  seoScore: number;
+  suggestions: string[];
+}
+
+export interface SeoDashboardData {
+  totalProducts: number;
+  averageScore: number;
+  distribution: { excellent: number; good: number; average: number; poor: number };
+  priorityProducts: { id: string; name: string; brand: string; category: string; score: number; mainIssue: string }[];
+  blogStats: { total: number; published: number };
+}
+
+export interface SeoScoredProduct {
+  id: string;
+  name: string;
+  brand: string;
+  category: string;
+  subcategory: string;
+  seoScore: number;
+  seoDetails: { criterion: string; score: number; max: number; tip: string }[];
+}
+
+export interface BlogArticleGenerated {
+  title: string;
+  slug: string;
+  excerpt: string;
+  content: string;
+  metaDescription: string;
+  tags: string[];
+  category: string;
+  readTime: number;
+}
+
+export function getSeoDashboard() {
+  return adminFetch<SeoDashboardData>("/api/admin/seo/dashboard");
+}
+
+export function getSeoScores(params?: { page?: number; limit?: number; sort?: string; category?: string; minScore?: number; maxScore?: number }) {
+  const sp = new URLSearchParams();
+  if (params) {
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") sp.set(k, String(v));
+    });
+  }
+  const q = sp.toString();
+  return adminFetch<{ products: SeoScoredProduct[]; total: number; page: number; pages: number }>(`/api/admin/seo/scores${q ? `?${q}` : ""}`);
+}
+
+export function analyzeSeoProduct(id: string) {
+  return adminFetch<{ product: Product; score: number; details: { criterion: string; score: number; max: number; tip: string }[] }>(`/api/admin/seo/analyze/${id}`);
+}
+
+export function optimizeSeoProduct(id: string) {
+  return adminFetch<{ product: Product; optimization: SeoOptimization }>(`/api/admin/seo/optimize/${id}`);
+}
+
+export function applySeoOptimization(id: string, data: { optimizedTitle?: string; metaDescription?: string; seoDescription?: string; suggestedTags?: string[] }) {
+  return adminFetch<{ success: boolean; product: Product }>(`/api/admin/seo/apply/${id}`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function bulkOptimizeSeo(productIds: string[], autoApply: boolean) {
+  return adminFetch<{ total: number; success: number; failed: number; autoApplied: boolean; results: any[] }>("/api/admin/seo/bulk-optimize", {
+    method: "POST",
+    body: JSON.stringify({ productIds, autoApply }),
+  });
+}
+
+export function generateSeoBlogArticle(data: { topic: string; type: string; relatedProductIds?: string[]; keywords?: string[] }) {
+  return adminFetch<BlogArticleGenerated>("/api/admin/seo/blog/generate", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function saveSeoBlogArticle(data: { title: string; slug: string; excerpt: string; content: string; category: string; readTime: number; published: boolean }) {
+  return adminFetch<{ success: boolean; article: any }>("/api/admin/seo/blog/save", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
