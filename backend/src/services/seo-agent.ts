@@ -1,10 +1,10 @@
 // ============================================================
-// BARBER PARADISE — Agent SEO (OpenAI GPT-4.1-mini)
+// BARBER PARADISE — Agent SEO (Anthropic Claude Sonnet 4)
 // ============================================================
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const MODEL = "gpt-4.1-mini";
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const MODEL = "claude-sonnet-4-20250514";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -63,7 +63,11 @@ export function calculateSeoScore(product: ProductData): {
     criterion: "Titre optimisé",
     score: titleScore,
     max: 20,
-    tip: titleLen < 30 ? "Titre trop court. Ajoutez des mots-clés pertinents." : titleLen > 70 ? "Titre trop long. Raccourcissez-le à 60-70 caractères." : "Bonne longueur de titre.",
+    tip: titleLen < 30
+      ? "Titre trop court. Ajoutez des mots-clés pertinents."
+      : titleLen > 70
+      ? "Titre trop long. Raccourcissez-le à 60-70 caractères."
+      : "Bonne longueur de titre.",
   });
 
   // 2. Description length (20 pts)
@@ -76,7 +80,9 @@ export function calculateSeoScore(product: ProductData): {
     criterion: "Description riche",
     score: descScore,
     max: 20,
-    tip: plainDesc.length < 300 ? `Description trop courte (${plainDesc.length} car.). Visez 300+ caractères avec des mots-clés.` : "Bonne longueur de description.",
+    tip: plainDesc.length < 300
+      ? `Description trop courte (${plainDesc.length} car.). Visez 300+ caractères avec des mots-clés.`
+      : "Bonne longueur de description.",
   });
 
   // 3. Description has HTML structure (15 pts)
@@ -91,7 +97,11 @@ export function calculateSeoScore(product: ProductData): {
     criterion: "Structure HTML (H2, listes, gras)",
     score: structScore,
     max: 15,
-    tip: !hasH2 ? "Ajoutez des sous-titres H2/H3 pour structurer la description." : !hasList ? "Ajoutez des listes à puces pour les caractéristiques." : "Bonne structure HTML.",
+    tip: !hasH2
+      ? "Ajoutez des sous-titres H2/H3 pour structurer la description."
+      : !hasList
+      ? "Ajoutez des listes à puces pour les caractéristiques."
+      : "Bonne structure HTML.",
   });
 
   // 4. Images (15 pts)
@@ -105,7 +115,9 @@ export function calculateSeoScore(product: ProductData): {
     criterion: "Images produit",
     score: imgScore,
     max: 15,
-    tip: images.length < 3 ? `Seulement ${images.length} image(s). Ajoutez-en pour atteindre 3+ images.` : "Bon nombre d'images.",
+    tip: images.length < 3
+      ? `Seulement ${images.length} image(s). Ajoutez-en pour atteindre 3+ images.`
+      : "Bon nombre d'images.",
   });
 
   // 5. Tags/Keywords (15 pts)
@@ -119,7 +131,9 @@ export function calculateSeoScore(product: ProductData): {
     criterion: "Tags / Mots-clés",
     score: tagScore,
     max: 15,
-    tip: tags.length < 5 ? `Seulement ${tags.length} tag(s). Ajoutez des mots-clés pertinents (5+ recommandés).` : "Bon nombre de tags.",
+    tip: tags.length < 5
+      ? `Seulement ${tags.length} tag(s). Ajoutez des mots-clés pertinents (5+ recommandés).`
+      : "Bon nombre de tags.",
   });
 
   // 6. Short description / Meta (15 pts)
@@ -132,7 +146,11 @@ export function calculateSeoScore(product: ProductData): {
     criterion: "Meta description",
     score: metaScore,
     max: 15,
-    tip: shortLen < 100 ? "Meta description trop courte. Visez 120-155 caractères." : shortLen > 160 ? "Meta description trop longue. Limitez à 155 caractères." : "Bonne longueur de meta description.",
+    tip: shortLen < 100
+      ? "Meta description trop courte. Visez 120-155 caractères."
+      : shortLen > 160
+      ? "Meta description trop longue. Limitez à 155 caractères."
+      : "Bonne longueur de meta description.",
   });
 
   const totalScore = details.reduce((sum, d) => sum + d.score, 0);
@@ -141,6 +159,33 @@ export function calculateSeoScore(product: ProductData): {
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, " ").replace(/&[a-z]+;/gi, " ").replace(/\s+/g, " ").trim();
+}
+
+// ─── Helper: call Claude and parse JSON response ─────────────
+
+async function callClaude(prompt: string, maxTokens: number): Promise<string> {
+  const message = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: maxTokens,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  // Extract text from the response content blocks
+  const textBlock = message.content.find((block) => block.type === "text");
+  return textBlock && textBlock.type === "text" ? textBlock.text : "{}";
+}
+
+function parseJsonResponse(raw: string): Record<string, unknown> {
+  // Strip potential markdown code fences
+  let jsonStr = raw.trim();
+  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) jsonStr = jsonMatch[1].trim();
+
+  // Try to extract first JSON object if there's surrounding text
+  const objMatch = jsonStr.match(/\{[\s\S]*\}/);
+  if (objMatch) jsonStr = objMatch[0];
+
+  return JSON.parse(jsonStr);
 }
 
 // ─── AI Optimization ────────────────────────────────────────
@@ -185,30 +230,18 @@ Génère une optimisation SEO complète au format JSON avec les champs suivants 
 
 Réponds UNIQUEMENT avec le JSON valide, sans markdown ni commentaires.`;
 
-  const response = await openai.chat.completions.create({
-    model: MODEL,
-    messages: [{ role: "user", content: prompt }],
-    temperature: 0.7,
-    max_tokens: 4000,
-  });
+  const raw = await callClaude(prompt, 4000);
 
-  const content = response.choices[0]?.message?.content || "{}";
-  
-  // Parse JSON from response (handle potential markdown wrapping)
-  let jsonStr = content;
-  const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
-  
   try {
-    const result = JSON.parse(jsonStr.trim());
+    const result = parseJsonResponse(raw) as Record<string, unknown>;
     return {
-      optimizedTitle: result.optimizedTitle || product.name,
-      metaDescription: result.metaDescription || product.shortDescription,
-      seoDescription: result.seoDescription || product.description,
-      suggestedTags: result.suggestedTags || [],
-      imageAlts: result.imageAlts || [],
-      seoScore: result.seoScore || 50,
-      suggestions: result.suggestions || [],
+      optimizedTitle: (result.optimizedTitle as string) || product.name,
+      metaDescription: (result.metaDescription as string) || product.shortDescription,
+      seoDescription: (result.seoDescription as string) || product.description,
+      suggestedTags: (result.suggestedTags as string[]) || [],
+      imageAlts: (result.imageAlts as string[]) || [],
+      seoScore: (result.seoScore as number) || 50,
+      suggestions: (result.suggestions as string[]) || [],
     };
   } catch {
     throw new Error("Erreur de parsing de la réponse IA. Réessayez.");
@@ -224,7 +257,9 @@ export async function generateBlogArticle(params: {
   keywords?: string[];
 }): Promise<BlogArticle> {
   const productMentions = params.relatedProducts?.length
-    ? `\nPRODUITS À MENTIONNER (avec liens internes) :\n${params.relatedProducts.map((p) => `- ${p.name} (${p.brand}) → lien: /produit/${p.slug}`).join("\n")}`
+    ? `\nPRODUITS À MENTIONNER (avec liens internes) :\n${params.relatedProducts
+        .map((p) => `- ${p.name} (${p.brand}) → lien: /produit/${p.slug}`)
+        .join("\n")}`
     : "";
 
   const keywordsList = params.keywords?.length
@@ -267,29 +302,19 @@ Génère un article au format JSON avec les champs suivants :
 
 Réponds UNIQUEMENT avec le JSON valide, sans markdown ni commentaires.`;
 
-  const response = await openai.chat.completions.create({
-    model: MODEL,
-    messages: [{ role: "user", content: prompt }],
-    temperature: 0.8,
-    max_tokens: 6000,
-  });
-
-  const content = response.choices[0]?.message?.content || "{}";
-  let jsonStr = content;
-  const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1];
+  const raw = await callClaude(prompt, 6000);
 
   try {
-    const result = JSON.parse(jsonStr.trim());
+    const result = parseJsonResponse(raw) as Record<string, unknown>;
     return {
-      title: result.title || params.topic,
-      slug: result.slug || params.topic.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-      excerpt: result.excerpt || "",
-      content: result.content || "",
-      metaDescription: result.metaDescription || "",
-      tags: result.tags || [],
-      category: result.category || params.type,
-      readTime: result.readTime || 5,
+      title: (result.title as string) || params.topic,
+      slug: (result.slug as string) || params.topic.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+      excerpt: (result.excerpt as string) || "",
+      content: (result.content as string) || "",
+      metaDescription: (result.metaDescription as string) || "",
+      tags: (result.tags as string[]) || [],
+      category: (result.category as string) || params.type,
+      readTime: (result.readTime as number) || 5,
     };
   } catch {
     throw new Error("Erreur de parsing de la réponse IA. Réessayez.");
