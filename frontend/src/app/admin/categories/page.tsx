@@ -1,10 +1,9 @@
 "use client";
-
+export const dynamic = "force-dynamic";
 import { useEffect, useState, useCallback } from "react";
 import { getAdminCategories, createCategory, updateCategory, deleteCategory } from "@/lib/admin-api";
 import type { Category } from "@/types";
 import { Plus, Pencil, Trash2, FolderTree, X, AlertCircle } from "lucide-react";
-
 interface CatForm {
   name: string;
   slug: string;
@@ -13,9 +12,7 @@ interface CatForm {
   parentSlug: string;
   order: string;
 }
-
 const emptyForm: CatForm = { name: "", slug: "", description: "", image: "", parentSlug: "", order: "0" };
-
 export default function AdminCategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,7 +21,6 @@ export default function AdminCategoriesPage() {
   const [form, setForm] = useState<CatForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -36,16 +32,13 @@ export default function AdminCategoriesPage() {
       setLoading(false);
     }
   }, []);
-
   useEffect(() => { load(); }, [load]);
-
   const openCreate = () => {
     setEditingId(null);
     setForm(emptyForm);
     setError("");
     setShowModal(true);
   };
-
   const openEdit = (c: Category) => {
     setEditingId(c.id);
     setForm({
@@ -59,7 +52,6 @@ export default function AdminCategoriesPage() {
     setError("");
     setShowModal(true);
   };
-
   const handleSave = async () => {
     if (!form.name || !form.slug) {
       setError("Le nom et le slug sont requis");
@@ -82,7 +74,6 @@ export default function AdminCategoriesPage() {
       setSaving(false);
     }
   };
-
   const handleDelete = async (id: string) => {
     if (!confirm("Supprimer cette catégorie ?")) return;
     try {
@@ -92,10 +83,8 @@ export default function AdminCategoriesPage() {
       console.error(err);
     }
   };
-
   const parents = categories.filter((c) => !c.parentSlug);
   const children = (parentSlug: string) => categories.filter((c) => c.parentSlug === parentSlug);
-
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -107,7 +96,6 @@ export default function AdminCategoriesPage() {
           <Plus size={16} /> Nouvelle catégorie
         </button>
       </div>
-
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center">
@@ -163,7 +151,6 @@ export default function AdminCategoriesPage() {
           </div>
         )}
       </div>
-
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowModal(false)}>

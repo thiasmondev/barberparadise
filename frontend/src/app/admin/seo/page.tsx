@@ -1,5 +1,5 @@
 "use client";
-
+export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getSeoDashboard, type SeoDashboardData } from "@/lib/admin-api";
@@ -15,7 +15,6 @@ import {
   Target,
   BookOpen,
 } from "lucide-react";
-
 function ScoreBadge({ score }: { score: number }) {
   const color =
     score >= 80
@@ -31,13 +30,11 @@ function ScoreBadge({ score }: { score: number }) {
     </span>
   );
 }
-
 function ScoreRing({ score, size = 120 }: { score: number; size?: number }) {
   const radius = (size - 12) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (score / 100) * circumference;
   const color = score >= 80 ? "#10b981" : score >= 60 ? "#3b82f6" : score >= 40 ? "#f59e0b" : "#ef4444";
-
   return (
     <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90">
@@ -62,19 +59,16 @@ function ScoreRing({ score, size = 120 }: { score: number; size?: number }) {
     </div>
   );
 }
-
 export default function SeoDashboardPage() {
   const [data, setData] = useState<SeoDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-
   useEffect(() => {
     getSeoDashboard()
       .then(setData)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
-
   if (loading) {
     return (
       <div className="space-y-6">
@@ -98,7 +92,6 @@ export default function SeoDashboardPage() {
       </div>
     );
   }
-
   if (error) {
     return (
       <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-red-700">
@@ -107,11 +100,8 @@ export default function SeoDashboardPage() {
       </div>
     );
   }
-
   if (!data) return null;
-
   const { distribution } = data;
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -142,7 +132,6 @@ export default function SeoDashboardPage() {
           </Link>
         </div>
       </div>
-
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
@@ -179,7 +168,6 @@ export default function SeoDashboardPage() {
           <span className="text-sm text-gray-400 ml-1">({data.blogStats.published} publiés)</span>
         </div>
       </div>
-
       {/* Score Distribution + Score Ring */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex flex-col items-center justify-center">
@@ -189,7 +177,6 @@ export default function SeoDashboardPage() {
             {data.averageScore >= 80 ? "Excellent" : data.averageScore >= 60 ? "Bon" : data.averageScore >= 40 ? "À améliorer" : "Critique"}
           </p>
         </div>
-
         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 lg:col-span-2">
           <h2 className="font-semibold text-gray-900 mb-4">Répartition des scores</h2>
           <div className="space-y-3">
@@ -217,7 +204,6 @@ export default function SeoDashboardPage() {
           </div>
         </div>
       </div>
-
       {/* Priority Products */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
         <div className="p-5 border-b border-gray-100 flex items-center justify-between">
@@ -248,7 +234,6 @@ export default function SeoDashboardPage() {
           ))}
         </div>
       </div>
-
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Link

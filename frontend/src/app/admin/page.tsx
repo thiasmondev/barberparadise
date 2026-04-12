@@ -1,5 +1,5 @@
 "use client";
-
+export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import { getDashboardStats } from "@/lib/admin-api";
 import type { DashboardStats } from "@/types";
@@ -16,7 +16,6 @@ import {
   AlertCircle,
 } from "lucide-react";
 import Link from "next/link";
-
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Clock }> = {
   pending: { label: "En attente", color: "text-yellow-600 bg-yellow-50", icon: Clock },
   processing: { label: "En cours", color: "text-blue-600 bg-blue-50", icon: AlertCircle },
@@ -24,26 +23,21 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof
   delivered: { label: "Livrée", color: "text-green-600 bg-green-50", icon: CheckCircle },
   cancelled: { label: "Annulée", color: "text-red-600 bg-red-50", icon: XCircle },
 };
-
 function formatPrice(n: number) {
   return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(n);
 }
-
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
 }
-
 export default function AdminDashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     getDashboardStats()
       .then(setStats)
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
-
   if (loading) {
     return (
       <div className="space-y-6">
@@ -58,7 +52,6 @@ export default function AdminDashboard() {
       </div>
     );
   }
-
   if (!stats) {
     return (
       <div className="text-center py-20 text-gray-500">
@@ -66,21 +59,18 @@ export default function AdminDashboard() {
       </div>
     );
   }
-
   const kpis = [
     { label: "Produits actifs", value: stats.totalProducts, icon: Package, color: "text-primary bg-primary/10" },
     { label: "Commandes", value: stats.totalOrders, icon: ShoppingCart, color: "text-emerald-600 bg-emerald-50" },
     { label: "Clients", value: stats.totalCustomers, icon: Users, color: "text-violet-600 bg-violet-50" },
     { label: "Chiffre d'affaires", value: formatPrice(stats.totalRevenue), icon: DollarSign, color: "text-amber-600 bg-amber-50" },
   ];
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="font-heading font-bold text-xl text-dark-800">Dashboard</h1>
         <p className="text-sm text-gray-500 mt-0.5">Vue d&apos;ensemble de votre boutique</p>
       </div>
-
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((kpi) => (
@@ -95,7 +85,6 @@ export default function AdminDashboard() {
           </div>
         ))}
       </div>
-
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Recent orders */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-gray-100">
@@ -134,7 +123,6 @@ export default function AdminDashboard() {
             )}
           </div>
         </div>
-
         {/* Orders by status */}
         <div className="bg-white rounded-xl border border-gray-100">
           <div className="px-5 py-4 border-b border-gray-100">
@@ -169,7 +157,6 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
-
       {/* Quick actions */}
       <div className="grid sm:grid-cols-3 gap-4">
         <Link

@@ -1,5 +1,5 @@
 "use client";
-
+export const dynamic = "force-dynamic";
 import { useEffect, useState, useCallback } from "react";
 import { getAdminCustomers } from "@/lib/admin-api";
 import type { Customer } from "@/types";
@@ -12,11 +12,9 @@ import {
   Eye,
   ShoppingCart,
 } from "lucide-react";
-
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
 }
-
 export default function AdminClientsPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [total, setTotal] = useState(0);
@@ -24,7 +22,6 @@ export default function AdminClientsPage() {
   const [pages, setPages] = useState(1);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
-
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -38,14 +35,11 @@ export default function AdminClientsPage() {
       setLoading(false);
     }
   }, [page, search]);
-
   useEffect(() => { load(); }, [load]);
-
   const handleSearch = (val: string) => {
     setSearch(val);
     setPage(1);
   };
-
   return (
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -54,7 +48,6 @@ export default function AdminClientsPage() {
           <p className="text-sm text-gray-500">{total} client{total !== 1 ? "s" : ""} inscrit{total !== 1 ? "s" : ""}</p>
         </div>
       </div>
-
       {/* Search */}
       <div className="relative max-w-md">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -66,7 +59,6 @@ export default function AdminClientsPage() {
           placeholder="Rechercher par nom ou email..."
         />
       </div>
-
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
@@ -134,7 +126,6 @@ export default function AdminClientsPage() {
             </tbody>
           </table>
         </div>
-
         {pages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
             <span className="text-xs text-gray-500">Page {page} sur {pages}</span>

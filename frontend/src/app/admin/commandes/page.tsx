@@ -1,5 +1,5 @@
 "use client";
-
+export const dynamic = "force-dynamic";
 import { useEffect, useState, useCallback } from "react";
 import { getAdminOrders, updateOrderStatus } from "@/lib/admin-api";
 import type { Order } from "@/types";
@@ -15,7 +15,6 @@ import {
   ChevronRight,
   Eye,
 } from "lucide-react";
-
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Clock }> = {
   pending: { label: "En attente", color: "text-yellow-600 bg-yellow-50", icon: Clock },
   processing: { label: "En cours", color: "text-blue-600 bg-blue-50", icon: AlertCircle },
@@ -23,7 +22,6 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof
   delivered: { label: "Livrée", color: "text-green-600 bg-green-50", icon: CheckCircle },
   cancelled: { label: "Annulée", color: "text-red-600 bg-red-50", icon: XCircle },
 };
-
 const STATUS_OPTIONS = [
   { value: "", label: "Tous les statuts" },
   { value: "pending", label: "En attente" },
@@ -32,15 +30,12 @@ const STATUS_OPTIONS = [
   { value: "delivered", label: "Livrée" },
   { value: "cancelled", label: "Annulée" },
 ];
-
 function formatPrice(n: number) {
   return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(n);
 }
-
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
-
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [total, setTotal] = useState(0);
@@ -49,7 +44,6 @@ export default function AdminOrdersPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
-
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -63,9 +57,7 @@ export default function AdminOrdersPage() {
       setLoading(false);
     }
   }, [page, statusFilter]);
-
   useEffect(() => { load(); }, [load]);
-
   const handleStatusChange = async (orderId: string, newStatus: string) => {
     setUpdatingId(orderId);
     try {
@@ -79,7 +71,6 @@ export default function AdminOrdersPage() {
       setUpdatingId(null);
     }
   };
-
   return (
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -97,7 +88,6 @@ export default function AdminOrdersPage() {
           ))}
         </select>
       </div>
-
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -176,7 +166,6 @@ export default function AdminOrdersPage() {
             </tbody>
           </table>
         </div>
-
         {pages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
             <span className="text-xs text-gray-500">Page {page} sur {pages}</span>

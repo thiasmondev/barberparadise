@@ -1,5 +1,5 @@
 "use client";
-
+export const dynamic = "force-dynamic";
 import { useEffect, useState, useCallback } from "react";
 import { getAdminProducts, deleteProduct, createProduct, updateProduct } from "@/lib/admin-api";
 import type { Product } from "@/types";
@@ -14,23 +14,19 @@ import {
   ChevronRight,
   AlertCircle,
 } from "lucide-react";
-
 function formatPrice(n: number) {
   return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(n);
 }
-
 function parseImages(images: string | string[]): string[] {
   if (Array.isArray(images)) return images;
   try { return JSON.parse(images); } catch { return []; }
 }
-
 const STATUSES = [
   { value: "", label: "Tous les statuts" },
   { value: "active", label: "Actif" },
   { value: "draft", label: "Brouillon" },
   { value: "archived", label: "Archivé" },
 ];
-
 interface ProductForm {
   name: string;
   brand: string;
@@ -42,7 +38,6 @@ interface ProductForm {
   inStock: boolean;
   isActive: boolean;
 }
-
 const emptyForm: ProductForm = {
   name: "",
   brand: "",
@@ -54,7 +49,6 @@ const emptyForm: ProductForm = {
   inStock: true,
   isActive: true,
 };
-
 export default function AdminProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
@@ -69,7 +63,6 @@ export default function AdminProductsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
-
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -83,21 +76,17 @@ export default function AdminProductsPage() {
       setLoading(false);
     }
   }, [page, search, statusFilter]);
-
   useEffect(() => { load(); }, [load]);
-
   const handleSearch = (val: string) => {
     setSearch(val);
     setPage(1);
   };
-
   const openCreate = () => {
     setEditingId(null);
     setForm(emptyForm);
     setError("");
     setShowModal(true);
   };
-
   const openEdit = (p: Product) => {
     setEditingId(p.id);
     setForm({
@@ -114,7 +103,6 @@ export default function AdminProductsPage() {
     setError("");
     setShowModal(true);
   };
-
   const handleSave = async () => {
     if (!form.name || !form.price) {
       setError("Le nom et le prix sont requis");
@@ -136,7 +124,6 @@ export default function AdminProductsPage() {
       setSaving(false);
     }
   };
-
   const handleDelete = async (id: string) => {
     if (!confirm("Supprimer ce produit ?")) return;
     setDeleting(id);
@@ -149,7 +136,6 @@ export default function AdminProductsPage() {
       setDeleting(null);
     }
   };
-
   return (
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -161,7 +147,6 @@ export default function AdminProductsPage() {
           <Plus size={16} /> Nouveau produit
         </button>
       </div>
-
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
@@ -184,7 +169,6 @@ export default function AdminProductsPage() {
           ))}
         </select>
       </div>
-
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
@@ -284,7 +268,6 @@ export default function AdminProductsPage() {
             </tbody>
           </table>
         </div>
-
         {/* Pagination */}
         {pages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
@@ -308,7 +291,6 @@ export default function AdminProductsPage() {
           </div>
         )}
       </div>
-
       {/* Modal Create/Edit */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
@@ -321,14 +303,12 @@ export default function AdminProductsPage() {
                 <X size={20} />
               </button>
             </div>
-
             <div className="p-6 space-y-4">
               {error && (
                 <div className="flex items-center gap-2 text-red-500 text-sm bg-red-50 px-3 py-2 rounded-lg">
                   <AlertCircle size={14} /> {error}
                 </div>
               )}
-
               <div>
                 <label className="block text-sm font-medium text-dark-700 mb-1">Nom *</label>
                 <input
@@ -339,7 +319,6 @@ export default function AdminProductsPage() {
                   placeholder="Nom du produit"
                 />
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-dark-700 mb-1">Marque</label>
@@ -362,7 +341,6 @@ export default function AdminProductsPage() {
                   />
                 </div>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-dark-700 mb-1">Sous-catégorie</label>
                 <input
@@ -373,7 +351,6 @@ export default function AdminProductsPage() {
                   placeholder="Sous-catégorie"
                 />
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-dark-700 mb-1">Prix *</label>
@@ -398,7 +375,6 @@ export default function AdminProductsPage() {
                   />
                 </div>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-dark-700 mb-1">Description</label>
                 <textarea
@@ -409,7 +385,6 @@ export default function AdminProductsPage() {
                   placeholder="Description du produit"
                 />
               </div>
-
               <div className="flex gap-6">
                 <label className="flex items-center gap-2 text-sm">
                   <input
@@ -431,7 +406,6 @@ export default function AdminProductsPage() {
                 </label>
               </div>
             </div>
-
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
               <button onClick={() => setShowModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-dark-800">
                 Annuler
