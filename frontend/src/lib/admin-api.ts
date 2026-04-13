@@ -61,6 +61,10 @@ export function getDashboardStats() {
 
 // ─── Products ────────────────────────────────────────────────
 
+export function getProductsMeta() {
+  return adminFetch<{ brands: string[]; subcategories: string[]; categories: string[] }>("/api/admin/products/meta");
+}
+
 export function getAdminProducts(params?: { page?: number; limit?: number; search?: string; category?: string; status?: string }) {
   const sp = new URLSearchParams();
   if (params) {

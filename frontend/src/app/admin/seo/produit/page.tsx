@@ -9,10 +9,13 @@ import {
   analyzeSeoProduct,
   optimizeSeoProduct,
   applySeoOptimization,
+  getProductsMeta,
+  updateProduct,
   type SeoOptimization,
 } from "@/lib/admin-api";
 import type { Product } from "@/types";
 import { parseImages, formatPrice, getDiscount } from "@/lib/utils";
+import AutocompleteInput from "@/components/admin/AutocompleteInput";
 import {
   ChevronLeft,
   Sparkles,
@@ -31,6 +34,8 @@ import {
   Truck,
   Star,
   Tag,
+  Code2,
+  FileText,
 } from "lucide-react";
 
 // Chargement dynamique de l'éditeur WYSIWYG (client-side only)
@@ -138,17 +143,17 @@ function TagsEditor({ tags, onChange }: { tags: string[]; onChange: (tags: strin
 
 // ─── Product Preview (simule la fiche produit publique) ───────────────────────
 function ProductPreview({
-  product, title, metaDescription, description, tags,
+  product, title, metaDescription, description, tags, category, subcategory,
 }: {
   product: Product; title: string; metaDescription: string;
-  description: string; tags: string[];
+  description: string; tags: string[]; category: string; subcategory: string;
 }) {
   const images = parseImages(product.images);
   const discount = getDiscount(product.price, product.originalPrice);
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm text-sm">
-      {/* Header */}
+      {/* Browser chrome */}
       <div className="bg-gray-900 text-white px-4 py-2 flex items-center gap-2">
         <div className="flex gap-1.5">
           <div className="w-3 h-3 rounded-full bg-red-500" />
@@ -163,12 +168,18 @@ function ProductPreview({
       {/* Page content */}
       <div className="p-4 max-h-[calc(100vh-280px)] overflow-y-auto">
         {/* Breadcrumb */}
-        <nav className="flex items-center gap-1 text-xs text-gray-400 mb-4">
+        <nav className="flex items-center gap-1 text-xs text-gray-400 mb-4 flex-wrap">
           <span className="hover:text-violet-600 cursor-pointer">Accueil</span>
           <span>/</span>
           <span className="hover:text-violet-600 cursor-pointer">Catalogue</span>
           <span>/</span>
-          <span className="hover:text-violet-600 cursor-pointer">{product.category}</span>
+          <span className="hover:text-violet-600 cursor-pointer">{category || product.category}</span>
+          {subcategory && (
+            <>
+              <span>/</span>
+              <span className="hover:text-violet-600 cursor-pointer">{subcategory}</span>
+            </>
+          )}
           <span>/</span>
           <span className="text-gray-700 font-medium truncate">{title || product.name}</span>
         </nav>
@@ -189,15 +200,9 @@ function ProductPreview({
 
           {/* Info */}
           <div className="space-y-2">
-            {/* Brand */}
             <p className="text-xs text-gray-400 uppercase tracking-wide">{product.brand}</p>
+            <h1 className="font-bold text-gray-900 leading-tight text-base">{title || product.name}</h1>
 
-            {/* Title */}
-            <h1 className="font-bold text-gray-900 leading-tight text-base">
-              {title || product.name}
-            </h1>
-
-            {/* Rating */}
             {product.rating > 0 && (
               <div className="flex items-center gap-1">
                 {[1,2,3,4,5].map((s) => (
@@ -207,7 +212,6 @@ function ProductPreview({
               </div>
             )}
 
-            {/* Price */}
             <div className="flex items-baseline gap-2">
               <span className="text-xl font-bold text-gray-900">{formatPrice(product.price)}</span>
               {product.originalPrice && product.originalPrice > product.price && (
@@ -215,12 +219,10 @@ function ProductPreview({
               )}
             </div>
 
-            {/* Short description / meta */}
             {metaDescription && (
               <p className="text-xs text-gray-500 leading-relaxed line-clamp-3">{metaDescription}</p>
             )}
 
-            {/* Stock */}
             <div className="flex items-center gap-1.5">
               <div className={`w-1.5 h-1.5 rounded-full ${product.inStock ? "bg-green-500" : "bg-red-500"}`} />
               <span className={`text-xs font-medium ${product.inStock ? "text-green-600" : "text-red-600"}`}>
@@ -228,13 +230,11 @@ function ProductPreview({
               </span>
             </div>
 
-            {/* CTA */}
             <button className="w-full flex items-center justify-center gap-1.5 py-2 bg-violet-600 text-white rounded-lg text-xs font-medium">
               <ShoppingCart size={12} />
               Ajouter au panier
             </button>
 
-            {/* Delivery */}
             <div className="bg-gray-50 rounded-lg p-2 flex items-center gap-2">
               <Truck size={12} className="text-violet-600 shrink-0" />
               <div>
@@ -300,11 +300,22 @@ export default function SeoProductPage() {
   const [details, setDetails] = useState<{ criterion: string; score: number; max: number; tip: string }[]>([]);
   const [optimization, setOptimization] = useState<SeoOptimization | null>(null);
 
-  // Champs éditables
+  // Champs éditables SEO
   const [editTitle, setEditTitle] = useState("");
   const [editMeta, setEditMeta] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editTags, setEditTags] = useState<string[]>([]);
+
+  // Champs éditables produit
+  const [editCategory, setEditCategory] = useState("");
+  const [editSubcategory, setEditSubcategory] = useState("");
+
+  // Autocomplétion
+  const [allCategories, setAllCategories] = useState<string[]>([]);
+  const [allSubcategories, setAllSubcategories] = useState<string[]>([]);
+
+  // Éditeur description : mode WYSIWYG ou HTML brut
+  const [htmlMode, setHtmlMode] = useState(false);
 
   // UI state
   const [loading, setLoading] = useState(true);
@@ -314,6 +325,16 @@ export default function SeoProductPage() {
   const [error, setError] = useState("");
   const [showPreview, setShowPreview] = useState(true);
 
+  // Charger les métadonnées pour l'autocomplétion
+  useEffect(() => {
+    getProductsMeta()
+      .then((meta) => {
+        setAllCategories(meta.categories);
+        setAllSubcategories(meta.subcategories);
+      })
+      .catch(console.error);
+  }, []);
+
   useEffect(() => {
     if (!productId) return;
     setLoading(true);
@@ -322,10 +343,11 @@ export default function SeoProductPage() {
         setProduct(data.product);
         setScore(data.score);
         setDetails(data.details);
-        // Pré-remplir avec les valeurs actuelles du produit
         setEditTitle(data.product.name || "");
         setEditMeta((data.product as any).metaDescription || "");
         setEditDescription(data.product.description || "");
+        setEditCategory(data.product.category || "");
+        setEditSubcategory(data.product.subcategory || "");
         setEditTags(
           Array.isArray(data.product.tags)
             ? data.product.tags
@@ -364,16 +386,24 @@ export default function SeoProductPage() {
   };
 
   const handleApply = async () => {
-    if (!productId) return;
+    if (!productId || !product) return;
     setApplying(true);
     setError("");
     try {
+      // Appliquer l'optimisation SEO (titre, meta, description, tags)
       await applySeoOptimization(productId, {
         optimizedTitle: editTitle,
         metaDescription: editMeta,
         seoDescription: editDescription,
         suggestedTags: editTags,
       });
+      // Sauvegarder aussi catégorie et sous-catégorie si modifiées
+      if (editCategory !== product.category || editSubcategory !== product.subcategory) {
+        await updateProduct(productId, {
+          category: editCategory,
+          subcategory: editSubcategory,
+        });
+      }
       setApplied(true);
       const data = await analyzeSeoProduct(productId);
       setProduct(data.product);
@@ -431,10 +461,9 @@ export default function SeoProductPage() {
         </Link>
         <div className="flex-1 min-w-0">
           <h1 className="text-lg font-bold text-gray-900 truncate">{product?.name}</h1>
-          <p className="text-sm text-gray-500">{(product as any)?.brand} · {(product as any)?.category}</p>
+          <p className="text-sm text-gray-500">{product?.brand} · {editCategory || product?.category}</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Toggle aperçu */}
           <button
             onClick={() => setShowPreview(!showPreview)}
             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
@@ -492,6 +521,34 @@ export default function SeoProductPage() {
             </div>
           </div>
 
+          {/* Catégorie + Sous-catégorie */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">CATÉGORIE & SOUS-CATÉGORIE</span>
+              <span className="text-xs text-gray-400">Modifiables directement</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Catégorie</label>
+                <AutocompleteInput
+                  value={editCategory}
+                  onChange={(v) => { setEditCategory(v); setApplied(false); }}
+                  suggestions={allCategories}
+                  placeholder="ex: tondeuses"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Sous-catégorie</label>
+                <AutocompleteInput
+                  value={editSubcategory}
+                  onChange={(v) => { setEditSubcategory(v); setApplied(false); }}
+                  suggestions={allSubcategories}
+                  placeholder="ex: accessoires-tondeuses"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Bouton générer IA */}
           {!optimization && (
             <div className="flex justify-center py-2">
@@ -540,34 +597,71 @@ export default function SeoProductPage() {
               )}
 
               {/* Titre */}
-              <EditableField label="TITRE" value={editTitle} onChange={setEditTitle}
+              <EditableField label="TITRE" value={editTitle} onChange={(v) => { setEditTitle(v); setApplied(false); }}
                 maxLength={60} hint="50-60 caractères recommandés. Incluez le nom exact du produit et la marque."
                 badgeColor="violet" />
 
               {/* Meta description */}
-              <EditableField label="META DESCRIPTION" value={editMeta} onChange={setEditMeta}
+              <EditableField label="META DESCRIPTION" value={editMeta} onChange={(v) => { setEditMeta(v); setApplied(false); }}
                 multiline maxLength={155} hint="120-155 caractères. Décrivez le produit avec précision."
                 badgeColor="blue" />
 
               {/* Tags */}
-              <TagsEditor tags={editTags} onChange={setEditTags} />
+              <TagsEditor tags={editTags} onChange={(t) => { setEditTags(t); setApplied(false); }} />
 
-              {/* Description WYSIWYG */}
+              {/* Description : WYSIWYG ou HTML brut */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">DESCRIPTION SEO</span>
                   <span className="text-xs text-gray-400">
-                    {editDescription.replace(/<[^>]+>/g, "").length} car. (texte brut)
+                    {editDescription.replace(/<[^>]+>/g, "").length} car.
+                    {" · "}
+                    {editDescription.replace(/<[^>]+>/g, "").trim().split(/\s+/).filter(Boolean).length} mots
                   </span>
+                  {/* Bouton bascule HTML / WYSIWYG */}
+                  <button
+                    onClick={() => setHtmlMode(!htmlMode)}
+                    title={htmlMode ? "Passer en éditeur visuel" : "Voir / éditer le code HTML"}
+                    className={`ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                      htmlMode
+                        ? "bg-gray-800 text-white border-gray-700"
+                        : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                    }`}
+                  >
+                    {htmlMode ? <FileText size={12} /> : <Code2 size={12} />}
+                    {htmlMode ? "Éditeur visuel" : "Code HTML"}
+                  </button>
                 </div>
-                <RichTextEditor
-                  value={editDescription}
-                  onChange={setEditDescription}
-                  placeholder="Rédigez une description riche et structurée pour ce produit..."
-                />
-                <p className="text-xs text-gray-400 mt-2">
-                  Utilisez H2/H3 pour structurer, les listes à puces pour les caractéristiques, et le gras pour les mots-clés importants.
-                </p>
+
+                {htmlMode ? (
+                  /* Mode HTML brut */
+                  <div>
+                    <textarea
+                      value={editDescription}
+                      onChange={(e) => { setEditDescription(e.target.value); setApplied(false); }}
+                      rows={14}
+                      spellCheck={false}
+                      className="w-full font-mono text-xs text-gray-800 bg-gray-950 text-green-400 border border-gray-700 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-y leading-relaxed"
+                      placeholder="<h2>Titre de section</h2>&#10;<p>Description du produit...</p>"
+                    />
+                    <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
+                      <Code2 size={11} />
+                      Mode HTML brut — les balises sont interprétées dans l&apos;aperçu live
+                    </p>
+                  </div>
+                ) : (
+                  /* Mode WYSIWYG */
+                  <div>
+                    <RichTextEditor
+                      value={editDescription}
+                      onChange={(v) => { setEditDescription(v); setApplied(false); }}
+                      placeholder="Rédigez une description riche et structurée pour ce produit..."
+                    />
+                    <p className="text-xs text-gray-400 mt-2">
+                      Utilisez H2/H3 pour structurer, les listes à puces pour les caractéristiques, et le gras pour les mots-clés importants.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Image alts */}
@@ -639,6 +733,8 @@ export default function SeoProductPage() {
               metaDescription={editMeta}
               description={editDescription}
               tags={editTags}
+              category={editCategory}
+              subcategory={editSubcategory}
             />
           </div>
         )}

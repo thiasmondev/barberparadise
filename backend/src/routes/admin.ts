@@ -46,6 +46,40 @@ adminRouter.get("/stats", requireAdmin, async (_req: Request, res: Response): Pr
   }
 });
 
+// GET /api/admin/products/meta — Marques et sous-catégories distinctes pour autocomplétion
+adminRouter.get("/products/meta", requireAdmin, async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const [brands, subcategories, categories] = await Promise.all([
+      prisma.product.findMany({
+        select: { brand: true },
+        distinct: ["brand"],
+        where: { brand: { not: "" } },
+        orderBy: { brand: "asc" },
+      }),
+      prisma.product.findMany({
+        select: { subcategory: true },
+        distinct: ["subcategory"],
+        where: { subcategory: { not: "" } },
+        orderBy: { subcategory: "asc" },
+      }),
+      prisma.product.findMany({
+        select: { category: true },
+        distinct: ["category"],
+        where: { category: { not: "" } },
+        orderBy: { category: "asc" },
+      }),
+    ]);
+    res.json({
+      brands: brands.map((b) => b.brand).filter(Boolean),
+      subcategories: subcategories.map((s) => s.subcategory).filter(Boolean),
+      categories: categories.map((c) => c.category).filter(Boolean),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
 // GET /api/admin/products — Liste produits pour l'admin
 adminRouter.get("/products", requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
