@@ -22,7 +22,11 @@ async function adminFetch<T>(endpoint: string, options?: RequestInit): Promise<T
   if (res.status === 401) {
     localStorage.removeItem("admin-token");
     localStorage.removeItem("admin-user");
-    window.location.href = "/admin";
+    // Émettre un événement custom pour que le contexte React gère le logout
+    // sans recharger la page (évite la boucle infinie)
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("admin-session-expired"));
+    }
     throw new Error("Session expirée");
   }
 
