@@ -216,7 +216,9 @@ export function analyzeSeoProduct(id: string) {
 }
 
 export function optimizeSeoProduct(id: string) {
-  return adminFetch<{ product: Product; optimization: SeoOptimization }>(`/api/admin/seo/optimize/${id}`);
+  return adminFetch<{ product: Product; optimization: SeoOptimization }>(`/api/admin/seo/optimize/${id}`, {
+    method: "POST",
+  });
 }
 
 export function applySeoOptimization(id: string, data: { optimizedTitle?: string; metaDescription?: string; seoDescription?: string; suggestedTags?: string[] }) {
