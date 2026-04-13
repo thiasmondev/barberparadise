@@ -16,6 +16,7 @@ import {
 import type { Product } from "@/types";
 import { parseImages, formatPrice, getDiscount } from "@/lib/utils";
 import AutocompleteInput from "@/components/admin/AutocompleteInput";
+import ImageManager from "@/components/admin/ImageManager";
 import {
   ChevronLeft,
   Sparkles,
@@ -141,14 +142,14 @@ function TagsEditor({ tags, onChange }: { tags: string[]; onChange: (tags: strin
   );
 }
 
-// ─── Product Preview (simule la fiche produit publique) ───────────────────────
+//// ─── Product Preview (simule la fiche produit publique) ────────────────────
 function ProductPreview({
-  product, title, metaDescription, description, tags, category, subcategory,
+  product, title, metaDescription, description, tags, category, subcategory, images: editImages,
 }: {
   product: Product; title: string; metaDescription: string;
-  description: string; tags: string[]; category: string; subcategory: string;
+  description: string; tags: string[]; category: string; subcategory: string; images: string[];
 }) {
-  const images = parseImages(product.images);
+  const images = editImages.length > 0 ? editImages : parseImages(product.images);
   const discount = getDiscount(product.price, product.originalPrice);
 
   return (
@@ -309,6 +310,7 @@ export default function SeoProductPage() {
   // Champs éditables produit
   const [editCategory, setEditCategory] = useState("");
   const [editSubcategory, setEditSubcategory] = useState("");
+  const [editImages, setEditImages] = useState<string[]>([]);
 
   // Autocomplétion
   const [allCategories, setAllCategories] = useState<string[]>([]);
@@ -348,6 +350,7 @@ export default function SeoProductPage() {
         setEditDescription(data.product.description || "");
         setEditCategory(data.product.category || "");
         setEditSubcategory(data.product.subcategory || "");
+        setEditImages(parseImages(data.product.images));
         setEditTags(
           Array.isArray(data.product.tags)
             ? data.product.tags
@@ -549,6 +552,22 @@ export default function SeoProductPage() {
             </div>
           </div>
 
+          {/* Gestion des images */}
+          {productId && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs font-semibold text-pink-600 bg-pink-50 px-2 py-0.5 rounded">IMAGES DU PRODUIT</span>
+                <span className="text-xs text-gray-400">{editImages.length} image(s) — glissez pour réorganiser</span>
+                <ImageIcon size={13} className="text-gray-300 ml-auto" />
+              </div>
+              <ImageManager
+                productId={productId}
+                images={editImages}
+                onChange={(imgs) => { setEditImages(imgs); setApplied(false); }}
+              />
+            </div>
+          )}
+
           {/* Bouton générer IA */}
           {!optimization && (
             <div className="flex justify-center py-2">
@@ -735,6 +754,7 @@ export default function SeoProductPage() {
               tags={editTags}
               category={editCategory}
               subcategory={editSubcategory}
+              images={editImages}
             />
           </div>
         )}

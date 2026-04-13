@@ -1,6 +1,25 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../utils/prisma";
 import { requireAdmin } from "../middleware/auth";
+import multer from "multer";
+import { v2 as cloudinary } from "cloudinary";
+
+// ─── Cloudinary Config ───────────────────────────────────────
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || "dopr7tgf8",
+  api_key: process.env.CLOUDINARY_API_KEY || "417132953848714",
+  api_secret: process.env.CLOUDINARY_API_SECRET || "w2ZrORm8B4GTORmWCvBFkwmYXUM",
+});
+
+// ─── Multer (mémoire) ────────────────────────────────────────
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) cb(null, true);
+    else cb(new Error("Seules les images sont acceptées"));
+  },
+});
 
 export const adminRouter = Router();
 
@@ -328,6 +347,97 @@ adminRouter.put("/reviews/:id/approve", requireAdmin, async (req: Request, res: 
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur approbation avis" });
+  }
+});
+
+// ─── POST /api/admin/products/:id/images — Upload image vers Cloudinary ────
+adminRouter.post(
+  "/products/:id/images",
+  requireAdmin,
+  upload.single("image"),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      if (!req.file) {
+        res.status(400).json({ error: "Aucun fichier fourni" });
+        return;
+      }
+      // Upload vers Cloudinary depuis le buffer mémoire
+      const result = await new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            folder: `barberparadise/products/${req.params.id}`,
+            transformation: [{ width: 1200, height: 1200, crop: "limit", quality: "auto", fetch_format: "auto" }],
+          },
+          (error, result) => {
+            if (error || !result) reject(error || new Error("Upload échoué"));
+            else resolve(result as { secure_url: string; public_id: string });
+          }
+        );
+        stream.end(req.file!.buffer);
+      });
+
+      // Ajouter l'URL à la liste d'images du produit
+      const product = await prisma.product.findUnique({ where: { id: req.params.id } });
+      if (!product) { res.status(404).json({ error: "Produit introuvable" }); return; }
+      const images: string[] = JSON.parse(product.images || "[]");
+      images.push(result.secure_url);
+      const updated = await prisma.product.update({
+        where: { id: req.params.id },
+        data: { images: JSON.stringify(images) },
+      });
+      res.json({ url: result.secure_url, public_id: result.public_id, images });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur upload image" });
+    }
+  }
+);
+
+// ─── PUT /api/admin/products/:id/images — Réorganiser / remplacer la liste d'images ─
+adminRouter.put("/products/:id/images", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { images } = req.body as { images: string[] };
+    if (!Array.isArray(images)) { res.status(400).json({ error: "images doit être un tableau" }); return; }
+    const updated = await prisma.product.update({
+      where: { id: req.params.id },
+      data: { images: JSON.stringify(images) },
+    });
+    res.json({ images: JSON.parse(updated.images || "[]") });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur mise à jour images" });
+  }
+});
+
+// ─── DELETE /api/admin/products/:id/images — Supprimer une image ────────────
+adminRouter.delete("/products/:id/images", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { url } = req.body as { url: string };
+    if (!url) { res.status(400).json({ error: "URL manquante" }); return; }
+
+    // Supprimer de Cloudinary si c'est une URL Cloudinary
+    if (url.includes("cloudinary.com")) {
+      try {
+        const parts = url.split("/");
+        const filenameWithExt = parts[parts.length - 1];
+        const filename = filenameWithExt.split(".")[0];
+        const folderIndex = parts.indexOf("barberparadise");
+        const publicId = folderIndex >= 0 ? parts.slice(folderIndex).join("/").replace(/\.[^.]+$/, "") : filename;
+        await cloudinary.uploader.destroy(publicId);
+      } catch (e) {
+        console.warn("Impossible de supprimer de Cloudinary:", e);
+      }
+    }
+
+    // Retirer l'URL de la liste
+    const product = await prisma.product.findUnique({ where: { id: req.params.id } });
+    if (!product) { res.status(404).json({ error: "Produit introuvable" }); return; }
+    const images: string[] = JSON.parse(product.images || "[]").filter((img: string) => img !== url);
+    await prisma.product.update({ where: { id: req.params.id }, data: { images: JSON.stringify(images) } });
+    res.json({ success: true, images });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur suppression image" });
   }
 });
 

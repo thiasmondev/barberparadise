@@ -6,6 +6,10 @@ function getToken(): string | null {
   return localStorage.getItem("admin-token");
 }
 
+export function getAdminToken(): string | null {
+  return getToken();
+}
+
 async function adminFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const token = getToken();
   if (!token) throw new Error("Non authentifié");
