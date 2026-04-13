@@ -65,8 +65,16 @@ export function getDashboardStats() {
 
 // ─── Products ────────────────────────────────────────────────
 
+export type CategorySuggestion = { slug: string; label: string; parent?: string };
+
 export function getProductsMeta() {
-  return adminFetch<{ brands: string[]; subcategories: string[]; categories: string[] }>("/api/admin/products/meta");
+  return adminFetch<{
+    brands: string[];
+    categories: string[];
+    subcategories: string[];
+    categoriesWithLabels: CategorySuggestion[];
+    subcategoriesWithLabels: CategorySuggestion[];
+  }>("/api/admin/products/meta");
 }
 
 export function getAdminProducts(params?: { page?: number; limit?: number; search?: string; category?: string; status?: string }) {

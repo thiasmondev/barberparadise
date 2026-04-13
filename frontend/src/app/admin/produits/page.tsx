@@ -78,16 +78,24 @@ export default function AdminProductsPage() {
 
   // Données pour l'autocomplétion
   const [brands, setBrands] = useState<string[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [allSubcategories, setAllSubcategories] = useState<string[]>([]);
+  const [categories, setCategories] = useState<import("@/components/admin/AutocompleteInput").AutocompleteSuggestion[]>([]);
+  const [allSubcategories, setAllSubcategories] = useState<import("@/components/admin/AutocompleteInput").AutocompleteSuggestion[]>([]);
 
   // Charger les métadonnées une seule fois
   useEffect(() => {
     getProductsMeta()
       .then((meta) => {
         setBrands(meta.brands);
-        setCategories(meta.categories);
-        setAllSubcategories(meta.subcategories);
+        setCategories(
+          meta.categoriesWithLabels?.length
+            ? meta.categoriesWithLabels
+            : meta.categories.map((s) => ({ slug: s, label: s }))
+        );
+        setAllSubcategories(
+          meta.subcategoriesWithLabels?.length
+            ? meta.subcategoriesWithLabels
+            : meta.subcategories.map((s) => ({ slug: s, label: s }))
+        );
       })
       .catch(console.error);
   }, []);

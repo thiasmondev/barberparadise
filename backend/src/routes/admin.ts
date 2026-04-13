@@ -65,33 +65,86 @@ adminRouter.get("/stats", requireAdmin, async (_req: Request, res: Response): Pr
   }
 });
 
-// GET /api/admin/products/meta — Marques et sous-catégories distinctes pour autocomplétion
+// GET /api/admin/products/meta — Marques + toutes catégories/sous-catégories (3 niveaux) pour autocomplétion
 adminRouter.get("/products/meta", requireAdmin, async (_req: Request, res: Response): Promise<void> => {
   try {
-    const [brands, subcategories, categories] = await Promise.all([
+    const [brands, allCategoryRows, productCategories, productSubcategories] = await Promise.all([
+      // Marques distinctes depuis les produits
       prisma.product.findMany({
         select: { brand: true },
         distinct: ["brand"],
         where: { brand: { not: "" } },
         orderBy: { brand: "asc" },
       }),
-      prisma.product.findMany({
-        select: { subcategory: true },
-        distinct: ["subcategory"],
-        where: { subcategory: { not: "" } },
-        orderBy: { subcategory: "asc" },
+      // Toutes les entrées de la table Category (3 niveaux)
+      prisma.category.findMany({
+        select: { slug: true, name: true, parentSlug: true },
+        orderBy: [{ parentSlug: "asc" }, { name: "asc" }],
       }),
+      // Catégories utilisées dans les produits (complément)
       prisma.product.findMany({
         select: { category: true },
         distinct: ["category"],
         where: { category: { not: "" } },
-        orderBy: { category: "asc" },
+      }),
+      // Sous-catégories utilisées dans les produits (complément)
+      prisma.product.findMany({
+        select: { subcategory: true },
+        distinct: ["subcategory"],
+        where: { subcategory: { not: "" } },
       }),
     ]);
+
+    // Identifier les slugs de chaque niveau
+    const rootSlugs = new Set(allCategoryRows.filter(c => !c.parentSlug).map(c => c.slug));
+    const level2Slugs = new Set(allCategoryRows.filter(c => c.parentSlug && rootSlugs.has(c.parentSlug)).map(c => c.slug));
+    const level3Slugs = new Set(allCategoryRows.filter(c => c.parentSlug && level2Slugs.has(c.parentSlug)).map(c => c.slug));
+
+    // Map slug -> nom pour affichage
+    const nameMap = new Map(allCategoryRows.map(c => [c.slug, c.name]));
+    const parentMap = new Map(allCategoryRows.map(c => [c.slug, c.parentSlug]));
+
+    // Catégories (niveau 1) : toutes les racines + celles utilisées dans les produits
+    const categorySlugs = new Set([
+      ...rootSlugs,
+      ...productCategories.map(c => c.category).filter(Boolean),
+    ]);
+
+    // Sous-catégories (niveaux 2 et 3) : toutes + celles utilisées dans les produits
+    const subcategorySlugs = new Set([
+      ...level2Slugs,
+      ...level3Slugs,
+      ...productSubcategories.map(s => s.subcategory).filter(Boolean),
+    ]);
+
+    // Construire les suggestions enrichies avec label hiérarchique
+    const categoriesWithLabels = [...categorySlugs].sort().map(slug => ({
+      slug,
+      label: nameMap.has(slug) ? `${nameMap.get(slug)} (• ${slug})` : slug,
+    }));
+
+    const subcategoriesWithLabels = [...subcategorySlugs].sort().map(slug => {
+      const name = nameMap.get(slug) || slug;
+      const parent = parentMap.get(slug) || "";
+      const parentName = nameMap.get(parent) || parent;
+      const isLevel3 = level3Slugs.has(slug);
+      return {
+        slug,
+        label: isLevel3
+          ? `↳ ${name} (sous ${parentName})`
+          : parentName
+          ? `${name} (${parentName})`
+          : name,
+        parent,
+      };
+    });
+
     res.json({
-      brands: brands.map((b) => b.brand).filter(Boolean),
-      subcategories: subcategories.map((s) => s.subcategory).filter(Boolean),
-      categories: categories.map((c) => c.category).filter(Boolean),
+      brands: brands.map(b => b.brand).filter(Boolean),
+      categories: [...categorySlugs].sort(),
+      subcategories: [...subcategorySlugs].sort(),
+      categoriesWithLabels,
+      subcategoriesWithLabels,
     });
   } catch (err) {
     console.error(err);

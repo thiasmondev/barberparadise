@@ -2,14 +2,25 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ChevronDown, X } from "lucide-react";
 
+// Suggestion simple (string) ou enrichie (slug + label affiché)
+export type AutocompleteSuggestion = string | { slug: string; label: string; parent?: string };
+
 interface AutocompleteInputProps {
   value: string;
   onChange: (value: string) => void;
-  suggestions: string[];
+  suggestions: AutocompleteSuggestion[];
   placeholder?: string;
   label?: string;
   className?: string;
-  allowCustom?: boolean; // autoriser une valeur hors liste
+  allowCustom?: boolean;
+}
+
+function getSlug(s: AutocompleteSuggestion): string {
+  return typeof s === "string" ? s : s.slug;
+}
+
+function getLabel(s: AutocompleteSuggestion): string {
+  return typeof s === "string" ? s : s.label;
 }
 
 export default function AutocompleteInput({
@@ -41,9 +52,13 @@ export default function AutocompleteInput({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const filtered = suggestions.filter((s) =>
-    s.toLowerCase().includes(query.toLowerCase())
-  );
+  // Filtrer sur le slug ET le label
+  const filtered = suggestions.filter((s) => {
+    const slug = getSlug(s).toLowerCase();
+    const label = getLabel(s).toLowerCase();
+    const q = query.toLowerCase();
+    return slug.includes(q) || label.includes(q);
+  });
 
   const handleInput = useCallback(
     (val: string) => {
@@ -55,9 +70,10 @@ export default function AutocompleteInput({
   );
 
   const handleSelect = useCallback(
-    (s: string) => {
-      setQuery(s);
-      onChange(s);
+    (s: AutocompleteSuggestion) => {
+      const slug = getSlug(s);
+      setQuery(slug);
+      onChange(slug);
       setOpen(false);
       inputRef.current?.blur();
     },
@@ -114,32 +130,41 @@ export default function AutocompleteInput({
       </div>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-52 overflow-y-auto">
+        <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
           {filtered.length === 0 ? (
             <div className="px-3 py-2 text-xs text-gray-400 italic">
               {query ? `"${query}" — valeur personnalisée` : "Aucune suggestion"}
             </div>
           ) : (
-            filtered.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault(); // évite le blur avant le click
-                  handleSelect(s);
-                }}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-primary/5 hover:text-primary transition-colors ${
-                  s === value ? "bg-primary/10 text-primary font-medium" : "text-dark-700"
-                }`}
-              >
-                {/* Surligner la partie correspondant à la recherche */}
-                {query ? (
-                  <HighlightMatch text={s} query={query} />
-                ) : (
-                  s
-                )}
-              </button>
-            ))
+            filtered.map((s) => {
+              const slug = getSlug(s);
+              const label = getLabel(s);
+              const isLevel3 = label.startsWith("↳");
+              return (
+                <button
+                  key={slug}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleSelect(s);
+                  }}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-primary/5 hover:text-primary transition-colors ${
+                    slug === value ? "bg-primary/10 text-primary font-medium" : "text-gray-700"
+                  } ${isLevel3 ? "pl-6" : ""}`}
+                >
+                  <div className="flex flex-col">
+                    {/* Label hiérarchique avec surlignage */}
+                    <span className={`${isLevel3 ? "text-xs text-gray-500" : "text-sm"}`}>
+                      {query ? <HighlightMatch text={label} query={query} /> : label}
+                    </span>
+                    {/* Slug en dessous si différent du label */}
+                    {label !== slug && (
+                      <span className="text-xs text-gray-400 font-mono">{slug}</span>
+                    )}
+                  </div>
+                </button>
+              );
+            })
           )}
         </div>
       )}

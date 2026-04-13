@@ -12,6 +12,7 @@ import {
   getProductsMeta,
   updateProduct,
   type SeoOptimization,
+  type CategorySuggestion,
 } from "@/lib/admin-api";
 import type { Product } from "@/types";
 import { parseImages, formatPrice, getDiscount } from "@/lib/utils";
@@ -312,9 +313,9 @@ export default function SeoProductPage() {
   const [editSubcategory, setEditSubcategory] = useState("");
   const [editImages, setEditImages] = useState<string[]>([]);
 
-  // Autocomplétion
-  const [allCategories, setAllCategories] = useState<string[]>([]);
-  const [allSubcategories, setAllSubcategories] = useState<string[]>([]);
+  // Autocomplétion (suggestions enrichies avec labels hiérarchiques)
+  const [allCategories, setAllCategories] = useState<CategorySuggestion[]>([]);
+  const [allSubcategories, setAllSubcategories] = useState<CategorySuggestion[]>([]);
 
   // Éditeur description : mode WYSIWYG ou HTML brut
   const [htmlMode, setHtmlMode] = useState(false);
@@ -331,8 +332,17 @@ export default function SeoProductPage() {
   useEffect(() => {
     getProductsMeta()
       .then((meta) => {
-        setAllCategories(meta.categories);
-        setAllSubcategories(meta.subcategories);
+        // Utiliser les listes enrichies si disponibles, sinon fallback sur les slugs simples
+        setAllCategories(
+          meta.categoriesWithLabels?.length
+            ? meta.categoriesWithLabels
+            : meta.categories.map((s) => ({ slug: s, label: s }))
+        );
+        setAllSubcategories(
+          meta.subcategoriesWithLabels?.length
+            ? meta.subcategoriesWithLabels
+            : meta.subcategories.map((s) => ({ slug: s, label: s }))
+        );
       })
       .catch(console.error);
   }, []);
