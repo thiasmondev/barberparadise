@@ -310,7 +310,10 @@ export default function AdminCategoriesPage() {
   useEffect(() => { load(); }, [load]);
 
   // Synchronise visibleNodes quand l'arbre ou le noeud courant change
+  // MAIS seulement si on n'est pas en train de réorganiser (pour ne pas écraser le drag)
+  const isDraggingRef = useRef(false);
   useEffect(() => {
+    if (isDraggingRef.current) return; // Ne pas écraser pendant/après un drag
     const nodes = currentNode ? currentNode.children : tree;
     setVisibleNodes(nodes);
   }, [tree, currentNode]);
@@ -399,6 +402,7 @@ export default function AdminCategoriesPage() {
   const handleDragStart = (event: DragStartEvent) => {
     setActiveDragId(event.active.id as string);
     setReorderSaved(false);
+    isDraggingRef.current = true; // Bloquer la sync depuis l'arbre
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -410,26 +414,35 @@ export default function AdminCategoriesPage() {
     const newIndex = visibleNodes.findIndex((n) => n.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
 
-    // Réorganiser localement
+    // Réorganiser localement et assigner les nouveaux ordres
     const reordered = arrayMove(visibleNodes, oldIndex, newIndex);
-    setVisibleNodes(reordered);
-
-    // Mettre à jour l'arbre local immédiatement
     const updatedItems = reordered.map((n, i) => ({ ...n, order: i }));
-    setVisibleNodes(updatedItems);
+    setVisibleNodes(updatedItems); // Mise à jour visuelle immédiate
 
-    // Sauvegarder avec debounce
+    // Mettre à jour aussi l'arbre et les catégories en mémoire (sans recharger depuis la base)
+    setCategories((prev) =>
+      prev.map((c) => {
+        const found = updatedItems.find((n) => n.id === c.id);
+        return found ? { ...c, order: found.order } : c;
+      })
+    );
+
+    // Sauvegarder en base avec debounce
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setReordering(true);
     saveTimer.current = setTimeout(async () => {
       try {
         await reorderCategories(updatedItems.map((n, i) => ({ id: n.id, order: i })));
         setReorderSaved(true);
-        setTimeout(() => setReorderSaved(false), 2000);
-        // Recharger pour synchroniser
-        await load();
+        setTimeout(() => {
+          setReorderSaved(false);
+          isDraggingRef.current = false; // Réactiver la sync seulement après confirmation
+        }, 2000);
       } catch (err) {
         console.error("Erreur sauvegarde ordre:", err);
+        isDraggingRef.current = false;
+        // En cas d'erreur, recharger pour retrouver l'état cohérent
+        await load();
       } finally {
         setReordering(false);
       }
