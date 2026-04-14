@@ -18,6 +18,7 @@ import type { Product } from "@/types";
 import { parseImages, formatPrice, getDiscount } from "@/lib/utils";
 import AutocompleteInput from "@/components/admin/AutocompleteInput";
 import ImageManager from "@/components/admin/ImageManager";
+import VariantManager from "@/components/admin/VariantManager";
 import {
   ChevronLeft,
   Sparkles,
@@ -574,6 +575,20 @@ export default function SeoProductPage() {
                 productId={productId}
                 images={editImages}
                 onChange={(imgs) => { setEditImages(imgs); setApplied(false); }}
+              />
+            </div>
+          )}
+
+          {/* Gestion des variantes */}
+          {productId && product && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded">VARIANTES</span>
+                <span className="text-xs text-gray-400">Couleurs, tailles, options</span>
+              </div>
+              <VariantManager
+                productId={productId}
+                productPrice={product.price}
               />
             </div>
           )}
