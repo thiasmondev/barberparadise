@@ -275,3 +275,50 @@ export function saveSeoBlogArticle(data: { title: string; slug: string; excerpt:
     body: JSON.stringify(data),
   });
 }
+
+// ─── Variantes produit ───────────────────────────────────────
+
+export interface ProductVariant {
+  id: string;
+  productId: string;
+  name: string;
+  type: string; // "color" | "size" | "other"
+  color: string;
+  colorHex: string;
+  size: string;
+  price: number | null;
+  stock: number;
+  inStock: boolean;
+  sku: string;
+  image: string;
+  order: number;
+}
+
+export function getProductVariants(productId: string): Promise<ProductVariant[]> {
+  return adminFetch<ProductVariant[]>(`/api/admin/products/${productId}/variants`);
+}
+
+export function createProductVariant(productId: string, data: Partial<ProductVariant>): Promise<ProductVariant> {
+  return adminFetch<ProductVariant>(`/api/admin/products/${productId}/variants`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateProductVariant(variantId: string, data: Partial<ProductVariant>): Promise<ProductVariant> {
+  return adminFetch<ProductVariant>(`/api/admin/variants/${variantId}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteProductVariant(variantId: string): Promise<void> {
+  return adminFetch<void>(`/api/admin/variants/${variantId}`, { method: "DELETE" });
+}
+
+export function reorderProductVariants(productId: string, items: { id: string; order: number }[]): Promise<void> {
+  return adminFetch<void>(`/api/admin/products/${productId}/variants/reorder`, {
+    method: "PUT",
+    body: JSON.stringify({ items }),
+  });
+}

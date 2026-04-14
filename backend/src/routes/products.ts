@@ -107,7 +107,10 @@ productsRouter.get("/:slug", async (req: Request, res: Response): Promise<void> 
   try {
     const product = await prisma.product.findUnique({
       where: { slug: req.params.slug },
-      include: { reviews: { where: { approved: true }, orderBy: { createdAt: "desc" }, take: 10 } },
+      include: {
+        reviews: { where: { approved: true }, orderBy: { createdAt: "desc" }, take: 10 },
+        variants: { orderBy: { order: "asc" } },
+      },
     });
     if (!product) {
       res.status(404).json({ error: "Produit non trouvé" });

@@ -23,6 +23,23 @@ export interface Product {
   status: string;
   createdAt: string;
   updatedAt: string;
+  variants?: ProductVariant[];
+}
+
+export interface ProductVariant {
+  id: string;
+  productId: string;
+  name: string;
+  type: string; // "color" | "size" | "other"
+  color: string;
+  colorHex: string;
+  size: string;
+  price: number | null;
+  stock: number;
+  inStock: boolean;
+  sku: string;
+  image: string;
+  order: number;
 }
 
 export interface CartItem {

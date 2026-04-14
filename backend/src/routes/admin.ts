@@ -494,4 +494,99 @@ adminRouter.delete("/products/:id/images", requireAdmin, async (req: Request, re
   }
 });
 
+// ─── VARIANTES PRODUIT ────────────────────────────────────────────
+
+// GET /api/admin/products/:id/variants — Lister les variantes d'un produit
+adminRouter.get("/products/:id/variants", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const variants = await prisma.productVariant.findMany({
+      where: { productId: req.params.id },
+      orderBy: { order: "asc" },
+    });
+    res.json(variants);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// POST /api/admin/products/:id/variants — Créer une variante
+adminRouter.post("/products/:id/variants", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { name, type, color, colorHex, size, price, stock, inStock, sku, image, order } = req.body;
+    const variant = await prisma.productVariant.create({
+      data: {
+        productId: req.params.id,
+        name: name || "",
+        type: type || "other",
+        color: color || "",
+        colorHex: colorHex || "",
+        size: size || "",
+        price: price != null ? parseFloat(price) : null,
+        stock: parseInt(stock) || 0,
+        inStock: inStock !== false,
+        sku: sku || "",
+        image: image || "",
+        order: parseInt(order) || 0,
+      },
+    });
+    res.json(variant);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur création variante" });
+  }
+});
+
+// PUT /api/admin/variants/:variantId — Modifier une variante
+adminRouter.put("/variants/:variantId", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { name, type, color, colorHex, size, price, stock, inStock, sku, image, order } = req.body;
+    const variant = await prisma.productVariant.update({
+      where: { id: req.params.variantId },
+      data: {
+        name: name || "",
+        type: type || "other",
+        color: color || "",
+        colorHex: colorHex || "",
+        size: size || "",
+        price: price != null && price !== "" ? parseFloat(price) : null,
+        stock: parseInt(stock) || 0,
+        inStock: inStock !== false,
+        sku: sku || "",
+        image: image || "",
+        order: parseInt(order) || 0,
+      },
+    });
+    res.json(variant);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur modification variante" });
+  }
+});
+
+// DELETE /api/admin/variants/:variantId — Supprimer une variante
+adminRouter.delete("/variants/:variantId", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    await prisma.productVariant.delete({ where: { id: req.params.variantId } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur suppression variante" });
+  }
+});
+
+// PUT /api/admin/products/:id/variants/reorder — Réorganiser les variantes
+adminRouter.put("/products/:id/variants/reorder", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { items } = req.body as { items: { id: string; order: number }[] };
+    await Promise.all(
+      items.map((item) => prisma.productVariant.update({ where: { id: item.id }, data: { order: item.order } }))
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur réorganisation variantes" });
+  }
+});
+
 export default adminRouter;

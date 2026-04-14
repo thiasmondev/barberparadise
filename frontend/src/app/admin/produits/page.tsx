@@ -10,6 +10,7 @@ import {
 } from "@/lib/admin-api";
 import type { Product } from "@/types";
 import AutocompleteInput from "@/components/admin/AutocompleteInput";
+import VariantManager from "@/components/admin/VariantManager";
 import {
   Search,
   Plus,
@@ -469,6 +470,21 @@ export default function AdminProductsPage() {
                   Actif (visible)
                 </label>
               </div>
+
+              {/* Variantes — uniquement en mode édition */}
+              {editingId && (
+                <div className="border-t border-gray-100 pt-4">
+                  <VariantManager
+                    productId={editingId}
+                    productPrice={parseFloat(form.price) || 0}
+                  />
+                </div>
+              )}
+              {!editingId && (
+                <p className="text-xs text-gray-400 italic border-t border-gray-100 pt-3">
+                  Les variantes (couleurs, tailles) peuvent être ajoutées après la création du produit.
+                </p>
+              )}
             </div>
 
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">

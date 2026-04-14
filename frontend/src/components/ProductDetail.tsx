@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ShoppingCart, Heart, Minus, Plus, ChevronLeft, Check, Truck } from "lucide-react";
-import { Product } from "@/types";
+import { Product, ProductVariant } from "@/types";
 import { parseImages, formatPrice, getDiscount } from "@/lib/utils";
 import { useCart } from "@/contexts/CartContext";
 
@@ -14,12 +14,43 @@ export default function ProductDetail({ product }: { product: Product }) {
   const [selectedImage, setSelectedImage] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const discount = getDiscount(product.price, product.originalPrice);
 
+  const variants = product.variants ?? [];
+
+  // Grouper les variantes par type
+  const colorVariants = variants.filter((v) => v.type === "color");
+  const sizeVariants = variants.filter((v) => v.type === "size");
+  const otherVariants = variants.filter((v) => v.type === "other");
+
+  // Prix affiché : celui de la variante sélectionnée, ou le prix du produit
+  const displayPrice = selectedVariant?.price != null ? selectedVariant.price : product.price;
+
+  // Stock : celui de la variante sélectionnée, ou le stock du produit
+  const isInStock = selectedVariant ? selectedVariant.inStock : product.inStock;
+
+  // Image : si la variante a une image spécifique, on l'utilise
+  const displayImages = useMemo(() => {
+    if (selectedVariant?.image) {
+      return [selectedVariant.image, ...images.filter((img) => img !== selectedVariant.image)];
+    }
+    return images;
+  }, [selectedVariant, images]);
+
   const handleAddToCart = () => {
-    addItem(product, quantity);
+    // On passe le produit avec le prix de la variante si applicable
+    const productToAdd = selectedVariant?.price != null
+      ? { ...product, price: selectedVariant.price, name: `${product.name} - ${selectedVariant.name}` }
+      : product;
+    addItem(productToAdd, quantity);
     setAdded(true);
     setTimeout(() => setAdded(false), 2000);
+  };
+
+  const handleSelectVariant = (v: ProductVariant) => {
+    setSelectedVariant(selectedVariant?.id === v.id ? null : v);
+    setSelectedImage(0);
   };
 
   return (
@@ -42,9 +73,9 @@ export default function ProductDetail({ product }: { product: Product }) {
         <div>
           {/* Main image */}
           <div className="relative aspect-square bg-gray-50 rounded-2xl overflow-hidden mb-4">
-            {images[selectedImage] ? (
+            {displayImages[selectedImage] ? (
               <Image
-                src={images[selectedImage]}
+                src={displayImages[selectedImage]}
                 alt={product.name}
                 fill
                 className="object-contain p-6"
@@ -71,9 +102,9 @@ export default function ProductDetail({ product }: { product: Product }) {
             </div>
           </div>
           {/* Thumbnails */}
-          {images.length > 1 && (
+          {displayImages.length > 1 && (
             <div className="flex gap-3 overflow-x-auto pb-2">
-              {images.map((img, i) => (
+              {displayImages.map((img, i) => (
                 <button
                   key={i}
                   onClick={() => setSelectedImage(i)}
@@ -106,7 +137,7 @@ export default function ProductDetail({ product }: { product: Product }) {
           {/* Price */}
           <div className="flex items-baseline gap-3 mb-6">
             <span className="text-3xl font-bold text-dark-800">
-              {formatPrice(product.price)}
+              {formatPrice(displayPrice)}
             </span>
             {product.originalPrice && product.originalPrice > product.price && (
               <span className="text-lg text-gray-400 line-through">
@@ -120,19 +151,121 @@ export default function ProductDetail({ product }: { product: Product }) {
             )}
           </div>
 
-          {/* Description */}
+          {/* Description courte */}
           {product.shortDescription && (
             <p className="text-gray-600 text-sm leading-relaxed mb-6">
               {product.shortDescription}
             </p>
           )}
 
+          {/* ─── SÉLECTEUR DE VARIANTES COULEUR ─── */}
+          {colorVariants.length > 0 && (
+            <div className="mb-5">
+              <div className="flex items-center gap-2 mb-2.5">
+                <span className="text-sm font-semibold text-dark-700">Couleur</span>
+                {selectedVariant && selectedVariant.type === "color" && (
+                  <span className="text-sm text-gray-500">— {selectedVariant.name}</span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2.5">
+                {colorVariants.map((v) => (
+                  <button
+                    key={v.id}
+                    onClick={() => handleSelectVariant(v)}
+                    disabled={!v.inStock}
+                    title={v.name + (!v.inStock ? " (Rupture)" : "")}
+                    className={`relative w-9 h-9 rounded-full border-2 transition-all focus:outline-none ${
+                      selectedVariant?.id === v.id
+                        ? "border-primary scale-110 shadow-md"
+                        : "border-gray-200 hover:border-gray-400"
+                    } ${!v.inStock ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
+                    style={{ backgroundColor: v.colorHex || "#e5e7eb" }}
+                  >
+                    {selectedVariant?.id === v.id && (
+                      <span
+                        className="absolute inset-0 flex items-center justify-center"
+                        style={{ color: isLightColor(v.colorHex) ? "#1a1a1a" : "#ffffff" }}
+                      >
+                        <Check size={14} strokeWidth={3} />
+                      </span>
+                    )}
+                    {!v.inStock && (
+                      <span className="absolute inset-0 flex items-center justify-center">
+                        <span className="w-full h-0.5 bg-gray-400 rotate-45 absolute" />
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ─── SÉLECTEUR DE VARIANTES TAILLE ─── */}
+          {sizeVariants.length > 0 && (
+            <div className="mb-5">
+              <div className="flex items-center gap-2 mb-2.5">
+                <span className="text-sm font-semibold text-dark-700">Taille</span>
+                {selectedVariant && selectedVariant.type === "size" && (
+                  <span className="text-sm text-gray-500">— {selectedVariant.name}</span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {sizeVariants.map((v) => (
+                  <button
+                    key={v.id}
+                    onClick={() => handleSelectVariant(v)}
+                    disabled={!v.inStock}
+                    title={!v.inStock ? `${v.name} (Rupture)` : v.name}
+                    className={`px-3.5 py-1.5 text-sm font-medium rounded-lg border-2 transition-all ${
+                      selectedVariant?.id === v.id
+                        ? "border-primary bg-primary text-white"
+                        : "border-gray-200 text-dark-700 hover:border-primary hover:text-primary bg-white"
+                    } ${!v.inStock ? "opacity-40 cursor-not-allowed line-through" : "cursor-pointer"}`}
+                  >
+                    {v.size || v.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ─── SÉLECTEUR AUTRES VARIANTES ─── */}
+          {otherVariants.length > 0 && (
+            <div className="mb-5">
+              <div className="flex items-center gap-2 mb-2.5">
+                <span className="text-sm font-semibold text-dark-700">Options</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {otherVariants.map((v) => (
+                  <button
+                    key={v.id}
+                    onClick={() => handleSelectVariant(v)}
+                    disabled={!v.inStock}
+                    className={`px-3.5 py-1.5 text-sm font-medium rounded-lg border-2 transition-all ${
+                      selectedVariant?.id === v.id
+                        ? "border-primary bg-primary text-white"
+                        : "border-gray-200 text-dark-700 hover:border-primary hover:text-primary bg-white"
+                    } ${!v.inStock ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
+                  >
+                    {v.name}
+                    {v.price != null && v.price !== product.price && (
+                      <span className="ml-1.5 text-xs opacity-75">({formatPrice(v.price)})</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Stock */}
           <div className="flex items-center gap-2 mb-6">
-            {product.inStock ? (
+            {isInStock ? (
               <>
                 <div className="w-2 h-2 bg-green-500 rounded-full" />
                 <span className="text-sm text-green-600 font-medium">En stock</span>
+                {selectedVariant && (
+                  <span className="text-xs text-gray-400">({selectedVariant.stock} disponibles)</span>
+                )}
               </>
             ) : (
               <>
@@ -141,6 +274,13 @@ export default function ProductDetail({ product }: { product: Product }) {
               </>
             )}
           </div>
+
+          {/* Alerte sélection variante requise */}
+          {variants.length > 0 && !selectedVariant && (
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+              Veuillez sélectionner une option avant d&apos;ajouter au panier
+            </p>
+          )}
 
           {/* Quantity + Add to cart */}
           <div className="flex items-center gap-4 mb-6">
@@ -163,7 +303,7 @@ export default function ProductDetail({ product }: { product: Product }) {
             </div>
             <button
               onClick={handleAddToCart}
-              disabled={!product.inStock}
+              disabled={!isInStock || (variants.length > 0 && !selectedVariant)}
               className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-lg font-medium text-sm transition-all ${
                 added
                   ? "bg-green-500 text-white"
@@ -198,41 +338,25 @@ export default function ProductDetail({ product }: { product: Product }) {
           {/* Full description */}
           {product.description && (
             <div className="mt-8 pt-8 border-t border-gray-100">
-              <h2 className="font-heading font-semibold text-lg text-dark-800 mb-4">
-                Description
-              </h2>
+              <h2 className="font-heading font-bold text-lg text-dark-800 mb-4">Description</h2>
               <div
-                className="text-sm text-gray-600 leading-relaxed prose prose-sm max-w-none"
+                className="prose prose-sm max-w-none text-gray-600"
                 dangerouslySetInnerHTML={{ __html: product.description }}
               />
             </div>
           )}
-
-          {/* Category & Tags */}
-          <div className="mt-6 pt-6 border-t border-gray-100 space-y-2">
-            <p className="text-xs text-gray-500">
-              <span className="font-medium text-dark-600">Catégorie :</span>{" "}
-              <Link href={`/catalogue?category=${product.category}`} className="hover:text-primary">
-                {product.category}
-              </Link>
-              {product.subcategory && (
-                <>
-                  {" > "}
-                  <Link href={`/catalogue?subcategory=${product.subcategory}`} className="hover:text-primary">
-                    {product.subcategory}
-                  </Link>
-                </>
-              )}
-            </p>
-            <p className="text-xs text-gray-500">
-              <span className="font-medium text-dark-600">Marque :</span>{" "}
-              <Link href={`/catalogue?brand=${product.brand}`} className="hover:text-primary">
-                {product.brand}
-              </Link>
-            </p>
-          </div>
         </div>
       </div>
     </div>
   );
+}
+
+// Utilitaire : détecter si une couleur hex est claire (pour le texte du checkmark)
+function isLightColor(hex: string): boolean {
+  if (!hex || hex.length < 4) return true;
+  const h = hex.replace("#", "");
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 128;
 }
