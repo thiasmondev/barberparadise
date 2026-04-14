@@ -52,6 +52,26 @@ categoriesRouter.put("/:id", requireAdmin, async (req: Request, res: Response): 
   }
 });
 
+// PATCH /api/categories/reorder (admin) — Sauvegarder le nouvel ordre par drag-and-drop
+categoriesRouter.patch("/reorder", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { items } = req.body as { items: { id: string; order: number }[] };
+    if (!Array.isArray(items) || items.length === 0) {
+      res.status(400).json({ error: "items requis" });
+      return;
+    }
+    await Promise.all(
+      items.map(({ id, order }) =>
+        prisma.category.update({ where: { id }, data: { order } })
+      )
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
 // DELETE /api/categories/:id (admin)
 categoriesRouter.delete("/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {

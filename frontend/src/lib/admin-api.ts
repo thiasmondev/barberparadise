@@ -169,6 +169,13 @@ export function updateCategory(id: string, data: Record<string, unknown>) {
   });
 }
 
+export function reorderCategories(items: { id: string; order: number }[]) {
+  return adminFetch<{ success: boolean }>("/api/categories/reorder", {
+    method: "PATCH",
+    body: JSON.stringify({ items }),
+  });
+}
+
 export function deleteCategory(id: string) {
   return adminFetch<{ success: boolean }>(`/api/categories/${id}`, {
     method: "DELETE",

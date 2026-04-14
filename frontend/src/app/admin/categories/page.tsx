@@ -1,11 +1,31 @@
 "use client";
 export const dynamic = "force-dynamic";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   getAdminCategories,
   createCategory,
   updateCategory,
   deleteCategory,
+  reorderCategories,
 } from "@/lib/admin-api";
 import type { Category } from "@/types";
 import {
@@ -19,6 +39,9 @@ import {
   FolderOpen,
   FolderPlus,
   Home,
+  GripVertical,
+  Check,
+  Loader2,
 } from "lucide-react";
 
 function slugify(str: string) {
@@ -78,6 +101,175 @@ const emptyForm = (parentSlug = ""): CatForm => ({
   order: "0",
 });
 
+// ─── Composant ligne sortable ─────────────────────────────────────────────────
+interface SortableRowProps {
+  node: CatNode;
+  breadcrumbLength: number;
+  onNavigate: (node: CatNode) => void;
+  onEdit: (cat: Category) => void;
+  onDelete: (id: string, name: string) => void;
+  onAddChild: (slug: string) => void;
+  isDragging?: boolean;
+}
+
+function SortableRow({
+  node,
+  breadcrumbLength,
+  onNavigate,
+  onEdit,
+  onDelete,
+  onAddChild,
+  isDragging = false,
+}: SortableRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging: isSelfDragging,
+  } = useSortable({ id: node.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isSelfDragging ? 0.3 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className={isDragging ? "shadow-lg rounded-lg" : ""}>
+      {/* Ligne principale */}
+      <div
+        className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 group border-b border-gray-50 cursor-pointer"
+        onClick={() => node.children.length > 0 && onNavigate(node)}
+      >
+        {/* Poignée drag */}
+        <div
+          {...attributes}
+          {...listeners}
+          className="shrink-0 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 touch-none"
+          onClick={(e) => e.stopPropagation()}
+          title="Glisser pour réorganiser"
+        >
+          <GripVertical size={16} />
+        </div>
+
+        <div className="shrink-0">
+          {node.children.length > 0 ? (
+            <FolderOpen size={18} className="text-violet-400" />
+          ) : (
+            <Folder size={18} className="text-gray-300" />
+          )}
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`font-medium text-sm ${node.children.length > 0 ? "text-violet-700" : "text-dark-700"}`}>
+              {node.name}
+            </span>
+            {node.children.length > 0 && (
+              <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">
+                {node.children.length} {node.level === 0 ? "sous-catégorie" : "sous-sous-catégorie"}{node.children.length > 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
+          <div className="text-xs text-gray-400 font-mono">/{node.slug} · Ordre: {node.order}</div>
+        </div>
+
+        {node.children.length > 0 && (
+          <ChevronRight size={16} className="text-gray-300 group-hover:text-violet-400 transition-colors shrink-0" />
+        )}
+
+        <div
+          className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {node.level < 2 && (
+            <button
+              onClick={() => onAddChild(node.slug)}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs text-violet-600 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg whitespace-nowrap"
+              title={`Ajouter une ${node.level === 0 ? "sous-catégorie" : "sous-sous-catégorie"}`}
+            >
+              <FolderPlus size={11} />
+              {node.level === 0 ? "Sous-catégorie" : "Sous-sous-catégorie"}
+            </button>
+          )}
+          <button
+            onClick={() => onEdit(node)}
+            className="p-1.5 text-gray-400 hover:text-primary hover:bg-primary/5 rounded-lg"
+          >
+            <Pencil size={13} />
+          </button>
+          <button
+            onClick={() => onDelete(node.id, node.name)}
+            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </div>
+
+      {/* Aperçu des enfants (vue racine seulement) */}
+      {breadcrumbLength === 0 && node.children.length > 0 && (
+        <div className="bg-gray-50/40 border-b border-gray-50">
+          {node.children.slice(0, 5).map((child) => (
+            <div
+              key={child.id}
+              className="flex items-center gap-3 pl-10 pr-4 py-2 hover:bg-gray-100/60 group/child cursor-pointer border-b border-gray-50/80"
+              onClick={() => child.children.length > 0 && onNavigate(child)}
+            >
+              <Folder size={14} className={child.children.length > 0 ? "text-blue-400" : "text-gray-200"} />
+              <div className="flex-1 min-w-0">
+                <span className={`text-xs ${child.children.length > 0 ? "text-blue-700 font-medium" : "text-gray-600"}`}>
+                  {child.name}
+                </span>
+                {child.children.length > 0 && (
+                  <span className="text-xs text-gray-400 ml-1.5">
+                    ({child.children.length} sous-sous-catégorie{child.children.length > 1 ? "s" : ""})
+                  </span>
+                )}
+                <span className="text-xs text-gray-300 font-mono ml-2">/{child.slug}</span>
+              </div>
+              {child.children.length > 0 && (
+                <ChevronRight size={12} className="text-gray-200 group-hover/child:text-blue-400 shrink-0" />
+              )}
+              <div
+                className="flex items-center gap-1 opacity-0 group-hover/child:opacity-100 transition-opacity"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {child.level < 2 && (
+                  <button
+                    onClick={() => onAddChild(child.slug)}
+                    className="p-1 text-violet-400 hover:text-violet-600 hover:bg-violet-50 rounded"
+                    title="Ajouter une sous-sous-catégorie"
+                  >
+                    <FolderPlus size={11} />
+                  </button>
+                )}
+                <button onClick={() => onEdit(child)} className="p-1 text-gray-300 hover:text-primary rounded">
+                  <Pencil size={11} />
+                </button>
+                <button onClick={() => onDelete(child.id, child.name)} className="p-1 text-gray-300 hover:text-red-500 rounded">
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            </div>
+          ))}
+          {node.children.length > 5 && (
+            <button
+              onClick={() => onNavigate(node)}
+              className="pl-10 pr-4 py-1.5 text-xs text-violet-600 hover:underline block"
+            >
+              Voir les {node.children.length - 5} autres sous-catégories →
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Page principale ──────────────────────────────────────────────────────────
 export default function AdminCategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [tree, setTree] = useState<CatNode[]>([]);
@@ -89,6 +281,18 @@ export default function AdminCategoriesPage() {
   const [error, setError] = useState("");
   const [breadcrumb, setBreadcrumb] = useState<CatNode[]>([]);
   const [currentNode, setCurrentNode] = useState<CatNode | null>(null);
+  const [reordering, setReordering] = useState(false);
+  const [reorderSaved, setReorderSaved] = useState(false);
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Noeuds visibles dans la vue courante (réorganisables)
+  const [visibleNodes, setVisibleNodes] = useState<CatNode[]>([]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -105,7 +309,12 @@ export default function AdminCategoriesPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const visibleNodes = currentNode ? currentNode.children : tree;
+  // Synchronise visibleNodes quand l'arbre ou le noeud courant change
+  useEffect(() => {
+    const nodes = currentNode ? currentNode.children : tree;
+    setVisibleNodes(nodes);
+  }, [tree, currentNode]);
+
   const currentLevel = currentNode ? currentNode.level + 1 : 0;
   const levelLabel = ["Catégories racines", "Sous-catégories", "Sous-sous-catégories"];
   const addLabel = ["+ Nouvelle catégorie", "+ Nouvelle sous-catégorie", "+ Nouvelle sous-sous-catégorie"];
@@ -186,6 +395,48 @@ export default function AdminCategoriesPage() {
     }
   };
 
+  // ─── Drag-and-drop handlers ────────────────────────────────────────────────
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragId(event.active.id as string);
+    setReorderSaved(false);
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    setActiveDragId(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = visibleNodes.findIndex((n) => n.id === active.id);
+    const newIndex = visibleNodes.findIndex((n) => n.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    // Réorganiser localement
+    const reordered = arrayMove(visibleNodes, oldIndex, newIndex);
+    setVisibleNodes(reordered);
+
+    // Mettre à jour l'arbre local immédiatement
+    const updatedItems = reordered.map((n, i) => ({ ...n, order: i }));
+    setVisibleNodes(updatedItems);
+
+    // Sauvegarder avec debounce
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    setReordering(true);
+    saveTimer.current = setTimeout(async () => {
+      try {
+        await reorderCategories(updatedItems.map((n, i) => ({ id: n.id, order: i })));
+        setReorderSaved(true);
+        setTimeout(() => setReorderSaved(false), 2000);
+        // Recharger pour synchroniser
+        await load();
+      } catch (err) {
+        console.error("Erreur sauvegarde ordre:", err);
+      } finally {
+        setReordering(false);
+      }
+    }, 600);
+  };
+
+  const activeDragNode = activeDragId ? visibleNodes.find((n) => n.id === activeDragId) : null;
   const allParents = categories.filter((c) => !editingId || c.id !== editingId);
 
   return (
@@ -196,9 +447,22 @@ export default function AdminCategoriesPage() {
           <h1 className="font-heading font-bold text-xl text-dark-800">Catégories</h1>
           <p className="text-sm text-gray-500">{categories.length} catégories au total</p>
         </div>
-        <button onClick={() => openCreate(currentNode?.slug || "")} className="btn-primary">
-          <Plus size={16} /> {addLabel[Math.min(currentLevel, 2)]}
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Indicateur de sauvegarde */}
+          {reordering && (
+            <span className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full">
+              <Loader2 size={12} className="animate-spin" /> Sauvegarde...
+            </span>
+          )}
+          {reorderSaved && !reordering && (
+            <span className="flex items-center gap-1.5 text-xs text-green-600 bg-green-50 px-3 py-1.5 rounded-full">
+              <Check size={12} /> Ordre sauvegardé
+            </span>
+          )}
+          <button onClick={() => openCreate(currentNode?.slug || "")} className="btn-primary">
+            <Plus size={16} /> {addLabel[Math.min(currentLevel, 2)]}
+          </button>
+        </div>
       </div>
 
       {/* Fil d'Ariane */}
@@ -230,7 +494,7 @@ export default function AdminCategoriesPage() {
         ))}
       </nav>
 
-      {/* Liste */}
+      {/* Liste avec drag-and-drop */}
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50">
           <div className="flex items-center gap-2">
@@ -242,6 +506,9 @@ export default function AdminCategoriesPage() {
               — {levelLabel[Math.min(currentLevel, 2)]} ({visibleNodes.length})
             </span>
           </div>
+          <span className="flex items-center gap-1 text-xs text-gray-400">
+            <GripVertical size={12} /> Glissez pour réorganiser
+          </span>
         </div>
 
         {loading ? (
@@ -262,125 +529,47 @@ export default function AdminCategoriesPage() {
             </button>
           </div>
         ) : (
-          <div>
-            {visibleNodes.map((node) => (
-              <div key={node.id}>
-                {/* Ligne principale */}
-                <div
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 group border-b border-gray-50 cursor-pointer"
-                  onClick={() => node.children.length > 0 && navigateTo(node)}
-                >
-                  <div className="shrink-0">
-                    {node.children.length > 0 ? (
-                      <FolderOpen size={18} className="text-violet-400" />
-                    ) : (
-                      <Folder size={18} className="text-gray-300" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`font-medium text-sm ${node.children.length > 0 ? "text-violet-700" : "text-dark-700"}`}>
-                        {node.name}
-                      </span>
-                      {node.children.length > 0 && (
-                        <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">
-                          {node.children.length} {node.level === 0 ? "sous-catégorie" : "sous-sous-catégorie"}{node.children.length > 1 ? "s" : ""}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-gray-400 font-mono">/{node.slug} · Ordre: {node.order}</div>
-                  </div>
-                  {node.children.length > 0 && (
-                    <ChevronRight size={16} className="text-gray-300 group-hover:text-violet-400 transition-colors shrink-0" />
-                  )}
-                  <div
-                    className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {node.level < 2 && (
-                      <button
-                        onClick={() => openCreate(node.slug)}
-                        className="inline-flex items-center gap-1 px-2 py-1 text-xs text-violet-600 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg whitespace-nowrap"
-                        title={`Ajouter une ${node.level === 0 ? "sous-catégorie" : "sous-sous-catégorie"}`}
-                      >
-                        <FolderPlus size={11} />
-                        {node.level === 0 ? "Sous-catégorie" : "Sous-sous-catégorie"}
-                      </button>
-                    )}
-                    <button
-                      onClick={() => openEdit(node)}
-                      className="p-1.5 text-gray-400 hover:text-primary hover:bg-primary/5 rounded-lg"
-                    >
-                      <Pencil size={13} />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(node.id, node.name)}
-                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Aperçu des enfants (vue racine seulement) */}
-                {breadcrumb.length === 0 && node.children.length > 0 && (
-                  <div className="bg-gray-50/40 border-b border-gray-50">
-                    {node.children.slice(0, 5).map((child) => (
-                      <div
-                        key={child.id}
-                        className="flex items-center gap-3 pl-10 pr-4 py-2 hover:bg-gray-100/60 group/child cursor-pointer border-b border-gray-50/80"
-                        onClick={() => child.children.length > 0 && navigateTo(child)}
-                      >
-                        <Folder size={14} className={child.children.length > 0 ? "text-blue-400" : "text-gray-200"} />
-                        <div className="flex-1 min-w-0">
-                          <span className={`text-xs ${child.children.length > 0 ? "text-blue-700 font-medium" : "text-gray-600"}`}>
-                            {child.name}
-                          </span>
-                          {child.children.length > 0 && (
-                            <span className="text-xs text-gray-400 ml-1.5">
-                              ({child.children.length} sous-sous-catégorie{child.children.length > 1 ? "s" : ""})
-                            </span>
-                          )}
-                          <span className="text-xs text-gray-300 font-mono ml-2">/{child.slug}</span>
-                        </div>
-                        {child.children.length > 0 && (
-                          <ChevronRight size={12} className="text-gray-200 group-hover/child:text-blue-400 shrink-0" />
-                        )}
-                        <div
-                          className="flex items-center gap-1 opacity-0 group-hover/child:opacity-100 transition-opacity"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {child.level < 2 && (
-                            <button
-                              onClick={() => openCreate(child.slug)}
-                              className="p-1 text-violet-400 hover:text-violet-600 hover:bg-violet-50 rounded"
-                              title="Ajouter une sous-sous-catégorie"
-                            >
-                              <FolderPlus size={11} />
-                            </button>
-                          )}
-                          <button onClick={() => openEdit(child)} className="p-1 text-gray-300 hover:text-primary rounded">
-                            <Pencil size={11} />
-                          </button>
-                          <button onClick={() => handleDelete(child.id, child.name)} className="p-1 text-gray-300 hover:text-red-500 rounded">
-                            <Trash2 size={11} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    {node.children.length > 5 && (
-                      <button
-                        onClick={() => navigateTo(node)}
-                        className="pl-10 pr-4 py-1.5 text-xs text-violet-600 hover:underline block"
-                      >
-                        Voir les {node.children.length - 5} autres sous-catégories →
-                      </button>
-                    )}
-                  </div>
-                )}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={visibleNodes.map((n) => n.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div>
+                {visibleNodes.map((node) => (
+                  <SortableRow
+                    key={node.id}
+                    node={node}
+                    breadcrumbLength={breadcrumb.length}
+                    onNavigate={navigateTo}
+                    onEdit={openEdit}
+                    onDelete={handleDelete}
+                    onAddChild={openCreate}
+                  />
+                ))}
               </div>
-            ))}
-          </div>
+            </SortableContext>
+
+            {/* Overlay affiché pendant le drag */}
+            <DragOverlay>
+              {activeDragNode ? (
+                <div className="bg-white border-2 border-violet-300 rounded-xl shadow-2xl px-4 py-3 flex items-center gap-3 opacity-95">
+                  <GripVertical size={16} className="text-violet-400" />
+                  {activeDragNode.children.length > 0 ? (
+                    <FolderOpen size={18} className="text-violet-400" />
+                  ) : (
+                    <Folder size={18} className="text-gray-300" />
+                  )}
+                  <span className="font-medium text-sm text-dark-700">{activeDragNode.name}</span>
+                  <span className="text-xs text-gray-400 font-mono">/{activeDragNode.slug}</span>
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         )}
       </div>
 
@@ -430,17 +619,13 @@ export default function AdminCategoriesPage() {
 
               <div>
                 <label className="block text-sm font-medium text-dark-700 mb-1">Slug *</label>
-                <div className="flex items-center gap-1">
-                  <span className="text-sm text-gray-400">/</span>
-                  <input
-                    type="text"
-                    value={form.slug}
-                    onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
-                    className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-primary"
-                    placeholder="peigne-coiffant"
-                  />
-                </div>
-                <p className="text-xs text-gray-400 mt-1">Utilisé dans l&apos;URL — lettres minuscules et tirets uniquement</p>
+                <input
+                  type="text"
+                  value={form.slug}
+                  onChange={(e) => setForm((f) => ({ ...f, slug: slugify(e.target.value) }))}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-primary"
+                  placeholder="ex: peigne-coiffant"
+                />
               </div>
 
               <div>
@@ -450,7 +635,7 @@ export default function AdminCategoriesPage() {
                   onChange={(e) => setForm((f) => ({ ...f, parentSlug: e.target.value }))}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary"
                 >
-                  <option value="">Aucune (catégorie racine)</option>
+                  <option value="">— Aucune (catégorie racine) —</option>
                   {allParents.map((p) => (
                     <option key={p.id} value={p.slug}>
                       {p.parentSlug ? `  ↳ ${p.name}` : p.name}
@@ -461,32 +646,30 @@ export default function AdminCategoriesPage() {
 
               <div>
                 <label className="block text-sm font-medium text-dark-700 mb-1">Description</label>
-                <input
-                  type="text"
+                <textarea
                   value={form.description}
                   onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary"
-                  placeholder="Description courte (optionnel)"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-dark-700 mb-1">Ordre d&apos;affichage</label>
-                <input
-                  type="number"
-                  value={form.order}
-                  onChange={(e) => setForm((f) => ({ ...f, order: e.target.value }))}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary"
+                  rows={2}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary resize-none"
+                  placeholder="Description optionnelle"
                 />
               </div>
             </div>
 
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
-              <button onClick={() => setShowModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-dark-800">
+              <button
+                onClick={() => setShowModal(false)}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
+              >
                 Annuler
               </button>
-              <button onClick={handleSave} disabled={saving} className="btn-primary disabled:opacity-50">
-                {saving ? "Enregistrement..." : editingId ? "Mettre à jour" : "Créer"}
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="btn-primary disabled:opacity-50"
+              >
+                {saving ? <Loader2 size={14} className="animate-spin" /> : null}
+                {editingId ? "Mettre à jour" : "Créer"}
               </button>
             </div>
           </div>
