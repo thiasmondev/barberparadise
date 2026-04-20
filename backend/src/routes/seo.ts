@@ -535,3 +535,194 @@ seoRouter.get("/geo-dashboard", async (_req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ─── GEO Enrichi : Snippet vocal + E-E-A-T + Longue traîne ──
+seoRouter.post("/geo-enrich/:id", async (req, res) => {
+  try {
+    const product = await prisma.product.findUnique({
+      where: { id: req.params.id },
+      include: { variants: true },
+    });
+    if (!product) {
+      res.status(404).json({ error: "Produit non trouvé" });
+      return;
+    }
+
+    const { generateGeoEnrichedContent } = await import("../services/seo-agent");
+    const enriched = await generateGeoEnrichedContent(product as any);
+    res.json({ product, enriched });
+  } catch (err: any) {
+    console.error("GEO Enrich error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Appliquer le contenu GEO enrichi ───────────────────────
+seoRouter.post("/geo-enrich-apply/:id", async (req, res) => {
+  try {
+    const { voiceSnippet, eeaatContent, longTailQuestions, competitorComparison, useCases, buyingGuideSnippet, entityKeywords } = req.body;
+
+    const product = await prisma.product.findUnique({ where: { id: req.params.id } });
+    if (!product) {
+      res.status(404).json({ error: "Produit non trouvé" });
+      return;
+    }
+
+    const existingFeatures = (() => {
+      try { return JSON.parse(product.features || "{}"); } catch { return {}; }
+    })();
+
+    if (voiceSnippet !== undefined) existingFeatures.voiceSnippet = voiceSnippet;
+    if (eeaatContent !== undefined) existingFeatures.eeaatContent = eeaatContent;
+    if (longTailQuestions !== undefined) existingFeatures.longTailQuestions = longTailQuestions;
+    if (competitorComparison !== undefined) existingFeatures.competitorComparison = competitorComparison;
+    if (useCases !== undefined) existingFeatures.useCases = useCases;
+    if (buyingGuideSnippet !== undefined) existingFeatures.buyingGuideSnippet = buyingGuideSnippet;
+    if (entityKeywords !== undefined) existingFeatures.entityKeywords = entityKeywords;
+
+    const updated = await prisma.product.update({
+      where: { id: req.params.id },
+      data: { features: JSON.stringify(existingFeatures) },
+    });
+
+    res.json({ success: true, product: updated });
+  } catch (err: any) {
+    console.error("GEO Enrich Apply error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Audit GEO global du site ────────────────────────────────
+seoRouter.get("/geo-audit", async (_req, res) => {
+  try {
+    const { runGeoAudit } = await import("../services/seo-agent");
+
+    const products = await prisma.product.findMany({
+      where: { status: "active" },
+      select: {
+        id: true, name: true, brand: true, category: true, subcategory: true,
+        description: true, shortDescription: true, images: true, tags: true,
+        features: true, price: true, originalPrice: true, inStock: true,
+      },
+      take: 200,
+    });
+
+    const auditResult = await runGeoAudit(products as any[]);
+
+    // Vérifier si llms.txt existe (on suppose qu'il est déployé si au moins 1 produit a un schema)
+    auditResult.llmsTxtExists = auditResult.productsWithSchema > 0;
+
+    res.json(auditResult);
+  } catch (err: any) {
+    console.error("GEO Audit error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Déployer llms.txt (sauvegarder dans la base) ───────────
+seoRouter.post("/deploy-llms-txt", async (req, res) => {
+  try {
+    const { content } = req.body;
+    if (!content) {
+      res.status(400).json({ error: "Contenu llms.txt requis" });
+      return;
+    }
+
+    // Sauvegarder dans la table des settings (ou une table dédiée)
+    // Pour l'instant, on le stocke dans un enregistrement BlogPost spécial
+    const existing = await prisma.blogPost.findUnique({ where: { slug: "__llms-txt__" } });
+
+    if (existing) {
+      await prisma.blogPost.update({
+        where: { slug: "__llms-txt__" },
+        data: { content, updatedAt: new Date() },
+      });
+    } else {
+      await prisma.blogPost.create({
+        data: {
+          title: "llms.txt",
+          slug: "__llms-txt__",
+          excerpt: "Fichier llms.txt pour les LLM",
+          content,
+          image: "",
+          author: "system",
+          category: "system",
+          readTime: 0,
+          published: false,
+        },
+      });
+    }
+
+    res.json({ success: true, message: "llms.txt déployé avec succès" });
+  } catch (err: any) {
+    console.error("Deploy llms.txt error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Générateur de guide d'achat par catégorie ───────────────
+seoRouter.post("/generate-buying-guide", async (req, res) => {
+  try {
+    const { category } = req.body;
+    if (!category) {
+      res.status(400).json({ error: "category requis" });
+      return;
+    }
+
+    const { generateBlogArticle } = await import("../services/seo-agent");
+
+    // Récupérer les produits de la catégorie
+    const products = await prisma.product.findMany({
+      where: { category, status: "active" },
+      select: { name: true, slug: true, brand: true, price: true },
+      orderBy: { price: "desc" },
+      take: 10,
+    });
+
+    const article = await generateBlogArticle({
+      topic: `Guide d'achat ${category} 2026 — Meilleurs produits pour barbiers`,
+      type: "guide",
+      relatedProducts: products,
+      keywords: [category, "barbier", "professionnel", "guide d'achat 2026"],
+    });
+
+    res.json(article);
+  } catch (err: any) {
+    console.error("Generate buying guide error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Contenu GEO pour une catégorie ─────────────────────────
+seoRouter.post("/geo-category", async (req, res) => {
+  try {
+    const { categorySlug } = req.body;
+    if (!categorySlug) {
+      res.status(400).json({ error: "categorySlug requis" });
+      return;
+    }
+
+    const { generateCategoryGeoContent } = await import("../services/seo-agent");
+
+    const category = await prisma.category.findUnique({ where: { slug: categorySlug } });
+    const productCount = await prisma.product.count({ where: { category: categorySlug, status: "active" } });
+    const topProducts = await prisma.product.findMany({
+      where: { category: categorySlug, status: "active" },
+      select: { name: true, brand: true, price: true },
+      orderBy: { price: "desc" },
+      take: 8,
+    });
+
+    const result = await generateCategoryGeoContent({
+      categoryName: category?.name || categorySlug,
+      categorySlug,
+      productCount,
+      topProducts,
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    console.error("GEO Category error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});

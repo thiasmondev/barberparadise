@@ -562,3 +562,232 @@ Réponds UNIQUEMENT avec le JSON valide, sans markdown ni commentaires.`;
     throw new Error("Erreur de parsing de la réponse IA. Réessayez.");
   }
 }
+
+// ─── Types enrichis GEO ──────────────────────────────────────
+
+export interface GeoEnrichedContent {
+  voiceSnippet: string;           // Réponse vocale 30-40 mots (Google Assistant, Siri)
+  eeaatContent: string;           // Bloc E-E-A-T : expérience, expertise, autorité, confiance
+  longTailQuestions: { question: string; answer: string; intent: string }[];  // 8 questions longue traîne
+  competitorComparison: {         // Tableau comparatif vs concurrents
+    feature: string;
+    ourProduct: string;
+    competitor1: string;
+    competitor2: string;
+  }[];
+  useCases: { profile: string; useCase: string; benefit: string }[];  // Cas d'usage par profil
+  buyingGuideSnippet: string;     // Extrait guide d'achat (pour être cité dans les guides)
+  entityKeywords: string[];       // Entités nommées pour le Knowledge Graph Google
+}
+
+export interface GeoAuditResult {
+  globalScore: number;
+  totalProducts: number;
+  productsWithSchema: number;
+  productsWithFaq: number;
+  productsWithDirectAnswer: number;
+  productsWithVoiceSnippet: number;
+  llmsTxtExists: boolean;
+  checks: {
+    id: string;
+    label: string;
+    status: "ok" | "warning" | "error";
+    detail: string;
+    priority: "haute" | "moyenne" | "basse";
+  }[];
+  topOpportunities: { productId: string; productName: string; geoScore: number; missingElements: string[] }[];
+}
+
+// ─── GEO Enrichi : Snippet vocal + E-E-A-T + Longue traîne ──
+
+export async function generateGeoEnrichedContent(product: ProductData): Promise<GeoEnrichedContent> {
+  const plainDesc = stripHtml(product.description);
+  let tags: string[] = [];
+  try { tags = JSON.parse(product.tags); } catch { tags = []; }
+
+  const prompt = `Tu es un expert GEO (Generative Engine Optimization) spécialisé dans le matériel de barbier et coiffure professionnelle. Génère du contenu enrichi pour que ce produit soit cité par les LLM et les assistants vocaux.
+
+PRODUIT :
+- Nom : ${product.name}
+- Marque : ${product.brand}
+- Catégorie : ${product.category} > ${product.subcategory}
+- Prix : ${product.price}€
+- Description : ${plainDesc.substring(0, 1000)}
+- Tags : ${tags.join(", ")}
+
+Génère un JSON avec ces champs :
+
+1. "voiceSnippet" : Réponse vocale de 30-40 mots maximum. Doit répondre directement à "C'est quoi ${product.name} ?" comme si un assistant vocal (Google, Siri, Alexa) le lisait à voix haute. Factuel, concis, naturel à l'oral.
+
+2. "eeaatContent" : Bloc HTML court (150-200 mots) démontrant l'E-E-A-T (Expérience, Expertise, Autorité, Confiance) pour ce produit. Mentionner : l'usage professionnel, les certifications ou standards du secteur, pourquoi Barber Paradise est une source fiable pour ce type de produit. Format HTML avec <p> et <strong>.
+
+3. "longTailQuestions" : Array de 8 objets {question, answer, intent} avec des questions longue traîne que tapent les barbiers/coiffeurs sur Google. Chaque question doit être différente des FAQ classiques. Intent = "informationnelle" | "commerciale" | "navigationnelle" | "transactionnelle". Les réponses doivent être basées UNIQUEMENT sur les informations disponibles.
+
+4. "competitorComparison" : Array de 4-6 objets {feature, ourProduct, competitor1, competitor2} comparant ce produit à 2 concurrents génériques du même segment (ex: "Modèle concurrent A", "Modèle concurrent B"). Utiliser uniquement des caractéristiques objectives (prix, poids, autonomie, garantie, etc.) basées sur les informations disponibles. Ne pas inventer de specs précises non mentionnées.
+
+5. "useCases" : Array de 4 objets {profile, useCase, benefit}. Profils typiques : "Barbier débutant", "Barbier professionnel confirmé", "Coiffeur en salon", "Usage à domicile". Pour chaque profil, décrire un cas d'usage concret et le bénéfice principal.
+
+6. "buyingGuideSnippet" : Paragraphe de 80-100 mots qui pourrait figurer dans un guide d'achat. Commence par "Pour les barbiers qui cherchent..." ou "Si vous hésitez entre...". Factuel, comparatif, avec des critères de choix clairs.
+
+7. "entityKeywords" : Array de 10-15 entités nommées (marques, technologies, certifications, termes techniques) liées à ce produit pour renforcer le Knowledge Graph Google. Ex: ["Andis", "GTX-Z", "moteur rotatif", "lame zéro gap", ...].
+
+Réponds UNIQUEMENT avec le JSON valide, sans markdown ni commentaires.`;
+
+  const raw = await callClaude(prompt, 4000);
+
+  try {
+    const result = parseJsonResponse(raw) as Record<string, unknown>;
+    return {
+      voiceSnippet: (result.voiceSnippet as string) || "",
+      eeaatContent: (result.eeaatContent as string) || "",
+      longTailQuestions: (result.longTailQuestions as { question: string; answer: string; intent: string }[]) || [],
+      competitorComparison: (result.competitorComparison as { feature: string; ourProduct: string; competitor1: string; competitor2: string }[]) || [],
+      useCases: (result.useCases as { profile: string; useCase: string; benefit: string }[]) || [],
+      buyingGuideSnippet: (result.buyingGuideSnippet as string) || "",
+      entityKeywords: (result.entityKeywords as string[]) || [],
+    };
+  } catch {
+    throw new Error("Erreur de parsing du contenu GEO enrichi. Réessayez.");
+  }
+}
+
+// ─── Audit GEO global du site ────────────────────────────────
+
+export async function runGeoAudit(products: ProductData[]): Promise<GeoAuditResult> {
+  let productsWithSchema = 0;
+  let productsWithFaq = 0;
+  let productsWithDirectAnswer = 0;
+  let productsWithVoiceSnippet = 0;
+  let totalGeoScore = 0;
+
+  const topOpportunities: { productId: string; productName: string; geoScore: number; missingElements: string[] }[] = [];
+
+  for (const p of products) {
+    const { score } = calculateGeoScore(p);
+    totalGeoScore += score;
+
+    let features: Record<string, unknown> = {};
+    try { features = JSON.parse(p.features || "{}"); } catch { /* */ }
+
+    const hasSchema = !!features.schemaJsonLd;
+    const hasFaq = !!(features.faqItems && Array.isArray(features.faqItems) && (features.faqItems as unknown[]).length > 0);
+    const hasDirectAnswer = !!features.directAnswerIntro;
+    const hasVoiceSnippet = !!features.voiceSnippet;
+
+    if (hasSchema) productsWithSchema++;
+    if (hasFaq) productsWithFaq++;
+    if (hasDirectAnswer) productsWithDirectAnswer++;
+    if (hasVoiceSnippet) productsWithVoiceSnippet++;
+
+    if (score < 60) {
+      const missing: string[] = [];
+      if (!hasSchema) missing.push("Schema.org");
+      if (!hasFaq) missing.push("FAQ");
+      if (!hasDirectAnswer) missing.push("Introduction directe");
+      if (!hasVoiceSnippet) missing.push("Snippet vocal");
+      topOpportunities.push({ productId: p.id, productName: p.name, geoScore: score, missingElements: missing });
+    }
+  }
+
+  const globalScore = products.length > 0 ? Math.round(totalGeoScore / products.length) : 0;
+  const schemaRate = products.length > 0 ? Math.round((productsWithSchema / products.length) * 100) : 0;
+  const faqRate = products.length > 0 ? Math.round((productsWithFaq / products.length) * 100) : 0;
+
+  const checks: GeoAuditResult["checks"] = [
+    {
+      id: "schema_coverage",
+      label: "Couverture Schema.org",
+      status: schemaRate >= 80 ? "ok" : schemaRate >= 40 ? "warning" : "error",
+      detail: `${productsWithSchema}/${products.length} produits ont un Schema.org (${schemaRate}%)`,
+      priority: "haute",
+    },
+    {
+      id: "faq_coverage",
+      label: "Couverture FAQ produits",
+      status: faqRate >= 70 ? "ok" : faqRate >= 30 ? "warning" : "error",
+      detail: `${productsWithFaq}/${products.length} produits ont une FAQ (${faqRate}%)`,
+      priority: "haute",
+    },
+    {
+      id: "direct_answer",
+      label: "Introductions directes (LLM-ready)",
+      status: productsWithDirectAnswer >= products.length * 0.5 ? "ok" : productsWithDirectAnswer > 0 ? "warning" : "error",
+      detail: `${productsWithDirectAnswer}/${products.length} produits ont une introduction directe`,
+      priority: "haute",
+    },
+    {
+      id: "voice_snippets",
+      label: "Snippets vocaux (Siri, Google Assistant)",
+      status: productsWithVoiceSnippet >= products.length * 0.5 ? "ok" : productsWithVoiceSnippet > 0 ? "warning" : "error",
+      detail: `${productsWithVoiceSnippet}/${products.length} produits ont un snippet vocal`,
+      priority: "moyenne",
+    },
+    {
+      id: "global_geo_score",
+      label: "Score GEO moyen",
+      status: globalScore >= 70 ? "ok" : globalScore >= 50 ? "warning" : "error",
+      detail: `Score GEO moyen : ${globalScore}/100`,
+      priority: "haute",
+    },
+  ];
+
+  return {
+    globalScore,
+    totalProducts: products.length,
+    productsWithSchema,
+    productsWithFaq,
+    productsWithDirectAnswer,
+    productsWithVoiceSnippet,
+    llmsTxtExists: false, // sera vérifié côté route
+    checks,
+    topOpportunities: topOpportunities.sort((a, b) => a.geoScore - b.geoScore).slice(0, 10),
+  };
+}
+
+// ─── Générateur de contenu catégorie GEO ────────────────────
+
+export async function generateCategoryGeoContent(params: {
+  categoryName: string;
+  categorySlug: string;
+  productCount: number;
+  topProducts: { name: string; brand: string; price: number }[];
+}): Promise<{ heroText: string; buyingCriteria: string[]; faqCategory: { question: string; answer: string }[]; entityKeywords: string[] }> {
+  const productList = params.topProducts
+    .slice(0, 8)
+    .map((p) => `- ${p.name} (${p.brand}) — ${p.price}€`)
+    .join("\n");
+
+  const prompt = `Tu es un expert GEO pour le e-commerce de barbier professionnel. Génère du contenu optimisé pour la page catégorie "${params.categoryName}" de Barber Paradise.
+
+DONNÉES :
+- Catégorie : ${params.categoryName}
+- Nombre de produits : ${params.productCount}
+- Produits phares :
+${productList}
+
+Génère un JSON avec :
+
+1. "heroText" : Paragraphe d'introduction de 100-120 mots pour la page catégorie. Répond directement à "Quels sont les meilleurs ${params.categoryName} pour barbier ?". Factuel, avec des données chiffrées (fourchette de prix, marques phares, critères clés).
+
+2. "buyingCriteria" : Array de 5-7 critères de choix importants pour cette catégorie (ex: "Puissance du moteur", "Autonomie de la batterie", "Type de lame"). Chaque critère = string courte.
+
+3. "faqCategory" : Array de 5 objets {question, answer} avec des questions fréquentes sur cette catégorie de produits. Questions que tapent les barbiers sur Google.
+
+4. "entityKeywords" : Array de 10 entités/termes techniques importants pour cette catégorie (marques, technologies, termes professionnels).
+
+Réponds UNIQUEMENT avec le JSON valide, sans markdown ni commentaires.`;
+
+  const raw = await callClaude(prompt, 2500);
+
+  try {
+    const result = parseJsonResponse(raw) as Record<string, unknown>;
+    return {
+      heroText: (result.heroText as string) || "",
+      buyingCriteria: (result.buyingCriteria as string[]) || [],
+      faqCategory: (result.faqCategory as { question: string; answer: string }[]) || [],
+      entityKeywords: (result.entityKeywords as string[]) || [],
+    };
+  } catch {
+    throw new Error("Erreur de parsing du contenu GEO catégorie. Réessayez.");
+  }
+}

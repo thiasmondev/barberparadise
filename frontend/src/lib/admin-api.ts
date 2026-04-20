@@ -370,6 +370,67 @@ export function generateLlmsTxt() {
   });
 }
 
+export function deployLlmsTxt(content: string) {
+  return adminFetch<{ success: boolean; message: string }>("/api/admin/seo/deploy-llms-txt", {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+}
+
+// ─── GEO Enrichi ────────────────────────────────────────────
+
+export interface GeoEnrichedContent {
+  voiceSnippet: string;
+  eeaatContent: string;
+  longTailQuestions: { question: string; answer: string; intent: string }[];
+  competitorComparison: { feature: string; ourProduct: string; competitor1: string; competitor2: string }[];
+  useCases: { profile: string; useCase: string; benefit: string }[];
+  buyingGuideSnippet: string;
+  entityKeywords: string[];
+}
+
+export interface GeoAuditResult {
+  globalScore: number;
+  totalProducts: number;
+  productsWithSchema: number;
+  productsWithFaq: number;
+  productsWithDirectAnswer: number;
+  productsWithVoiceSnippet: number;
+  llmsTxtExists: boolean;
+  checks: {
+    id: string;
+    label: string;
+    status: "ok" | "warning" | "error";
+    detail: string;
+    priority: "haute" | "moyenne" | "basse";
+  }[];
+  topOpportunities: { productId: string; productName: string; geoScore: number; missingElements: string[] }[];
+}
+
+export function enrichProductGeo(id: string) {
+  return adminFetch<{ product: Product; enriched: GeoEnrichedContent }>(`/api/admin/seo/geo-enrich/${id}`, {
+    method: "POST",
+  });
+}
+
+export function applyGeoEnrichedContent(id: string, data: Partial<GeoEnrichedContent>) {
+  return adminFetch<{ success: boolean; product: Product }>(`/api/admin/seo/geo-enrich-apply/${id}`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function runGeoAudit() {
+  return adminFetch<GeoAuditResult>("/api/admin/seo/geo-audit");
+}
+
+export function generateBuyingGuide(category: string) {
+  return adminFetch<{ title: string; content: string; slug: string; excerpt: string; tags: string[]; readTime: number }>("/api/admin/seo/generate-buying-guide", {
+    method: "POST",
+    body: JSON.stringify({ category }),
+  });
+}
+
 // ─── Paramètres admin ────────────────────────────────────────
 
 export async function changeAdminPassword(currentPassword: string, newPassword: string): Promise<void> {

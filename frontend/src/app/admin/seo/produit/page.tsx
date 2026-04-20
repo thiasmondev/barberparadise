@@ -13,8 +13,11 @@ import {
   updateProduct,
   optimizeProductGeo,
   applyGeoOptimization,
+  enrichProductGeo,
+  applyGeoEnrichedContent,
   type SeoOptimization,
   type GeoOptimization,
+  type GeoEnrichedContent,
   type CategorySuggestion,
 } from "@/lib/admin-api";
 import type { Product } from "@/types";
@@ -49,6 +52,13 @@ import {
   Copy,
   ChevronDown,
   ChevronUp,
+  Mic,
+  Shield,
+  Search,
+  BarChart2,
+  Users,
+  BookOpen,
+  Zap,
 } from "lucide-react";
 
 // Chargement dynamique de l'éditeur WYSIWYG (client-side only)
@@ -350,6 +360,19 @@ export default function SeoProductPage() {
   const [editDirectAnswer, setEditDirectAnswer] = useState("");
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
   const [schemaCopied, setSchemaCopied] = useState(false);
+  // GEO enrichi state
+  const [geoEnriched, setGeoEnriched] = useState<GeoEnrichedContent | null>(null);
+  const [geoEnriching, setGeoEnriching] = useState(false);
+  const [geoEnrichApplying, setGeoEnrichApplying] = useState(false);
+  const [geoEnrichApplied, setGeoEnrichApplied] = useState(false);
+  const [editVoiceSnippet, setEditVoiceSnippet] = useState("");
+  const [editEeaatContent, setEditEeaatContent] = useState("");
+  const [editLongTailQuestions, setEditLongTailQuestions] = useState<{ question: string; answer: string; intent: string }[]>([]);
+  const [editCompetitorComparison, setEditCompetitorComparison] = useState<{ feature: string; ourProduct: string; competitor1: string; competitor2: string }[]>([]);
+  const [editUseCases, setEditUseCases] = useState<{ profile: string; useCase: string; benefit: string }[]>([]);
+  const [editBuyingGuideSnippet, setEditBuyingGuideSnippet] = useState("");
+  const [editEntityKeywords, setEditEntityKeywords] = useState<string[]>([]);
+  const [geoSubTab, setGeoSubTab] = useState<"base" | "enrichi">("base");
 
   // Charger les métadonnées pour l'autocomplétion
   useEffect(() => {
@@ -503,6 +526,51 @@ export default function SeoProductPage() {
     navigator.clipboard.writeText(editSchemaJsonLd);
     setSchemaCopied(true);
     setTimeout(() => setSchemaCopied(false), 2000);
+  };
+
+  // ─── GEO Enrichi Handlers ────────────────────────────────────
+  const handleGeoEnrich = async () => {
+    if (!productId) return;
+    setGeoEnriching(true);
+    setError("");
+    setGeoEnrichApplied(false);
+    try {
+      const data = await enrichProductGeo(productId);
+      setGeoEnriched(data.enriched);
+      setEditVoiceSnippet(data.enriched.voiceSnippet || "");
+      setEditEeaatContent(data.enriched.eeaatContent || "");
+      setEditLongTailQuestions(data.enriched.longTailQuestions || []);
+      setEditCompetitorComparison(data.enriched.competitorComparison || []);
+      setEditUseCases(data.enriched.useCases || []);
+      setEditBuyingGuideSnippet(data.enriched.buyingGuideSnippet || "");
+      setEditEntityKeywords(data.enriched.entityKeywords || []);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setGeoEnriching(false);
+    }
+  };
+
+  const handleGeoEnrichApply = async () => {
+    if (!productId) return;
+    setGeoEnrichApplying(true);
+    setError("");
+    try {
+      await applyGeoEnrichedContent(productId, {
+        voiceSnippet: editVoiceSnippet,
+        eeaatContent: editEeaatContent,
+        longTailQuestions: editLongTailQuestions,
+        competitorComparison: editCompetitorComparison,
+        useCases: editUseCases,
+        buyingGuideSnippet: editBuyingGuideSnippet,
+        entityKeywords: editEntityKeywords,
+      });
+      setGeoEnrichApplied(true);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setGeoEnrichApplying(false);
+    }
   };
 
   if (!productId) {
@@ -872,9 +940,38 @@ export default function SeoProductPage() {
                   <h2 className="font-semibold text-emerald-900 text-sm">Optimisation GEO — Être cité par ChatGPT, Claude & Perplexity</h2>
                 </div>
                 <p className="text-xs text-emerald-700 leading-relaxed">
-                  Le GEO (Generative Engine Optimization) permet d&apos;être référencé dans les réponses des IA. L&apos;agent génère un <strong>Schema.org JSON-LD</strong>, une <strong>FAQ produit</strong> et une <strong>introduction directe</strong> optimisée pour les LLM.
+                  Le GEO (Generative Engine Optimization) permet d&apos;être référencé dans les réponses des IA. Générez le <strong>Schema.org</strong>, la <strong>FAQ</strong> et l&apos;<strong>introduction directe</strong> (GEO Base), puis enrichissez avec le <strong>snippet vocal</strong>, l&apos;<strong>E-E-A-T</strong>, les <strong>questions longue traîne</strong> et le <strong>comparatif concurrents</strong> (GEO Enrichi).
                 </p>
               </div>
+
+              {/* Sous-onglets GEO Base / GEO Enrichi */}
+              <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+                <button
+                  onClick={() => setGeoSubTab("base")}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-all ${
+                    geoSubTab === "base"
+                      ? "bg-white text-emerald-700 shadow-sm"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  <Globe size={13} /> GEO Base
+                  {geoOptimization && <span className="bg-emerald-100 text-emerald-700 text-xs px-1.5 py-0.5 rounded-full font-bold">{geoOptimization.geoScore}</span>}
+                </button>
+                <button
+                  onClick={() => setGeoSubTab("enrichi")}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-all ${
+                    geoSubTab === "enrichi"
+                      ? "bg-white text-teal-700 shadow-sm"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  <Zap size={13} /> GEO Enrichi
+                  {geoEnriched && <span className="bg-teal-100 text-teal-700 text-xs px-1.5 py-0.5 rounded-full font-bold">✓</span>}
+                </button>
+              </div>
+
+              {/* ─── GEO Base ─── */}
+              {geoSubTab === "base" && (<>
 
               {/* Bouton générer GEO */}
               {!geoOptimization && (
@@ -1066,6 +1163,252 @@ export default function SeoProductPage() {
                       {geoApplied ? "GEO appliqué ✓" : "Appliquer l'optimisation GEO"}
                     </button>
                   </div>
+                </div>
+              )}
+              </>)}
+
+              {/* ─── GEO Enrichi ─── */}
+              {geoSubTab === "enrichi" && (
+                <div className="space-y-4">
+                  {/* Bouton générer */}
+                  {!geoEnriched && (
+                    <div className="flex flex-col items-center gap-3 py-4">
+                      <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 text-center max-w-md">
+                        <Zap size={24} className="text-teal-600 mx-auto mb-2" />
+                        <p className="text-sm font-semibold text-teal-900 mb-1">GEO Enrichi</p>
+                        <p className="text-xs text-teal-700 leading-relaxed">
+                          Génère 7 nouveaux éléments : snippet vocal, contenu E-E-A-T, 8 questions longue traîne, comparatif concurrents, cas d&apos;usage par profil, extrait guide d&apos;achat et entités Knowledge Graph.
+                        </p>
+                      </div>
+                      <button onClick={handleGeoEnrich} disabled={geoEnriching}
+                        className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-teal-600 to-cyan-600 text-white rounded-xl font-medium hover:from-teal-700 hover:to-cyan-700 transition-all shadow-lg shadow-teal-200 disabled:opacity-50">
+                        {geoEnriching ? <><Loader2 size={18} className="animate-spin" />Génération en cours...</> : <><Zap size={18} />Générer le GEO Enrichi</>}
+                      </button>
+                    </div>
+                  )}
+
+                  {geoEnriched && (
+                    <div className="space-y-4">
+                      {/* Barre d'actions */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <Zap size={15} className="text-teal-500" />
+                          <span className="font-semibold text-gray-900 text-sm">Contenu GEO Enrichi</span>
+                          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Modifiable</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={() => { setGeoEnriched(null); setGeoEnrichApplied(false); }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50">
+                            <RotateCcw size={12} /> Régénérer
+                          </button>
+                          <button onClick={handleGeoEnrichApply} disabled={geoEnrichApplying || geoEnrichApplied}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-50">
+                            {geoEnrichApplying ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                            {geoEnrichApplied ? "Appliqué ✓" : "Appliquer"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Snippet vocal */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Mic size={15} className="text-teal-500" />
+                          <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Snippet Vocal (Google Assistant, Siri, Alexa)</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mb-2">Texte de 30-40 mots lu à voix haute par les assistants vocaux. Factuel et naturel à l&apos;oral.</p>
+                        <textarea
+                          value={editVoiceSnippet}
+                          onChange={(e) => setEditVoiceSnippet(e.target.value)}
+                          rows={3}
+                          className="w-full border border-gray-200 rounded-lg p-3 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-300 resize-none"
+                        />
+                        <p className="text-xs text-gray-400 mt-1">{editVoiceSnippet.split(/\s+/).filter(Boolean).length} mots (idéal : 30-40)</p>
+                      </div>
+
+                      {/* E-E-A-T */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Shield size={15} className="text-blue-500" />
+                          <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Contenu E-E-A-T (Expérience, Expertise, Autorité, Confiance)</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mb-2">Bloc HTML démontrant la crédibilité du produit. Renforce la confiance des LLM et de Google.</p>
+                        <textarea
+                          value={editEeaatContent}
+                          onChange={(e) => setEditEeaatContent(e.target.value)}
+                          rows={5}
+                          className="w-full border border-gray-200 rounded-lg p-3 text-sm font-mono text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none"
+                        />
+                      </div>
+
+                      {/* Questions longue traîne */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Search size={15} className="text-violet-500" />
+                            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Questions Longue Traîne ({editLongTailQuestions.length})</span>
+                          </div>
+                          <button
+                            onClick={() => setEditLongTailQuestions([...editLongTailQuestions, { question: "", answer: "", intent: "informationnelle" }])}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-violet-50 text-violet-700 rounded-lg text-xs hover:bg-violet-100">
+                            <Plus size={12} /> Ajouter
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          {editLongTailQuestions.map((item, idx) => (
+                            <div key={idx} className="border border-gray-200 rounded-lg p-3">
+                              <div className="flex items-start gap-2">
+                                <div className="flex-1 space-y-1.5">
+                                  <input
+                                    value={item.question}
+                                    onChange={(e) => {
+                                      const updated = [...editLongTailQuestions];
+                                      updated[idx] = { ...updated[idx], question: e.target.value };
+                                      setEditLongTailQuestions(updated);
+                                    }}
+                                    className="w-full text-sm font-medium text-gray-800 border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-violet-300"
+                                    placeholder="Question longue traîne..."
+                                  />
+                                  <textarea
+                                    value={item.answer}
+                                    onChange={(e) => {
+                                      const updated = [...editLongTailQuestions];
+                                      updated[idx] = { ...updated[idx], answer: e.target.value };
+                                      setEditLongTailQuestions(updated);
+                                    }}
+                                    rows={2}
+                                    className="w-full text-xs text-gray-600 border border-gray-100 rounded-lg px-2 py-1 bg-gray-50 focus:outline-none focus:ring-1 focus:ring-violet-300 resize-none"
+                                    placeholder="Réponse..."
+                                  />
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-xs text-gray-400">Intent :</span>
+                                    {["informationnelle", "commerciale", "transactionnelle", "navigationnelle"].map((intent) => (
+                                      <button key={intent}
+                                        onClick={() => {
+                                          const updated = [...editLongTailQuestions];
+                                          updated[idx] = { ...updated[idx], intent };
+                                          setEditLongTailQuestions(updated);
+                                        }}
+                                        className={`text-xs px-1.5 py-0.5 rounded-full transition-colors ${
+                                          item.intent === intent
+                                            ? "bg-violet-600 text-white"
+                                            : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                                        }`}
+                                      >{intent}</button>
+                                    ))}
+                                  </div>
+                                </div>
+                                <button onClick={() => setEditLongTailQuestions(editLongTailQuestions.filter((_, i) => i !== idx))}
+                                  className="p-1 text-red-400 hover:text-red-600 rounded shrink-0">
+                                  <X size={12} />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Comparatif concurrents */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <BarChart2 size={15} className="text-orange-500" />
+                          <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Comparatif Concurrents</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mb-3">Tableau comparé pour être cité quand les LLM répondent à &quot;quelle est la différence entre...&quot;</p>
+                        {editCompetitorComparison.length > 0 && (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-gray-50">
+                                  <th className="border border-gray-200 px-2 py-1.5 text-left font-semibold text-gray-600">Critère</th>
+                                  <th className="border border-gray-200 px-2 py-1.5 text-left font-semibold text-emerald-600">Notre produit</th>
+                                  <th className="border border-gray-200 px-2 py-1.5 text-left font-semibold text-gray-500">Concurrent A</th>
+                                  <th className="border border-gray-200 px-2 py-1.5 text-left font-semibold text-gray-500">Concurrent B</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {editCompetitorComparison.map((row, idx) => (
+                                  <tr key={idx} className="hover:bg-gray-50">
+                                    <td className="border border-gray-200 px-2 py-1.5 font-medium text-gray-700">{row.feature}</td>
+                                    <td className="border border-gray-200 px-2 py-1.5 text-emerald-700 font-medium">{row.ourProduct}</td>
+                                    <td className="border border-gray-200 px-2 py-1.5 text-gray-500">{row.competitor1}</td>
+                                    <td className="border border-gray-200 px-2 py-1.5 text-gray-500">{row.competitor2}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Cas d'usage */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Users size={15} className="text-indigo-500" />
+                          <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Cas d&apos;Usage par Profil</span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2">
+                          {editUseCases.map((uc, idx) => (
+                            <div key={idx} className="border border-gray-100 rounded-lg p-3 bg-indigo-50/30">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-xs font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">{uc.profile}</span>
+                              </div>
+                              <p className="text-xs text-gray-700 mb-1"><strong>Cas :</strong> {uc.useCase}</p>
+                              <p className="text-xs text-gray-500"><strong>Bénéfice :</strong> {uc.benefit}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Extrait guide d'achat */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <BookOpen size={15} className="text-amber-500" />
+                          <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Extrait Guide d&apos;Achat</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mb-2">Paragraphe pour être cité dans les guides d&apos;achat générés par les LLM.</p>
+                        <textarea
+                          value={editBuyingGuideSnippet}
+                          onChange={(e) => setEditBuyingGuideSnippet(e.target.value)}
+                          rows={3}
+                          className="w-full border border-gray-200 rounded-lg p-3 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-300 resize-none"
+                        />
+                      </div>
+
+                      {/* Entités Knowledge Graph */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Globe size={15} className="text-cyan-500" />
+                          <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Entités Knowledge Graph ({editEntityKeywords.length})</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mb-2">Termes techniques, marques et certifications pour renforcer le Knowledge Graph Google.</p>
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {editEntityKeywords.map((kw, idx) => (
+                            <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 bg-cyan-50 text-cyan-700 border border-cyan-200 rounded-full text-xs font-medium">
+                              {kw}
+                              <button onClick={() => setEditEntityKeywords(editEntityKeywords.filter((_, i) => i !== idx))}
+                                className="text-cyan-400 hover:text-red-500">
+                                <X size={9} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Bouton appliquer */}
+                      {geoEnrichApplied && (
+                        <div className="bg-teal-50 border border-teal-200 rounded-xl p-3 text-teal-700 text-sm flex items-center gap-2">
+                          <CheckCircle size={15} /> Contenu GEO Enrichi appliqué avec succès !
+                        </div>
+                      )}
+                      <div className="flex justify-end pb-4">
+                        <button onClick={handleGeoEnrichApply} disabled={geoEnrichApplying || geoEnrichApplied}
+                          className="inline-flex items-center gap-2 px-6 py-3 bg-teal-600 text-white rounded-xl font-medium hover:bg-teal-700 disabled:opacity-50 shadow-lg shadow-teal-200">
+                          {geoEnrichApplying ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                          {geoEnrichApplied ? "GEO Enrichi appliqué ✓" : "Appliquer le GEO Enrichi"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
