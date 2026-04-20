@@ -1,211 +1,127 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { ShoppingCart, Search, Menu, X, User, ChevronDown } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ShoppingBag, Search, Menu, X, User, Moon, Sun } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
+import { usePathname } from "next/navigation";
 
 const NAV_ITEMS = [
-  { label: "Accueil", href: "/" },
-  {
-    label: "Produits",
-    href: "/catalogue",
-    children: [
-      { label: "Tous les produits", href: "/catalogue" },
-      { label: "Tondeuses", href: "/catalogue?category=Tondeuses" },
-      { label: "Ciseaux", href: "/catalogue?category=Ciseaux" },
-      { label: "Rasoirs", href: "/catalogue?category=Rasoirs" },
-      { label: "Soins cheveux", href: "/catalogue?category=Soins+cheveux" },
-      { label: "Soins barbe", href: "/catalogue?category=Soins+barbe" },
-    ],
-  },
-  { label: "Nouveautés", href: "/catalogue?sort=newest" },
-  { label: "Promotions", href: "/catalogue?promo=true" },
-  { label: "Contact", href: "/contact" },
+  { label: "NOUVEAUTÉS", href: "/catalogue?sort=newest" },
+  { label: "PRODUITS", href: "/catalogue" },
+  { label: "MATÉRIEL", href: "/catalogue?category=materiel" },
+  { label: "MARQUES", href: "/catalogue" },
+  { label: "PROMO", href: "/catalogue?promo=true" },
+  { label: "CONTACT", href: "/contact" },
 ];
 
 export default function Header() {
   const { itemCount } = useCart();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [scrolled, setScrolled] = useState(false);
+  const pathname = usePathname();
+  const isHome = pathname === "/";
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 50);
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   return (
-    <header className="sticky top-0 z-50 bg-white shadow-sm">
-      {/* Top bar */}
-      <div className="bg-dark-800 text-white text-xs py-1.5">
-        <div className="max-w-7xl mx-auto px-4 flex items-center justify-between">
-          <span>Livraison gratuite dès 49€ d&apos;achat</span>
-          <span>Service client : contact@barberparadise.fr</span>
-        </div>
-      </div>
+    <header 
+      className={`sticky top-0 z-50 transition-all duration-300 ${
+        scrolled || !isHome 
+          ? "bg-[#131313]/95 backdrop-blur-md border-b border-white/5 py-2" 
+          : "bg-transparent py-4"
+      }`}
+    >
+      <div className="max-w-[1440px] mx-auto px-8">
+        <div className="flex items-center justify-between h-16">
+          {/* Left: Menu & Search Label */}
+          <div className="flex items-center gap-6 w-1/3">
+            <button
+              className="p-2 -ml-2 text-white hover:opacity-70 transition-opacity"
+              onClick={() => setMobileOpen(!mobileOpen)}
+              aria-label="Menu"
+            >
+              {mobileOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+            <span className="hidden md:block text-[10px] font-black tracking-[0.3em] text-white uppercase">
+              RECHERCHE
+            </span>
+          </div>
 
-      {/* Main header */}
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="flex items-center justify-between h-16 lg:h-20">
-          {/* Mobile menu button */}
-          <button
-            className="lg:hidden p-2 -ml-2 text-dark-800"
-            onClick={() => setMobileOpen(!mobileOpen)}
-            aria-label="Menu"
-          >
-            {mobileOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
-
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 shrink-0">
-            <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center">
-              <span className="text-white font-heading font-bold text-lg">BP</span>
-            </div>
-            <div className="hidden sm:block">
-              <span className="font-heading font-bold text-xl text-dark-800 leading-none block">
+          {/* Center: Logo */}
+          <Link href="/" className="flex items-center justify-center w-1/3 group">
+            <div className="relative flex flex-col items-center">
+              <span className="font-black text-2xl tracking-tighter text-white leading-none group-hover:text-[#ffb1c4] transition-colors">
                 BARBER
               </span>
-              <span className="font-heading text-xs text-primary tracking-[0.2em] block">
+              <span className="font-bold text-[10px] text-[#ff4a8d] tracking-[0.4em] leading-none mt-1">
                 PARADISE
               </span>
             </div>
           </Link>
 
-          {/* Desktop nav */}
-          <nav className="hidden lg:flex items-center gap-1">
-            {NAV_ITEMS.map((item) => (
-              <div
-                key={item.label}
-                className="relative"
-                onMouseEnter={() => item.children && setOpenDropdown(item.label)}
-                onMouseLeave={() => setOpenDropdown(null)}
-              >
-                <Link
-                  href={item.href}
-                  className="flex items-center gap-1 px-4 py-2 text-sm font-medium text-dark-700 hover:text-primary transition-colors"
-                >
-                  {item.label}
-                  {item.children && <ChevronDown size={14} />}
-                </Link>
-                {item.children && openDropdown === item.label && (
-                  <div className="absolute top-full left-0 bg-white shadow-lg rounded-lg py-2 min-w-[200px] border border-gray-100">
-                    {item.children.map((child) => (
-                      <Link
-                        key={child.href}
-                        href={child.href}
-                        className="block px-4 py-2 text-sm text-dark-600 hover:bg-primary-50 hover:text-primary transition-colors"
-                      >
-                        {child.label}
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </nav>
-
-          {/* Actions */}
-          <div className="flex items-center gap-2">
-            {/* Search */}
-            <button
-              onClick={() => setSearchOpen(!searchOpen)}
-              className="p-2 text-dark-600 hover:text-primary transition-colors"
-              aria-label="Rechercher"
-            >
-              <Search size={20} />
+          {/* Right: Actions */}
+          <div className="flex items-center justify-end gap-6 w-1/3">
+            <button className="text-white hover:opacity-70 transition-opacity hidden sm:block">
+              <Moon size={18} />
             </button>
-
-            {/* Account */}
-            <Link
-              href="/compte"
-              className="p-2 text-dark-600 hover:text-primary transition-colors hidden sm:block"
-            >
-              <User size={20} />
+            <button className="text-white hover:opacity-70 transition-opacity">
+              <Search size={18} />
+            </button>
+            <div className="w-px h-4 bg-white/10 hidden md:block"></div>
+            <Link href="/compte" className="text-white hover:opacity-70 transition-opacity hidden sm:block">
+              <User size={18} />
             </Link>
-
-            {/* Cart */}
-            <Link
-              href="/panier"
-              className="relative p-2 text-dark-600 hover:text-primary transition-colors"
-            >
-              <ShoppingCart size={20} />
-              {itemCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 bg-primary text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                  {itemCount}
-                </span>
-              )}
+            <Link href="/panier" className="relative group">
+              <ShoppingBag size={22} className="text-white group-hover:text-[#ffb1c4] transition-colors" />
+              <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[9px] font-black text-white mt-[3px]">
+                {itemCount}
+              </span>
             </Link>
           </div>
         </div>
+
+        {/* Desktop Navigation */}
+        <nav className="hidden md:flex items-center justify-center gap-10 mt-4 pb-2">
+          {NAV_ITEMS.map((item) => (
+            <Link
+              key={item.label}
+              href={item.href}
+              className="text-[10px] font-black tracking-[0.2em] text-white/70 hover:text-white transition-colors uppercase"
+            >
+              {item.label}
+            </Link>
+          ))}
+        </nav>
       </div>
 
-      {/* Search bar */}
-      {searchOpen && (
-        <div className="border-t border-gray-100 bg-white">
-          <div className="max-w-7xl mx-auto px-4 py-3">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (searchQuery.trim()) {
-                  window.location.href = `/catalogue?search=${encodeURIComponent(searchQuery)}`;
-                  setSearchOpen(false);
-                }
-              }}
-              className="flex items-center gap-3"
-            >
-              <Search size={18} className="text-gray-400 shrink-0" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Rechercher un produit, une marque..."
-                className="flex-1 text-sm outline-none text-dark-800 placeholder:text-gray-400"
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={() => setSearchOpen(false)}
-                className="text-gray-400 hover:text-dark-600"
-              >
-                <X size={18} />
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Mobile menu */}
+      {/* Mobile Menu Overlay */}
       {mobileOpen && (
-        <div className="lg:hidden border-t border-gray-100 bg-white">
-          <nav className="max-w-7xl mx-auto px-4 py-4 space-y-1">
+        <div className="fixed inset-0 top-[72px] bg-[#131313] z-40 md:hidden animate-fade-in">
+          <nav className="flex flex-col p-8 gap-6">
             {NAV_ITEMS.map((item) => (
-              <div key={item.label}>
-                <Link
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className="block py-2.5 text-sm font-medium text-dark-700 hover:text-primary"
-                >
-                  {item.label}
-                </Link>
-                {item.children && (
-                  <div className="pl-4 space-y-1">
-                    {item.children.map((child) => (
-                      <Link
-                        key={child.href}
-                        href={child.href}
-                        onClick={() => setMobileOpen(false)}
-                        className="block py-1.5 text-sm text-dark-500 hover:text-primary"
-                      >
-                        {child.label}
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <Link
+                key={item.label}
+                href={item.href}
+                onClick={() => setMobileOpen(false)}
+                className="text-2xl font-black tracking-tighter text-white uppercase italic hover:text-[#ff4a8d] transition-colors"
+              >
+                {item.label}
+              </Link>
             ))}
+            <div className="h-px bg-white/5 my-4"></div>
             <Link
               href="/compte"
               onClick={() => setMobileOpen(false)}
-              className="block py-2.5 text-sm font-medium text-dark-700 hover:text-primary"
+              className="text-lg font-bold text-white/50 uppercase tracking-widest"
             >
-              Mon compte
+              MON COMPTE
             </Link>
           </nav>
         </div>
