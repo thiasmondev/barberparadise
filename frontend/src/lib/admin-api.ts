@@ -10,7 +10,7 @@ export function getAdminToken(): string | null {
   return getToken();
 }
 
-async function adminFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
+export async function adminFetch<T = unknown>(endpoint: string, options?: RequestInit): Promise<T> {
   const token = getToken();
   if (!token) throw new Error("Non authentifié");
 
@@ -320,5 +320,52 @@ export function reorderProductVariants(productId: string, items: { id: string; o
   return adminFetch<void>(`/api/admin/products/${productId}/variants/reorder`, {
     method: "PUT",
     body: JSON.stringify({ items }),
+  });
+}
+
+// ─── GEO Agent ──────────────────────────────────────────────
+
+export interface GeoOptimization {
+  schemaJsonLd: string;
+  faqItems: { question: string; answer: string }[];
+  geoScore: number;
+  geoDetails: { criterion: string; score: number; max: number; tip: string }[];
+  directAnswerIntro: string;
+  geoSuggestions: string[];
+}
+
+export interface GeoDashboardData {
+  totalProducts: number;
+  averageGeoScore: number;
+  distribution: { excellent: number; good: number; average: number; poor: number };
+  productsWithSchema: number;
+  productsWithFaq: number;
+  priorityProducts: { id: string; name: string; brand: string; category: string; geoScore: number; hasSchema: boolean; hasFaq: boolean }[];
+}
+
+export function getGeoDashboard() {
+  return adminFetch<GeoDashboardData>("/api/admin/seo/geo-dashboard");
+}
+
+export function optimizeProductGeo(id: string) {
+  return adminFetch<{ product: Product; geoOptimization: GeoOptimization }>(`/api/admin/seo/geo-optimize/${id}`, {
+    method: "POST",
+  });
+}
+
+export function applyGeoOptimization(id: string, data: { schemaJsonLd?: string; faqItems?: { question: string; answer: string }[]; directAnswerIntro?: string }) {
+  return adminFetch<{ success: boolean; product: Product }>(`/api/admin/seo/geo-apply/${id}`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function getGeoScore(id: string) {
+  return adminFetch<{ product: Product; geoScore: number; geoDetails: { criterion: string; score: number; max: number; tip: string }[] }>(`/api/admin/seo/geo-score/${id}`);
+}
+
+export function generateLlmsTxt() {
+  return adminFetch<{ content: string }>("/api/admin/seo/generate-llms-txt", {
+    method: "POST",
   });
 }

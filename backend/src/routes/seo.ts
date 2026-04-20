@@ -347,3 +347,191 @@ seoRouter.post("/blog/save", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ─── GEO Optimize Single Product (Schema.org + FAQ) ─────────
+seoRouter.post("/geo-optimize/:id", async (req, res) => {
+  try {
+    const product = await prisma.product.findUnique({
+      where: { id: req.params.id },
+      include: { variants: true },
+    });
+    if (!product) {
+      res.status(404).json({ error: "Produit non trouvé" });
+      return;
+    }
+
+    const { optimizeProductGeo } = await import("../services/seo-agent");
+    const productData = {
+      ...product,
+      variants: product.variants?.map((v: any) => ({
+        name: v.name,
+        price: v.price,
+        inStock: v.inStock,
+      })),
+    };
+
+    const geoOptimization = await optimizeProductGeo(productData as any);
+    res.json({ product, geoOptimization });
+  } catch (err: any) {
+    console.error("GEO Optimize error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Apply GEO Optimization (Schema + FAQ) ──────────────────
+seoRouter.post("/geo-apply/:id", async (req, res) => {
+  try {
+    const { schemaJsonLd, faqItems, directAnswerIntro } = req.body;
+
+    const product = await prisma.product.findUnique({
+      where: { id: req.params.id },
+    });
+    if (!product) {
+      res.status(404).json({ error: "Produit non trouvé" });
+      return;
+    }
+
+    const updateData: Record<string, any> = {};
+
+    // Stocker le schema JSON-LD et la FAQ dans les features du produit
+    const existingFeatures = (() => {
+      try { return JSON.parse(product.features || "{}"); } catch { return {}; }
+    })();
+
+    if (schemaJsonLd) existingFeatures.schemaJsonLd = schemaJsonLd;
+    if (faqItems && Array.isArray(faqItems)) existingFeatures.faqItems = faqItems;
+    if (directAnswerIntro) existingFeatures.directAnswerIntro = directAnswerIntro;
+
+    updateData.features = JSON.stringify(existingFeatures);
+
+    const updated = await prisma.product.update({
+      where: { id: req.params.id },
+      data: updateData,
+    });
+
+    res.json({ success: true, product: updated });
+  } catch (err: any) {
+    console.error("GEO Apply error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GEO Score Single Product ────────────────────────────────
+seoRouter.get("/geo-score/:id", async (req, res) => {
+  try {
+    const product = await prisma.product.findUnique({
+      where: { id: req.params.id },
+    });
+    if (!product) {
+      res.status(404).json({ error: "Produit non trouvé" });
+      return;
+    }
+
+    const { calculateGeoScore } = await import("../services/seo-agent");
+    const { score, details } = calculateGeoScore(product as any);
+    res.json({ product, geoScore: score, geoDetails: details });
+  } catch (err: any) {
+    console.error("GEO Score error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Generate llms.txt ───────────────────────────────────────
+seoRouter.post("/generate-llms-txt", async (req, res) => {
+  try {
+    const { generateLlmsTxt } = await import("../services/seo-agent");
+
+    // Récupérer les catégories avec le nombre de produits
+    const categories = await prisma.category.findMany({
+      where: { parentSlug: null as any },
+      orderBy: { order: "asc" },
+    });
+
+    const categoriesWithCount = await Promise.all(
+      categories.map(async (cat: any) => {
+        const count = await prisma.product.count({
+          where: { category: cat.slug, status: "active" },
+        });
+        return { name: cat.name, slug: cat.slug, productCount: count };
+      })
+    );
+
+    // Récupérer les 20 meilleurs produits (en stock, les plus récents)
+    const topProducts = await prisma.product.findMany({
+      where: { status: "active", inStock: true },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: { name: true, brand: true, category: true, price: true, slug: true },
+    });
+
+    const totalProducts = await prisma.product.count({ where: { status: "active" } });
+
+    const { content } = await generateLlmsTxt({
+      categories: categoriesWithCount,
+      topProducts,
+      totalProducts,
+      siteUrl: "https://barberparadise.fr",
+    });
+
+    res.json({ content });
+  } catch (err: any) {
+    console.error("Generate llms.txt error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GEO Dashboard (scores GEO de tous les produits) ────────
+seoRouter.get("/geo-dashboard", async (_req, res) => {
+  try {
+    const { calculateGeoScore } = await import("../services/seo-agent");
+
+    const products = await prisma.product.findMany({
+      where: { status: "active" },
+      select: {
+        id: true, name: true, brand: true, category: true,
+        description: true, shortDescription: true, images: true, tags: true, features: true,
+        price: true, originalPrice: true, subcategory: true,
+      },
+      take: 100,
+    });
+
+    let totalGeoScore = 0;
+    let geoExcellent = 0, geoGood = 0, geoAverage = 0, geoPoor = 0;
+
+    const scoredProducts = products.map((p: any) => {
+      const { score } = calculateGeoScore(p);
+      totalGeoScore += score;
+      if (score >= 80) geoExcellent++;
+      else if (score >= 60) geoGood++;
+      else if (score >= 40) geoAverage++;
+      else geoPoor++;
+
+      // Vérifier si le produit a déjà un schema JSON-LD
+      let hasSchema = false;
+      let hasFaq = false;
+      try {
+        const features = JSON.parse(p.features || "{}");
+        hasSchema = !!features.schemaJsonLd;
+        hasFaq = !!(features.faqItems && features.faqItems.length > 0);
+      } catch { /* */ }
+
+      return { id: p.id, name: p.name, brand: p.brand, category: p.category, geoScore: score, hasSchema, hasFaq };
+    });
+
+    const priorityProducts = [...scoredProducts]
+      .sort((a: any, b: any) => a.geoScore - b.geoScore)
+      .slice(0, 20);
+
+    res.json({
+      totalProducts: products.length,
+      averageGeoScore: products.length > 0 ? Math.round(totalGeoScore / products.length) : 0,
+      distribution: { excellent: geoExcellent, good: geoGood, average: geoAverage, poor: geoPoor },
+      productsWithSchema: scoredProducts.filter((p: any) => p.hasSchema).length,
+      productsWithFaq: scoredProducts.filter((p: any) => p.hasFaq).length,
+      priorityProducts,
+    });
+  } catch (err: any) {
+    console.error("GEO Dashboard error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});

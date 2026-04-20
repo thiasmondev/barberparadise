@@ -11,7 +11,10 @@ import {
   applySeoOptimization,
   getProductsMeta,
   updateProduct,
+  optimizeProductGeo,
+  applyGeoOptimization,
   type SeoOptimization,
+  type GeoOptimization,
   type CategorySuggestion,
 } from "@/lib/admin-api";
 import type { Product } from "@/types";
@@ -39,6 +42,13 @@ import {
   Tag,
   Code2,
   FileText,
+  Globe,
+  HelpCircle,
+  Braces,
+  TrendingUp,
+  Copy,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 
 // Chargement dynamique de l'éditeur WYSIWYG (client-side only)
@@ -328,6 +338,18 @@ export default function SeoProductPage() {
   const [applied, setApplied] = useState(false);
   const [error, setError] = useState("");
   const [showPreview, setShowPreview] = useState(true);
+  // Onglet actif : "seo" ou "geo"
+  const [activeTab, setActiveTab] = useState<"seo" | "geo">("seo");
+  // GEO state
+  const [geoOptimization, setGeoOptimization] = useState<GeoOptimization | null>(null);
+  const [geoOptimizing, setGeoOptimizing] = useState(false);
+  const [geoApplying, setGeoApplying] = useState(false);
+  const [geoApplied, setGeoApplied] = useState(false);
+  const [editFaqItems, setEditFaqItems] = useState<{ question: string; answer: string }[]>([]);
+  const [editSchemaJsonLd, setEditSchemaJsonLd] = useState("");
+  const [editDirectAnswer, setEditDirectAnswer] = useState("");
+  const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+  const [schemaCopied, setSchemaCopied] = useState(false);
 
   // Charger les métadonnées pour l'autocomplétion
   useEffect(() => {
@@ -440,6 +462,49 @@ export default function SeoProductPage() {
     setApplied(false);
   };
 
+  // ─── GEO Handlers ────────────────────────────────────────────
+  const handleGeoOptimize = async () => {
+    if (!productId) return;
+    setGeoOptimizing(true);
+    setError("");
+    setGeoApplied(false);
+    try {
+      const data = await optimizeProductGeo(productId);
+      setGeoOptimization(data.geoOptimization);
+      setEditFaqItems(data.geoOptimization.faqItems || []);
+      setEditSchemaJsonLd(data.geoOptimization.schemaJsonLd || "");
+      setEditDirectAnswer(data.geoOptimization.directAnswerIntro || "");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setGeoOptimizing(false);
+    }
+  };
+
+  const handleGeoApply = async () => {
+    if (!productId) return;
+    setGeoApplying(true);
+    setError("");
+    try {
+      await applyGeoOptimization(productId, {
+        schemaJsonLd: editSchemaJsonLd,
+        faqItems: editFaqItems,
+        directAnswerIntro: editDirectAnswer,
+      });
+      setGeoApplied(true);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setGeoApplying(false);
+    }
+  };
+
+  const handleCopySchema = () => {
+    navigator.clipboard.writeText(editSchemaJsonLd);
+    setSchemaCopied(true);
+    setTimeout(() => setSchemaCopied(false), 2000);
+  };
+
   if (!productId) {
     return (
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-amber-700">
@@ -505,12 +570,45 @@ export default function SeoProductPage() {
         </div>
       )}
 
+      {/* ─── Onglets SEO / GEO ─── */}
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+        <button
+          onClick={() => setActiveTab("seo")}
+          className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-medium transition-all ${
+            activeTab === "seo"
+              ? "bg-white text-violet-700 shadow-sm"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          <TrendingUp size={15} />
+          SEO Google
+          {score > 0 && (
+            <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
+              score >= 80 ? "bg-emerald-100 text-emerald-700" :
+              score >= 60 ? "bg-blue-100 text-blue-700" :
+              score >= 40 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
+            }`}>{score}</span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab("geo")}
+          className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-medium transition-all ${
+            activeTab === "geo"
+              ? "bg-white text-emerald-700 shadow-sm"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          <Globe size={15} />
+          GEO — IA & LLM
+          <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">Nouveau</span>
+        </button>
+      </div>
+
       {/* Layout principal : éditeur + aperçu */}
       <div className={`grid gap-4 ${showPreview ? "xl:grid-cols-[1fr_400px]" : "grid-cols-1"}`}>
-
         {/* ── Colonne gauche : éditeur ── */}
         <div className="space-y-4 min-w-0">
-
+          {activeTab === "seo" && (<>
           {/* Analyse SEO actuelle */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
             <h2 className="font-semibold text-gray-900 mb-3 text-sm">Analyse SEO actuelle</h2>
@@ -761,8 +859,218 @@ export default function SeoProductPage() {
               </div>
             </div>
           )}
-        </div>
 
+          </>)}
+
+          {/* ─── Panneau GEO ─── */}
+          {activeTab === "geo" && (
+            <div className="space-y-4">
+              {/* Intro */}
+              <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Globe size={18} className="text-emerald-600" />
+                  <h2 className="font-semibold text-emerald-900 text-sm">Optimisation GEO — Être cité par ChatGPT, Claude & Perplexity</h2>
+                </div>
+                <p className="text-xs text-emerald-700 leading-relaxed">
+                  Le GEO (Generative Engine Optimization) permet d&apos;être référencé dans les réponses des IA. L&apos;agent génère un <strong>Schema.org JSON-LD</strong>, une <strong>FAQ produit</strong> et une <strong>introduction directe</strong> optimisée pour les LLM.
+                </p>
+              </div>
+
+              {/* Bouton générer GEO */}
+              {!geoOptimization && (
+                <div className="flex justify-center py-2">
+                  <button onClick={handleGeoOptimize} disabled={geoOptimizing}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-medium hover:from-emerald-700 hover:to-teal-700 transition-all shadow-lg shadow-emerald-200 disabled:opacity-50">
+                    {geoOptimizing ? <><Loader2 size={18} className="animate-spin" />Génération GEO en cours...</> : <><Globe size={18} />Générer l&apos;optimisation GEO</>}
+                  </button>
+                </div>
+              )}
+
+              {/* Zone d'édition GEO */}
+              {geoOptimization && (
+                <div className="space-y-4">
+                  {/* Barre d'actions GEO */}
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <Globe size={15} className="text-emerald-500" />
+                      <span className="font-semibold text-gray-900 text-sm">Contenu GEO généré</span>
+                      <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Modifiable</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => { setGeoOptimization(null); setGeoApplied(false); }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50">
+                        <RotateCcw size={12} /> Régénérer
+                      </button>
+                      <button onClick={handleGeoApply} disabled={geoApplying || geoApplied}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700 disabled:opacity-50">
+                        {geoApplying ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                        {geoApplied ? "Appliqué ✓" : "Appliquer"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Score GEO */}
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                    <div className="flex items-center gap-3">
+                      <ScoreRing score={geoOptimization.geoScore} size={56} />
+                      <div>
+                        <p className="font-semibold text-gray-900 text-sm">Score GEO estimé</p>
+                        <p className="text-xs text-gray-500">Probabilité d&apos;être cité par les LLM</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mt-3">
+                      {geoOptimization.geoDetails?.map((d) => {
+                        const pct = d.max > 0 ? (d.score / d.max) * 100 : 0;
+                        const color = pct >= 80 ? "text-emerald-600" : pct >= 60 ? "text-blue-600" : pct >= 40 ? "text-amber-600" : "text-red-600";
+                        const bg = pct >= 80 ? "bg-emerald-500" : pct >= 60 ? "bg-blue-500" : pct >= 40 ? "bg-amber-500" : "bg-red-500";
+                        return (
+                          <div key={d.criterion} className="border border-gray-100 rounded-lg p-2">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-medium text-gray-700 truncate">{d.criterion}</span>
+                              <span className={`text-xs font-bold ${color}`}>{d.score}/{d.max}</span>
+                            </div>
+                            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-1">
+                              <div className={`h-full ${bg} rounded-full`} style={{ width: `${pct}%` }} />
+                            </div>
+                            <p className="text-xs text-gray-400 leading-tight">{d.tip}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Introduction directe (150 premiers mots) */}
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <FileText size={15} className="text-blue-500" />
+                      <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Introduction directe (150 premiers mots)</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-2">Les LLM citent les pages qui répondent directement à la question. Ce texte sera placé en tête de description.</p>
+                    <textarea
+                      value={editDirectAnswer}
+                      onChange={(e) => setEditDirectAnswer(e.target.value)}
+                      rows={4}
+                      className="w-full border border-gray-200 rounded-lg p-3 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-300 resize-none"
+                      placeholder="Réponse directe à la question : Qu'est-ce que ce produit et à qui s'adresse-t-il ?"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">{editDirectAnswer.split(/\s+/).filter(Boolean).length} mots (idéal : 100-150)</p>
+                  </div>
+
+                  {/* FAQ produit */}
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <HelpCircle size={15} className="text-violet-500" />
+                        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">FAQ Produit ({editFaqItems.length} questions)</span>
+                      </div>
+                      <button
+                        onClick={() => setEditFaqItems([...editFaqItems, { question: "", answer: "" }])}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-violet-50 text-violet-700 rounded-lg text-xs hover:bg-violet-100">
+                        <Plus size={12} /> Ajouter
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      {editFaqItems.map((item, idx) => (
+                        <div key={idx} className="border border-gray-200 rounded-lg overflow-hidden">
+                          <div
+                            className="flex items-center justify-between p-2.5 cursor-pointer hover:bg-gray-50"
+                            onClick={() => setExpandedFaq(expandedFaq === idx ? null : idx)}
+                          >
+                            <input
+                              value={item.question}
+                              onChange={(e) => {
+                                const updated = [...editFaqItems];
+                                updated[idx] = { ...updated[idx], question: e.target.value };
+                                setEditFaqItems(updated);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex-1 text-sm font-medium text-gray-800 bg-transparent focus:outline-none"
+                              placeholder="Question..."
+                            />
+                            <div className="flex items-center gap-1 ml-2">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setEditFaqItems(editFaqItems.filter((_, i) => i !== idx)); }}
+                                className="p-1 text-red-400 hover:text-red-600 rounded"
+                              ><X size={12} /></button>
+                              {expandedFaq === idx ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+                            </div>
+                          </div>
+                          {expandedFaq === idx && (
+                            <div className="border-t border-gray-100 p-2.5">
+                              <textarea
+                                value={item.answer}
+                                onChange={(e) => {
+                                  const updated = [...editFaqItems];
+                                  updated[idx] = { ...updated[idx], answer: e.target.value };
+                                  setEditFaqItems(updated);
+                                }}
+                                rows={3}
+                                className="w-full text-sm text-gray-700 bg-gray-50 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-violet-300 resize-none"
+                                placeholder="Réponse..."
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Schema.org JSON-LD */}
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Braces size={15} className="text-orange-500" />
+                        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Schema.org JSON-LD</span>
+                      </div>
+                      <button onClick={handleCopySchema}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-50 text-orange-700 rounded-lg text-xs hover:bg-orange-100">
+                        <Copy size={12} /> {schemaCopied ? "Copié !" : "Copier"}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-2">Ce bloc JSON-LD sera automatiquement injecté dans le <code className="bg-gray-100 px-1 rounded">&lt;head&gt;</code> de la fiche produit.</p>
+                    <textarea
+                      value={editSchemaJsonLd}
+                      onChange={(e) => setEditSchemaJsonLd(e.target.value)}
+                      rows={12}
+                      className="w-full font-mono text-xs text-gray-800 bg-gray-900 text-green-400 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-orange-300 resize-none"
+                    />
+                  </div>
+
+                  {/* Suggestions GEO */}
+                  {geoOptimization.geoSuggestions && geoOptimization.geoSuggestions.length > 0 && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <TrendingUp size={14} className="text-emerald-600" />
+                        <span className="text-xs font-semibold text-emerald-800 uppercase tracking-wide">Suggestions d&apos;amélioration GEO</span>
+                      </div>
+                      <ul className="space-y-1">
+                        {geoOptimization.geoSuggestions.map((s, i) => (
+                          <li key={i} className="text-xs text-emerald-700 flex items-start gap-1.5">
+                            <span className="text-emerald-500 mt-0.5">→</span> {s}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Bouton appliquer bas de page GEO */}
+                  {geoApplied && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-emerald-700 text-sm flex items-center gap-2">
+                      <CheckCircle size={15} /> Optimisation GEO appliquée avec succès !
+                    </div>
+                  )}
+                  <div className="flex justify-end pb-4">
+                    <button onClick={handleGeoApply} disabled={geoApplying || geoApplied}
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl font-medium hover:bg-emerald-700 disabled:opacity-50 shadow-lg shadow-emerald-200">
+                      {geoApplying ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                      {geoApplied ? "GEO appliqué ✓" : "Appliquer l'optimisation GEO"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
         {/* ── Colonne droite : aperçu live ── */}
         {showPreview && product && (
           <div className="xl:sticky xl:top-4 xl:self-start space-y-2">

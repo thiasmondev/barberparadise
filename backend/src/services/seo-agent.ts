@@ -1,5 +1,5 @@
 // ============================================================
-// BARBER PARADISE — Agent SEO (Anthropic Claude Sonnet 4)
+// BARBER PARADISE — Agent SEO + GEO (Anthropic Claude Sonnet 4)
 // ============================================================
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -21,6 +21,9 @@ export interface ProductData {
   images: string;
   tags: string;
   features: string;
+  slug?: string;
+  inStock?: boolean;
+  variants?: { name: string; price?: number; inStock?: boolean }[];
 }
 
 export interface SeoOptimization {
@@ -33,6 +36,15 @@ export interface SeoOptimization {
   suggestions: string[];
 }
 
+export interface GeoOptimization {
+  schemaJsonLd: string;           // JSON-LD Product schema complet
+  faqItems: { question: string; answer: string }[];  // 5 Q&R FAQ
+  geoScore: number;               // Score GEO 0-100
+  geoDetails: { criterion: string; score: number; max: number; tip: string }[];
+  directAnswerIntro: string;      // 150 mots "réponse directe" pour les LLM
+  geoSuggestions: string[];       // Conseils spécifiques GEO
+}
+
 export interface BlogArticle {
   title: string;
   slug: string;
@@ -42,6 +54,10 @@ export interface BlogArticle {
   tags: string[];
   category: string;
   readTime: number;
+}
+
+export interface LlmsTxtData {
+  content: string;  // Contenu complet du fichier llms.txt
 }
 
 // ─── SEO Score Calculator ───────────────────────────────────
@@ -157,6 +173,99 @@ export function calculateSeoScore(product: ProductData): {
   return { score: totalScore, details };
 }
 
+// ─── GEO Score Calculator ───────────────────────────────────
+
+export function calculateGeoScore(product: ProductData): {
+  score: number;
+  details: { criterion: string; score: number; max: number; tip: string }[];
+} {
+  const details: { criterion: string; score: number; max: number; tip: string }[] = [];
+  const plainDesc = stripHtml(product.description);
+
+  // 1. Réponse directe dans les 150 premiers mots (25 pts)
+  const first150 = plainDesc.substring(0, 600);
+  const hasBrand = first150.toLowerCase().includes(product.brand.toLowerCase());
+  const hasCategory = first150.toLowerCase().includes(product.category.toLowerCase());
+  const hasNumbers = /\d+/.test(first150); // chiffres = données factuelles
+  let directScore = 0;
+  if (hasBrand) directScore += 8;
+  if (hasCategory) directScore += 8;
+  if (hasNumbers) directScore += 9;
+  details.push({
+    criterion: "Réponse directe (150 premiers mots)",
+    score: directScore,
+    max: 25,
+    tip: directScore < 20
+      ? "Les 150 premiers mots doivent mentionner la marque, le type de produit et des données chiffrées (poids, autonomie, etc.)."
+      : "Bonne introduction factuelle.",
+  });
+
+  // 2. Données factuelles (chiffres, specs) (20 pts)
+  const specPatterns = [/\d+\s*(mm|cm|ml|g|kg|w|v|hz|rpm|tr\/min|h|min|ans?)/gi, /\d+\s*%/gi];
+  let specCount = 0;
+  for (const pattern of specPatterns) {
+    const matches = plainDesc.match(pattern);
+    if (matches) specCount += matches.length;
+  }
+  let factScore = 0;
+  if (specCount >= 5) factScore = 20;
+  else if (specCount >= 3) factScore = 14;
+  else if (specCount >= 1) factScore = 8;
+  details.push({
+    criterion: "Données factuelles et chiffrées",
+    score: factScore,
+    max: 20,
+    tip: specCount < 3
+      ? "Ajoutez des données techniques précises : poids, autonomie, dimensions, puissance, etc."
+      : "Bonne densité de données factuelles.",
+  });
+
+  // 3. FAQ présente (20 pts)
+  const hasFaq = /<faq|foire aux questions|questions fréquentes/i.test(product.description);
+  const faqScore = hasFaq ? 20 : 0;
+  details.push({
+    criterion: "Section FAQ produit",
+    score: faqScore,
+    max: 20,
+    tip: !hasFaq
+      ? "Ajoutez une section FAQ avec 5 questions/réponses. Les IA adorent extraire les FAQ."
+      : "Section FAQ présente.",
+  });
+
+  // 4. Sections comparatives (15 pts)
+  const hasIdealPour = /idéal pour|convient pour|recommandé pour|parfait pour/i.test(plainDesc);
+  const hasAvantages = /avantage|bénéfice|point fort|pourquoi choisir/i.test(plainDesc);
+  let compScore = 0;
+  if (hasIdealPour) compScore += 8;
+  if (hasAvantages) compScore += 7;
+  details.push({
+    criterion: "Contenu comparatif (Idéal pour, Avantages)",
+    score: compScore,
+    max: 15,
+    tip: compScore < 10
+      ? "Ajoutez des sections 'Idéal pour' et 'Avantages' pour aider les IA à recommander ce produit."
+      : "Bon contenu comparatif.",
+  });
+
+  // 5. Marque et autorité (20 pts)
+  const hasBrandMention = (plainDesc.match(new RegExp(product.brand, "gi")) || []).length >= 2;
+  const hasPro = /professionnel|barbier|coiffeur|salon/i.test(plainDesc);
+  let authScore = 0;
+  if (hasBrandMention) authScore += 10;
+  if (hasPro) authScore += 10;
+  details.push({
+    criterion: "Autorité et contexte professionnel",
+    score: authScore,
+    max: 20,
+    tip: authScore < 15
+      ? "Mentionnez la marque plusieurs fois et précisez l'usage professionnel (barbier, salon, etc.)."
+      : "Bonne autorité de marque.",
+  });
+
+  const totalScore = details.reduce((sum, d) => sum + d.score, 0);
+  return { score: totalScore, details };
+}
+
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, " ").replace(/&[a-z]+;/gi, " ").replace(/\s+/g, " ").trim();
 }
@@ -170,32 +279,27 @@ async function callClaude(prompt: string, maxTokens: number): Promise<string> {
     messages: [{ role: "user", content: prompt }],
   });
 
-  // Extract text from the response content blocks
   const textBlock = message.content.find((block) => block.type === "text");
   return textBlock && textBlock.type === "text" ? textBlock.text : "{}";
 }
 
 function parseJsonResponse(raw: string): Record<string, unknown> {
-  // Strip potential markdown code fences
   let jsonStr = raw.trim();
   const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (jsonMatch) jsonStr = jsonMatch[1].trim();
-
-  // Try to extract first JSON object if there's surrounding text
   const objMatch = jsonStr.match(/\{[\s\S]*\}/);
   if (objMatch) jsonStr = objMatch[0];
-
   return JSON.parse(jsonStr);
 }
 
-// ─── AI Optimization ────────────────────────────────────────
+// ─── AI SEO Optimization (améliorée avec GEO) ───────────────
 
 export async function optimizeProduct(product: ProductData): Promise<SeoOptimization> {
   const plainDesc = stripHtml(product.description);
   let images: string[] = [];
   try { images = JSON.parse(product.images); } catch { images = []; }
 
-  const prompt = `Tu es un expert SEO spécialisé dans le e-commerce de produits de barbier et coiffure professionnelle. Tu dois optimiser la fiche produit suivante pour le référencement Google France.
+  const prompt = `Tu es un expert SEO & GEO (Generative Engine Optimization) spécialisé dans le e-commerce de produits de barbier et coiffure professionnelle. Tu dois optimiser la fiche produit suivante pour le référencement Google France ET pour être cité par les LLM (ChatGPT, Claude, Perplexity).
 
 PRODUIT ACTUEL :
 - Nom : ${product.name}
@@ -205,24 +309,30 @@ PRODUIT ACTUEL :
 - Description actuelle : ${plainDesc.substring(0, 1500)}
 - Nombre d'images : ${images.length}
 
-INSTRUCTIONS :
-Génère une optimisation SEO complète au format JSON avec les champs suivants :
+INSTRUCTIONS CRITIQUES :
+1. Les 150 premiers mots de la description doivent répondre DIRECTEMENT à "Qu'est-ce que ce produit et à qui s'adresse-t-il ?" avec des FAITS PRÉCIS (poids, autonomie, type de lame, RPM, etc.). Pas de marketing vague.
+2. Inclure une section "Idéal pour" avec des cas d'usage concrets (ex: "Idéal pour les dégradés à blanc, les fondus intensifs...").
+3. Utiliser des données chiffrées réelles ou plausibles basées sur le type de produit.
+4. NE PAS inventer de caractéristiques techniques non mentionnées dans la description originale.
 
-1. "optimizedTitle" : Titre optimisé SEO (50-70 caractères). Inclure la marque, le type de produit, et un mot-clé fort. Pas de majuscules excessives.
+Génère une optimisation SEO complète au format JSON :
+
+1. "optimizedTitle" : Titre optimisé SEO (50-70 caractères). Inclure la marque, le type de produit, et un mot-clé fort.
 
 2. "metaDescription" : Meta description (120-155 caractères). Accroche commerciale + mot-clé principal + appel à l'action.
 
-3. "seoDescription" : Description longue optimisée en HTML (500-1000 mots). Structure avec :
-   - Un paragraphe d'introduction avec le mot-clé principal
-   - <h2> pour les sections principales (Caractéristiques, Avantages, Utilisation, Spécifications)
-   - <ul><li> pour les listes de caractéristiques
+3. "seoDescription" : Description longue optimisée en HTML (600-1200 mots). Structure OBLIGATOIRE :
+   - Paragraphe d'introduction factuel (150 mots max, réponse directe, données chiffrées)
+   - <h2>Caractéristiques techniques</h2> avec <ul><li> pour les specs
+   - <h2>Idéal pour</h2> avec cas d'usage concrets pour les barbiers/coiffeurs
+   - <h2>Avantages</h2> avec les points forts du produit
+   - <h2>Spécifications</h2> avec tableau ou liste technique
    - <strong> pour les mots-clés importants
-   - Vocabulaire naturel lié au barbier/coiffure professionnel
-   - Mots-clés longue traîne intégrés naturellement
+   - Vocabulaire professionnel barbier/coiffure
 
-4. "suggestedTags" : Array de 8-12 tags/mots-clés pertinents en français (barbier, coiffure, professionnel, etc.)
+4. "suggestedTags" : Array de 8-12 tags/mots-clés pertinents en français
 
-5. "imageAlts" : Array de textes alt pour ${images.length} image(s). Descriptifs, incluant marque + type produit.
+5. "imageAlts" : Array de textes alt pour ${images.length} image(s). Descriptifs avec marque + type produit.
 
 6. "seoScore" : Score SEO estimé après optimisation (0-100)
 
@@ -230,7 +340,7 @@ Génère une optimisation SEO complète au format JSON avec les champs suivants 
 
 Réponds UNIQUEMENT avec le JSON valide, sans markdown ni commentaires.`;
 
-  const raw = await callClaude(prompt, 4000);
+  const raw = await callClaude(prompt, 5000);
 
   try {
     const result = parseJsonResponse(raw) as Record<string, unknown>;
@@ -246,6 +356,133 @@ Réponds UNIQUEMENT avec le JSON valide, sans markdown ni commentaires.`;
   } catch {
     throw new Error("Erreur de parsing de la réponse IA. Réessayez.");
   }
+}
+
+// ─── AI GEO Optimization (Schema.org + FAQ + Score GEO) ─────
+
+export async function optimizeProductGeo(product: ProductData): Promise<GeoOptimization> {
+  const plainDesc = stripHtml(product.description);
+  let images: string[] = [];
+  try { images = JSON.parse(product.images); } catch { images = []; }
+  let tags: string[] = [];
+  try { tags = JSON.parse(product.tags); } catch { tags = []; }
+
+  const imageUrl = images[0] || "";
+  const availability = product.inStock !== false ? "https://schema.org/InStock" : "https://schema.org/OutOfStock";
+  const productUrl = product.slug ? `https://barberparadise.fr/produit/${product.slug}` : "https://barberparadise.fr";
+
+  const prompt = `Tu es un expert GEO (Generative Engine Optimization) pour le e-commerce. Tu dois générer les données structurées et le contenu optimisé pour que ce produit soit cité par ChatGPT, Claude, Perplexity et Google AI Overviews.
+
+PRODUIT :
+- Nom : ${product.name}
+- Marque : ${product.brand}
+- Catégorie : ${product.category} > ${product.subcategory}
+- Prix : ${product.price}€
+- Description : ${plainDesc.substring(0, 1200)}
+- Tags : ${tags.join(", ")}
+- URL produit : ${productUrl}
+- Image principale : ${imageUrl}
+- En stock : ${product.inStock !== false ? "Oui" : "Non"}
+
+Génère un JSON avec ces champs :
+
+1. "schemaJsonLd" : Le JSON-LD Schema.org complet pour ce produit (type Product). Inclure OBLIGATOIREMENT :
+   - @context, @type: "Product"
+   - name, description (texte court factuel, 150 mots max)
+   - brand (@type: "Brand", name)
+   - image (array d'URLs)
+   - offers (@type: "Offer", price, priceCurrency: "EUR", availability, url)
+   - category
+   - keywords (array des tags)
+   - Si pertinent : weight, material, color
+   Retourner le JSON-LD comme STRING (pas d'objet imbriqué, juste la string du JSON-LD).
+
+2. "faqItems" : Array de 5 objets {question, answer} avec des vraies questions que se posent les barbiers/coiffeurs sur ce produit. Les réponses doivent être factuelles, courtes (2-4 phrases), et basées UNIQUEMENT sur les informations disponibles dans la description. NE PAS inventer de caractéristiques.
+
+3. "geoScore" : Score GEO estimé (0-100) basé sur la richesse factuelle du contenu actuel
+
+4. "geoDetails" : Array de 4 objets {criterion, score, max, tip} évaluant :
+   - "Richesse factuelle" (max 25)
+   - "Contenu extractible par IA" (max 25)
+   - "Autorité de marque" (max 25)
+   - "Structure FAQ" (max 25)
+
+5. "directAnswerIntro" : Un paragraphe de 100-150 mots qui répond directement à "Qu'est-ce que ${product.name} et à qui s'adresse-t-il ?". Factuel, précis, avec données chiffrées si disponibles. C'est le texte que les LLM vont citer.
+
+6. "geoSuggestions" : Array de 3-4 conseils spécifiques pour améliorer la visibilité GEO de ce produit
+
+Réponds UNIQUEMENT avec le JSON valide, sans markdown ni commentaires.`;
+
+  const raw = await callClaude(prompt, 5000);
+
+  try {
+    const result = parseJsonResponse(raw) as Record<string, unknown>;
+
+    // Calculer le score GEO automatique
+    const autoGeo = calculateGeoScore(product);
+
+    return {
+      schemaJsonLd: (result.schemaJsonLd as string) || "{}",
+      faqItems: (result.faqItems as { question: string; answer: string }[]) || [],
+      geoScore: (result.geoScore as number) || autoGeo.score,
+      geoDetails: (result.geoDetails as { criterion: string; score: number; max: number; tip: string }[]) || autoGeo.details,
+      directAnswerIntro: (result.directAnswerIntro as string) || "",
+      geoSuggestions: (result.geoSuggestions as string[]) || [],
+    };
+  } catch {
+    throw new Error("Erreur de parsing de la réponse GEO. Réessayez.");
+  }
+}
+
+// ─── Génération du fichier llms.txt ─────────────────────────
+
+export async function generateLlmsTxt(siteData: {
+  categories: { name: string; slug: string; productCount: number }[];
+  topProducts: { name: string; brand: string; category: string; price: number; slug: string }[];
+  totalProducts: number;
+  siteUrl: string;
+}): Promise<LlmsTxtData> {
+  const categoriesList = siteData.categories
+    .map((c) => `- ${c.name} (${c.productCount} produits) : ${siteData.siteUrl}/categorie/${c.slug}`)
+    .join("\n");
+
+  const productsList = siteData.topProducts
+    .slice(0, 20)
+    .map((p) => `- ${p.name} (${p.brand}) — ${p.price}€ : ${siteData.siteUrl}/produit/${p.slug}`)
+    .join("\n");
+
+  const prompt = `Tu es un expert en GEO (Generative Engine Optimization). Génère le contenu d'un fichier llms.txt pour le site e-commerce Barber Paradise.
+
+Le fichier llms.txt est un standard émergent (comme robots.txt) qui aide les LLM (ChatGPT, Claude, Perplexity) à comprendre et indexer un site web.
+
+DONNÉES DU SITE :
+- URL : ${siteData.siteUrl}
+- Nombre total de produits : ${siteData.totalProducts}
+- Catégories principales :
+${categoriesList}
+
+- Produits phares :
+${productsList}
+
+INSTRUCTIONS :
+Génère le contenu complet du fichier llms.txt en Markdown. Il doit contenir :
+
+1. Un titre H1 : # Barber Paradise
+2. Une description courte et factuelle de l'entreprise (2-3 phrases)
+3. ## À propos — Description détaillée (qui nous sommes, notre spécialité, notre clientèle cible)
+4. ## Catalogue — Résumé structuré des catégories avec URLs
+5. ## Produits phares — Liste des 10-15 produits les plus importants avec prix et URLs
+6. ## Politique commerciale — Livraison, retours, garanties (en termes généraux)
+7. ## Contact — Email et informations de contact génériques
+8. ## Sitemap — Liens vers les pages principales
+
+Le ton doit être factuel, informatif, sans marketing. C'est un document technique pour les IA.
+
+Réponds avec le contenu du fichier llms.txt directement (pas de JSON, juste le texte Markdown).`;
+
+  const content = await callClaude(prompt, 3000);
+
+  return { content };
 }
 
 // ─── Blog Article Generation ────────────────────────────────
@@ -267,34 +504,39 @@ export async function generateBlogArticle(params: {
     : "";
 
   const typeInstructions: Record<string, string> = {
-    guide: "Guide d'achat complet avec critères de choix, comparaison, et recommandations.",
-    comparatif: "Comparatif détaillé entre produits avec tableau récapitulatif, avantages/inconvénients.",
-    tutoriel: "Tutoriel pratique étape par étape avec conseils de professionnel.",
-    tendances: "Article sur les tendances actuelles du secteur barbier/coiffure.",
+    guide: "Guide d'achat complet avec critères de choix, comparaison, et recommandations. Optimisé pour être cité par les LLM quand quelqu'un demande 'comment choisir...'.",
+    comparatif: "Comparatif détaillé entre produits avec tableau récapitulatif, avantages/inconvénients. Optimisé pour être cité par les LLM quand quelqu'un demande 'quelle est la différence entre...'.",
+    tutoriel: "Tutoriel pratique étape par étape avec conseils de professionnel. Optimisé pour être cité par les LLM quand quelqu'un demande 'comment faire...'.",
+    tendances: "Article sur les tendances actuelles du secteur barbier/coiffure. Optimisé pour être cité par les LLM quand quelqu'un demande 'quelles sont les tendances...'.",
   };
 
-  const prompt = `Tu es un rédacteur SEO expert en barbier et coiffure professionnelle. Génère un article de blog complet et optimisé pour le référencement Google France.
+  const prompt = `Tu es un rédacteur SEO & GEO expert en barbier et coiffure professionnelle. Génère un article de blog optimisé pour Google France ET pour être cité par les LLM (ChatGPT, Claude, Perplexity).
 
 SUJET : ${params.topic}
 TYPE D'ARTICLE : ${typeInstructions[params.type]}
 ${productMentions}
 ${keywordsList}
 
-INSTRUCTIONS :
-Génère un article au format JSON avec les champs suivants :
+INSTRUCTIONS GEO CRITIQUES :
+- Commence chaque section par une réponse directe à la question implicite
+- Inclure des données chiffrées et des faits vérifiables
+- Ajouter une section FAQ en fin d'article avec 5 questions/réponses
+- Structurer avec des H2/H3 clairs qui correspondent à des requêtes réelles
+
+Génère un article au format JSON :
 
 1. "title" : Titre H1 accrocheur et optimisé SEO (50-70 caractères)
 2. "slug" : Slug URL en minuscules avec tirets
 3. "excerpt" : Résumé/chapô de l'article (150-200 caractères)
 4. "content" : Article complet en HTML (1500-2500 mots) avec :
    - Structure H2/H3 claire
-   - Introduction engageante avec le mot-clé principal
+   - Introduction engageante avec le mot-clé principal et réponse directe
    - Sections bien développées avec des <h2> et <h3>
    - Listes à puces pour les points clés
    - <strong> pour les mots-clés importants
-   - Liens internes vers les produits mentionnés : <a href="/produit/slug">Nom du produit</a>
+   - Liens internes vers les produits : <a href="/produit/slug">Nom du produit</a>
+   - Section <h2>Questions fréquentes</h2> avec 5 Q&R en fin d'article
    - Conclusion avec appel à l'action
-   - Ton professionnel mais accessible
 5. "metaDescription" : Meta description (120-155 caractères)
 6. "tags" : Array de 5-8 tags pertinents
 7. "category" : Catégorie de l'article (guide, comparatif, tutoriel, tendances)

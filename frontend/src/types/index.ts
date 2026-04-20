@@ -21,9 +21,18 @@ export interface Product {
   isPromo: boolean;
   tags: string | string[];
   status: string;
+  comparePrice?: number | null;
+  metaDescription?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  seoTags?: string | null;
+  schemaJsonLd?: string | null;
+  faqItems?: string | null;
+  directAnswer?: string | null;
   createdAt: string;
   updatedAt: string;
   variants?: ProductVariant[];
+  [key: string]: unknown;
 }
 
 export interface ProductVariant {

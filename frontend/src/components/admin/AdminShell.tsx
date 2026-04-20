@@ -16,6 +16,7 @@ import {
   X,
   ChevronRight,
   Search,
+  Globe,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -25,6 +26,7 @@ const NAV_ITEMS = [
   { href: "/admin/clients", label: "Clients", icon: Users },
   { href: "/admin/categories", label: "Catégories", icon: FolderTree },
   { href: "/admin/seo", label: "Agent SEO", icon: Search },
+  { href: "/admin/geo", label: "Outils GEO", icon: Globe },
 ];
 
 export default function AdminShell({ children }: { children: ReactNode }) {
