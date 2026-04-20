@@ -12,7 +12,8 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
     return;
   }
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || "secret") as { id: string; email: string };
+    // JWT_SECRET est garanti défini (validé au démarrage dans index.ts)
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as { id: string; email: string };
     req.user = decoded;
     next();
   } catch {
@@ -27,7 +28,8 @@ export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction
     return;
   }
   try {
-    const decoded = jwt.verify(token, process.env.ADMIN_JWT_SECRET || "admin-secret") as { id: string; email: string; role: string };
+    // ADMIN_JWT_SECRET est garanti défini (validé au démarrage dans index.ts)
+    const decoded = jwt.verify(token, process.env.ADMIN_JWT_SECRET as string) as { id: string; email: string; role: string };
     if (decoded.role !== "admin" && decoded.role !== "superadmin") {
       res.status(403).json({ error: "Accès refusé" });
       return;

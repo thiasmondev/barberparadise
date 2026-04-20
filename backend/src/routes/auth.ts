@@ -1,12 +1,24 @@
 import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import rateLimit from "express-rate-limit";
 import { prisma } from "../utils/prisma";
 
 export const authRouter = Router();
 
+// ─── Rate Limiting ────────────────────────────────────────────
+// Max 10 tentatives par IP sur 15 minutes pour login et register
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Trop de tentatives. Réessayez dans 15 minutes." },
+  skipSuccessfulRequests: false,
+});
+
 // POST /api/auth/register — Inscription client
-authRouter.post("/register", async (req: Request, res: Response): Promise<void> => {
+authRouter.post("/register", authLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password, firstName, lastName, phone } = req.body;
 
@@ -26,9 +38,10 @@ authRouter.post("/register", async (req: Request, res: Response): Promise<void> 
       data: { email, password: hashed, firstName, lastName, phone },
     });
 
+    // JWT_SECRET est garanti défini (validé au démarrage dans index.ts)
     const token = jwt.sign(
       { id: customer.id, email: customer.email },
-      process.env.JWT_SECRET || "secret",
+      process.env.JWT_SECRET as string,
       { expiresIn: "7d" }
     );
 
@@ -41,7 +54,7 @@ authRouter.post("/register", async (req: Request, res: Response): Promise<void> 
 });
 
 // POST /api/auth/login — Connexion client
-authRouter.post("/login", async (req: Request, res: Response): Promise<void> => {
+authRouter.post("/login", authLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
 
@@ -57,9 +70,10 @@ authRouter.post("/login", async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
+    // JWT_SECRET est garanti défini (validé au démarrage dans index.ts)
     const token = jwt.sign(
       { id: customer.id, email: customer.email },
-      process.env.JWT_SECRET || "secret",
+      process.env.JWT_SECRET as string,
       { expiresIn: "7d" }
     );
 
@@ -71,8 +85,8 @@ authRouter.post("/login", async (req: Request, res: Response): Promise<void> => 
   }
 });
 
-// POST /api/auth/admin/login — Connexion admin
-authRouter.post("/admin/login", async (req: Request, res: Response): Promise<void> => {
+// POST /api/auth/admin/login — Connexion admin (rate limiting aussi)
+authRouter.post("/admin/login", authLimiter, async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
 
@@ -88,9 +102,10 @@ authRouter.post("/admin/login", async (req: Request, res: Response): Promise<voi
       return;
     }
 
+    // ADMIN_JWT_SECRET est garanti défini (validé au démarrage dans index.ts)
     const token = jwt.sign(
       { id: admin.id, email: admin.email, role: admin.role },
-      process.env.ADMIN_JWT_SECRET || "admin-secret",
+      process.env.ADMIN_JWT_SECRET as string,
       { expiresIn: "24h" }
     );
 
