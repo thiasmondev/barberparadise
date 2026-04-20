@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
+import bcrypt from "bcryptjs";
 import { prisma } from "../utils/prisma";
-import { requireAdmin } from "../middleware/auth";
+import { requireAdmin, AuthRequest } from "../middleware/auth";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
 
@@ -586,6 +587,55 @@ adminRouter.put("/products/:id/variants/reorder", requireAdmin, async (req: Requ
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur réorganisation variantes" });
+  }
+});
+
+// POST /api/admin/change-password — Changer le mot de passe admin
+adminRouter.post("/change-password", requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      res.status(400).json({ error: "Mot de passe actuel et nouveau mot de passe requis" });
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      res.status(400).json({ error: "Le nouveau mot de passe doit contenir au moins 8 caractères" });
+      return;
+    }
+
+    // Récupérer l'admin connecté depuis le token
+    const adminId = req.user?.id;
+    if (!adminId) {
+      res.status(401).json({ error: "Non authentifié" });
+      return;
+    }
+
+    const admin = await prisma.admin.findUnique({ where: { id: adminId } });
+    if (!admin) {
+      res.status(404).json({ error: "Admin introuvable" });
+      return;
+    }
+
+    // Vérifier le mot de passe actuel
+    const valid = await bcrypt.compare(currentPassword, admin.password);
+    if (!valid) {
+      res.status(401).json({ error: "Mot de passe actuel incorrect" });
+      return;
+    }
+
+    // Hasher et sauvegarder le nouveau mot de passe
+    const hashed = await bcrypt.hash(newPassword, 12);
+    await prisma.admin.update({
+      where: { id: adminId },
+      data: { password: hashed },
+    });
+
+    res.json({ success: true, message: "Mot de passe modifié avec succès" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur lors du changement de mot de passe" });
   }
 });
 
