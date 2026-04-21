@@ -62,7 +62,8 @@ export default function HomePage() {
           getCategories(),
         ]);
         setFeatured(productsData.products.slice(0, 8));
-        setCategories(categoriesData.filter((c: Category) => !c.parentSlug).slice(0, 6));
+        // Catégories racines exactement comme en base (parentSlug vide ou absent)
+        setCategories(categoriesData.filter((c: Category) => !c.parentSlug || c.parentSlug === '').slice(0, 8));
 
         // Avis publics
         try {
