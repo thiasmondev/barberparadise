@@ -18,6 +18,7 @@ import {
   Search,
   Globe,
   Settings,
+  MessageSquare,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { href: "/admin/categories", label: "Catégories", icon: FolderTree },
   { href: "/admin/seo", label: "Agent SEO", icon: Search },
   { href: "/admin/geo", label: "Outils GEO", icon: Globe },
+  { href: "/admin/import-reviews", label: "Import Avis", icon: MessageSquare },
   { href: "/admin/parametres", label: "Paramètres", icon: Settings },
 ];
 

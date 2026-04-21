@@ -1,4 +1,6 @@
+"use client";
 import Link from "next/link";
+import Image from "next/image";
 import { Mail, Phone, MapPin, Instagram, Facebook, Twitter } from "lucide-react";
 
 export default function Footer() {
@@ -8,13 +10,14 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-16">
           {/* Brand & Newsletter */}
           <div className="lg:col-span-1">
-            <Link href="/" className="flex flex-col mb-8 group">
-              <span className="font-black text-2xl tracking-tighter text-white leading-none group-hover:text-[#ffb1c4] transition-colors">
-                BARBER
-              </span>
-              <span className="font-bold text-[10px] text-[#ff4a8d] tracking-[0.4em] leading-none mt-1">
-                PARADISE
-              </span>
+            <Link href="/" className="inline-block mb-8 group">
+              <Image
+                src="/logo-barberparadise.png"
+                alt="Barber Paradise"
+                width={160}
+                height={65}
+                className="object-contain h-14 w-auto opacity-90 group-hover:opacity-100 transition-opacity"
+              />
             </Link>
             <p className="text-xs text-gray-500 leading-relaxed mb-8 uppercase tracking-widest">
               Premium grooming essentials for the modern gentleman. Forged in tradition, refined for today.
