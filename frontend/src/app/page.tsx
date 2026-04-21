@@ -135,11 +135,11 @@ export default function HomePage() {
         <div className="max-w-[1440px] mx-auto px-8">
           <div className="flex justify-between items-end mb-12">
             <div>
-              <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-2">THE ARSENAL</h2>
-              <p className="text-gray-500 tracking-widest text-xs uppercase">Our most coveted formulations.</p>
+              <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-2">THE PARADISE</h2>
+              <p className="text-gray-500 tracking-widest text-xs uppercase">La meilleure sélection du marché.</p>
             </div>
             <Link href="/catalogue" className="text-[#ff4a8d] text-[10px] font-black tracking-[0.2em] uppercase hover:underline flex items-center gap-2">
-              SHOP ALL BESTSELLERS <ArrowRight size={12} />
+              ACHETER AU MEILLEUR PRIX <ArrowRight size={12} />
             </Link>
           </div>
 
@@ -189,8 +189,8 @@ export default function HomePage() {
         <div className="max-w-[1440px] mx-auto px-8">
           <div className="flex justify-between items-center mb-16">
             <div>
-              <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-2">WORD ON THE STREET</h2>
-              <p className="text-gray-500 tracking-widest text-xs uppercase">What our patrons are saying.</p>
+              <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-2">LES AVIS DE NOS CLIENTS</h2>
+              <p className="text-gray-500 tracking-widest text-xs uppercase">Ils savent de quoi ils parlent.</p>
             </div>
             <div className="flex gap-2">
               <button className="w-10 h-10 border border-white/10 flex items-center justify-center hover:bg-white/5 transition-colors">
@@ -242,7 +242,7 @@ export default function HomePage() {
       {/* Featured Brands Marquee */}
       <section className="py-16 bg-[#131313] overflow-hidden border-b border-white/5">
         <div className="max-w-[1440px] mx-auto px-8 mb-8">
-          <p className="text-center text-[10px] font-black tracking-[0.3em] text-gray-600 uppercase">FEATURED BRANDS</p>
+          <p className="text-center text-[10px] font-black tracking-[0.3em] text-gray-600 uppercase">NOS MARQUES</p>
         </div>
         <div className="relative flex overflow-x-hidden">
           <div className="animate-marquee whitespace-nowrap flex items-center gap-20 py-4">
