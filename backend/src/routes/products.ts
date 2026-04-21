@@ -180,3 +180,21 @@ productsRouter.delete("/:id", requireAdmin, async (req: Request, res: Response):
     res.status(500).json({ error: "Erreur suppression produit" });
   }
 });
+
+// GET /api/products/reviews/public — Avis approuvés pour la homepage
+productsRouter.get("/reviews/public", async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const reviews = await prisma.review.findMany({
+      where: { approved: true },
+      orderBy: { createdAt: "desc" },
+      take: 6,
+      include: {
+        product: { select: { name: true, brand: true } },
+      },
+    });
+    res.json(reviews);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
