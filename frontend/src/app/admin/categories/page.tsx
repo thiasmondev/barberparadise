@@ -62,21 +62,30 @@ function buildTree(cats: Category[]): CatNode[] {
   const map = new Map<string, CatNode>();
   cats.forEach((c) => map.set(c.slug, { ...c, children: [], level: 0 }));
   const roots: CatNode[] = [];
+  // Protection anti-cycle : on assigne les niveaux en BFS depuis les racines
+  const visited = new Set<string>();
+  // Première passe : trouver les vraies racines (sans parent ou parent inconnu)
   map.forEach((node) => {
-    if (!node.parentSlug) {
+    const hasValidParent = node.parentSlug && map.has(node.parentSlug) && node.parentSlug !== node.slug;
+    if (!hasValidParent) {
       node.level = 0;
       roots.push(node);
-    } else {
-      const parent = map.get(node.parentSlug);
-      if (parent) {
-        node.level = parent.level + 1;
-        parent.children.push(node);
-      } else {
-        node.level = 0;
-        roots.push(node);
-      }
+      visited.add(node.slug);
     }
   });
+  // Deuxième passe : attacher les enfants en évitant les cycles
+  const queue = [...roots];
+  while (queue.length > 0) {
+    const parent = queue.shift()!;
+    map.forEach((node) => {
+      if (node.parentSlug === parent.slug && !visited.has(node.slug)) {
+        node.level = parent.level + 1;
+        parent.children.push(node);
+        visited.add(node.slug);
+        queue.push(node);
+      }
+    });
+  }
   const sort = (nodes: CatNode[]) => {
     nodes.sort((a, b) => a.order - b.order);
     nodes.forEach((n) => sort(n.children));
@@ -141,7 +150,7 @@ function SortableRow({
       {/* Ligne principale */}
       <div
         className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 group border-b border-gray-50 cursor-pointer"
-        onClick={() => node.children.length > 0 && onNavigate(node)}
+        onClick={() => onNavigate(node)}
       >
         {/* Poignée drag */}
         <div
@@ -216,7 +225,7 @@ function SortableRow({
             <div
               key={child.id}
               className="flex items-center gap-3 pl-10 pr-4 py-2 hover:bg-gray-100/60 group/child cursor-pointer border-b border-gray-50/80"
-              onClick={() => child.children.length > 0 && onNavigate(child)}
+              onClick={() => onNavigate(child)}
             >
               <Folder size={14} className={child.children.length > 0 ? "text-blue-400" : "text-gray-200"} />
               <div className="flex-1 min-w-0">
@@ -323,7 +332,6 @@ export default function AdminCategoriesPage() {
   const addLabel = ["+ Nouvelle catégorie", "+ Nouvelle sous-catégorie", "+ Nouvelle sous-sous-catégorie"];
 
   const navigateTo = (node: CatNode) => {
-    if (node.children.length === 0) return;
     setBreadcrumb((bc) => [...bc, node]);
     setCurrentNode(node);
   };
