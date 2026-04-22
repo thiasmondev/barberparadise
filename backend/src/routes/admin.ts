@@ -16,7 +16,7 @@ cloudinary.config({
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
-  fileFilter: (_req, file, cb) => {
+  fileFilter: (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
     if (file.mimetype.startsWith("image/")) cb(null, true);
     else cb(new Error("Seules les images sont acceptées"));
   },
@@ -409,12 +409,13 @@ adminRouter.post(
   "/products/:id/images",
   requireAdmin,
   upload.single("image"),
-  async (req: Request, res: Response): Promise<void> => {
+  async (req: Request & { file?: Express.Multer.File }, res: Response): Promise<void> => {
     try {
       if (!req.file) {
         res.status(400).json({ error: "Aucun fichier fourni" });
         return;
       }
+      const uploadedFile = req.file;
       // Upload vers Cloudinary depuis le buffer mémoire
       const result = await new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
@@ -427,7 +428,7 @@ adminRouter.post(
             else resolve(result as { secure_url: string; public_id: string });
           }
         );
-        stream.end(req.file!.buffer);
+        stream.end(uploadedFile.buffer);
       });
 
       // Ajouter l'URL à la liste d'images du produit
