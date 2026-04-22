@@ -19,8 +19,8 @@ interface ApiCategory {
   order: number;
 }
 
-// Catégories racines principales (niveau 0)
-const ROOT_SLUGS = ["materiel", "tondeuses", "ciseaux", "rasage", "coiffant", "barbe", "cheveux", "autres"];
+// Catégories racines principales (niveau 0) — exclure 'marque' qui est géré séparément
+const EXCLUDED_ROOT_SLUGS = ["marque"];
 
 interface NavItem {
   label: string;
@@ -54,9 +54,10 @@ function MegaMenuProduits({
   allCategories: ApiCategory[];
   onClose: () => void;
 }) {
+  // Utiliser les vraies catégories racines de l'API (parentSlug vide ou null)
   const roots = allCategories
-    .filter((c) => ROOT_SLUGS.includes(c.slug))
-    .sort((a, b) => ROOT_SLUGS.indexOf(a.slug) - ROOT_SLUGS.indexOf(b.slug));
+    .filter((c) => !c.parentSlug && !EXCLUDED_ROOT_SLUGS.includes(c.slug))
+    .sort((a, b) => a.order - b.order);
 
   const [hoveredRoot, setHoveredRoot] = useState<string>(roots[0]?.slug || "");
 

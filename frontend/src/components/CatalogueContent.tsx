@@ -22,8 +22,8 @@ const PRICE_RANGES = [
   { label: "Plus de 100€", min: 100, max: 9999 },
 ];
 
-// Catégories racines fixes (les 8 grandes catégories de produits)
-const ROOT_CATEGORY_SLUGS = ["materiel", "tondeuses", "ciseaux", "rasage", "coiffant", "barbe", "cheveux", "autres"];
+// Catégories à exclure de la sidebar (gérées séparément)
+const EXCLUDED_CATEGORY_SLUGS = ["marque"];
 
 function formatPrice(price: number) {
   return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(price);
@@ -56,15 +56,15 @@ export default function CatalogueContent() {
   const sort = searchParams.get("sort") || "newest";
   const promo = searchParams.get("promo") || "";
 
-  // Charger les catégories racines depuis l'API
+  // Charger toutes les catégories depuis l'API (racines + enfants)
   useEffect(() => {
     getCategories()
       .then((cats) => {
-        // Garder seulement les 8 catégories racines principales
-        const roots = cats.filter((c) => ROOT_CATEGORY_SLUGS.includes(c.slug));
-        // Trier dans l'ordre défini
-        roots.sort((a, b) => ROOT_CATEGORY_SLUGS.indexOf(a.slug) - ROOT_CATEGORY_SLUGS.indexOf(b.slug));
-        setCategories(roots);
+        // Garder toutes les catégories sauf celles exclues
+        const filtered = cats.filter((c) => !EXCLUDED_CATEGORY_SLUGS.includes(c.slug));
+        // Trier par order
+        filtered.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        setCategories(filtered);
       })
       .catch(() => {});
   }, []);
@@ -154,20 +154,67 @@ export default function CatalogueContent() {
                 >
                   Tous les produits
                 </button>
-                {/* Catégories dynamiques depuis l'API */}
-                {categories.map((cat) => (
-                  <button
-                    key={cat.slug}
-                    onClick={() => { updateParams("category", cat.slug); setFiltersOpen(false); }}
-                    className={`text-left text-sm transition-colors ${
-                      category === cat.slug
-                        ? "text-[#ff4a8d] font-bold"
-                        : "text-gray-400 hover:text-white"
-                    }`}
-                  >
-                    {cat.name}
-                  </button>
-                ))}
+                {/* Catégories dynamiques depuis l'API avec hiérarchie */}
+                {categories
+                  .filter((c) => !c.parentSlug) // Racines seulement
+                  .map((root) => {
+                    const children = categories.filter((c) => c.parentSlug === root.slug);
+                    return (
+                      <div key={root.slug}>
+                        {/* Catégorie racine */}
+                        <button
+                          onClick={() => { updateParams("category", root.slug); setFiltersOpen(false); }}
+                          className={`text-left text-sm font-semibold transition-colors w-full ${
+                            category === root.slug
+                              ? "text-[#ff4a8d]"
+                              : "text-gray-300 hover:text-white"
+                          }`}
+                        >
+                          {root.name}
+                        </button>
+                        {/* Sous-catégories */}
+                        {children.length > 0 && (
+                          <div className="flex flex-col gap-1.5 mt-1.5 ml-3 border-l border-white/10 pl-3">
+                            {children.map((child) => {
+                              const grandchildren = categories.filter((c) => c.parentSlug === child.slug);
+                              return (
+                                <div key={child.slug}>
+                                  <button
+                                    onClick={() => { updateParams("category", child.slug); setFiltersOpen(false); }}
+                                    className={`text-left text-xs transition-colors w-full ${
+                                      category === child.slug
+                                        ? "text-[#ff4a8d] font-bold"
+                                        : "text-gray-400 hover:text-white"
+                                    }`}
+                                  >
+                                    {child.name}
+                                  </button>
+                                  {/* Sous-sous-catégories */}
+                                  {grandchildren.length > 0 && (
+                                    <div className="flex flex-col gap-1 mt-1 ml-3 border-l border-white/5 pl-2">
+                                      {grandchildren.map((gc) => (
+                                        <button
+                                          key={gc.slug}
+                                          onClick={() => { updateParams("category", gc.slug); setFiltersOpen(false); }}
+                                          className={`text-left text-[11px] transition-colors w-full ${
+                                            category === gc.slug
+                                              ? "text-[#ff4a8d] font-bold"
+                                              : "text-gray-500 hover:text-gray-300"
+                                          }`}
+                                        >
+                                          ↳ {gc.name}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
               </div>
             </div>
 
