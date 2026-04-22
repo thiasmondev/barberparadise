@@ -7,90 +7,29 @@ import { ShoppingBag, Search, Menu, X, User, ChevronRight } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { usePathname } from "next/navigation";
 
-// ─── Hiérarchie des catégories (basée sur les vraies données produits) ──────
-// category (champ Product.category) → subcategories (champ Product.subcategory)
-const CATEGORY_TREE: Record<string, { slug: string; name: string }[]> = {
-  materiel: [
-    { slug: "capes", name: "Capes de coupe" },
-    { slug: "vaporisateurs", name: "Vaporisateurs" },
-    { slug: "balai-a-cou", name: "Balai à cou" },
-    { slug: "neckfitter", name: "Neckfitter" },
-    { slug: "miroir", name: "Miroir" },
-    { slug: "brosses", name: "Brosses" },
-    { slug: "peignes", name: "Peignes" },
-    { slug: "seche-cheveux", name: "Sèche-cheveux" },
-    { slug: "hygiene", name: "Hygiène & Désinfection" },
-    { slug: "accessoire", name: "Accessoires" },
-  ],
-  tondeuses: [
-    { slug: "tondeuses-de-coupe", name: "Tondeuses de coupe" },
-    { slug: "tondeuses-de-finition", name: "Tondeuses de finition" },
-    { slug: "shavers", name: "Shavers / Rasoirs électriques" },
-    { slug: "lames-et-accessoires", name: "Lames & Accessoires" },
-    { slug: "accessoires-tondeuses", name: "Accessoires tondeuses" },
-    { slug: "entretien-tondeuse", name: "Entretien tondeuse" },
-  ],
-  ciseaux: [
-    { slug: "ciseaux-droit", name: "Ciseaux droits" },
-    { slug: "ciseaux-sculpteur", name: "Ciseaux sculpteurs" },
-  ],
-  rasage: [
-    { slug: "rasoirs", name: "Rasoirs" },
-    { slug: "lames", name: "Lames de rasoir" },
-    { slug: "gels-et-mousses", name: "Gels & Mousses à raser" },
-    { slug: "apres-rasage", name: "Après-rasage" },
-    { slug: "accessoires-rasage", name: "Accessoires rasage" },
-  ],
-  coiffage: [
-    { slug: "cires", name: "Cires coiffantes" },
-    { slug: "pomades", name: "Pomades" },
-    { slug: "pates", name: "Pâtes coiffantes" },
-    { slug: "argiles", name: "Argiles" },
-    { slug: "gels", name: "Gels coiffants" },
-    { slug: "laques", name: "Laques" },
-    { slug: "sprays", name: "Sprays coiffants" },
-    { slug: "poudres", name: "Poudres coiffantes" },
-    { slug: "cremes", name: "Crèmes coiffantes" },
-  ],
-  barbe: [
-    { slug: "baumes-a-barbe", name: "Baumes à barbe" },
-    { slug: "huiles-a-barbe", name: "Huiles à barbe" },
-    { slug: "gels-a-barbe", name: "Gels à barbe" },
-    { slug: "brosses-a-barbe", name: "Brosses à barbe" },
-  ],
-  cheveux: [
-    { slug: "shampoings", name: "Shampoings" },
-    { slug: "colorations", name: "Colorations" },
-  ],
-};
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
 
-// Noms affichables des catégories racines
-const CATEGORY_NAMES: Record<string, string> = {
-  materiel: "Matériel",
-  tondeuses: "Tondeuses",
-  ciseaux: "Ciseaux",
-  rasage: "Rasage",
-  coiffage: "Produits coiffants",
-  barbe: "Barbe",
-  cheveux: "Cheveux",
-  autres: "Autres",
-};
+// ─── Types ────────────────────────────────────────────────────
+interface ApiCategory {
+  id: string;
+  slug: string;
+  name: string;
+  parentSlug: string | null;
+  order: number;
+}
+
+// Catégories racines principales (niveau 0 — les 8 grandes familles de produits)
+const ROOT_SLUGS = ["materiel", "tondeuses", "ciseaux", "rasage", "coiffant", "barbe", "cheveux", "autres"];
 
 interface NavItem {
   label: string;
   href: string;
-  megaMenu?: {
-    rootSlug: string;
-  };
+  megaMenu?: "produits" | "materiel";
 }
 
 const NAV_MAIN: NavItem[] = [
-  { label: "PRODUITS", href: "/catalogue" },
-  {
-    label: "MATÉRIEL",
-    href: "/catalogue?category=materiel",
-    megaMenu: { rootSlug: "materiel" },
-  },
+  { label: "PRODUITS", href: "/catalogue", megaMenu: "produits" },
+  { label: "MATÉRIEL", href: "/catalogue?category=materiel", megaMenu: "materiel" },
   { label: "MARQUES", href: "/catalogue?marques=true" },
   { label: "NOUVEAUTÉS", href: "/catalogue?sort=newest" },
 ];
@@ -106,78 +45,197 @@ const NAV_BURGER = [
   { label: "PROMOTIONS", href: "/catalogue?promo=true" },
 ];
 
-// ─── Composant MegaMenu ───────────────────────────────────────
-function MegaMenu({
-  rootSlug,
+// ─── Mega-menu PRODUITS (niveau 0 → niveau 1 → niveau 2) ─────
+function MegaMenuProduits({
+  allCategories,
   onClose,
 }: {
-  rootSlug: string;
+  allCategories: ApiCategory[];
   onClose: () => void;
 }) {
-  const [hoveredChild, setHoveredChild] = useState<string | null>(null);
+  const roots = allCategories
+    .filter((c) => ROOT_SLUGS.includes(c.slug))
+    .sort((a, b) => ROOT_SLUGS.indexOf(a.slug) - ROOT_SLUGS.indexOf(b.slug));
 
-  // Sous-catégories de la catégorie racine
-  const level1 = CATEGORY_TREE[rootSlug] || [];
+  const [hoveredRoot, setHoveredRoot] = useState<string>(roots[0]?.slug || "");
 
-  // Initialiser le premier item survolé
   useEffect(() => {
-    if (level1.length > 0) setHoveredChild(level1[0].slug);
-  }, [rootSlug]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (roots.length > 0 && !hoveredRoot) setHoveredRoot(roots[0].slug);
+  }, [roots.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const level1 = allCategories
+    .filter((c) => c.parentSlug === hoveredRoot)
+    .sort((a, b) => a.order - b.order);
+
+  if (roots.length === 0) return null;
+
+  return (
+    <div
+      className="absolute top-full left-1/2 -translate-x-1/2 mt-0 z-50 flex shadow-2xl border border-white/10"
+      style={{ minWidth: 680 }}
+      onMouseLeave={onClose}
+    >
+      {/* Colonne gauche : grandes catégories */}
+      <div className="bg-[#1a1a1a] py-6 min-w-[200px] border-r border-white/5">
+        <Link
+          href="/catalogue"
+          onClick={onClose}
+          className="block px-6 py-2 text-[11px] font-black tracking-[0.2em] uppercase text-[#ff4a8d] hover:text-white transition-colors"
+        >
+          Tous les produits →
+        </Link>
+        <div className="h-px bg-white/10 mx-4 my-2" />
+        {roots.map((cat) => (
+          <button
+            key={cat.slug}
+            onMouseEnter={() => setHoveredRoot(cat.slug)}
+            onClick={() => { onClose(); window.location.href = `/catalogue?category=${cat.slug}`; }}
+            className={`w-full text-left flex items-center justify-between px-6 py-3 text-[12px] font-semibold tracking-[0.1em] uppercase transition-all duration-150 ${
+              hoveredRoot === cat.slug
+                ? "text-white bg-white/5 border-l-2 border-[#ff4a8d]"
+                : "text-white/60 hover:text-white hover:bg-white/5 border-l-2 border-transparent"
+            }`}
+          >
+            <span>{cat.name}</span>
+            {allCategories.some((c) => c.parentSlug === cat.slug) && (
+              <ChevronRight size={12} className="opacity-40" />
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Colonne droite : sous-catégories de la grande catégorie survolée */}
+      {level1.length > 0 && (
+        <div className="bg-[#111111] py-6 min-w-[240px] flex flex-col">
+          <Link
+            href={`/catalogue?category=${hoveredRoot}`}
+            onClick={onClose}
+            className="block px-6 py-2 text-[11px] font-black tracking-[0.2em] uppercase text-[#ff4a8d] hover:text-white transition-colors"
+          >
+            Tout voir →
+          </Link>
+          <div className="h-px bg-white/10 mx-4 my-2" />
+          <div className="grid grid-cols-1 gap-0">
+            {level1.map((cat) => (
+              <Link
+                key={cat.slug}
+                href={`/catalogue?category=${cat.slug}`}
+                onClick={onClose}
+                className="block px-6 py-2.5 text-[12px] font-semibold tracking-[0.1em] uppercase text-white/55 hover:text-white hover:bg-white/5 transition-all duration-150"
+              >
+                {cat.name}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Mega-menu MATÉRIEL (niveau 1 → niveau 2) ────────────────
+function MegaMenuMateriel({
+  allCategories,
+  onClose,
+}: {
+  allCategories: ApiCategory[];
+  onClose: () => void;
+}) {
+  // Sous-catégories directes de "materiel"
+  const level1 = allCategories
+    .filter((c) => c.parentSlug === "materiel")
+    .sort((a, b) => a.order - b.order);
+
+  const [hoveredSub, setHoveredSub] = useState<string>(level1[0]?.slug || "");
+
+  useEffect(() => {
+    if (level1.length > 0) setHoveredSub(level1[0].slug);
+  }, [level1.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sous-sous-catégories de la sous-catégorie survolée
+  const level2 = allCategories
+    .filter((c) => c.parentSlug === hoveredSub)
+    .sort((a, b) => a.order - b.order);
 
   if (level1.length === 0) return null;
 
   return (
     <div
       className="absolute top-full left-1/2 -translate-x-1/2 mt-0 z-50 flex shadow-2xl border border-white/10"
-      style={{ minWidth: 480 }}
+      style={{ minWidth: 520 }}
       onMouseLeave={onClose}
     >
-      {/* Colonne gauche : sous-catégories */}
+      {/* Colonne gauche : sous-catégories de matériel */}
       <div className="bg-[#1a1a1a] py-6 min-w-[240px]">
-        {/* Lien "Tout voir" */}
         <Link
-          href={`/catalogue?category=${rootSlug}`}
+          href="/catalogue?category=materiel"
           onClick={onClose}
           className="block px-6 py-2 text-[11px] font-black tracking-[0.2em] uppercase text-[#ff4a8d] hover:text-white transition-colors"
         >
-          Tout voir — {CATEGORY_NAMES[rootSlug] || rootSlug} →
+          Tout voir — Matériel →
         </Link>
         <div className="h-px bg-white/10 mx-4 my-2" />
         {level1.map((cat) => (
-          <Link
+          <button
             key={cat.slug}
-            href={`/catalogue?category=${cat.slug}`}
-            onMouseEnter={() => setHoveredChild(cat.slug)}
-            onClick={onClose}
+            onMouseEnter={() => setHoveredSub(cat.slug)}
+            onClick={() => { onClose(); window.location.href = `/catalogue?category=${cat.slug}`; }}
             className={`w-full text-left flex items-center justify-between px-6 py-3 text-[12px] font-semibold tracking-[0.1em] uppercase transition-all duration-150 ${
-              hoveredChild === cat.slug
+              hoveredSub === cat.slug
                 ? "text-white bg-white/5 border-l-2 border-[#ff4a8d]"
                 : "text-white/60 hover:text-white hover:bg-white/5 border-l-2 border-transparent"
             }`}
           >
             <span>{cat.name}</span>
-            <ChevronRight size={12} className="opacity-30" />
-          </Link>
+            {allCategories.some((c) => c.parentSlug === cat.slug) && (
+              <ChevronRight size={12} className="opacity-40" />
+            )}
+          </button>
         ))}
       </div>
 
-      {/* Colonne droite : image/promo ou vide */}
-      <div className="bg-[#111111] py-6 min-w-[200px] border-l border-white/5 flex flex-col justify-between p-6">
-        <div>
-          <p className="text-[10px] font-black tracking-[0.3em] uppercase text-[#ff4a8d] mb-3">
-            {CATEGORY_NAMES[rootSlug] || rootSlug}
-          </p>
-          <p className="text-xs text-white/40 leading-relaxed">
-            Découvrez notre sélection de matériel professionnel pour barbiers et coiffeurs.
-          </p>
-        </div>
-        <Link
-          href={`/catalogue?category=${rootSlug}`}
-          onClick={onClose}
-          className="mt-6 inline-block bg-[#ff4a8d] text-white text-[10px] font-black tracking-[0.2em] uppercase px-4 py-2 hover:bg-[#ff1f70] transition-colors"
-        >
-          Voir tout →
-        </Link>
+      {/* Colonne droite : sous-sous-catégories */}
+      <div className="bg-[#111111] py-6 min-w-[200px] border-l border-white/5">
+        {level2.length > 0 ? (
+          <>
+            <Link
+              href={`/catalogue?category=${hoveredSub}`}
+              onClick={onClose}
+              className="block px-6 py-2 text-[11px] font-black tracking-[0.2em] uppercase text-[#ff4a8d] hover:text-white transition-colors"
+            >
+              Tout voir →
+            </Link>
+            <div className="h-px bg-white/10 mx-4 my-2" />
+            {level2.map((cat) => (
+              <Link
+                key={cat.slug}
+                href={`/catalogue?category=${cat.slug}`}
+                onClick={onClose}
+                className="block px-6 py-2.5 text-[12px] font-semibold tracking-[0.1em] uppercase text-white/55 hover:text-white hover:bg-white/5 transition-all duration-150"
+              >
+                {cat.name}
+              </Link>
+            ))}
+          </>
+        ) : (
+          <div className="flex flex-col justify-between h-full p-6">
+            <div>
+              <p className="text-[10px] font-black tracking-[0.3em] uppercase text-[#ff4a8d] mb-3">
+                {level1.find((c) => c.slug === hoveredSub)?.name || "Matériel"}
+              </p>
+              <p className="text-xs text-white/30 leading-relaxed">
+                Découvrez notre sélection de matériel professionnel pour barbiers et coiffeurs.
+              </p>
+            </div>
+            <Link
+              href={`/catalogue?category=${hoveredSub}`}
+              onClick={onClose}
+              className="mt-6 inline-block bg-[#ff4a8d] text-white text-[10px] font-black tracking-[0.2em] uppercase px-4 py-2 hover:bg-[#ff1f70] transition-colors"
+            >
+              Voir tout →
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -189,6 +247,7 @@ export default function Header() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [allCategories, setAllCategories] = useState<ApiCategory[]>([]);
   const pathname = usePathname();
   const isHome = pathname === "/";
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -205,6 +264,14 @@ export default function Header() {
     setMobileOpen(false);
     setOpenMenu(null);
   }, [pathname]);
+
+  // Charger toutes les catégories depuis l'API (hiérarchie complète)
+  useEffect(() => {
+    fetch(`${API_URL}/api/categories`)
+      .then((r) => r.json())
+      .then((data: ApiCategory[]) => setAllCategories(data))
+      .catch(() => {});
+  }, []);
 
   const handleNavEnter = (label: string) => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
@@ -302,10 +369,17 @@ export default function Header() {
                 {/* Mega-menu déroulant */}
                 {hasMega && isOpen && (
                   <div onMouseEnter={handleMenuEnter} onMouseLeave={handleNavLeave}>
-                    <MegaMenu
-                      rootSlug={item.megaMenu!.rootSlug}
-                      onClose={() => setOpenMenu(null)}
-                    />
+                    {item.megaMenu === "produits" ? (
+                      <MegaMenuProduits
+                        allCategories={allCategories}
+                        onClose={() => setOpenMenu(null)}
+                      />
+                    ) : (
+                      <MegaMenuMateriel
+                        allCategories={allCategories}
+                        onClose={() => setOpenMenu(null)}
+                      />
+                    )}
                   </div>
                 )}
               </div>
@@ -352,23 +426,28 @@ export default function Header() {
           </nav>
 
           {/* Sous-catégories matériel dans le burger */}
-          <div className="px-8 pt-6 pb-4">
-            <p className="text-[10px] font-black tracking-[0.3em] uppercase text-[#ff4a8d] mb-4">
-              MATÉRIEL — CATÉGORIES
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              {(CATEGORY_TREE["materiel"] || []).map((cat) => (
-                <Link
-                  key={cat.slug}
-                  href={`/catalogue?category=${cat.slug}`}
-                  onClick={() => setMobileOpen(false)}
-                  className="text-[11px] font-semibold tracking-[0.1em] uppercase text-white/50 hover:text-white py-2 border-b border-white/5 transition-colors"
-                >
-                  {cat.name}
-                </Link>
-              ))}
+          {allCategories.filter((c) => c.parentSlug === "materiel").length > 0 && (
+            <div className="px-8 pt-6 pb-4">
+              <p className="text-[10px] font-black tracking-[0.3em] uppercase text-[#ff4a8d] mb-4">
+                MATÉRIEL — CATÉGORIES
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {allCategories
+                  .filter((c) => c.parentSlug === "materiel")
+                  .sort((a, b) => a.order - b.order)
+                  .map((cat) => (
+                    <Link
+                      key={cat.slug}
+                      href={`/catalogue?category=${cat.slug}`}
+                      onClick={() => setMobileOpen(false)}
+                      className="text-[11px] font-semibold tracking-[0.1em] uppercase text-white/50 hover:text-white py-2 border-b border-white/5 transition-colors"
+                    >
+                      {cat.name}
+                    </Link>
+                  ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Footer du menu */}
           <div className="mt-auto px-8 py-8 border-t border-white/5 flex-shrink-0">
