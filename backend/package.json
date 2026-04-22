@@ -13,7 +13,8 @@
     "db:seed": "ts-node src/seed.ts",
     "db:studio": "prisma studio",
     "db:seed-brands": "ts-node scripts/seed-brands.ts",
-    "update-brand-logo": "npx ts-node scripts/update-brand-logo.ts"
+    "update-brand-logo": "npx ts-node scripts/update-brand-logo.ts",
+    "fix-brand-logos": "ts-node scripts/fix-brand-logos.ts"
   },
   "engines": {
     "node": ">=18.0.0"
