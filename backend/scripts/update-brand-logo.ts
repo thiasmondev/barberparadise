@@ -24,12 +24,29 @@ import * as os from "os";
 
 const prisma = new PrismaClient();
 
-// ─── Config Cloudinary ────────────────────────────────────────
+// ─── Config Cloudinary ──────────────────────────────────────
+const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || "";
+const API_KEY    = process.env.CLOUDINARY_API_KEY    || "";
+const API_SECRET = process.env.CLOUDINARY_API_SECRET || "";
+
+// Diagnostic : afficher les variables lues (masquées)
+console.log("\n🔧 Variables Cloudinary lues depuis process.env :");
+console.log(`   CLOUDINARY_CLOUD_NAME  : ${CLOUD_NAME  ? CLOUD_NAME              : "❌ NON DÉFINIE"}`);
+console.log(`   CLOUDINARY_API_KEY     : ${API_KEY     ? API_KEY.slice(0, 6) + "..." : "❌ NON DÉFINIE"}`);
+console.log(`   CLOUDINARY_API_SECRET  : ${API_SECRET  ? API_SECRET.slice(0, 4) + "..." : "❌ NON DÉFINIE"}`);
+
+if (!CLOUD_NAME || !API_KEY || !API_SECRET) {
+  console.error("\n❌ Erreur : une ou plusieurs variables Cloudinary sont manquantes.");
+  console.error("   Vérifie que CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY et CLOUDINARY_API_SECRET");
+  console.error("   sont bien définies dans les variables d'environnement Render.");
+  process.exit(1);
+}
+
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-  secure: true,
+  cloud_name: CLOUD_NAME,
+  api_key:    API_KEY,
+  api_secret: API_SECRET,
+  secure:     true,
 });
 
 // ─── Télécharger une image vers un fichier temporaire ─────────
