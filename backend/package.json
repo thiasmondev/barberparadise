@@ -12,7 +12,8 @@
     "db:push": "prisma db push",
     "db:seed": "ts-node src/seed.ts",
     "db:studio": "prisma studio",
-    "db:seed-brands": "ts-node scripts/seed-brands.ts"
+    "db:seed-brands": "ts-node scripts/seed-brands.ts",
+    "update-brand-logo": "npx ts-node scripts/update-brand-logo.ts"
   },
   "engines": {
     "node": ">=18.0.0"
