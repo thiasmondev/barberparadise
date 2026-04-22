@@ -4,20 +4,25 @@
  * Protégée par requireAdmin.
  */
 
-import { Router, Response } from "express";
-import multer from "multer";
+import { Router, Request, Response } from "express";
+import multer, { StorageEngine } from "multer";
 import { parse } from "csv-parse/sync";
 import { PrismaClient } from "@prisma/client";
-import { requireAdmin, AuthRequest } from "../middleware/auth";
+import { requireAdmin } from "../middleware/auth";
 
 const router = Router();
 const prisma = new PrismaClient();
 
 // Multer : stockage en mémoire (pas de fichier sur disque)
+const storage: StorageEngine = multer.memoryStorage();
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB max
-  fileFilter: (_req, file, cb) => {
+  fileFilter: (
+    _req: Request,
+    file: Express.Multer.File,
+    cb: multer.FileFilterCallback
+  ) => {
     if (file.mimetype === "text/csv" || file.originalname.endsWith(".csv")) {
       cb(null, true);
     } else {
@@ -63,14 +68,16 @@ router.post(
   "/",
   requireAdmin,
   upload.single("csv"),
-  async (req: AuthRequest, res: Response) => {
-    if (!req.file) {
+  async (req: Request, res: Response) => {
+    const file = (req as Request & { file?: Express.Multer.File }).file;
+
+    if (!file) {
       res.status(400).json({ error: "Aucun fichier CSV fourni" });
       return;
     }
 
     try {
-      const raw = req.file.buffer.toString("utf-8");
+      const raw = file.buffer.toString("utf-8");
 
       const rows: JudgeMeRow[] = parse(raw, {
         columns: true,
@@ -88,7 +95,7 @@ router.post(
       const bySlug = new Map<string, string>();
 
       for (const p of products) {
-        byHandle.set(normalize(p.handle), p.id);
+        if (p.handle) byHandle.set(normalize(p.handle), p.id);
         bySlug.set(normalize(p.slug), p.id);
       }
 
@@ -147,7 +154,9 @@ router.post(
           continue;
         }
 
-        const comment = [row.title, row.body].filter(Boolean).join(" — ") || "(sans commentaire)";
+        const comment =
+          [row.title, row.body].filter(Boolean).join(" — ") ||
+          "(sans commentaire)";
 
         await prisma.review.create({
           data: {
