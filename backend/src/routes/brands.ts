@@ -120,4 +120,36 @@ router.get("/:slug", async (req: Request, res: Response) => {
   }
 });
 
+// ─── PATCH /api/brands/:id (admin) ──────────────────────────
+// Mise à jour d'une marque (logo, description, bannerImage, website, name)
+router.patch("/:id", async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id, 10);
+  const adminToken = req.headers["x-admin-token"] || req.headers["authorization"]?.replace("Bearer ", "");
+
+  // Vérification basique du token admin
+  if (!adminToken) {
+    return res.status(401).json({ error: "Token admin requis" });
+  }
+
+  try {
+    const { name, description, logo, bannerImage, website } = req.body;
+
+    const updated = await prisma.brand.update({
+      where: { id },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(description !== undefined && { description }),
+        ...(logo !== undefined && { logo }),
+        ...(bannerImage !== undefined && { bannerImage }),
+        ...(website !== undefined && { website }),
+      },
+    });
+
+    res.json(updated);
+  } catch (err) {
+    console.error(`PATCH /api/brands/${id} error:`, err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
 export default router;
