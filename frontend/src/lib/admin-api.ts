@@ -149,7 +149,65 @@ export function getAdminCustomer(id: string) {
   return adminFetch<Customer>(`/api/admin/customers/${id}`);
 }
 
-// ─── Categories ──────────────────────────────────────────────
+//// ─── Brands ────────────────────────────────────────────────────
+
+export interface AdminBrand {
+  id:           number;
+  name:         string;
+  slug:         string;
+  logo:         string | null;
+  bannerImage:  string | null;
+  description:  string | null;
+  website:      string | null;
+  productCount: number;
+}
+
+export function getAdminBrands() {
+  return adminFetch<AdminBrand[]>("/api/admin/brands");
+}
+
+export function updateAdminBrand(id: number, data: Partial<Omit<AdminBrand, "id" | "slug" | "productCount">>) {
+  return adminFetch<AdminBrand>(`/api/admin/brands/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function uploadBrandLogo(id: number, file: File): Promise<{ logo: string }> {
+  const token = getAdminToken();
+  if (!token) throw new Error("Non authentifié");
+  const formData = new FormData();
+  formData.append("logo", file);
+  const res = await fetch(`${API_URL}/api/admin/brands/${id}/upload-logo`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error((data as any).error || `Erreur ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function uploadBrandBanner(id: number, file: File): Promise<{ bannerImage: string }> {
+  const token = getAdminToken();
+  if (!token) throw new Error("Non authentifié");
+  const formData = new FormData();
+  formData.append("banner", file);
+  const res = await fetch(`${API_URL}/api/admin/brands/${id}/upload-banner`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error((data as any).error || `Erreur ${res.status}`);
+  }
+  return res.json();
+}
+
+// ─── Categories ────────────────────────────────────────────────────
 
 export function getAdminCategories() {
   return adminFetch<Category[]>("/api/categories");

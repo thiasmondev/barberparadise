@@ -19,6 +19,7 @@ import {
   Globe,
   Settings,
   MessageSquare,
+  Tag,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { href: "/admin/commandes", label: "Commandes", icon: ShoppingCart },
   { href: "/admin/clients", label: "Clients", icon: Users },
   { href: "/admin/categories", label: "Catégories", icon: FolderTree },
+  { href: "/admin/brands", label: "Marques", icon: Tag },
   { href: "/admin/seo", label: "Agent SEO", icon: Search },
   { href: "/admin/geo", label: "Outils GEO", icon: Globe },
   { href: "/admin/import-reviews", label: "Import Avis", icon: MessageSquare },

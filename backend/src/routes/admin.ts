@@ -640,4 +640,127 @@ adminRouter.post("/change-password", requireAdmin, async (req: AuthRequest, res:
   }
 });
 
+// ─── BRANDS ADMIN ──────────────────────────────────────────────────────────────────
+
+// GET /api/admin/brands — Liste toutes les marques
+adminRouter.get("/brands", requireAdmin, async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const brands = await prisma.brand.findMany({
+      orderBy: { name: "asc" },
+      include: { _count: { select: { products: true } } },
+    });
+    res.json(brands.map((b) => ({
+      id:           b.id,
+      name:         b.name,
+      slug:         b.slug,
+      logo:         b.logo,
+      bannerImage:  b.bannerImage,
+      description:  b.description,
+      website:      b.website,
+      productCount: b._count.products,
+    })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// PATCH /api/admin/brands/:id — Mettre à jour les champs texte d'une marque
+adminRouter.patch("/brands/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { logo, bannerImage, description, website, name } = req.body;
+    const updated = await prisma.brand.update({
+      where: { id },
+      data: {
+        ...(name        !== undefined && { name }),
+        ...(logo        !== undefined && { logo }),
+        ...(bannerImage !== undefined && { bannerImage }),
+        ...(description !== undefined && { description }),
+        ...(website     !== undefined && { website }),
+      },
+    });
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// POST /api/admin/brands/:id/upload-logo — Upload logo → Cloudinary → update Brand.logo
+adminRouter.post(
+  "/brands/:id/upload-logo",
+  requireAdmin,
+  upload.single("logo"),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const id   = parseInt(req.params.id, 10);
+      const file = req.file;
+      if (!file) { res.status(400).json({ error: "Aucun fichier reçu" }); return; }
+
+      const uploadResult = await new Promise<any>((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            folder:         "barberparadise/brands",
+            public_id:      `brand-${id}-logo`,
+            overwrite:      true,
+            resource_type:  "image",
+            transformation: [
+              { width: 400, height: 400, crop: "fit" },
+              { quality: "auto", fetch_format: "auto" },
+            ],
+          },
+          (error, result) => { if (error) reject(error); else resolve(result); }
+        );
+        stream.end(file.buffer);
+      });
+
+      const logoUrl = uploadResult.secure_url as string;
+      const updated = await prisma.brand.update({ where: { id }, data: { logo: logoUrl } });
+      res.json({ success: true, logo: logoUrl, brand: updated });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur upload logo" });
+    }
+  }
+);
+
+// POST /api/admin/brands/:id/upload-banner — Upload bannière → Cloudinary → update Brand.bannerImage
+adminRouter.post(
+  "/brands/:id/upload-banner",
+  requireAdmin,
+  upload.single("banner"),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const id   = parseInt(req.params.id, 10);
+      const file = req.file;
+      if (!file) { res.status(400).json({ error: "Aucun fichier reçu" }); return; }
+
+      const uploadResult = await new Promise<any>((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            folder:         "barberparadise/brands",
+            public_id:      `brand-${id}-banner`,
+            overwrite:      true,
+            resource_type:  "image",
+            transformation: [
+              { width: 1400, height: 400, crop: "fill", gravity: "center" },
+              { quality: "auto", fetch_format: "auto" },
+            ],
+          },
+          (error, result) => { if (error) reject(error); else resolve(result); }
+        );
+        stream.end(file.buffer);
+      });
+
+      const bannerUrl = uploadResult.secure_url as string;
+      const updated = await prisma.brand.update({ where: { id }, data: { bannerImage: bannerUrl } });
+      res.json({ success: true, bannerImage: bannerUrl, brand: updated });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur upload bannière" });
+    }
+  }
+);
+
 export default adminRouter;
