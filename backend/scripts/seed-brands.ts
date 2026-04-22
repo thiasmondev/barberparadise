@@ -2,7 +2,7 @@
  * seed-brands.ts
  * ─────────────────────────────────────────────────────────────
  * 1. Récupère les marques distinctes depuis Product
- * 2. Génère une description via OpenAI (compatible Anthropic)
+ * 2. Génère une description via Anthropic Claude (claude-sonnet-4-20250514)
  * 3. Tente de scraper le logo depuis barberparadise.fr
  * 4. Insère chaque Brand en base
  * 5. Met à jour brandId dans tous les produits correspondants
@@ -11,16 +11,15 @@
  */
 
 import { PrismaClient } from "@prisma/client";
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import * as https from "https";
 import * as http from "http";
 
 const prisma = new PrismaClient();
 
-// ─── OpenAI / Claude via proxy Manus ─────────────────────────
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "",
-  baseURL: process.env.OPENAI_API_BASE || "https://api.openai.com/v1",
+// ─── Anthropic Claude ─────────────────────────────────────────
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY || "",
 });
 
 // ─── Slugify ──────────────────────────────────────────────────
@@ -33,26 +32,23 @@ function slugify(name: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-// ─── Générer description via LLM ─────────────────────────────
+// ─── Générer description via Anthropic Claude ────────────────
 async function generateDescription(brandName: string): Promise<string> {
   try {
-    const resp = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
+    const resp = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 200,
+      system:
+        "Tu es un expert en matériel de barbier et coiffure professionnelle. Rédige des descriptions de marques courtes, professionnelles et percutantes en français.",
       messages: [
-        {
-          role: "system",
-          content:
-            "Tu es un expert en matériel de barbier et coiffure professionnelle. Rédige des descriptions de marques courtes, professionnelles et percutantes en français.",
-        },
         {
           role: "user",
           content: `Rédige une description courte de 2 à 3 phrases pour la marque "${brandName}" dans le contexte du barbier et de la coiffure professionnelle. Mets en avant la réputation, la spécialité ou les produits phares de la marque. Sois factuel et professionnel. Réponds uniquement avec la description, sans titre ni formatage.`,
         },
       ],
-      max_tokens: 200,
-      temperature: 0.7,
     });
-    return resp.choices[0]?.message?.content?.trim() || "";
+    const block = resp.content[0];
+    return block.type === "text" ? block.text.trim() : "";
   } catch (err) {
     console.error(`  ⚠ LLM error for ${brandName}:`, err);
     return "";
