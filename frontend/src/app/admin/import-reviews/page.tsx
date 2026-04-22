@@ -56,7 +56,7 @@ export default function ImportReviewsPage() {
     setResult(null);
 
     try {
-      const token = localStorage.getItem("adminToken");
+      const token = localStorage.getItem("admin-token");
       const formData = new FormData();
       formData.append("csv", file);
 
