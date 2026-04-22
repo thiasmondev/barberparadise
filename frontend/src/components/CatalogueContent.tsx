@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, SlidersHorizontal, X, ArrowRight } from "lucide-react";
-import { getProducts } from "@/lib/api";
-import type { Product } from "@/types";
+import { getProducts, getCategories } from "@/lib/api";
+import type { Product, Category } from "@/types";
 import Link from "next/link";
 
 const SORT_OPTIONS = [
@@ -14,19 +14,6 @@ const SORT_OPTIONS = [
   { value: "name_asc", label: "A — Z" },
 ];
 
-const CATEGORIES = [
-  { label: "Tous les produits", value: "" },
-  { label: "Tondeuses", value: "Tondeuses" },
-  { label: "Ciseaux", value: "Ciseaux" },
-  { label: "Rasoirs", value: "Rasoirs" },
-  { label: "Soins cheveux", value: "Soins cheveux" },
-  { label: "Soins barbe", value: "Soins barbe" },
-  { label: "Accessoires", value: "Accessoires" },
-  { label: "Mobilier", value: "Mobilier" },
-  { label: "Linge", value: "Linge" },
-  { label: "Hygiène", value: "Hygiène" },
-];
-
 const PRICE_RANGES = [
   { label: "Tous les prix", min: 0, max: 9999 },
   { label: "Moins de 20€", min: 0, max: 20 },
@@ -34,6 +21,9 @@ const PRICE_RANGES = [
   { label: "50€ — 100€", min: 50, max: 100 },
   { label: "Plus de 100€", min: 100, max: 9999 },
 ];
+
+// Catégories racines fixes (les 8 grandes catégories de produits)
+const ROOT_CATEGORY_SLUGS = ["materiel", "tondeuses", "ciseaux", "rasage", "coiffant", "barbe", "cheveux", "autres"];
 
 function formatPrice(price: number) {
   return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(price);
@@ -58,12 +48,26 @@ export default function CatalogueContent() {
   const [loading, setLoading] = useState(true);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [priceRange, setPriceRange] = useState(0);
+  const [categories, setCategories] = useState<Category[]>([]);
 
   const page = Number(searchParams.get("page")) || 1;
   const category = searchParams.get("category") || "";
   const search = searchParams.get("search") || "";
   const sort = searchParams.get("sort") || "newest";
   const promo = searchParams.get("promo") || "";
+
+  // Charger les catégories racines depuis l'API
+  useEffect(() => {
+    getCategories()
+      .then((cats) => {
+        // Garder seulement les 8 catégories racines principales
+        const roots = cats.filter((c) => ROOT_CATEGORY_SLUGS.includes(c.slug));
+        // Trier dans l'ordre défini
+        roots.sort((a, b) => ROOT_CATEGORY_SLUGS.indexOf(a.slug) - ROOT_CATEGORY_SLUGS.indexOf(b.slug));
+        setCategories(roots);
+      })
+      .catch(() => {});
+  }, []);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -88,6 +92,8 @@ export default function CatalogueContent() {
       setTotalPages(data.totalPages);
     } catch {
       setProducts([]);
+      setTotal(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
@@ -105,7 +111,18 @@ export default function CatalogueContent() {
     router.push(`/catalogue?${params.toString()}`);
   };
 
-  const title = search ? `"${search}"` : category || "SHOP ALL";
+  // Trouver le nom de la catégorie active pour l'affichage
+  const getCategoryLabel = () => {
+    if (search) return `"${search}"`;
+    if (!category) return "SHOP ALL";
+    // Chercher dans les catégories chargées
+    const found = categories.find((c) => c.slug === category);
+    if (found) return found.name.toUpperCase();
+    // Fallback : transformer le slug en titre lisible
+    return category.replace(/-/g, " ").toUpperCase();
+  };
+
+  const title = getCategoryLabel();
 
   return (
     <div className="bg-[#131313] min-h-screen text-[#e5e2e1]">
@@ -128,22 +145,29 @@ export default function CatalogueContent() {
             <div>
               <h3 className="text-[10px] font-black tracking-[0.3em] text-gray-500 uppercase mb-6">CATÉGORIE</h3>
               <div className="flex flex-col gap-3">
-                {CATEGORIES.map((cat) => {
-                  const isActive = cat.value === category;
-                  return (
-                    <button
-                      key={cat.value}
-                      onClick={() => { updateParams("category", cat.value); setFiltersOpen(false); }}
-                      className={`text-left text-sm transition-colors ${
-                        isActive
-                          ? "text-[#ff4a8d] font-bold"
-                          : "text-gray-400 hover:text-white"
-                      }`}
-                    >
-                      {cat.label}
-                    </button>
-                  );
-                })}
+                {/* Tous les produits */}
+                <button
+                  onClick={() => { updateParams("category", ""); setFiltersOpen(false); }}
+                  className={`text-left text-sm transition-colors ${
+                    !category ? "text-[#ff4a8d] font-bold" : "text-gray-400 hover:text-white"
+                  }`}
+                >
+                  Tous les produits
+                </button>
+                {/* Catégories dynamiques depuis l'API */}
+                {categories.map((cat) => (
+                  <button
+                    key={cat.slug}
+                    onClick={() => { updateParams("category", cat.slug); setFiltersOpen(false); }}
+                    className={`text-left text-sm transition-colors ${
+                      category === cat.slug
+                        ? "text-[#ff4a8d] font-bold"
+                        : "text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    {cat.name}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -276,10 +300,10 @@ export default function CatalogueContent() {
                         <p className="text-[10px] text-gray-500 uppercase tracking-widest">{product.brand}</p>
                       </div>
                       <div className="flex justify-between items-center mt-4">
-                        <span className="font-black text-sm">{formatPrice(product.price)}</span>
-                        <span className="text-[#ff4a8d] opacity-0 group-hover:opacity-100 transition-opacity">
-                          <ArrowRight size={14} />
+                        <span className={`font-black ${isHighlight ? "text-xl" : "text-base"} text-white`}>
+                          {formatPrice(product.price)}
                         </span>
+                        <ArrowRight size={14} className="text-gray-500 group-hover:text-[#ff4a8d] transition-colors" />
                       </div>
                     </div>
                   </Link>

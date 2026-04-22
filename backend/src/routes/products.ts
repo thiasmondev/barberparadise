@@ -19,14 +19,40 @@ productsRouter.get("/", async (req: Request, res: Response): Promise<void> => {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const where: any = { status: "active" };
-    if (category) where.category = category;
-    if (subcategory) where.subcategory = subcategory;
+    // Filtrage catégorie : cherche dans category ET subcategory (les slugs peuvent être dans l'un ou l'autre)
+    if (category && subcategory) {
+      // Les deux sont fournis : on filtre sur les deux
+      where.category = category;
+      where.subcategory = subcategory;
+    } else if (category) {
+      // Un seul slug fourni : cherche dans category OU subcategory
+      where.OR = [
+        { category: { equals: category, mode: "insensitive" } },
+        { subcategory: { equals: category, mode: "insensitive" } },
+        { subsubcategory: { equals: category, mode: "insensitive" } },
+      ];
+    } else if (subcategory) {
+      where.OR = [
+        { subcategory: { equals: subcategory, mode: "insensitive" } },
+        { subsubcategory: { equals: subcategory, mode: "insensitive" } },
+      ];
+    }
     if (brand) where.brand = { equals: brand, mode: "insensitive" };
-    if (search) where.OR = [
-      { name: { contains: search, mode: "insensitive" } },
-      { description: { contains: search, mode: "insensitive" } },
-      { brand: { contains: search, mode: "insensitive" } },
-    ];
+    if (search) {
+      // Utiliser AND pour combiner avec un éventuel OR de catégorie
+      const searchOr = [
+        { name: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+        { brand: { contains: search, mode: "insensitive" } },
+      ];
+      if (where.OR) {
+        // Combiner : catégorie AND search
+        where.AND = [{ OR: where.OR }, { OR: searchOr }];
+        delete where.OR;
+      } else {
+        where.OR = searchOr;
+      }
+    }
     if (minPrice || maxPrice) {
       where.price = {};
       if (minPrice) where.price.gte = parseFloat(minPrice);

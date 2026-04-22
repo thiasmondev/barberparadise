@@ -36,12 +36,16 @@ export async function getProducts(params?: {
     });
   }
   const query = searchParams.toString();
-  return fetchAPI<{
+  const raw = await fetchAPI<{
     products: import("@/types").Product[];
-    total: number;
-    page: number;
-    totalPages: number;
+    pagination: { total: number; page: number; pages: number; limit: number };
   }>(`/api/products${query ? `?${query}` : ""}`);
+  return {
+    products: raw.products,
+    total: raw.pagination.total,
+    page: raw.pagination.page,
+    totalPages: raw.pagination.pages,
+  };
 }
 
 export async function getProduct(slug: string) {
