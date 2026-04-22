@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from "react";
 import { ShoppingBag, Search, Menu, X, User, ChevronRight } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { usePathname } from "next/navigation";
+import type { Brand } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
 
@@ -18,19 +19,19 @@ interface ApiCategory {
   order: number;
 }
 
-// Catégories racines principales (niveau 0 — les 8 grandes familles de produits)
+// Catégories racines principales (niveau 0)
 const ROOT_SLUGS = ["materiel", "tondeuses", "ciseaux", "rasage", "coiffant", "barbe", "cheveux", "autres"];
 
 interface NavItem {
   label: string;
   href: string;
-  megaMenu?: "produits" | "materiel";
+  megaMenu?: "produits" | "materiel" | "marques";
 }
 
 const NAV_MAIN: NavItem[] = [
   { label: "PRODUITS", href: "/catalogue", megaMenu: "produits" },
   { label: "MATÉRIEL", href: "/catalogue?category=materiel", megaMenu: "materiel" },
-  { label: "MARQUES", href: "/catalogue?marques=true" },
+  { label: "MARQUES", href: "/marques", megaMenu: "marques" },
   { label: "NOUVEAUTÉS", href: "/catalogue?sort=newest" },
 ];
 
@@ -40,12 +41,12 @@ const NAV_BURGER = [
   { label: "TONDEUSES", href: "/catalogue?category=tondeuses" },
   { label: "RASAGE", href: "/catalogue?category=rasage" },
   { label: "BARBE", href: "/catalogue?category=barbe" },
-  { label: "MARQUES", href: "/catalogue?marques=true" },
+  { label: "MARQUES", href: "/marques" },
   { label: "NOUVEAUTÉS", href: "/catalogue?sort=newest" },
   { label: "PROMOTIONS", href: "/catalogue?promo=true" },
 ];
 
-// ─── Mega-menu PRODUITS (niveau 0 → niveau 1 → niveau 2) ─────
+// ─── Mega-menu PRODUITS ───────────────────────────────────────
 function MegaMenuProduits({
   allCategories,
   onClose,
@@ -104,7 +105,7 @@ function MegaMenuProduits({
         ))}
       </div>
 
-      {/* Colonne droite : sous-catégories de la grande catégorie survolée */}
+      {/* Colonne droite : sous-catégories */}
       {level1.length > 0 && (
         <div className="bg-[#111111] py-6 min-w-[240px] flex flex-col">
           <Link
@@ -115,25 +116,23 @@ function MegaMenuProduits({
             Tout voir →
           </Link>
           <div className="h-px bg-white/10 mx-4 my-2" />
-          <div className="grid grid-cols-1 gap-0">
-            {level1.map((cat) => (
-              <Link
-                key={cat.slug}
-                href={`/catalogue?category=${cat.slug}`}
-                onClick={onClose}
-                className="block px-6 py-2.5 text-[12px] font-semibold tracking-[0.1em] uppercase text-white/55 hover:text-white hover:bg-white/5 transition-all duration-150"
-              >
-                {cat.name}
-              </Link>
-            ))}
-          </div>
+          {level1.map((cat) => (
+            <Link
+              key={cat.slug}
+              href={`/catalogue?category=${cat.slug}`}
+              onClick={onClose}
+              className="block px-6 py-2.5 text-[12px] font-semibold tracking-[0.1em] uppercase text-white/55 hover:text-white hover:bg-white/5 transition-all duration-150"
+            >
+              {cat.name}
+            </Link>
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-// ─── Mega-menu MATÉRIEL (niveau 1 → niveau 2) ────────────────
+// ─── Mega-menu MATÉRIEL ───────────────────────────────────────
 function MegaMenuMateriel({
   allCategories,
   onClose,
@@ -141,7 +140,6 @@ function MegaMenuMateriel({
   allCategories: ApiCategory[];
   onClose: () => void;
 }) {
-  // Sous-catégories directes de "materiel"
   const level1 = allCategories
     .filter((c) => c.parentSlug === "materiel")
     .sort((a, b) => a.order - b.order);
@@ -152,7 +150,6 @@ function MegaMenuMateriel({
     if (level1.length > 0) setHoveredSub(level1[0].slug);
   }, [level1.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sous-sous-catégories de la sous-catégorie survolée
   const level2 = allCategories
     .filter((c) => c.parentSlug === hoveredSub)
     .sort((a, b) => a.order - b.order);
@@ -165,7 +162,6 @@ function MegaMenuMateriel({
       style={{ minWidth: 520 }}
       onMouseLeave={onClose}
     >
-      {/* Colonne gauche : sous-catégories de matériel */}
       <div className="bg-[#1a1a1a] py-6 min-w-[240px]">
         <Link
           href="/catalogue?category=materiel"
@@ -194,7 +190,6 @@ function MegaMenuMateriel({
         ))}
       </div>
 
-      {/* Colonne droite : sous-sous-catégories */}
       <div className="bg-[#111111] py-6 min-w-[200px] border-l border-white/5">
         {level2.length > 0 ? (
           <>
@@ -241,6 +236,89 @@ function MegaMenuMateriel({
   );
 }
 
+// ─── Mega-menu MARQUES ────────────────────────────────────────
+function MegaMenuMarques({
+  brands,
+  onClose,
+}: {
+  brands: Brand[];
+  onClose: () => void;
+}) {
+  // Afficher les 20 premières marques (triées par nb de produits)
+  const topBrands = [...brands]
+    .sort((a, b) => b.productCount - a.productCount)
+    .slice(0, 20);
+
+  if (topBrands.length === 0) return null;
+
+  return (
+    <div
+      className="absolute top-full left-1/2 -translate-x-1/2 mt-0 z-50 shadow-2xl border border-white/10 bg-[#1a1a1a]"
+      style={{ minWidth: 560 }}
+      onMouseLeave={onClose}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
+        <p className="text-[10px] font-black tracking-[0.3em] uppercase text-[#ff4a8d]">
+          NOS MARQUES
+        </p>
+        <Link
+          href="/marques"
+          onClick={onClose}
+          className="text-[10px] font-black tracking-[0.2em] uppercase text-white/40 hover:text-white transition-colors"
+        >
+          Voir toutes →
+        </Link>
+      </div>
+
+      {/* Grille marques */}
+      <div className="grid grid-cols-4 gap-px bg-white/5 p-px">
+        {topBrands.map((brand) => (
+          <Link
+            key={brand.id}
+            href={`/marques/${brand.slug}`}
+            onClick={onClose}
+            className="group bg-[#1a1a1a] hover:bg-[#222] transition-colors p-4 flex flex-col items-center gap-2"
+          >
+            {brand.logo ? (
+              <div className="relative w-12 h-8">
+                <Image
+                  src={brand.logo}
+                  alt={brand.name}
+                  fill
+                  className="object-contain filter brightness-75 group-hover:brightness-110 transition-all"
+                  sizes="48px"
+                  unoptimized
+                />
+              </div>
+            ) : (
+              <div className="w-12 h-8 flex items-center justify-center">
+                <span className="text-[11px] font-black text-white/25 group-hover:text-[#ff4a8d] transition-colors uppercase tracking-tighter text-center leading-tight">
+                  {brand.name.slice(0, 4)}
+                </span>
+              </div>
+            )}
+            <p className="text-[9px] font-black tracking-[0.1em] uppercase text-white/40 group-hover:text-white transition-colors text-center leading-tight line-clamp-2">
+              {brand.name}
+            </p>
+          </Link>
+        ))}
+      </div>
+
+      {/* Footer */}
+      <div className="px-6 py-4 border-t border-white/5">
+        <Link
+          href="/marques"
+          onClick={onClose}
+          className="block text-center text-[11px] font-black tracking-[0.3em] uppercase text-white/30 hover:text-[#ff4a8d] transition-colors"
+        >
+          Voir toutes les marques ({brands.length}) →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 // ─── Header principal ─────────────────────────────────────────
 export default function Header() {
   const { itemCount } = useCart();
@@ -248,28 +326,32 @@ export default function Header() {
   const [scrolled, setScrolled] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [allCategories, setAllCategories] = useState<ApiCategory[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
   const pathname = usePathname();
   const isHome = pathname === "/";
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Scroll listener
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Fermer le menu burger au changement de route
   useEffect(() => {
     setMobileOpen(false);
     setOpenMenu(null);
   }, [pathname]);
 
-  // Charger toutes les catégories depuis l'API (hiérarchie complète)
+  // Charger catégories et marques
   useEffect(() => {
     fetch(`${API_URL}/api/categories`)
       .then((r) => r.json())
       .then((data: ApiCategory[]) => setAllCategories(data))
+      .catch(() => {});
+
+    fetch(`${API_URL}/api/brands`)
+      .then((r) => r.json())
+      .then((data: Brand[]) => setBrands(Array.isArray(data) ? data.filter((b) => b.productCount > 0) : []))
       .catch(() => {});
   }, []);
 
@@ -308,7 +390,7 @@ export default function Header() {
             </button>
           </div>
 
-          {/* ─── CENTRE : Logo officiel ─── */}
+          {/* ─── CENTRE : Logo ─── */}
           <Link href="/" className="flex items-center justify-center w-1/2">
             <Image
               src="/logo-barberparadise.png"
@@ -339,12 +421,12 @@ export default function Header() {
           </div>
         </div>
 
-        {/* ─── NAVIGATION DESKTOP avec mega-menu ─── */}
+        {/* ─── NAVIGATION DESKTOP ─── */}
         <nav className="hidden md:flex items-center justify-center gap-2 pb-4">
           {NAV_MAIN.map((item) => {
             const isActive =
               pathname === item.href ||
-              pathname.startsWith(item.href.split("?")[0] + "?");
+              (item.href !== "/" && pathname.startsWith(item.href.split("?")[0]));
             const hasMega = !!item.megaMenu;
             const isOpen = openMenu === item.label;
 
@@ -366,19 +448,16 @@ export default function Header() {
                   {item.label}
                 </Link>
 
-                {/* Mega-menu déroulant */}
                 {hasMega && isOpen && (
                   <div onMouseEnter={handleMenuEnter} onMouseLeave={handleNavLeave}>
-                    {item.megaMenu === "produits" ? (
-                      <MegaMenuProduits
-                        allCategories={allCategories}
-                        onClose={() => setOpenMenu(null)}
-                      />
-                    ) : (
-                      <MegaMenuMateriel
-                        allCategories={allCategories}
-                        onClose={() => setOpenMenu(null)}
-                      />
+                    {item.megaMenu === "produits" && (
+                      <MegaMenuProduits allCategories={allCategories} onClose={() => setOpenMenu(null)} />
+                    )}
+                    {item.megaMenu === "materiel" && (
+                      <MegaMenuMateriel allCategories={allCategories} onClose={() => setOpenMenu(null)} />
+                    )}
+                    {item.megaMenu === "marques" && (
+                      <MegaMenuMarques brands={brands} onClose={() => setOpenMenu(null)} />
                     )}
                   </div>
                 )}
@@ -391,7 +470,6 @@ export default function Header() {
       {/* ─── MENU BURGER OVERLAY ─── */}
       {mobileOpen && (
         <div className="fixed inset-0 top-0 bg-[#0e0e0e] z-40 flex flex-col overflow-y-auto">
-          {/* Header du menu */}
           <div className="flex items-center justify-between px-8 h-20 border-b border-white/5 flex-shrink-0">
             <Image
               src="/logo-barberparadise.png"
@@ -408,7 +486,6 @@ export default function Header() {
             </button>
           </div>
 
-          {/* Liens principaux */}
           <nav className="flex flex-col px-8 pt-10 gap-1">
             {NAV_BURGER.map((item) => (
               <Link
@@ -425,7 +502,7 @@ export default function Header() {
             ))}
           </nav>
 
-          {/* Sous-catégories matériel dans le burger */}
+          {/* Sous-catégories matériel */}
           {allCategories.filter((c) => c.parentSlug === "materiel").length > 0 && (
             <div className="px-8 pt-6 pb-4">
               <p className="text-[10px] font-black tracking-[0.3em] uppercase text-[#ff4a8d] mb-4">
@@ -449,7 +526,34 @@ export default function Header() {
             </div>
           )}
 
-          {/* Footer du menu */}
+          {/* Marques dans le burger */}
+          {brands.length > 0 && (
+            <div className="px-8 pt-6 pb-4">
+              <p className="text-[10px] font-black tracking-[0.3em] uppercase text-[#ff4a8d] mb-4">
+                MARQUES
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {brands.slice(0, 9).map((brand) => (
+                  <Link
+                    key={brand.id}
+                    href={`/marques/${brand.slug}`}
+                    onClick={() => setMobileOpen(false)}
+                    className="text-[11px] font-semibold tracking-[0.1em] uppercase text-white/50 hover:text-white py-2 border-b border-white/5 transition-colors truncate"
+                  >
+                    {brand.name}
+                  </Link>
+                ))}
+              </div>
+              <Link
+                href="/marques"
+                onClick={() => setMobileOpen(false)}
+                className="mt-3 block text-[10px] font-black tracking-[0.2em] uppercase text-[#ff4a8d] hover:text-white transition-colors"
+              >
+                Voir toutes les marques →
+              </Link>
+            </div>
+          )}
+
           <div className="mt-auto px-8 py-8 border-t border-white/5 flex-shrink-0">
             <p className="text-[10px] font-black tracking-[0.3em] uppercase text-gray-600">
               BARBER PARADISE — MATÉRIEL PROFESSIONNEL

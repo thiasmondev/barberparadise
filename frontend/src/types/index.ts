@@ -66,6 +66,29 @@ export interface Category {
   order: number;
 }
 
+// ─── Brand Types ────────────────────────────────────────────
+
+export interface Brand {
+  id: number;
+  name: string;
+  slug: string;
+  description: string | null;
+  logo: string | null;
+  bannerImage: string | null;
+  website: string | null;
+  productCount: number;
+}
+
+export interface BrandDetail {
+  id: number;
+  name: string;
+  slug: string;
+  description: string | null;
+  logo: string | null;
+  bannerImage: string | null;
+  website: string | null;
+}
+
 // ─── Admin Types ────────────────────────────────────────────
 
 export interface AdminUser {

@@ -27,6 +27,7 @@ import { authRouter } from "./routes/auth";
 import { blogRouter } from "./routes/blog";
 import { seoRouter } from "./routes/seo";
 import importReviewsRouter from "./routes/import-reviews";
+import brandsRouter from "./routes/brands";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -50,6 +51,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/blog", blogRouter);
 app.use("/api/admin/seo", seoRouter);
 app.use("/api/admin/import-reviews", importReviewsRouter);
+app.use("/api/brands", brandsRouter);
 
 // ─── Root & Health Check ─────────────────────────────────────
 app.get("/", (_req, res) => {

@@ -18,6 +18,7 @@ model Product {
   name            String
   slug            String   @unique
   brand           String
+  brandId         Int?
   category        String
   subcategory     String
   subsubcategory  String   @default("")
@@ -38,6 +39,7 @@ model Product {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  brandRef   Brand?         @relation(fields: [brandId], references: [id])
   orderItems OrderItem[]
   reviews    Review[]
   variants   ProductVariant[]
@@ -45,7 +47,22 @@ model Product {
   @@index([category])
   @@index([subcategory])
   @@index([brand])
+  @@index([brandId])
   @@index([status])
+}
+
+// ─── MARQUES ─────────────────────────────────────────────────
+model Brand {
+  id          Int       @id @default(autoincrement())
+  name        String
+  slug        String    @unique
+  description String?
+  logo        String?
+  bannerImage String?
+  website     String?
+  createdAt   DateTime  @default(now())
+
+  products    Product[]
 }
 
 // ─── VARIANTES PRODUIT ────────────────────────────────────────────
