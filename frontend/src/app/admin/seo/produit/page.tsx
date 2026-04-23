@@ -332,11 +332,13 @@ export default function SeoProductPage() {
   // Champs éditables produit
   const [editCategory, setEditCategory] = useState("");
   const [editSubcategory, setEditSubcategory] = useState("");
+  const [editSubsubcategory, setEditSubsubcategory] = useState("");
   const [editImages, setEditImages] = useState<string[]>([]);
 
   // Autocomplétion (suggestions enrichies avec labels hiérarchiques)
   const [allCategories, setAllCategories] = useState<CategorySuggestion[]>([]);
   const [allSubcategories, setAllSubcategories] = useState<CategorySuggestion[]>([]);
+  const [level3ByParent, setLevel3ByParent] = useState<Record<string, { slug: string; label: string }[]>>({});
 
   // Éditeur description : mode WYSIWYG ou HTML brut
   const [htmlMode, setHtmlMode] = useState(false);
@@ -389,6 +391,7 @@ export default function SeoProductPage() {
             ? meta.subcategoriesWithLabels
             : meta.subcategories.map((s) => ({ slug: s, label: s }))
         );
+        setLevel3ByParent(meta.level3ByParent || {});
       })
       .catch(console.error);
   }, []);
@@ -406,6 +409,7 @@ export default function SeoProductPage() {
         setEditDescription(data.product.description || "");
         setEditCategory(data.product.category || "");
         setEditSubcategory(data.product.subcategory || "");
+        setEditSubsubcategory((data.product as any).subsubcategory || "");
         setEditImages(parseImages(data.product.images));
         setEditTags(
           Array.isArray(data.product.tags)
@@ -456,11 +460,12 @@ export default function SeoProductPage() {
         seoDescription: editDescription,
         suggestedTags: editTags,
       });
-      // Sauvegarder aussi catégorie et sous-catégorie si modifiées
-      if (editCategory !== product.category || editSubcategory !== product.subcategory) {
+      // Sauvegarder aussi catégorie, sous-catégorie et sous-sous-catégorie si modifiées
+      if (editCategory !== product.category || editSubcategory !== product.subcategory || editSubsubcategory !== ((product as any).subsubcategory || "")) {
         await updateProduct(productId, {
           category: editCategory,
           subcategory: editSubcategory,
+          subsubcategory: editSubsubcategory,
         });
       }
       setApplied(true);
@@ -721,12 +726,23 @@ export default function SeoProductPage() {
                 <label className="block text-xs text-gray-500 mb-1">Sous-catégorie</label>
                 <AutocompleteInput
                   value={editSubcategory}
-                  onChange={(v) => { setEditSubcategory(v); setApplied(false); }}
+                  onChange={(v) => { setEditSubcategory(v); setEditSubsubcategory(""); setApplied(false); }}
                   suggestions={allSubcategories}
                   placeholder="ex: accessoires-tondeuses"
                 />
               </div>
             </div>
+            {level3ByParent[editSubcategory]?.length > 0 && (
+              <div className="mt-3">
+                <label className="block text-xs text-gray-500 mb-1">Sous-sous-catégorie</label>
+                <AutocompleteInput
+                  value={editSubsubcategory}
+                  onChange={(v) => { setEditSubsubcategory(v); setApplied(false); }}
+                  suggestions={level3ByParent[editSubcategory].map((s) => ({ slug: s.slug, label: s.label }))}
+                  placeholder="Sélectionner une sous-sous-catégorie..."
+                />
+              </div>
+            )}
           </div>
 
           {/* Gestion des images */}

@@ -140,12 +140,28 @@ adminRouter.get("/products/meta", requireAdmin, async (_req: Request, res: Respo
       };
     });
 
+    // Sous-sous-catégories (niveau 3 uniquement) séparées pour le 3e champ
+    const subsubcategoriesWithLabels = [...level3Slugs].sort().map(slug => {
+      const name = nameMap.get(slug) || slug;
+      const parent = parentMap.get(slug) || "";
+      const parentName = nameMap.get(parent) || parent;
+      return { slug, label: `${name} (sous ${parentName})`, parent };
+    });
+
     res.json({
       brands: brands.map(b => b.brand).filter(Boolean),
       categories: [...categorySlugs].sort(),
       subcategories: [...subcategorySlugs].sort(),
       categoriesWithLabels,
       subcategoriesWithLabels,
+      subsubcategoriesWithLabels,
+      // Map parentSlug -> enfants niveau 3 (pour filtrage dynamique)
+      level3ByParent: [...level3Slugs].reduce((acc, slug) => {
+        const parent = parentMap.get(slug) || "";
+        if (!acc[parent]) acc[parent] = [];
+        acc[parent].push({ slug, label: nameMap.get(slug) || slug });
+        return acc;
+      }, {} as Record<string, { slug: string; label: string }[]>),
     });
   } catch (err) {
     console.error(err);
@@ -194,7 +210,7 @@ adminRouter.get("/products", requireAdmin, async (req: Request, res: Response): 
 // PATCH /api/admin/products/:id — Modifier un produit
 adminRouter.patch("/products/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, brand, category, subcategory, price, originalPrice, inStock, description, isActive } = req.body;
+    const { name, brand, category, subcategory, subsubcategory, price, originalPrice, inStock, description, isActive } = req.body;
     const product = await prisma.product.update({
       where: { id: req.params.id },
       data: {
@@ -202,6 +218,7 @@ adminRouter.patch("/products/:id", requireAdmin, async (req: Request, res: Respo
         brand: brand || undefined,
         category: category || undefined,
         subcategory: subcategory || undefined,
+        subsubcategory: subsubcategory !== undefined ? (subsubcategory || "") : undefined,
         price: price !== undefined ? parseFloat(price) : undefined,
         originalPrice: originalPrice ? parseFloat(originalPrice) : undefined,
         inStock: inStock ? true : false,

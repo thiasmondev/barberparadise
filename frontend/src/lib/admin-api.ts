@@ -74,6 +74,8 @@ export function getProductsMeta() {
     subcategories: string[];
     categoriesWithLabels: CategorySuggestion[];
     subcategoriesWithLabels: CategorySuggestion[];
+    subsubcategoriesWithLabels: CategorySuggestion[];
+    level3ByParent: Record<string, { slug: string; label: string }[]>;
   }>("/api/admin/products/meta");
 }
 

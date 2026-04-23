@@ -43,6 +43,7 @@ interface ProductForm {
   brand: string;
   category: string;
   subcategory: string;
+  subsubcategory: string;
   price: string;
   originalPrice: string;
   description: string;
@@ -55,6 +56,7 @@ const emptyForm: ProductForm = {
   brand: "",
   category: "",
   subcategory: "",
+  subsubcategory: "",
   price: "",
   originalPrice: "",
   description: "",
@@ -81,6 +83,7 @@ export default function AdminProductsPage() {
   const [brands, setBrands] = useState<string[]>([]);
   const [categories, setCategories] = useState<import("@/components/admin/AutocompleteInput").AutocompleteSuggestion[]>([]);
   const [allSubcategories, setAllSubcategories] = useState<import("@/components/admin/AutocompleteInput").AutocompleteSuggestion[]>([]);
+  const [level3ByParent, setLevel3ByParent] = useState<Record<string, { slug: string; label: string }[]>>({});
 
   // Charger les métadonnées une seule fois
   useEffect(() => {
@@ -97,6 +100,7 @@ export default function AdminProductsPage() {
             ? meta.subcategoriesWithLabels
             : meta.subcategories.map((s) => ({ slug: s, label: s }))
         );
+        setLevel3ByParent(meta.level3ByParent || {});
       })
       .catch(console.error);
   }, []);
@@ -136,6 +140,7 @@ export default function AdminProductsPage() {
       brand: p.brand,
       category: p.category,
       subcategory: p.subcategory,
+      subsubcategory: (p as any).subsubcategory || "",
       price: String(p.price),
       originalPrice: p.originalPrice ? String(p.originalPrice) : "",
       description: p.description,
@@ -405,11 +410,24 @@ export default function AdminProductsPage() {
                 <label className="block text-sm font-medium text-dark-700 mb-1">Sous-catégorie</label>
                 <AutocompleteInput
                   value={form.subcategory}
-                  onChange={(v) => setForm({ ...form, subcategory: v })}
+                  onChange={(v) => setForm({ ...form, subcategory: v, subsubcategory: "" })}
                   suggestions={allSubcategories}
                   placeholder="Sous-catégorie"
                 />
               </div>
+
+              {/* Sous-sous-catégorie (niveau 3) — visible uniquement si la sous-catégorie a des enfants */}
+              {level3ByParent[form.subcategory]?.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-dark-700 mb-1">Sous-sous-catégorie</label>
+                  <AutocompleteInput
+                    value={form.subsubcategory}
+                    onChange={(v) => setForm({ ...form, subsubcategory: v })}
+                    suggestions={level3ByParent[form.subcategory].map((s) => ({ slug: s.slug, label: s.label }))}
+                    placeholder="Sélectionner une sous-sous-catégorie..."
+                  />
+                </div>
+              )}
 
               {/* Prix */}
               <div className="grid grid-cols-2 gap-4">
