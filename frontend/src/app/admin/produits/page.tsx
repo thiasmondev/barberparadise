@@ -83,6 +83,7 @@ export default function AdminProductsPage() {
   const [brands, setBrands] = useState<string[]>([]);
   const [categories, setCategories] = useState<import("@/components/admin/AutocompleteInput").AutocompleteSuggestion[]>([]);
   const [allSubcategories, setAllSubcategories] = useState<import("@/components/admin/AutocompleteInput").AutocompleteSuggestion[]>([]);
+  const [level2ByParent, setLevel2ByParent] = useState<Record<string, { slug: string; label: string }[]>>({});
   const [level3ByParent, setLevel3ByParent] = useState<Record<string, { slug: string; label: string }[]>>({});
 
   // Charger les métadonnées une seule fois
@@ -100,6 +101,7 @@ export default function AdminProductsPage() {
             ? meta.subcategoriesWithLabels
             : meta.subcategories.map((s) => ({ slug: s, label: s }))
         );
+        setLevel2ByParent(meta.level2ByParent || {});
         setLevel3ByParent(meta.level3ByParent || {});
       })
       .catch(console.error);
@@ -398,7 +400,7 @@ export default function AdminProductsPage() {
                   <label className="block text-sm font-medium text-dark-700 mb-1">Catégorie</label>
                   <AutocompleteInput
                     value={form.category}
-                    onChange={(v) => setForm({ ...form, category: v, subcategory: "" })}
+                    onChange={(v) => setForm({ ...form, category: v, subcategory: "", subsubcategory: "" })}
                     suggestions={categories}
                     placeholder="Catégorie"
                   />
@@ -411,7 +413,11 @@ export default function AdminProductsPage() {
                 <AutocompleteInput
                   value={form.subcategory}
                   onChange={(v) => setForm({ ...form, subcategory: v, subsubcategory: "" })}
-                  suggestions={allSubcategories}
+                  suggestions={
+                    form.category && level2ByParent[form.category]?.length
+                      ? level2ByParent[form.category].map(s => ({ slug: s.slug, label: s.label }))
+                      : allSubcategories
+                  }
                   placeholder="Sous-catégorie"
                 />
               </div>

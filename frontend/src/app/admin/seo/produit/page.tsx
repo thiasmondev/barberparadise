@@ -338,6 +338,7 @@ export default function SeoProductPage() {
   // Autocomplétion (suggestions enrichies avec labels hiérarchiques)
   const [allCategories, setAllCategories] = useState<CategorySuggestion[]>([]);
   const [allSubcategories, setAllSubcategories] = useState<CategorySuggestion[]>([]);
+  const [level2ByParent, setLevel2ByParent] = useState<Record<string, { slug: string; label: string }[]>>({});
   const [level3ByParent, setLevel3ByParent] = useState<Record<string, { slug: string; label: string }[]>>({});
 
   // Éditeur description : mode WYSIWYG ou HTML brut
@@ -391,6 +392,7 @@ export default function SeoProductPage() {
             ? meta.subcategoriesWithLabels
             : meta.subcategories.map((s) => ({ slug: s, label: s }))
         );
+        setLevel2ByParent(meta.level2ByParent || {});
         setLevel3ByParent(meta.level3ByParent || {});
       })
       .catch(console.error);
@@ -712,37 +714,43 @@ export default function SeoProductPage() {
               <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">CATÉGORIE & SOUS-CATÉGORIE</span>
               <span className="text-xs text-gray-400">Modifiables directement</span>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Catégorie</label>
-                <AutocompleteInput
-                  value={editCategory}
-                  onChange={(v) => { setEditCategory(v); setApplied(false); }}
-                  suggestions={allCategories}
-                  placeholder="ex: tondeuses"
-                />
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Catégorie</label>
+                  <AutocompleteInput
+                    value={editCategory}
+                    onChange={(v) => { setEditCategory(v); setEditSubcategory(""); setEditSubsubcategory(""); setApplied(false); }}
+                    suggestions={allCategories}
+                    placeholder="ex: cheveux, barbe, peignes..."
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Sous-catégorie</label>
+                  <AutocompleteInput
+                    value={editSubcategory}
+                    onChange={(v) => { setEditSubcategory(v); setEditSubsubcategory(""); setApplied(false); }}
+                    suggestions={
+                      editCategory && level2ByParent[editCategory]?.length
+                        ? level2ByParent[editCategory].map(s => ({ slug: s.slug, label: s.label }))
+                        : allSubcategories
+                    }
+                    placeholder="ex: cires, gel, laques..."
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Sous-catégorie</label>
-                <AutocompleteInput
-                  value={editSubcategory}
-                  onChange={(v) => { setEditSubcategory(v); setEditSubsubcategory(""); setApplied(false); }}
-                  suggestions={allSubcategories}
-                  placeholder="ex: accessoires-tondeuses"
-                />
-              </div>
+              {level3ByParent[editSubcategory]?.length > 0 && (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Sous-sous-catégorie</label>
+                  <AutocompleteInput
+                    value={editSubsubcategory}
+                    onChange={(v) => { setEditSubsubcategory(v); setApplied(false); }}
+                    suggestions={level3ByParent[editSubcategory].map((s) => ({ slug: s.slug, label: s.label }))}
+                    placeholder="Sélectionner une sous-sous-catégorie..."
+                  />
+                </div>
+              )}
             </div>
-            {level3ByParent[editSubcategory]?.length > 0 && (
-              <div className="mt-3">
-                <label className="block text-xs text-gray-500 mb-1">Sous-sous-catégorie</label>
-                <AutocompleteInput
-                  value={editSubsubcategory}
-                  onChange={(v) => { setEditSubsubcategory(v); setApplied(false); }}
-                  suggestions={level3ByParent[editSubcategory].map((s) => ({ slug: s.slug, label: s.label }))}
-                  placeholder="Sélectionner une sous-sous-catégorie..."
-                />
-              </div>
-            )}
           </div>
 
           {/* Gestion des images */}

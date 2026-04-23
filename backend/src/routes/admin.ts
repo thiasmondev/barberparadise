@@ -96,57 +96,73 @@ adminRouter.get("/products/meta", requireAdmin, async (_req: Request, res: Respo
       }),
     ]);
 
-    // Identifier les slugs de chaque niveau
+    // Map slug -> nom et parent pour affichage
+    const nameMap = new Map(allCategoryRows.map(c => [c.slug, c.name]));
+    const parentMap = new Map(allCategoryRows.map(c => [c.slug, c.parentSlug || ""]));
+
+    // Identifier les slugs de chaque niveau (structure à 4 niveaux possible)
+    // Niveau 0 : racines (parentSlug vide/null)
     const rootSlugs = new Set(allCategoryRows.filter(c => !c.parentSlug).map(c => c.slug));
-    const level2Slugs = new Set(allCategoryRows.filter(c => c.parentSlug && rootSlugs.has(c.parentSlug)).map(c => c.slug));
+    // Niveau 1 : enfants directs des racines (ex: cheveux, barbe, peignes...)
+    const level1Slugs = new Set(allCategoryRows.filter(c => c.parentSlug && rootSlugs.has(c.parentSlug)).map(c => c.slug));
+    // Niveau 2 : enfants des niveau 1 (ex: cires, gel, laques...)
+    const level2Slugs = new Set(allCategoryRows.filter(c => c.parentSlug && level1Slugs.has(c.parentSlug)).map(c => c.slug));
+    // Niveau 3 : enfants des niveau 2 (ex: cire-brillante, cire-mat-naturel...)
     const level3Slugs = new Set(allCategoryRows.filter(c => c.parentSlug && level2Slugs.has(c.parentSlug)).map(c => c.slug));
 
-    // Map slug -> nom pour affichage
-    const nameMap = new Map(allCategoryRows.map(c => [c.slug, c.name]));
-    const parentMap = new Map(allCategoryRows.map(c => [c.slug, c.parentSlug]));
-
-    // Catégories (niveau 1) : toutes les racines + celles utilisées dans les produits
+    // Pour le champ "Catégorie" (niveau 1) : enfants directs des racines
     const categorySlugs = new Set([
-      ...rootSlugs,
+      ...level1Slugs,
       ...productCategories.map(c => c.category).filter(Boolean),
     ]);
 
-    // Sous-catégories (niveaux 2 et 3) : toutes + celles utilisées dans les produits
+    // Pour le champ "Sous-catégorie" (niveau 2) : enfants des catégories
     const subcategorySlugs = new Set([
       ...level2Slugs,
-      ...level3Slugs,
       ...productSubcategories.map(s => s.subcategory).filter(Boolean),
     ]);
 
     // Construire les suggestions enrichies avec label hiérarchique
     const categoriesWithLabels = [...categorySlugs].sort().map(slug => ({
       slug,
-      label: nameMap.has(slug) ? `${nameMap.get(slug)} (• ${slug})` : slug,
+      label: nameMap.has(slug) ? `${nameMap.get(slug)!}` : slug,
+      parent: parentMap.get(slug) || "",
     }));
 
     const subcategoriesWithLabels = [...subcategorySlugs].sort().map(slug => {
       const name = nameMap.get(slug) || slug;
       const parent = parentMap.get(slug) || "";
       const parentName = nameMap.get(parent) || parent;
-      const isLevel3 = level3Slugs.has(slug);
       return {
         slug,
-        label: isLevel3
-          ? `↳ ${name} (sous ${parentName})`
-          : parentName
-          ? `${name} (${parentName})`
-          : name,
+        label: parentName ? `${name} (${parentName})` : name,
         parent,
       };
     });
 
-    // Sous-sous-catégories (niveau 3 uniquement) séparées pour le 3e champ
+    // Sous-sous-catégories (niveau 3) séparées pour le 3e champ
     const subsubcategoriesWithLabels = [...level3Slugs].sort().map(slug => {
       const name = nameMap.get(slug) || slug;
       const parent = parentMap.get(slug) || "";
       const parentName = nameMap.get(parent) || parent;
       return { slug, label: `${name} (sous ${parentName})`, parent };
     });
+
+    // Map parentSlug (niveau 2) -> enfants niveau 3 (pour filtrage dynamique du 3e champ)
+    const level3ByParent: Record<string, { slug: string; label: string }[]> = {};
+    for (const slug of level3Slugs) {
+      const parent = parentMap.get(slug) || "";
+      if (!level3ByParent[parent]) level3ByParent[parent] = [];
+      level3ByParent[parent].push({ slug, label: nameMap.get(slug) || slug });
+    }
+
+    // Map parentSlug (niveau 1) -> enfants niveau 2 (pour filtrage dynamique du 2e champ)
+    const level2ByParent: Record<string, { slug: string; label: string }[]> = {};
+    for (const slug of level2Slugs) {
+      const parent = parentMap.get(slug) || "";
+      if (!level2ByParent[parent]) level2ByParent[parent] = [];
+      level2ByParent[parent].push({ slug, label: nameMap.get(slug) || slug });
+    }
 
     res.json({
       brands: brands.map(b => b.brand).filter(Boolean),
@@ -155,13 +171,8 @@ adminRouter.get("/products/meta", requireAdmin, async (_req: Request, res: Respo
       categoriesWithLabels,
       subcategoriesWithLabels,
       subsubcategoriesWithLabels,
-      // Map parentSlug -> enfants niveau 3 (pour filtrage dynamique)
-      level3ByParent: [...level3Slugs].reduce((acc, slug) => {
-        const parent = parentMap.get(slug) || "";
-        if (!acc[parent]) acc[parent] = [];
-        acc[parent].push({ slug, label: nameMap.get(slug) || slug });
-        return acc;
-      }, {} as Record<string, { slug: string; label: string }[]>),
+      level3ByParent,
+      level2ByParent,
     });
   } catch (err) {
     console.error(err);
