@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, SlidersHorizontal, X, ArrowRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronRight as ChevronRightIcon, SlidersHorizontal, X, ArrowRight } from "lucide-react";
 import { getProducts, getCategories } from "@/lib/api";
 import type { Product, Category } from "@/types";
 import Link from "next/link";
@@ -22,7 +22,6 @@ const PRICE_RANGES = [
   { label: "Plus de 100€", min: 100, max: 9999 },
 ];
 
-// Catégories à exclure de la sidebar (gérées séparément)
 const EXCLUDED_CATEGORY_SLUGS = ["marque"];
 
 function formatPrice(price: number) {
@@ -38,6 +37,17 @@ function parseImages(images: unknown): string[] {
   return [];
 }
 
+/** Retourne tous les slugs ancêtres d'un slug donné dans la liste de catégories */
+function getAncestorSlugs(slug: string, cats: Category[]): string[] {
+  const ancestors: string[] = [];
+  let current = cats.find((c) => c.slug === slug);
+  while (current?.parentSlug) {
+    ancestors.push(current.parentSlug);
+    current = cats.find((c) => c.slug === current!.parentSlug);
+  }
+  return ancestors;
+}
+
 export default function CatalogueContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -49,6 +59,8 @@ export default function CatalogueContent() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [priceRange, setPriceRange] = useState(0);
   const [categories, setCategories] = useState<Category[]>([]);
+  // Accordion : ensemble des slugs ouverts
+  const [openSlugs, setOpenSlugs] = useState<Set<string>>(new Set());
 
   const page = Number(searchParams.get("page")) || 1;
   const category = searchParams.get("category") || "";
@@ -56,18 +68,43 @@ export default function CatalogueContent() {
   const sort = searchParams.get("sort") || "newest";
   const promo = searchParams.get("promo") || "";
 
-  // Charger toutes les catégories depuis l'API (racines + enfants)
+  // Charger toutes les catégories depuis l'API
   useEffect(() => {
     getCategories()
       .then((cats) => {
-        // Garder toutes les catégories sauf celles exclues
         const filtered = cats.filter((c) => !EXCLUDED_CATEGORY_SLUGS.includes(c.slug));
-        // Trier par order
         filtered.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
         setCategories(filtered);
+        // Si une catégorie est active, ouvrir automatiquement ses ancêtres
+        if (category) {
+          const ancestors = getAncestorSlugs(category, filtered);
+          // Aussi ouvrir le parent direct de la catégorie active
+          const active = filtered.find((c) => c.slug === category);
+          if (active?.parentSlug) ancestors.push(active.parentSlug);
+          setOpenSlugs(new Set([...ancestors, category]));
+        }
       })
       .catch(() => {});
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Quand la catégorie URL change, ouvrir les ancêtres
+  useEffect(() => {
+    if (category && categories.length > 0) {
+      const ancestors = getAncestorSlugs(category, categories);
+      const active = categories.find((c) => c.slug === category);
+      if (active?.parentSlug) ancestors.push(active.parentSlug);
+      setOpenSlugs(new Set([...ancestors, category]));
+    }
+  }, [category, categories]);
+
+  const toggleSlug = (slug: string) => {
+    setOpenSlugs((prev) => {
+      const next = new Set(prev);
+      if (next.has(slug)) next.delete(slug);
+      else next.add(slug);
+      return next;
+    });
+  };
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -111,18 +148,62 @@ export default function CatalogueContent() {
     router.push(`/catalogue?${params.toString()}`);
   };
 
-  // Trouver le nom de la catégorie active pour l'affichage
-  const getCategoryLabel = () => {
+  // Titre dynamique
+  const getTitle = () => {
     if (search) return `"${search}"`;
-    if (!category) return "SHOP ALL";
-    // Chercher dans les catégories chargées
+    if (!category) return "CATALOGUE";
     const found = categories.find((c) => c.slug === category);
     if (found) return found.name.toUpperCase();
-    // Fallback : transformer le slug en titre lisible
     return category.replace(/-/g, " ").toUpperCase();
   };
 
-  const title = getCategoryLabel();
+  const title = getTitle();
+
+  // Rendu récursif d'un nœud de catégorie
+  const renderCatNode = (cat: Category, depth: number = 0) => {
+    const children = categories.filter((c) => c.parentSlug === cat.slug);
+    const hasChildren = children.length > 0;
+    const isOpen = openSlugs.has(cat.slug);
+    const isActive = category === cat.slug;
+
+    const indent = depth === 0 ? "" : depth === 1 ? "ml-3 pl-3 border-l border-white/10" : "ml-3 pl-2 border-l border-white/5";
+
+    return (
+      <div key={cat.slug} className={depth > 0 ? indent : ""}>
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => { updateParams("category", cat.slug); setFiltersOpen(false); }}
+            className={`text-left transition-colors flex-1 ${
+              depth === 0
+                ? `text-sm font-semibold py-0.5 ${isActive ? "text-[#ff4a8d]" : "text-gray-300 hover:text-white"}`
+                : depth === 1
+                ? `text-xs py-0.5 ${isActive ? "text-[#ff4a8d] font-bold" : "text-gray-400 hover:text-white"}`
+                : `text-[11px] py-0.5 ${isActive ? "text-[#ff4a8d] font-bold" : "text-gray-500 hover:text-gray-300"}`
+            }`}
+          >
+            {depth === 2 ? `↳ ${cat.name}` : cat.name}
+          </button>
+          {hasChildren && (
+            <button
+              onClick={() => toggleSlug(cat.slug)}
+              className="p-1 text-gray-500 hover:text-white transition-colors flex-shrink-0"
+              aria-label={isOpen ? "Fermer" : "Ouvrir"}
+            >
+              {isOpen
+                ? <ChevronDown size={12} />
+                : <ChevronRightIcon size={12} />
+              }
+            </button>
+          )}
+        </div>
+        {hasChildren && isOpen && (
+          <div className="mt-1 mb-1 flex flex-col gap-1">
+            {children.map((child) => renderCatNode(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="bg-[#131313] min-h-screen text-[#e5e2e1]">
@@ -144,7 +225,7 @@ export default function CatalogueContent() {
             {/* Catégories */}
             <div>
               <h3 className="text-[10px] font-black tracking-[0.3em] text-gray-500 uppercase mb-6">CATÉGORIE</h3>
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2">
                 {/* Tous les produits */}
                 <button
                   onClick={() => { updateParams("category", ""); setFiltersOpen(false); }}
@@ -154,67 +235,10 @@ export default function CatalogueContent() {
                 >
                   Tous les produits
                 </button>
-                {/* Catégories dynamiques depuis l'API avec hiérarchie */}
+                {/* Catégories racines avec accordion */}
                 {categories
-                  .filter((c) => !c.parentSlug) // Racines seulement
-                  .map((root) => {
-                    const children = categories.filter((c) => c.parentSlug === root.slug);
-                    return (
-                      <div key={root.slug}>
-                        {/* Catégorie racine */}
-                        <button
-                          onClick={() => { updateParams("category", root.slug); setFiltersOpen(false); }}
-                          className={`text-left text-sm font-semibold transition-colors w-full ${
-                            category === root.slug
-                              ? "text-[#ff4a8d]"
-                              : "text-gray-300 hover:text-white"
-                          }`}
-                        >
-                          {root.name}
-                        </button>
-                        {/* Sous-catégories */}
-                        {children.length > 0 && (
-                          <div className="flex flex-col gap-1.5 mt-1.5 ml-3 border-l border-white/10 pl-3">
-                            {children.map((child) => {
-                              const grandchildren = categories.filter((c) => c.parentSlug === child.slug);
-                              return (
-                                <div key={child.slug}>
-                                  <button
-                                    onClick={() => { updateParams("category", child.slug); setFiltersOpen(false); }}
-                                    className={`text-left text-xs transition-colors w-full ${
-                                      category === child.slug
-                                        ? "text-[#ff4a8d] font-bold"
-                                        : "text-gray-400 hover:text-white"
-                                    }`}
-                                  >
-                                    {child.name}
-                                  </button>
-                                  {/* Sous-sous-catégories */}
-                                  {grandchildren.length > 0 && (
-                                    <div className="flex flex-col gap-1 mt-1 ml-3 border-l border-white/5 pl-2">
-                                      {grandchildren.map((gc) => (
-                                        <button
-                                          key={gc.slug}
-                                          onClick={() => { updateParams("category", gc.slug); setFiltersOpen(false); }}
-                                          className={`text-left text-[11px] transition-colors w-full ${
-                                            category === gc.slug
-                                              ? "text-[#ff4a8d] font-bold"
-                                              : "text-gray-500 hover:text-gray-300"
-                                          }`}
-                                        >
-                                          ↳ {gc.name}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                  .filter((c) => !c.parentSlug)
+                  .map((root) => renderCatNode(root, 0))}
               </div>
             </div>
 

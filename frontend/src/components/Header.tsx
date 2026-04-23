@@ -425,9 +425,14 @@ export default function Header() {
         {/* ─── NAVIGATION DESKTOP ─── */}
         <nav className="hidden md:flex items-center justify-center gap-2 pb-4">
           {NAV_MAIN.map((item) => {
-            const isActive =
-              pathname === item.href ||
-              (item.href !== "/" && pathname.startsWith(item.href.split("?")[0]));
+            // Un item est actif uniquement si :
+            // - pathname correspond exactement à la partie path du href (sans query string)
+            // - ET le href n'a pas de query string (sinon c'est un filtre spécifique, pas une section)
+            const hrefPath = item.href.split("?")[0];
+            const hrefHasQuery = item.href.includes("?");
+            const isActive = hrefHasQuery
+              ? false // MATÉRIEL, NOUVEAUTÉS ont un ?query — jamais "actifs" au sens section
+              : pathname === hrefPath || (hrefPath !== "/" && pathname.startsWith(hrefPath + "/"));
             const hasMega = !!item.megaMenu;
             const isOpen = openMenu === item.label;
 
