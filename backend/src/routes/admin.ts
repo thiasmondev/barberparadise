@@ -791,4 +791,20 @@ adminRouter.post(
   }
 );
 
+// PUT /api/admin/products/:id/image-alts — Mettre à jour les alt texts des images
+adminRouter.put("/products/:id/image-alts", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { imageAlts } = req.body as { imageAlts: string[] };
+    if (!Array.isArray(imageAlts)) { res.status(400).json({ error: "imageAlts doit être un tableau" }); return; }
+    const updated = await prisma.product.update({
+      where: { id: req.params.id },
+      data: { imageAlts: JSON.stringify(imageAlts) },
+    });
+    res.json({ imageAlts: JSON.parse((updated as any).imageAlts || "[]") });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur mise à jour alt texts" });
+  }
+});
+
 export default adminRouter;

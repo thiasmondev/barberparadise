@@ -334,6 +334,7 @@ export default function SeoProductPage() {
   const [editSubcategory, setEditSubcategory] = useState("");
   const [editSubsubcategory, setEditSubsubcategory] = useState("");
   const [editImages, setEditImages] = useState<string[]>([]);
+  const [editImageAlts, setEditImageAlts] = useState<string[]>([]);
 
   // Autocomplétion (suggestions enrichies avec labels hiérarchiques)
   const [allCategories, setAllCategories] = useState<CategorySuggestion[]>([]);
@@ -413,6 +414,7 @@ export default function SeoProductPage() {
         setEditSubcategory(data.product.subcategory || "");
         setEditSubsubcategory((data.product as any).subsubcategory || "");
         setEditImages(parseImages(data.product.images));
+        setEditImageAlts(JSON.parse((data.product as any).imageAlts || "[]"));
         setEditTags(
           Array.isArray(data.product.tags)
             ? data.product.tags
@@ -764,7 +766,9 @@ export default function SeoProductPage() {
               <ImageManager
                 productId={productId}
                 images={editImages}
+                imageAlts={editImageAlts}
                 onChange={(imgs) => { setEditImages(imgs); setApplied(false); }}
+                onAltsChange={(alts) => setEditImageAlts(alts)}
               />
             </div>
           )}

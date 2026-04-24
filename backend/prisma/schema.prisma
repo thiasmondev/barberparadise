@@ -25,6 +25,7 @@ model Product {
   price           Float
   originalPrice   Float?
   images          String   // JSON array
+  imageAlts        String   @default("[]") // JSON array of alt texts matching images order
   description     String
   shortDescription String
   features        String   @default("[]") // JSON array
