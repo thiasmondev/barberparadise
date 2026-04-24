@@ -235,14 +235,11 @@ export default function CatalogueContent() {
                 >
                   Tous les produits
                 </button>
-                {/* Enfants directs de 'produit' (CHEVEUX, BARBE...) */}
+                {/* Catégories racines cliquables : produit et materiel, avec leurs enfants en retrait */}
                 {categories
-                  .filter((c) => c.parentSlug === "produit")
-                  .map((cat) => renderCatNode(cat, 0))}
-                {/* Enfants directs de 'materiel' (TONDEUSES, CISEAUX...) */}
-                {categories
-                  .filter((c) => c.parentSlug === "materiel")
-                  .map((cat) => renderCatNode(cat, 0))}
+                  .filter((c) => !c.parentSlug && !EXCLUDED_CATEGORY_SLUGS.includes(c.slug))
+                  .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                  .map((root) => renderCatNode(root, 0))}
               </div>
             </div>
 
