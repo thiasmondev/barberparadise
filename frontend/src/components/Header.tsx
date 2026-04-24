@@ -54,22 +54,23 @@ function MegaMenuProduits({
   allCategories: ApiCategory[];
   onClose: () => void;
 }) {
-  // Utiliser les vraies catégories racines de l'API (parentSlug vide ou null)
-  const roots = allCategories
-    .filter((c) => !c.parentSlug && !EXCLUDED_ROOT_SLUGS.includes(c.slug))
+  // Colonne gauche : enfants directs de 'produit' (CHEVEUX, BARBE...)
+  const produitChildren = allCategories
+    .filter((c) => c.parentSlug === "produit")
     .sort((a, b) => a.order - b.order);
 
-  const [hoveredRoot, setHoveredRoot] = useState<string>(roots[0]?.slug || "");
+  const [hoveredItem, setHoveredItem] = useState<string>(produitChildren[0]?.slug || "");
 
   useEffect(() => {
-    if (roots.length > 0 && !hoveredRoot) setHoveredRoot(roots[0].slug);
-  }, [roots.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (produitChildren.length > 0 && !hoveredItem) setHoveredItem(produitChildren[0].slug);
+  }, [produitChildren.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const level1 = allCategories
-    .filter((c) => c.parentSlug === hoveredRoot)
+  // Colonne droite : enfants de l'item survolé en colonne gauche
+  const subItems = allCategories
+    .filter((c) => c.parentSlug === hoveredItem)
     .sort((a, b) => a.order - b.order);
 
-  if (roots.length === 0) return null;
+  if (produitChildren.length === 0) return null;
 
   return (
     <div
@@ -87,13 +88,13 @@ function MegaMenuProduits({
           Tous les produits →
         </Link>
         <div className="h-px bg-white/10 mx-4 my-2" />
-        {roots.map((cat) => (
+        {produitChildren.map((cat) => (
           <button
             key={cat.slug}
-            onMouseEnter={() => setHoveredRoot(cat.slug)}
+            onMouseEnter={() => setHoveredItem(cat.slug)}
             onClick={() => { onClose(); window.location.href = `/catalogue?category=${cat.slug}`; }}
             className={`w-full text-left flex items-center justify-between px-6 py-3 text-[12px] font-semibold tracking-[0.1em] uppercase transition-all duration-150 ${
-              hoveredRoot === cat.slug
+              hoveredItem === cat.slug
                 ? "text-white bg-white/5 border-l-2 border-[#ff4a8d]"
                 : "text-white/60 hover:text-white hover:bg-white/5 border-l-2 border-transparent"
             }`}
@@ -106,18 +107,18 @@ function MegaMenuProduits({
         ))}
       </div>
 
-      {/* Colonne droite : sous-catégories */}
-      {level1.length > 0 && (
+      {/* Colonne droite : sous-catégories de l'item survolé */}
+      {subItems.length > 0 && (
         <div className="bg-[#111111] py-6 min-w-[240px] flex flex-col">
           <Link
-            href={`/catalogue?category=${hoveredRoot}`}
+            href={`/catalogue?category=${hoveredItem}`}
             onClick={onClose}
             className="block px-6 py-2 text-[11px] font-black tracking-[0.2em] uppercase text-[#ff4a8d] hover:text-white transition-colors"
           >
             Tout voir →
           </Link>
           <div className="h-px bg-white/10 mx-4 my-2" />
-          {level1.map((cat) => (
+          {subItems.map((cat) => (
             <Link
               key={cat.slug}
               href={`/catalogue?category=${cat.slug}`}
