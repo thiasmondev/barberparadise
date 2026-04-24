@@ -235,10 +235,14 @@ export default function CatalogueContent() {
                 >
                   Tous les produits
                 </button>
-                {/* Catégories racines avec accordion */}
+                {/* Enfants directs de 'produit' (CHEVEUX, BARBE...) */}
                 {categories
-                  .filter((c) => !c.parentSlug)
-                  .map((root) => renderCatNode(root, 0))}
+                  .filter((c) => c.parentSlug === "produit")
+                  .map((cat) => renderCatNode(cat, 0))}
+                {/* Enfants directs de 'materiel' (TONDEUSES, CISEAUX...) */}
+                {categories
+                  .filter((c) => c.parentSlug === "materiel")
+                  .map((cat) => renderCatNode(cat, 0))}
               </div>
             </div>
 
