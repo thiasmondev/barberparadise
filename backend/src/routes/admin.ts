@@ -791,26 +791,4 @@ adminRouter.post(
   }
 );
 
-// POST /api/admin/fix-category-parents — Corrige parentSlug des catégories racines mal classées
-adminRouter.post("/fix-category-parents", requireAdmin, async (_req: Request, res: Response): Promise<void> => {
-  try {
-    // Mettre tondeuses, ciseaux, rasage, autres comme enfants de materiel
-    const slugsToFix = ["tondeuses", "ciseaux", "rasage", "autres"];
-    const result = await prisma.category.updateMany({
-      where: { slug: { in: slugsToFix } },
-      data: { parentSlug: "materiel" },
-    });
-    // Vérification
-    const updated = await prisma.category.findMany({
-      where: { slug: { in: slugsToFix } },
-      select: { slug: true, name: true, parentSlug: true },
-      orderBy: { slug: "asc" },
-    });
-    res.json({ success: true, count: result.count, updated });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Erreur serveur" });
-  }
-});
-
 export default adminRouter;
