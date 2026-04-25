@@ -779,6 +779,9 @@ export default function SeoProductPage() {
                 imageAlts={editImageAlts}
                 onChange={(imgs) => { setEditImages(imgs); setApplied(false); }}
                 onAltsChange={(alts) => setEditImageAlts(alts)}
+                productName={product?.name}
+                productBrand={product?.brand}
+                productCategory={editCategory || product?.category}
               />
             </div>
           )}

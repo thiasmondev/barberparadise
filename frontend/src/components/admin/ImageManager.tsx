@@ -12,9 +12,13 @@ interface ImageManagerProps {
   imageAlts?: string[];
   onChange: (images: string[]) => void;
   onAltsChange?: (alts: string[]) => void;
+  // Données produit pour la génération IA des alt texts
+  productName?: string;
+  productBrand?: string;
+  productCategory?: string;
 }
 
-export default function ImageManager({ productId, images, imageAlts = [], onChange, onAltsChange }: ImageManagerProps) {
+export default function ImageManager({ productId, images, imageAlts = [], onChange, onAltsChange, productName, productBrand, productCategory }: ImageManagerProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [dragOver, setDragOver] = useState(false);
@@ -24,6 +28,7 @@ export default function ImageManager({ productId, images, imageAlts = [], onChan
   const [alts, setAlts] = useState<string[]>([]);
   const [savingAlts, setSavingAlts] = useState(false);
   const [altsSaved, setAltsSaved] = useState(false);
+  const [generatingAlts, setGeneratingAlts] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Synchroniser les alts avec les images
@@ -40,6 +45,35 @@ export default function ImageManager({ productId, images, imageAlts = [], onChan
     setAltsSaved(false);
     if (onAltsChange) onAltsChange(newAlts);
   };
+
+  // ─── Génération IA des alt texts ────────────────────────────
+  const generateAlts = useCallback(async () => {
+    setGeneratingAlts(true);
+    setError(null);
+    try {
+      const token = getAdminToken();
+      const res = await fetch(`${API_URL}/api/admin/seo/image-alts/generate/${productId}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Erreur génération (${res.status})`);
+      }
+      const data = await res.json();
+      const newAlts: string[] = data.alts || [];
+      // Compléter si moins d'alts que d'images
+      const synced = images.map((_, i) => newAlts[i] || "");
+      setAlts(synced);
+      setAltsSaved(true);
+      setTimeout(() => setAltsSaved(false), 3000);
+      if (onAltsChange) onAltsChange(synced);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur lors de la génération des alt texts");
+    } finally {
+      setGeneratingAlts(false);
+    }
+  }, [productId, images, onAltsChange]);
 
   // ─── Sauvegarde des alts ─────────────────────────────────────
   const saveAlts = useCallback(async () => {
@@ -289,24 +323,51 @@ export default function ImageManager({ productId, images, imageAlts = [], onChan
       {/* Grille d'images avec champs alt */}
       {images.length > 0 && (
         <div>
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
             <p className="text-xs text-gray-500 flex items-center gap-1">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" />
               </svg>
               Glissez pour réorganiser · La 1ère image est l'image principale
             </p>
-            <button
-              onClick={saveAlts}
-              disabled={savingAlts}
-              className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${
-                altsSaved
-                  ? "bg-green-100 text-green-700 border border-green-200"
-                  : "bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
-              }`}
-            >
-              {savingAlts ? "Sauvegarde..." : altsSaved ? "✓ Alt texts sauvegardés" : "Sauvegarder les alt texts"}
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Bouton Générer SEO via IA */}
+              <button
+                onClick={generateAlts}
+                disabled={generatingAlts || uploading}
+                title={`Générer automatiquement les alt texts SEO pour ${productName || "ce produit"}`}
+                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-50"
+              >
+                {generatingAlts ? (
+                  <>
+                    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Génération...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3l14 9-14 9V3z" />
+                    </svg>
+                    ✨ Générer SEO
+                  </>
+                )}
+              </button>
+              {/* Bouton Sauvegarder */}
+              <button
+                onClick={saveAlts}
+                disabled={savingAlts || generatingAlts}
+                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
+                  altsSaved
+                    ? "bg-green-100 text-green-700 border border-green-200"
+                    : "bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+                }`}
+              >
+                {savingAlts ? "Sauvegarde..." : altsSaved ? "✓ Sauvegardé" : "Sauvegarder"}
+              </button>
+            </div>
           </div>
 
           <div className="space-y-4">
