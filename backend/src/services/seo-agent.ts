@@ -805,29 +805,37 @@ export async function generateImageAlts(product: {
   try { images = JSON.parse(product.images); } catch { images = []; }
   if (images.length === 0) return [];
 
-  const prompt = `Tu es un expert SEO spécialisé en e-commerce de produits de barbier et coiffure professionnelle.
+  const systemPrompt = `Tu es un expert SEO e-commerce spécialisé dans les produits barber et coiffure.
+Pour chaque produit, génère un alt text optimisé en français qui :
+1. Commence par la marque et le nom exact du produit
+2. Inclut le type de produit (tondeuse, ciseau, cire, huile...)
+3. Inclut le contexte d'usage (barber, coiffeur, professionnel, homme)
+4. Inclut 1-2 mots-clés de longue traîne pertinents
+5. Fait entre 80 et 125 caractères
+6. Est naturel et lisible, pas une liste de mots-clés
 
-Génère des alt texts SEO optimisés pour les ${images.length} image(s) du produit suivant :
+Format : [Marque] [Nom Produit] [Type] - [Adjectifs usage]
+Exemple : "JRL FF2020C Tondeuse Professionnelle Sans Fil - Clipper Barber Fade Précision"
+
+Retourne UNIQUEMENT l'alt text, sans guillemets, sans explication.
+Pour le title, génère : [Nom produit] [Marque] — Barber Paradise simplement.
+
+Mots-clés prioritaires du secteur (intègre-les naturellement quand pertinent) :
+tondeuse barber, clipper professionnel, ciseaux coiffeur, cire cheveux homme, matériel barbier, huile barbe, produit coiffant`;
+
+  const prompt = `Produit à traiter :
 - Nom : ${product.name}
 - Marque : ${product.brand}
-- Catégorie : ${product.category} > ${product.subcategory}
+- Catégorie : ${product.category}${product.subcategory ? ` > ${product.subcategory}` : ""}
+- Nombre d'images : ${images.length}
 
-FORMAT OBLIGATOIRE pour chaque alt text :
-[Marque] [Nom Produit] [Type] - [Contexte usage barber/coiffure]
-Exemples :
-- "Wahl Magic Clip Tondeuse Sans Fil - Tondeuse Professionnelle Barber Fade"
-- "Hey Joe Cire Cheveux Mat - Produit Coiffant Professionnel Homme"
-- "JRL FF2020C Tondeuse Barber Professionnelle - Clipper Fade"
-
-RÈGLES :
-- Maximum 125 caractères par alt text
-- Inclure la marque en premier
-- Varier légèrement les formulations entre les images (ex: image principale vs image de détail)
-- Utiliser des mots-clés barber/coiffure pertinents
-- Écrire en français
+Génère exactement ${images.length} alt text(s) SEO optimisé(s) pour ce produit.
+Pour les images secondaires (2, 3...), varie légèrement la formulation (ex: "vue de profil", "détail", "packaging").
 
 Réponds UNIQUEMENT avec un JSON valide : { "alts": ["alt1", "alt2", ...] }
-Génère exactement ${images.length} alt text(s).`;
+
+SYSTEM PROMPT à respecter impérativement :
+${systemPrompt}`;
 
   const raw = await callClaude(prompt, 1000);
   try {
