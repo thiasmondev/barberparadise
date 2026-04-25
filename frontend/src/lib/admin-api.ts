@@ -500,3 +500,26 @@ export async function changeAdminPassword(currentPassword: string, newPassword: 
     body: JSON.stringify({ currentPassword, newPassword }),
   });
 }
+
+// ─── Image Alts SEO ──────────────────────────────────────────
+
+export async function generateImageAltsSeo(productId: string): Promise<{ alts: string[]; saved: boolean }> {
+  return adminFetch(`/api/admin/seo/image-alts/generate/${productId}`, { method: "POST" });
+}
+
+export async function saveImageAltsSeo(productId: string, alts: string[]): Promise<{ alts: string[]; saved: boolean }> {
+  return adminFetch(`/api/admin/seo/image-alts/${productId}`, {
+    method: "PUT",
+    body: JSON.stringify({ alts }),
+  });
+}
+
+export async function bulkGenerateImageAlts(): Promise<{
+  processed: number;
+  total: number;
+  remaining: number;
+  errors?: string[];
+  message: string;
+}> {
+  return adminFetch("/api/admin/seo/image-alts/bulk", { method: "POST" });
+}

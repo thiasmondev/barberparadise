@@ -469,9 +469,10 @@ adminRouter.post(
         data: { images: JSON.stringify(images) },
       });
       res.json({ url: result.secure_url, public_id: result.public_id, images });
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Erreur upload image" });
+    } catch (err: any) {
+      console.error("[UPLOAD IMAGE ERROR]", err);
+      const msg = err?.message || err?.error?.message || JSON.stringify(err) || "Erreur upload image";
+      res.status(500).json({ error: msg });
     }
   }
 );

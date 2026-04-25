@@ -15,6 +15,9 @@ import {
   applyGeoOptimization,
   enrichProductGeo,
   applyGeoEnrichedContent,
+  generateImageAltsSeo,
+  saveImageAltsSeo,
+  bulkGenerateImageAlts,
   type SeoOptimization,
   type GeoOptimization,
   type GeoEnrichedContent,
@@ -344,6 +347,13 @@ export default function SeoProductPage() {
 
   // Éditeur description : mode WYSIWYG ou HTML brut
   const [htmlMode, setHtmlMode] = useState(false);
+
+  // Alt texts SEO state
+  const [generatingAlts, setGeneratingAlts] = useState(false);
+  const [altsSaved, setAltsSaved] = useState(false);
+  const [altsError, setAltsError] = useState("");
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{ processed: number; total: number; remaining: number; message: string } | null>(null);
 
   // UI state
   const [loading, setLoading] = useState(true);
@@ -902,21 +912,114 @@ export default function SeoProductPage() {
                 )}
               </div>
 
-              {/* Image alts */}
-              {optimization?.imageAlts && optimization.imageAlts.length > 0 && (
+              {/* Image alts SEO — section interactive */}
+              {productId && editImages.length > 0 && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <ImageIcon size={14} className="text-gray-400" />
-                    <span className="text-xs font-semibold text-gray-600">TEXTES ALT DES IMAGES</span>
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-2">
+                      <ImageIcon size={14} className="text-gray-400" />
+                      <span className="text-xs font-semibold text-gray-600">ALT TEXTS SEO DES IMAGES</span>
+                      <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{editImages.length} image(s)</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={async () => {
+                          setGeneratingAlts(true);
+                          setAltsError("");
+                          setAltsSaved(false);
+                          try {
+                            const res = await generateImageAltsSeo(productId);
+                            setEditImageAlts(res.alts);
+                            setAltsSaved(true);
+                          } catch (e: any) {
+                            setAltsError(e.message);
+                          } finally {
+                            setGeneratingAlts(false);
+                          }
+                        }}
+                        disabled={generatingAlts}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-violet-600 text-white rounded-lg text-xs font-medium hover:bg-violet-700 disabled:opacity-50"
+                      >
+                        {generatingAlts ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                        Générer SEO
+                      </button>
+                      <button
+                        onClick={async () => {
+                          setAltsError("");
+                          try {
+                            await saveImageAltsSeo(productId, editImageAlts);
+                            setAltsSaved(true);
+                          } catch (e: any) {
+                            setAltsError(e.message);
+                          }
+                        }}
+                        disabled={generatingAlts}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        <Save size={12} />
+                        {altsSaved ? "Sauvegardé ✓" : "Sauvegarder"}
+                      </button>
+                    </div>
                   </div>
-                  <div className="space-y-1.5">
-                    {optimization.imageAlts.map((alt, i) => (
-                      <div key={i} className="flex items-start gap-2">
-                        <span className="text-xs text-gray-400 mt-0.5 shrink-0">Image {i + 1}:</span>
-                        <span className="text-sm text-gray-700">{alt}</span>
+                  {altsError && (
+                    <div className="mb-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{altsError}</div>
+                  )}
+                  <div className="space-y-2">
+                    {editImages.map((imgUrl, i) => (
+                      <div key={i} className="flex items-center gap-3">
+                        <img src={imgUrl} alt="" className="w-10 h-10 object-cover rounded border border-gray-200 shrink-0" />
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-[10px] text-gray-400">{i === 0 ? "Image principale" : `Image ${i + 1}`}</span>
+                            <span className={`text-[10px] ${(editImageAlts[i] || "").length > 100 ? "text-orange-500" : "text-gray-400"}`}>
+                              {(editImageAlts[i] || "").length}/125
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            value={editImageAlts[i] || ""}
+                            onChange={(e) => {
+                              const next = [...editImageAlts];
+                              while (next.length <= i) next.push("");
+                              next[i] = e.target.value;
+                              setEditImageAlts(next);
+                              setAltsSaved(false);
+                            }}
+                            placeholder={`Alt text SEO image ${i + 1}...`}
+                            maxLength={125}
+                            className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>
+                  {/* Bouton génération en masse */}
+                  {!productId && (
+                    <div className="mt-3 pt-3 border-t border-gray-100">
+                      <button
+                        onClick={async () => {
+                          setBulkGenerating(true);
+                          setBulkResult(null);
+                          try {
+                            const res = await bulkGenerateImageAlts();
+                            setBulkResult(res);
+                          } catch (e: any) {
+                            setAltsError(e.message);
+                          } finally {
+                            setBulkGenerating(false);
+                          }
+                        }}
+                        disabled={bulkGenerating}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 border border-violet-300 text-violet-700 rounded-lg text-xs font-medium hover:bg-violet-50 disabled:opacity-50"
+                      >
+                        {bulkGenerating ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                        Générer en masse (batch 10)
+                      </button>
+                      {bulkResult && (
+                        <p className="mt-1.5 text-xs text-emerald-600">{bulkResult.message}{bulkResult.remaining > 0 ? ` — ${bulkResult.remaining} restants` : ""}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 

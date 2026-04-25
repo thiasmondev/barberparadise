@@ -8,6 +8,7 @@ import {
   calculateSeoScore,
   optimizeProduct,
   generateBlogArticle,
+  generateImageAlts,
   type ProductData,
 } from "../services/seo-agent";
 
@@ -723,6 +724,113 @@ seoRouter.post("/geo-category", async (req, res) => {
     res.json(result);
   } catch (err: any) {
     console.error("GEO Category error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/seo/image-alts/generate/:id — Générer alt texts pour un produit ─
+seoRouter.post("/image-alts/generate/:id", requireAdmin, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const product = await prisma.product.findUnique({ where: { id: req.params.id } });
+    if (!product) { res.status(404).json({ error: "Produit introuvable" }); return; }
+
+    const alts = await generateImageAlts({
+      id: product.id,
+      name: product.name,
+      brand: product.brand,
+      category: product.category,
+      subcategory: product.subcategory || "",
+      images: product.images || "[]",
+    });
+
+    // Sauvegarder en base
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { imageAlts: JSON.stringify(alts) },
+    });
+
+    res.json({ alts, saved: true });
+  } catch (err: any) {
+    console.error("Image alts generate error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── PUT /api/seo/image-alts/:id — Sauvegarder alt texts manuellement ─────────
+seoRouter.put("/image-alts/:id", requireAdmin, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const { alts } = req.body as { alts: string[] };
+    if (!Array.isArray(alts)) { res.status(400).json({ error: "alts doit être un tableau" }); return; }
+
+    const updated = await prisma.product.update({
+      where: { id: req.params.id },
+      data: { imageAlts: JSON.stringify(alts) },
+    });
+
+    res.json({ alts, saved: true });
+  } catch (err: any) {
+    console.error("Image alts save error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/seo/image-alts/bulk — Générer en masse (batch de 10) ──────────
+seoRouter.post("/image-alts/bulk", requireAdmin, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    // Récupérer tous les produits sans alt texts ou avec alt texts vides
+    const products = await prisma.product.findMany({
+      where: { status: "active" },
+      select: { id: true, name: true, brand: true, category: true, subcategory: true, images: true, imageAlts: true },
+    });
+
+    const toProcess = products.filter((p) => {
+      if (!p.imageAlts) return true;
+      try {
+        const alts = JSON.parse(p.imageAlts);
+        return !Array.isArray(alts) || alts.length === 0 || alts.every((a: string) => !a.trim());
+      } catch { return true; }
+    });
+
+    if (toProcess.length === 0) {
+      res.json({ processed: 0, total: 0, message: "Tous les produits ont déjà des alt texts" });
+      return;
+    }
+
+    // Traiter par batch de 10
+    const BATCH_SIZE = 10;
+    let processed = 0;
+    const errors: string[] = [];
+
+    for (let i = 0; i < Math.min(toProcess.length, BATCH_SIZE); i++) {
+      const p = toProcess[i];
+      try {
+        const alts = await generateImageAlts({
+          id: p.id,
+          name: p.name,
+          brand: p.brand,
+          category: p.category,
+          subcategory: p.subcategory || "",
+          images: p.images || "[]",
+        });
+        await prisma.product.update({
+          where: { id: p.id },
+          data: { imageAlts: JSON.stringify(alts) },
+        });
+        processed++;
+      } catch (e: any) {
+        errors.push(`${p.name}: ${e.message}`);
+      }
+    }
+
+    res.json({
+      processed,
+      total: toProcess.length,
+      remaining: Math.max(0, toProcess.length - BATCH_SIZE),
+      errors: errors.length > 0 ? errors : undefined,
+      message: `${processed} produits traités sur ${toProcess.length} à traiter`,
+    });
+  } catch (err: any) {
+    console.error("Image alts bulk error:", err);
     res.status(500).json({ error: err.message });
   }
 });

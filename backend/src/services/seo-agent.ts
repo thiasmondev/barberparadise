@@ -791,3 +791,59 @@ Réponds UNIQUEMENT avec le JSON valide, sans markdown ni commentaires.`;
     throw new Error("Erreur de parsing du contenu GEO catégorie. Réessayez.");
   }
 }
+
+// ─── Génération Alt Texts SEO pour les images ───────────────
+export async function generateImageAlts(product: {
+  id: string;
+  name: string;
+  brand: string;
+  category: string;
+  subcategory: string;
+  images: string;
+}): Promise<string[]> {
+  let images: string[] = [];
+  try { images = JSON.parse(product.images); } catch { images = []; }
+  if (images.length === 0) return [];
+
+  const prompt = `Tu es un expert SEO spécialisé en e-commerce de produits de barbier et coiffure professionnelle.
+
+Génère des alt texts SEO optimisés pour les ${images.length} image(s) du produit suivant :
+- Nom : ${product.name}
+- Marque : ${product.brand}
+- Catégorie : ${product.category} > ${product.subcategory}
+
+FORMAT OBLIGATOIRE pour chaque alt text :
+[Marque] [Nom Produit] [Type] - [Contexte usage barber/coiffure]
+Exemples :
+- "Wahl Magic Clip Tondeuse Sans Fil - Tondeuse Professionnelle Barber Fade"
+- "Hey Joe Cire Cheveux Mat - Produit Coiffant Professionnel Homme"
+- "JRL FF2020C Tondeuse Barber Professionnelle - Clipper Fade"
+
+RÈGLES :
+- Maximum 125 caractères par alt text
+- Inclure la marque en premier
+- Varier légèrement les formulations entre les images (ex: image principale vs image de détail)
+- Utiliser des mots-clés barber/coiffure pertinents
+- Écrire en français
+
+Réponds UNIQUEMENT avec un JSON valide : { "alts": ["alt1", "alt2", ...] }
+Génère exactement ${images.length} alt text(s).`;
+
+  const raw = await callClaude(prompt, 1000);
+  try {
+    const result = parseJsonResponse(raw) as Record<string, unknown>;
+    const alts = (result.alts as string[]) || [];
+    // S'assurer qu'on a le bon nombre d'alts
+    while (alts.length < images.length) {
+      alts.push(`${product.brand} ${product.name} - Produit Professionnel Barber`);
+    }
+    return alts.slice(0, images.length);
+  } catch {
+    // Fallback : générer des alts basiques
+    return images.map((_, i) =>
+      i === 0
+        ? `${product.brand} ${product.name} - Produit Professionnel Barber`
+        : `${product.brand} ${product.name} vue ${i + 1} - Barber Paradise`
+    );
+  }
+}
