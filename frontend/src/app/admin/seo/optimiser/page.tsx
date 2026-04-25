@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -49,7 +49,7 @@ function ScoreBar({ score, max }: { score: number; max: number }) {
   );
 }
 
-export default function SeoOptimiserPage() {
+function SeoOptimiserContent() {
   const searchParams = useSearchParams();
   const filterParam = searchParams.get("filter");
 
@@ -345,5 +345,13 @@ export default function SeoOptimiserPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function SeoOptimiserPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-400">Chargement...</div>}>
+      <SeoOptimiserContent />
+    </Suspense>
   );
 }
