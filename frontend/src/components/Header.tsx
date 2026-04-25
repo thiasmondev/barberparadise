@@ -29,7 +29,7 @@ interface NavItem {
 }
 
 const NAV_MAIN: NavItem[] = [
-  { label: "PRODUITS", href: "/catalogue", megaMenu: "produits" },
+  { label: "PRODUITS", href: "/catalogue?category=produit", megaMenu: "produits" },
   { label: "MATÉRIEL", href: "/catalogue?category=materiel", megaMenu: "materiel" },
   { label: "MARQUES", href: "/marques", megaMenu: "marques" },
   { label: "NOUVEAUTÉS", href: "/catalogue?sort=newest" },
@@ -435,8 +435,8 @@ export default function Header() {
             // isActive : logique précise selon la section
             let isActive = false;
             if (item.megaMenu === "produits") {
-              // Actif si pas de catégorie (catalogue général) ou si la catégorie est dans PRODUIT_SLUGS
-              isActive = pathname === "/catalogue" && (!activeCategory || PRODUIT_SLUGS.includes(activeCategory));
+              // Actif UNIQUEMENT si une catégorie produit est explicitement sélectionnée
+              isActive = pathname === "/catalogue" && PRODUIT_SLUGS.includes(activeCategory);
             } else if (item.megaMenu === "materiel") {
               // Actif si la catégorie est dans MATERIEL_SLUGS
               isActive = pathname === "/catalogue" && MATERIEL_SLUGS.includes(activeCategory);
