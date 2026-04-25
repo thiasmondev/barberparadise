@@ -3,6 +3,8 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { getAdminToken } from "@/lib/admin-api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
+const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "dopr7tgf8";
+const CLOUDINARY_UPLOAD_PRESET = "barberparadise_unsigned";
 
 interface ImageManagerProps {
   productId: string;
@@ -59,7 +61,7 @@ export default function ImageManager({ productId, images, imageAlts = [], onChan
     }
   }, [productId, alts]);
 
-  // ─── Upload vers le backend ──────────────────────────────────
+  // ─── Upload direct vers Cloudinary (preset non signé) ────────
   const uploadFile = useCallback(async (file: File) => {
     if (!file.type.startsWith("image/")) {
       setError("Seules les images sont acceptées (JPG, PNG, WebP, GIF)");
@@ -75,32 +77,49 @@ export default function ImageManager({ productId, images, imageAlts = [], onChan
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append("image", file);
+      // Étape 1 : Upload vers Cloudinary directement depuis le navigateur
+      const cloudForm = new FormData();
+      cloudForm.append("file", file);
+      cloudForm.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+      cloudForm.append("folder", "barberparadise/products");
 
-      const token = getAdminToken();
-      if (!token) {
-        throw new Error("Non authentifié — veuillez vous reconnecter");
+      setUploadProgress(30);
+
+      const cloudRes = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+        { method: "POST", body: cloudForm }
+      );
+
+      setUploadProgress(70);
+
+      if (!cloudRes.ok) {
+        const cloudErr = await cloudRes.json().catch(() => ({}));
+        throw new Error(cloudErr.error?.message || `Erreur Cloudinary (${cloudRes.status})`);
       }
-      setUploadProgress(40);
 
-      const res = await fetch(`${API_URL}/api/admin/products/${productId}/images`, {
+      const cloudData = await cloudRes.json();
+      const secureUrl: string = cloudData.secure_url;
+
+      // Étape 2 : Enregistrer l'URL dans la base via le backend
+      const token = getAdminToken();
+      if (!token) throw new Error("Non authentifié — veuillez vous reconnecter");
+
+      const saveRes = await fetch(`${API_URL}/api/admin/products/${productId}/images`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ url: secureUrl }),
       });
 
-      setUploadProgress(80);
+      setUploadProgress(90);
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: `Erreur HTTP ${res.status}` }));
-        throw new Error(err.error || `Erreur upload (${res.status})`);
+      if (!saveRes.ok) {
+        const saveErr = await saveRes.json().catch(() => ({ error: `Erreur HTTP ${saveRes.status}` }));
+        throw new Error(saveErr.error || `Erreur sauvegarde (${saveRes.status})`);
       }
 
-      const data = await res.json();
+      const saveData = await saveRes.json();
       setUploadProgress(100);
-      onChange(data.images);
-      // Ajouter un alt vide pour la nouvelle image
+      onChange(saveData.images);
       setAlts(prev => [...prev, ""]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur lors de l'upload");

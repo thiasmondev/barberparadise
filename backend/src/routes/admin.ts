@@ -439,36 +439,43 @@ adminRouter.post(
   upload.single("image"),
   async (req: Request & { file?: Express.Multer.File }, res: Response): Promise<void> => {
     try {
-      if (!req.file) {
-        res.status(400).json({ error: "Aucun fichier fourni" });
+      let secureUrl: string;
+
+      if (req.body?.url) {
+        // Mode 1 : URL déjà uploadée vers Cloudinary depuis le frontend (preset non signé)
+        secureUrl = req.body.url;
+      } else if (req.file) {
+        // Mode 2 : Upload depuis le backend via Cloudinary API signée (fallback)
+        const uploadedFile = req.file;
+        const result = await new Promise<{ secure_url: string }>((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            {
+              folder: `barberparadise/products/${req.params.id}`,
+              transformation: [{ width: 1200, height: 1200, crop: "limit", quality: "auto", fetch_format: "auto" }],
+            },
+            (error, result) => {
+              if (error || !result) reject(error || new Error("Upload échoué"));
+              else resolve(result as { secure_url: string });
+            }
+          );
+          stream.end(uploadedFile.buffer);
+        });
+        secureUrl = result.secure_url;
+      } else {
+        res.status(400).json({ error: "Aucun fichier ni URL fourni" });
         return;
       }
-      const uploadedFile = req.file;
-      // Upload vers Cloudinary depuis le buffer mémoire
-      const result = await new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          {
-            folder: `barberparadise/products/${req.params.id}`,
-            transformation: [{ width: 1200, height: 1200, crop: "limit", quality: "auto", fetch_format: "auto" }],
-          },
-          (error, result) => {
-            if (error || !result) reject(error || new Error("Upload échoué"));
-            else resolve(result as { secure_url: string; public_id: string });
-          }
-        );
-        stream.end(uploadedFile.buffer);
-      });
 
       // Ajouter l'URL à la liste d'images du produit
       const product = await prisma.product.findUnique({ where: { id: req.params.id } });
       if (!product) { res.status(404).json({ error: "Produit introuvable" }); return; }
       const images: string[] = JSON.parse(product.images || "[]");
-      images.push(result.secure_url);
-      const updated = await prisma.product.update({
+      images.push(secureUrl);
+      await prisma.product.update({
         where: { id: req.params.id },
         data: { images: JSON.stringify(images) },
       });
-      res.json({ url: result.secure_url, public_id: result.public_id, images });
+      res.json({ url: secureUrl, images });
     } catch (err: any) {
       console.error("[UPLOAD IMAGE ERROR]", err);
       const msg = err?.message || err?.error?.message || JSON.stringify(err) || "Erreur upload image";
