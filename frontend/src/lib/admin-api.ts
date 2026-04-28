@@ -165,8 +165,32 @@ export interface AdminBrand {
   productCount: number;
 }
 
+export interface AdminBrandStats {
+  brand: Pick<AdminBrand, "id" | "name" | "slug" | "logo">;
+  productsCount: number;
+  reviewsCount: number;
+  variantsCount: number;
+  imagesCount: number;
+}
+
+export interface AdminBrandDeleteResult {
+  deleted: true;
+  productsDeleted: number;
+  brandName: string;
+}
+
 export function getAdminBrands() {
   return adminFetch<AdminBrand[]>("/api/admin/brands");
+}
+
+export function getAdminBrandStats(id: number) {
+  return adminFetch<AdminBrandStats>(`/api/admin/brands/${id}/stats`);
+}
+
+export function deleteAdminBrand(id: number) {
+  return adminFetch<AdminBrandDeleteResult>(`/api/admin/brands/${id}?confirm=true`, {
+    method: "DELETE",
+  });
 }
 
 export function updateAdminBrand(id: number, data: Partial<Omit<AdminBrand, "id" | "slug" | "productCount">>) {

@@ -4,8 +4,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { ArrowRight, Star, ChevronLeft, ChevronRight } from "lucide-react";
-import { getProducts } from "@/lib/api";
-import type { Product } from "@/types";
+import { getBrands, getProducts } from "@/lib/api";
+import type { Brand, Product } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
 
@@ -17,15 +17,10 @@ interface Review {
   product?: { name: string; brand: string };
 }
 
-const REAL_BRANDS = [
-  "ANDIS", "BABYLISS PRO", "GAMMA+", "JRL", "HEY JOE!", "JACQUES SEBAN",
-  "HAIRCUT PRO", "L3VEL3", "STYLE CRAFT", "VITOS", "DR K SOAP", "DENMAN",
-  "DISICIDE", "DANDY", "EUROMAX", "OMEGA", "OSAKA"
-];
-
 export default function HomePage() {
   const [featured, setFeatured] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentHeroIndex, setCurrentHeroIndex] = useState(0);
   const [reviewIndex, setReviewIndex] = useState(0);
@@ -56,8 +51,12 @@ export default function HomePage() {
   useEffect(() => {
     async function load() {
       try {
-        const productsData = await getProducts({ limit: 8, sort: "newest" });
+        const [productsData, brandsData] = await Promise.all([
+          getProducts({ limit: 8, sort: "newest" }),
+          getBrands(),
+        ]);
         setFeatured(productsData.products.slice(0, 8));
+        setBrands(brandsData.filter((brand) => brand.productCount > 0));
 
         // Avis publics
         try {
@@ -305,24 +304,24 @@ export default function HomePage() {
         </div>
         <div className="relative flex overflow-x-hidden">
           <div className="animate-marquee whitespace-nowrap flex items-center gap-16 py-4">
-            {REAL_BRANDS.map((brand, i) => (
+            {brands.map((brand) => (
               <Link
-                key={i}
-                href={`/catalogue?brand=${encodeURIComponent(brand)}`}
+                key={brand.id}
+                href={`/marques/${brand.slug}`}
                 className="text-2xl md:text-3xl font-black tracking-tighter text-white/20 hover:text-white/70 transition-colors uppercase italic"
               >
-                {brand}
+                {brand.name}
               </Link>
             ))}
           </div>
           <div className="absolute top-0 animate-marquee2 whitespace-nowrap flex items-center gap-16 py-4">
-            {REAL_BRANDS.map((brand, i) => (
+            {brands.map((brand) => (
               <Link
-                key={i}
-                href={`/catalogue?brand=${encodeURIComponent(brand)}`}
+                key={`duplicate-${brand.id}`}
+                href={`/marques/${brand.slug}`}
                 className="text-2xl md:text-3xl font-black tracking-tighter text-white/20 hover:text-white/70 transition-colors uppercase italic"
               >
-                {brand}
+                {brand.name}
               </Link>
             ))}
           </div>

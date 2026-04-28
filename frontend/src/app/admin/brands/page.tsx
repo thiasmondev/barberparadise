@@ -5,16 +5,21 @@ import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
 import {
   getAdminBrands,
+  getAdminBrandStats,
+  deleteAdminBrand,
   updateAdminBrand,
   uploadBrandLogo,
   uploadBrandBanner,
   type AdminBrand,
+  type AdminBrandStats,
 } from "@/lib/admin-api";
 import {
   Upload,
   X,
   Check,
   Pencil,
+  Trash2,
+  AlertTriangle,
   Globe,
   Package,
   ImageIcon,
@@ -267,13 +272,116 @@ function BrandEditModal({
   );
 }
 
+// ─── Modale de suppression définitive ─────────────────────────
+function BrandDeleteModal({
+  stats,
+  onClose,
+  onDeleted,
+}: {
+  stats: AdminBrandStats;
+  onClose: () => void;
+  onDeleted: (result: { brandId: number; brandName: string; productsDeleted: number }) => void;
+}) {
+  const [confirmName, setConfirmName] = useState("");
+  const [deleting, setDeleting]       = useState(false);
+  const [error, setError]             = useState<string | null>(null);
+  const canDelete = confirmName === stats.brand.name;
+
+  async function handleDelete() {
+    if (!canDelete) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      const result = await deleteAdminBrand(stats.brand.id);
+      onDeleted({ brandId: stats.brand.id, brandName: result.brandName, productsDeleted: result.productsDeleted });
+    } catch (err: any) {
+      setError(err?.message || "Erreur lors de la suppression définitive");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white border border-red-100 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+        <div className="p-6 border-b border-red-100 bg-red-50/70 flex items-start gap-4">
+          <div className="w-11 h-11 rounded-full bg-red-100 text-red-600 flex items-center justify-center flex-shrink-0">
+            <AlertTriangle size={22} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg font-bold text-dark-800">Supprimer définitivement la marque</h2>
+            <p className="text-sm text-red-600 mt-1">Cette action est irréversible.</p>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={deleting}
+            className="p-2 rounded-lg hover:bg-white/70 text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-60"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5">
+          <p className="text-sm text-gray-600 leading-relaxed">
+            Vous êtes sur le point de supprimer définitivement la marque <strong className="text-dark-800">{stats.brand.name}</strong>.
+            Cette suppression retirera également <strong>{stats.productsCount}</strong> produit{stats.productsCount !== 1 ? "s" : ""}, <strong>{stats.reviewsCount}</strong> avis,
+            <strong> {stats.variantsCount}</strong> variante{stats.variantsCount !== 1 ? "s" : ""} et <strong>{stats.imagesCount}</strong> image{stats.imagesCount !== 1 ? "s" : ""} référencée{stats.imagesCount !== 1 ? "s" : ""} dans les produits liés.
+          </p>
+
+          <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+            Pour confirmer cette suppression définitive, saisissez exactement le nom de la marque : <strong>{stats.brand.name}</strong>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-dark-700 mb-2">Nom exact de la marque</label>
+            <input
+              type="text"
+              value={confirmName}
+              onChange={(e) => setConfirmName(e.target.value)}
+              placeholder={stats.brand.name}
+              disabled={deleting}
+              className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-dark-800 placeholder-gray-400 focus:outline-none focus:border-red-400 transition-colors text-sm disabled:bg-gray-50"
+            />
+          </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-600 text-sm">
+              {error}
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-3 pt-1">
+            <button
+              onClick={onClose}
+              disabled={deleting}
+              className="px-5 py-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors text-sm disabled:opacity-60"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={!canDelete || deleting}
+              className="px-5 py-2.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium transition-colors text-sm flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {deleting ? <><Loader2 size={16} className="animate-spin" /> Suppression...</> : <><Trash2 size={16} /> Supprimer définitivement</>}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page principale ──────────────────────────────────────────
 export default function AdminBrandsPage() {
   const [brands, setBrands]             = useState<AdminBrand[]>([]);
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState<string | null>(null);
-  const [editingBrand, setEditingBrand] = useState<AdminBrand | null>(null);
-  const [search, setSearch]             = useState("");
+  const [editingBrand, setEditingBrand]       = useState<AdminBrand | null>(null);
+  const [deletingStats, setDeletingStats]     = useState<AdminBrandStats | null>(null);
+  const [loadingDeleteId, setLoadingDeleteId] = useState<number | null>(null);
+  const [toast, setToast]                     = useState<string | null>(null);
+  const [search, setSearch]                   = useState("");
 
   useEffect(() => {
     getAdminBrands()
@@ -295,6 +403,28 @@ export default function AdminBrandsPage() {
     setBrands((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
   }
 
+  async function handleOpenDelete(brand: AdminBrand) {
+    setLoadingDeleteId(brand.id);
+    setError(null);
+    try {
+      const stats = await getAdminBrandStats(brand.id);
+      setDeletingStats(stats);
+    } catch (err: any) {
+      setToast(err?.message || "Impossible de charger les statistiques de suppression");
+      setTimeout(() => setToast(null), 5000);
+    } finally {
+      setLoadingDeleteId(null);
+    }
+  }
+
+  function handleDeleted(result: { brandId: number; brandName: string; productsDeleted: number }) {
+    setBrands((prev) => prev.filter((brand) => brand.id !== result.brandId));
+    setDeletingStats(null);
+    const message = `La marque ${result.brandName} et ses ${result.productsDeleted} produits ont été supprimés définitivement`;
+    setToast(message);
+    setTimeout(() => setToast(null), 6000);
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -313,6 +443,12 @@ export default function AdminBrandsPage() {
 
   return (
     <div className="space-y-5">
+      {toast && (
+        <div className="fixed top-5 right-5 z-50 max-w-md rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-700 shadow-lg transition-all">
+          {toast}
+        </div>
+      )}
+
       {/* En-tête */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
@@ -449,14 +585,24 @@ export default function AdminBrandsPage() {
                 )}
               </div>
 
-              {/* Bouton modifier */}
-              <button
-                onClick={() => setEditingBrand(brand)}
-                className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 bg-gray-50 hover:bg-primary/5 border border-gray-200 hover:border-primary/30 rounded-lg text-gray-600 hover:text-primary text-xs font-medium transition-all"
-              >
-                <Pencil size={13} />
-                Modifier
-              </button>
+              {/* Actions */}
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setEditingBrand(brand)}
+                  className="flex items-center justify-center gap-2 px-3 py-2 bg-gray-50 hover:bg-primary/5 border border-gray-200 hover:border-primary/30 rounded-lg text-gray-600 hover:text-primary text-xs font-medium transition-all"
+                >
+                  <Pencil size={13} />
+                  Modifier
+                </button>
+                <button
+                  onClick={() => handleOpenDelete(brand)}
+                  disabled={loadingDeleteId === brand.id}
+                  className="flex items-center justify-center gap-2 px-3 py-2 bg-gray-50 hover:bg-red-50 border border-gray-200 hover:border-red-200 rounded-lg text-red-600 hover:text-red-700 text-xs font-medium transition-all disabled:opacity-60 disabled:cursor-wait"
+                >
+                  {loadingDeleteId === brand.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                  Supprimer
+                </button>
+              </div>
             </div>
           </div>
         ))}
@@ -474,6 +620,15 @@ export default function AdminBrandsPage() {
           brand={editingBrand}
           onClose={() => setEditingBrand(null)}
           onSaved={handleSaved}
+        />
+      )}
+
+      {/* Modale de suppression définitive */}
+      {deletingStats && (
+        <BrandDeleteModal
+          stats={deletingStats}
+          onClose={() => setDeletingStats(null)}
+          onDeleted={handleDeleted}
         />
       )}
     </div>

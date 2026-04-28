@@ -702,6 +702,96 @@ adminRouter.get("/brands", requireAdmin, async (_req: Request, res: Response): P
   }
 });
 
+// GET /api/admin/brands/:id/stats — Statistiques avant suppression définitive d'une marque
+adminRouter.get("/brands/:id/stats", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) { res.status(400).json({ error: "Identifiant de marque invalide" }); return; }
+
+    const brand = await prisma.brand.findUnique({
+      where: { id },
+      select: { id: true, name: true, slug: true, logo: true },
+    });
+    if (!brand) { res.status(404).json({ error: "Marque introuvable" }); return; }
+
+    const products = await prisma.product.findMany({
+      where: { brandId: id },
+      select: { id: true, images: true },
+    });
+    const productIds = products.map((product) => product.id);
+    const [reviewsCount, variantsCount] = productIds.length > 0
+      ? await Promise.all([
+          prisma.review.count({ where: { productId: { in: productIds } } }),
+          prisma.productVariant.count({ where: { productId: { in: productIds } } }),
+        ])
+      : [0, 0];
+    const imagesCount = products.reduce((total, product) => {
+      try {
+        const images = JSON.parse(product.images || "[]");
+        return total + (Array.isArray(images) ? images.length : 0);
+      } catch {
+        return total;
+      }
+    }, 0);
+
+    res.json({
+      brand,
+      productsCount: products.length,
+      reviewsCount,
+      variantsCount,
+      imagesCount,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// DELETE /api/admin/brands/:id?confirm=true — Supprimer définitivement une marque et ses produits liés
+adminRouter.delete("/brands/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) { res.status(400).json({ error: "Identifiant de marque invalide" }); return; }
+    if (req.query.confirm !== "true") {
+      res.status(400).json({ error: "Confirmation obligatoire pour supprimer définitivement une marque" });
+      return;
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const brand = await tx.brand.findUnique({
+        where: { id },
+        select: { id: true, name: true },
+      });
+      if (!brand) return null;
+
+      const products = await tx.product.findMany({
+        where: { brandId: id },
+        select: { id: true },
+      });
+      const productIds = products.map((product) => product.id);
+
+      if (productIds.length > 0) {
+        await tx.review.deleteMany({ where: { productId: { in: productIds } } });
+        await tx.productVariant.deleteMany({ where: { productId: { in: productIds } } });
+        await tx.product.deleteMany({ where: { id: { in: productIds } } });
+      }
+      await tx.brand.delete({ where: { id } });
+
+      return {
+        deleted: true,
+        productsDeleted: products.length,
+        brandName: brand.name,
+      };
+    });
+
+    if (!result) { res.status(404).json({ error: "Marque introuvable" }); return; }
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur suppression marque" });
+  }
+});
+
 // PATCH /api/admin/brands/:id — Mettre à jour les champs texte d'une marque
 adminRouter.patch("/brands/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
