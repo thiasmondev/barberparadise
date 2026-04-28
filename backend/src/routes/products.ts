@@ -1,8 +1,18 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../utils/prisma";
 import { requireAdmin } from "../middleware/auth";
+import { buildCategorySlugFilter, collectChildSlugs } from "../utils/categoryFilters";
 
 export const productsRouter = Router();
+
+async function getAllChildSlugs(parentSlug: string): Promise<string[]> {
+  return collectChildSlugs(parentSlug, (slug) =>
+    prisma.category.findMany({
+      where: { parentSlug: slug },
+      select: { slug: true },
+    }),
+  );
+}
 
 // GET /api/products — Liste avec filtres et pagination
 productsRouter.get("/", async (req: Request, res: Response): Promise<void> => {
@@ -19,23 +29,19 @@ productsRouter.get("/", async (req: Request, res: Response): Promise<void> => {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const where: any = { status: "active" };
-    // Filtrage catégorie : cherche dans category ET subcategory (les slugs peuvent être dans l'un ou l'autre)
+    // Filtrage catégorie : récupère récursivement les enfants pour inclure tous les produits des sous-catégories imbriquées.
     if (category && subcategory) {
-      // Les deux sont fournis : on filtre sur les deux
-      where.category = category;
-      where.subcategory = subcategory;
-    } else if (category) {
-      // Un seul slug fourni : cherche dans category OU subcategory
-      where.OR = [
+      const allSubcategorySlugs = await getAllChildSlugs(subcategory);
+      where.AND = [
         { category: { equals: category, mode: "insensitive" } },
-        { subcategory: { equals: category, mode: "insensitive" } },
-        { subsubcategory: { equals: category, mode: "insensitive" } },
+        { OR: buildCategorySlugFilter(allSubcategorySlugs) },
       ];
+    } else if (category) {
+      const allCategorySlugs = await getAllChildSlugs(category);
+      where.OR = buildCategorySlugFilter(allCategorySlugs);
     } else if (subcategory) {
-      where.OR = [
-        { subcategory: { equals: subcategory, mode: "insensitive" } },
-        { subsubcategory: { equals: subcategory, mode: "insensitive" } },
-      ];
+      const allSubcategorySlugs = await getAllChildSlugs(subcategory);
+      where.OR = buildCategorySlugFilter(allSubcategorySlugs);
     }
     if (brand) where.brand = { equals: brand, mode: "insensitive" };
     if (search) {

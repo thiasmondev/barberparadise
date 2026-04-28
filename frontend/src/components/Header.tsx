@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from "react";
 import { ShoppingBag, Search, Menu, X, User, ChevronRight } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { usePathname, useSearchParams } from "next/navigation";
+import { isExactActiveHref } from "@/utils/navigation";
 import type { Brand } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
@@ -331,13 +332,9 @@ export default function Header() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const activeCategory = searchParams.get("category") || "";
   const isHome = pathname === "/";
-
-  // Slugs enfants de chaque section pour déterminer l'item actif
-  const PRODUIT_SLUGS = ["produit", "cheveux", "barbe"];
-  const MATERIEL_SLUGS = ["materiel", "tondeuses", "ciseaux", "rasage", "autres", "brosses", "peignes", "seche-cheveux", "accessoires", "hygiene"];
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
@@ -432,19 +429,7 @@ export default function Header() {
         {/* ─── NAVIGATION DESKTOP ─── */}
         <nav className="hidden md:flex items-center justify-center gap-2 pb-4">
           {NAV_MAIN.map((item) => {
-            // isActive : logique précise selon la section
-            let isActive = false;
-            if (item.megaMenu === "produits") {
-              // Actif UNIQUEMENT si une catégorie produit est explicitement sélectionnée
-              isActive = pathname === "/catalogue" && PRODUIT_SLUGS.includes(activeCategory);
-            } else if (item.megaMenu === "materiel") {
-              // Actif si la catégorie est dans MATERIEL_SLUGS
-              isActive = pathname === "/catalogue" && MATERIEL_SLUGS.includes(activeCategory);
-            } else {
-              // Autres items (MARQUES, NOUVEAUTÉS) : actif si pathname correspond
-              const hrefPath = item.href.split("?")[0];
-              isActive = pathname === hrefPath || (hrefPath !== "/" && pathname.startsWith(hrefPath + "/"));
-            }
+            const isActive = isExactActiveHref(pathname, searchParams, item.href);
             const hasMega = !!item.megaMenu;
             const isOpen = openMenu === item.label;
 
