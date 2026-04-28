@@ -7,6 +7,7 @@ import { ShoppingBag, Search, Menu, X, User, ChevronRight } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { usePathname, useSearchParams } from "next/navigation";
 import { isExactActiveHref } from "@/utils/navigation";
+import { getMegaMenuChildren, hasMegaMenuChildren } from "@/utils/megaMenu";
 import type { Brand } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
@@ -56,30 +57,30 @@ function MegaMenuProduits({
   onClose: () => void;
 }) {
   // Colonne gauche : enfants directs de 'produit' (CHEVEUX, BARBE...)
-  const produitChildren = allCategories
-    .filter((c) => c.parentSlug === "produit")
-    .sort((a, b) => a.order - b.order);
+  const colL1 = getMegaMenuChildren(allCategories, "produit");
 
-  const [hoveredItem, setHoveredItem] = useState<string>(produitChildren[0]?.slug || "");
+  const [hoveredL1, setHoveredL1] = useState<string | null>(colL1[0]?.slug || null);
+  const [hoveredL2, setHoveredL2] = useState<string | null>(null);
 
   useEffect(() => {
-    if (produitChildren.length > 0 && !hoveredItem) setHoveredItem(produitChildren[0].slug);
-  }, [produitChildren.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (colL1.length > 0 && !hoveredL1) setHoveredL1(colL1[0].slug);
+  }, [colL1.length, hoveredL1]);
 
-  // Colonne droite : enfants de l'item survolé en colonne gauche
-  const subItems = allCategories
-    .filter((c) => c.parentSlug === hoveredItem)
-    .sort((a, b) => a.order - b.order);
+  // Colonne centre : enfants de l'item L1 survolé
+  const colL2 = hoveredL1 ? getMegaMenuChildren(allCategories, hoveredL1) : [];
 
-  if (produitChildren.length === 0) return null;
+  // Colonne droite : enfants de l'item L2 survolé
+  const colL3 = hoveredL2 ? getMegaMenuChildren(allCategories, hoveredL2) : [];
+
+  if (colL1.length === 0) return null;
 
   return (
     <div
       className="absolute top-full left-1/2 -translate-x-1/2 mt-0 z-50 flex shadow-2xl border border-white/10"
-      style={{ minWidth: 680 }}
+      style={{ minWidth: 720 }}
       onMouseLeave={onClose}
     >
-      {/* Colonne gauche : grandes catégories */}
+      {/* Colonne L1 : grandes catégories */}
       <div className="bg-[#1a1a1a] py-6 min-w-[200px] border-r border-white/5">
         <Link
           href="/catalogue"
@@ -89,37 +90,76 @@ function MegaMenuProduits({
           Tous les produits →
         </Link>
         <div className="h-px bg-white/10 mx-4 my-2" />
-        {produitChildren.map((cat) => (
-          <button
-            key={cat.slug}
-            onMouseEnter={() => setHoveredItem(cat.slug)}
-            onClick={() => { onClose(); window.location.href = `/catalogue?category=${cat.slug}`; }}
-            className={`w-full text-left flex items-center justify-between px-6 py-3 text-[12px] font-semibold tracking-[0.1em] uppercase transition-all duration-150 ${
-              hoveredItem === cat.slug
-                ? "text-white bg-white/5 border-l-2 border-[#ff4a8d]"
-                : "text-white/60 hover:text-white hover:bg-white/5 border-l-2 border-transparent"
-            }`}
-          >
-            <span>{cat.name}</span>
-            {allCategories.some((c) => c.parentSlug === cat.slug) && (
-              <ChevronRight size={12} className="opacity-40" />
-            )}
-          </button>
-        ))}
+        {colL1.map((cat) => {
+          const hasChildren = hasMegaMenuChildren(allCategories, cat.slug);
+
+          return (
+            <button
+              key={cat.slug}
+              onMouseEnter={() => {
+                setHoveredL1(cat.slug);
+                setHoveredL2(null);
+              }}
+              onClick={() => { onClose(); window.location.href = `/catalogue?category=${cat.slug}`; }}
+              className={`w-full text-left flex items-center justify-between px-6 py-3 text-[12px] font-semibold tracking-[0.1em] uppercase transition-all duration-150 ${
+                hoveredL1 === cat.slug
+                  ? "text-white bg-white/5 border-l-2 border-[#ff4a8d]"
+                  : "text-white/60 hover:text-white hover:bg-white/5 border-l-2 border-transparent"
+              }`}
+            >
+              <span>{cat.name}</span>
+              {hasChildren && <ChevronRight size={12} className="opacity-40" />}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Colonne droite : sous-catégories de l'item survolé */}
-      {subItems.length > 0 && (
-        <div className="bg-[#111111] py-6 min-w-[240px] flex flex-col">
+      {/* Colonne L2 : sous-catégories de l'item L1 survolé */}
+      {colL2.length > 0 && (
+        <div className="bg-[#111111] py-6 min-w-[240px] border-r border-white/5 flex flex-col">
           <Link
-            href={`/catalogue?category=${hoveredItem}`}
+            href={`/catalogue?category=${hoveredL1}`}
             onClick={onClose}
             className="block px-6 py-2 text-[11px] font-black tracking-[0.2em] uppercase text-[#ff4a8d] hover:text-white transition-colors"
           >
             Tout voir →
           </Link>
           <div className="h-px bg-white/10 mx-4 my-2" />
-          {subItems.map((cat) => (
+          {colL2.map((cat) => {
+            const hasChildren = hasMegaMenuChildren(allCategories, cat.slug);
+
+            return (
+              <Link
+                key={cat.slug}
+                href={`/catalogue?category=${cat.slug}`}
+                onMouseEnter={() => setHoveredL2(cat.slug)}
+                onClick={onClose}
+                className={`flex items-center justify-between px-6 py-2.5 text-[12px] font-semibold tracking-[0.1em] uppercase transition-all duration-150 ${
+                  hoveredL2 === cat.slug
+                    ? "text-white bg-white/5"
+                    : "text-white/55 hover:text-white hover:bg-white/5"
+                }`}
+              >
+                <span>{cat.name}</span>
+                {hasChildren && <ChevronRight size={12} className="opacity-40" />}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Colonne L3 : enfants de l'item L2 survolé, visible seulement s'ils existent */}
+      {colL3.length > 0 && (
+        <div className="bg-[#0c0c0c] py-6 min-w-[220px] flex flex-col">
+          <Link
+            href={`/catalogue?category=${hoveredL2}`}
+            onClick={onClose}
+            className="block px-6 py-2 text-[11px] font-black tracking-[0.2em] uppercase text-[#ff4a8d] hover:text-white transition-colors"
+          >
+            Tout voir →
+          </Link>
+          <div className="h-px bg-white/10 mx-4 my-2" />
+          {colL3.map((cat) => (
             <Link
               key={cat.slug}
               href={`/catalogue?category=${cat.slug}`}
@@ -143,29 +183,27 @@ function MegaMenuMateriel({
   allCategories: ApiCategory[];
   onClose: () => void;
 }) {
-  const level1 = allCategories
-    .filter((c) => c.parentSlug === "materiel")
-    .sort((a, b) => a.order - b.order);
+  const colL1 = getMegaMenuChildren(allCategories, "materiel");
 
-  const [hoveredSub, setHoveredSub] = useState<string>(level1[0]?.slug || "");
+  const [hoveredL1, setHoveredL1] = useState<string | null>(colL1[0]?.slug || null);
+  const [hoveredL2, setHoveredL2] = useState<string | null>(null);
 
   useEffect(() => {
-    if (level1.length > 0) setHoveredSub(level1[0].slug);
-  }, [level1.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (colL1.length > 0 && !hoveredL1) setHoveredL1(colL1[0].slug);
+  }, [colL1.length, hoveredL1]);
 
-  const level2 = allCategories
-    .filter((c) => c.parentSlug === hoveredSub)
-    .sort((a, b) => a.order - b.order);
+  const colL2 = hoveredL1 ? getMegaMenuChildren(allCategories, hoveredL1) : [];
+  const colL3 = hoveredL2 ? getMegaMenuChildren(allCategories, hoveredL2) : [];
 
-  if (level1.length === 0) return null;
+  if (colL1.length === 0) return null;
 
   return (
     <div
       className="absolute top-full left-1/2 -translate-x-1/2 mt-0 z-50 flex shadow-2xl border border-white/10"
-      style={{ minWidth: 520 }}
+      style={{ minWidth: 720 }}
       onMouseLeave={onClose}
     >
-      <div className="bg-[#1a1a1a] py-6 min-w-[240px]">
+      <div className="bg-[#1a1a1a] py-6 min-w-[240px] border-r border-white/5">
         <Link
           href="/catalogue?category=materiel"
           onClick={onClose}
@@ -174,67 +212,103 @@ function MegaMenuMateriel({
           Tout voir — Matériel →
         </Link>
         <div className="h-px bg-white/10 mx-4 my-2" />
-        {level1.map((cat) => (
-          <button
-            key={cat.slug}
-            onMouseEnter={() => setHoveredSub(cat.slug)}
-            onClick={() => { onClose(); window.location.href = `/catalogue?category=${cat.slug}`; }}
-            className={`w-full text-left flex items-center justify-between px-6 py-3 text-[12px] font-semibold tracking-[0.1em] uppercase transition-all duration-150 ${
-              hoveredSub === cat.slug
-                ? "text-white bg-white/5 border-l-2 border-[#ff4a8d]"
-                : "text-white/60 hover:text-white hover:bg-white/5 border-l-2 border-transparent"
-            }`}
-          >
-            <span>{cat.name}</span>
-            {allCategories.some((c) => c.parentSlug === cat.slug) && (
-              <ChevronRight size={12} className="opacity-40" />
-            )}
-          </button>
-        ))}
+        {colL1.map((cat) => {
+          const hasChildren = hasMegaMenuChildren(allCategories, cat.slug);
+
+          return (
+            <button
+              key={cat.slug}
+              onMouseEnter={() => {
+                setHoveredL1(cat.slug);
+                setHoveredL2(null);
+              }}
+              onClick={() => { onClose(); window.location.href = `/catalogue?category=${cat.slug}`; }}
+              className={`w-full text-left flex items-center justify-between px-6 py-3 text-[12px] font-semibold tracking-[0.1em] uppercase transition-all duration-150 ${
+                hoveredL1 === cat.slug
+                  ? "text-white bg-white/5 border-l-2 border-[#ff4a8d]"
+                  : "text-white/60 hover:text-white hover:bg-white/5 border-l-2 border-transparent"
+              }`}
+            >
+              <span>{cat.name}</span>
+              {hasChildren && <ChevronRight size={12} className="opacity-40" />}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="bg-[#111111] py-6 min-w-[200px] border-l border-white/5">
-        {level2.length > 0 ? (
-          <>
-            <Link
-              href={`/catalogue?category=${hoveredSub}`}
-              onClick={onClose}
-              className="block px-6 py-2 text-[11px] font-black tracking-[0.2em] uppercase text-[#ff4a8d] hover:text-white transition-colors"
-            >
-              Tout voir →
-            </Link>
-            <div className="h-px bg-white/10 mx-4 my-2" />
-            {level2.map((cat) => (
+      {colL2.length > 0 ? (
+        <div className="bg-[#111111] py-6 min-w-[220px] border-r border-white/5 flex flex-col">
+          <Link
+            href={`/catalogue?category=${hoveredL1}`}
+            onClick={onClose}
+            className="block px-6 py-2 text-[11px] font-black tracking-[0.2em] uppercase text-[#ff4a8d] hover:text-white transition-colors"
+          >
+            Tout voir →
+          </Link>
+          <div className="h-px bg-white/10 mx-4 my-2" />
+          {colL2.map((cat) => {
+            const hasChildren = hasMegaMenuChildren(allCategories, cat.slug);
+
+            return (
               <Link
                 key={cat.slug}
                 href={`/catalogue?category=${cat.slug}`}
+                onMouseEnter={() => setHoveredL2(cat.slug)}
                 onClick={onClose}
-                className="block px-6 py-2.5 text-[12px] font-semibold tracking-[0.1em] uppercase text-white/55 hover:text-white hover:bg-white/5 transition-all duration-150"
+                className={`flex items-center justify-between px-6 py-2.5 text-[12px] font-semibold tracking-[0.1em] uppercase transition-all duration-150 ${
+                  hoveredL2 === cat.slug
+                    ? "text-white bg-white/5"
+                    : "text-white/55 hover:text-white hover:bg-white/5"
+                }`}
               >
-                {cat.name}
+                <span>{cat.name}</span>
+                {hasChildren && <ChevronRight size={12} className="opacity-40" />}
               </Link>
-            ))}
-          </>
-        ) : (
-          <div className="flex flex-col justify-between h-full p-6">
-            <div>
-              <p className="text-[10px] font-black tracking-[0.3em] uppercase text-[#ff4a8d] mb-3">
-                {level1.find((c) => c.slug === hoveredSub)?.name || "Matériel"}
-              </p>
-              <p className="text-xs text-white/30 leading-relaxed">
-                Découvrez notre sélection de matériel professionnel pour barbiers et coiffeurs.
-              </p>
-            </div>
-            <Link
-              href={`/catalogue?category=${hoveredSub}`}
-              onClick={onClose}
-              className="mt-6 inline-block bg-[#ff4a8d] text-white text-[10px] font-black tracking-[0.2em] uppercase px-4 py-2 hover:bg-[#ff1f70] transition-colors"
-            >
-              Voir tout →
-            </Link>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="bg-[#111111] min-w-[220px] border-r border-white/5 flex flex-col justify-between p-6">
+          <div>
+            <p className="text-[10px] font-black tracking-[0.3em] uppercase text-[#ff4a8d] mb-3">
+              {colL1.find((c) => c.slug === hoveredL1)?.name || "Matériel"}
+            </p>
+            <p className="text-xs text-white/30 leading-relaxed">
+              Découvrez notre sélection de matériel professionnel pour barbiers et coiffeurs.
+            </p>
           </div>
-        )}
-      </div>
+          <Link
+            href={`/catalogue?category=${hoveredL1}`}
+            onClick={onClose}
+            className="mt-6 inline-block bg-[#ff4a8d] text-white text-[10px] font-black tracking-[0.2em] uppercase px-4 py-2 hover:bg-[#ff1f70] transition-colors"
+          >
+            Voir tout →
+          </Link>
+        </div>
+      )}
+
+      {colL3.length > 0 && (
+        <div className="bg-[#0c0c0c] py-6 min-w-[220px] flex flex-col">
+          <Link
+            href={`/catalogue?category=${hoveredL2}`}
+            onClick={onClose}
+            className="block px-6 py-2 text-[11px] font-black tracking-[0.2em] uppercase text-[#ff4a8d] hover:text-white transition-colors"
+          >
+            Tout voir →
+          </Link>
+          <div className="h-px bg-white/10 mx-4 my-2" />
+          {colL3.map((cat) => (
+            <Link
+              key={cat.slug}
+              href={`/catalogue?category=${cat.slug}`}
+              onClick={onClose}
+              className="block px-6 py-2.5 text-[12px] font-semibold tracking-[0.1em] uppercase text-white/55 hover:text-white hover:bg-white/5 transition-all duration-150"
+            >
+              {cat.name}
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
