@@ -47,6 +47,17 @@ describe("suppression définitive des marques", () => {
     expect(adminApi).toContain('method: "DELETE"');
   });
 
+  it("uploade les médias de marque directement vers Cloudinary avant la sauvegarde de la marque", () => {
+    expect(adminApi).toContain("async function uploadBrandMediaToCloudinary");
+    expect(adminApi).toContain("CLOUDINARY_UPLOAD_PRESET");
+    expect(adminApi).toContain("barberparadise_unsigned");
+    expect(adminApi).toContain("https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload");
+    expect(adminApi).toContain('formData.append("folder", "barberparadise/brands")');
+    expect(adminApi).toContain("data.secure_url");
+    expect(adminApi).not.toContain("/api/admin/brands/${id}/upload-logo");
+    expect(adminApi).not.toContain("/api/admin/brands/${id}/upload-banner");
+  });
+
   it("affiche une confirmation destructive avec saisie exacte du nom de marque", () => {
     expect(adminBrandsPage).toContain("function BrandDeleteModal");
     expect(adminBrandsPage).toContain("const canDelete = confirmName === stats.brand.name");

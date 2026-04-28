@@ -1,6 +1,9 @@
 import { API_URL } from "./api";
 import type { DashboardStats, Product, Order, Customer, Category } from "@/types";
 
+const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "dopr7tgf8";
+const CLOUDINARY_UPLOAD_PRESET = "barberparadise_unsigned";
+
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("admin-token");
@@ -200,38 +203,46 @@ export function updateAdminBrand(id: number, data: Partial<Omit<AdminBrand, "id"
   });
 }
 
-export async function uploadBrandLogo(id: number, file: File): Promise<{ logo: string }> {
-  const token = getAdminToken();
-  if (!token) throw new Error("Non authentifié");
+async function uploadBrandMediaToCloudinary(file: File, kind: "logo" | "banner"): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Seules les images sont acceptées (JPG, PNG, WebP, GIF, SVG)");
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error("L'image ne doit pas dépasser 10 Mo");
+  }
+
   const formData = new FormData();
-  formData.append("logo", file);
-  const res = await fetch(`${API_URL}/api/admin/brands/${id}/upload-logo`, {
+  formData.append("file", file);
+  formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+  formData.append("folder", "barberparadise/brands");
+  formData.append("tags", `brand,${kind}`);
+
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
     body: formData,
   });
+
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error((data as any).error || `Erreur ${res.status}`);
+    const message = (data as any)?.error?.message || `Erreur Cloudinary (${res.status})`;
+    throw new Error(message);
   }
-  return res.json();
+
+  const data = await res.json();
+  if (typeof data.secure_url !== "string" || !data.secure_url) {
+    throw new Error("Cloudinary n'a pas retourné d'URL sécurisée");
+  }
+  return data.secure_url;
 }
 
-export async function uploadBrandBanner(id: number, file: File): Promise<{ bannerImage: string }> {
-  const token = getAdminToken();
-  if (!token) throw new Error("Non authentifié");
-  const formData = new FormData();
-  formData.append("banner", file);
-  const res = await fetch(`${API_URL}/api/admin/brands/${id}/upload-banner`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData,
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error((data as any).error || `Erreur ${res.status}`);
-  }
-  return res.json();
+export async function uploadBrandLogo(_id: number, file: File): Promise<{ logo: string }> {
+  const logo = await uploadBrandMediaToCloudinary(file, "logo");
+  return { logo };
+}
+
+export async function uploadBrandBanner(_id: number, file: File): Promise<{ bannerImage: string }> {
+  const bannerImage = await uploadBrandMediaToCloudinary(file, "banner");
+  return { bannerImage };
 }
 
 // ─── Categories ────────────────────────────────────────────────────
