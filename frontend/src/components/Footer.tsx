@@ -40,7 +40,7 @@ export default function Footer() {
             <h3 className="text-[10px] font-black tracking-[0.3em] text-white uppercase mb-8">MENU</h3>
             <ul className="space-y-4">
               {[
-                { label: "NOUVEAUTÉS", href: "/catalogue?sort=newest" },
+                { label: "NOUVEAUTÉS", href: "/nouveautes" },
                 { label: "PRODUITS", href: "/catalogue" },
                 { label: "MATÉRIEL", href: "/catalogue?category=materiel" },
                 { label: "MARQUES", href: "/catalogue" },

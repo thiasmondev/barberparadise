@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { isExactActiveHref } from "../frontend/src/utils/navigation";
 import { buildCategorySlugFilter, collectChildSlugs } from "../backend/src/utils/categoryFilters";
@@ -16,10 +18,55 @@ describe("Header navigation active state", () => {
     expect(isExactActiveHref("/nouveautes", new URLSearchParams(), "/catalogue?sort=newest")).toBe(false);
   });
 
+  it("activates the dedicated Nouveautés route without relying on catalogue query sorting", () => {
+    expect(isExactActiveHref("/nouveautes", new URLSearchParams(), "/nouveautes")).toBe(true);
+    expect(isExactActiveHref("/nouveautes", new URLSearchParams("sort=newest"), "/nouveautes")).toBe(false);
+    expect(isExactActiveHref("/catalogue", new URLSearchParams("sort=newest"), "/nouveautes")).toBe(false);
+  });
+
   it("activates PRODUITS and MATÉRIEL only for their exact expected category query", () => {
     expect(isExactActiveHref("/catalogue", new URLSearchParams("category=produit"), "/catalogue?category=produit")).toBe(true);
     expect(isExactActiveHref("/catalogue", new URLSearchParams("category=materiel"), "/catalogue?category=produit")).toBe(false);
     expect(isExactActiveHref("/catalogue", new URLSearchParams("category=materiel"), "/catalogue?category=materiel")).toBe(true);
+  });
+});
+
+describe("Nouveautés storefront regressions", () => {
+  const repoRoot = resolve(__dirname, "..");
+
+  it("keeps the homepage free of the manually inserted parasite category menu", () => {
+    const homeSource = readFileSync(resolve(repoRoot, "frontend/src/app/page.tsx"), "utf8");
+
+    expect(homeSource).not.toContain("PRODUIT / MATÉRIEL / MARQUES / TOUT VOIR");
+    expect(homeSource).not.toContain("Tout voir →");
+  });
+
+  it("keeps the header Nouveautés links pointed to the dedicated route", () => {
+    const headerSource = readFileSync(resolve(repoRoot, "frontend/src/components/Header.tsx"), "utf8");
+
+    expect(headerSource.match(/label: "NOUVEAUTÉS", href: "\/nouveautes"/g)).toHaveLength(2);
+    expect(headerSource).not.toContain('label: "NOUVEAUTÉS", href: "/catalogue?sort=newest"');
+  });
+
+  it("loads /nouveautes with isNew=true and updated_desc ordering", () => {
+    const nouveautesSource = readFileSync(resolve(repoRoot, "frontend/src/app/nouveautes/page.tsx"), "utf8");
+    const productsRouteSource = readFileSync(resolve(repoRoot, "backend/src/routes/products.ts"), "utf8");
+
+    expect(nouveautesSource).toContain("isNew: true");
+    expect(nouveautesSource).toContain('sort: "updated_desc"');
+    expect(productsRouteSource).toContain('if (isNew === "true") where.isNew = true');
+    expect(productsRouteSource).toContain('sort === "updated_desc"');
+    expect(productsRouteSource).toContain('updatedAt: "desc"');
+  });
+
+  it("persists the Nouveautés toggle through the admin product PATCH contract", () => {
+    const adminPageSource = readFileSync(resolve(repoRoot, "frontend/src/app/admin/seo/produit/page.tsx"), "utf8");
+    const adminRouteSource = readFileSync(resolve(repoRoot, "backend/src/routes/admin.ts"), "utf8");
+
+    expect(adminPageSource).toContain("Mettre en avant dans Nouveautés");
+    expect(adminPageSource).toContain("role=\"switch\"");
+    expect(adminPageSource).toContain("updateProduct(productId, { isNew: next })");
+    expect(adminRouteSource).toContain("isNew: isNew !== undefined ? Boolean(isNew) : undefined");
   });
 });
 

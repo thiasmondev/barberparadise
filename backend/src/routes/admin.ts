@@ -221,7 +221,7 @@ adminRouter.get("/products", requireAdmin, async (req: Request, res: Response): 
 // PATCH /api/admin/products/:id — Modifier un produit
 adminRouter.patch("/products/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, brand, category, subcategory, subsubcategory, price, originalPrice, inStock, description, isActive } = req.body;
+    const { name, brand, category, subcategory, subsubcategory, price, originalPrice, inStock, description, isActive, isNew } = req.body;
     const product = await prisma.product.update({
       where: { id: req.params.id },
       data: {
@@ -235,6 +235,7 @@ adminRouter.patch("/products/:id", requireAdmin, async (req: Request, res: Respo
         inStock: inStock ? true : false,
         description: description || undefined,
         status: isActive !== undefined ? (isActive ? "active" : "inactive") : undefined,
+        isNew: isNew !== undefined ? Boolean(isNew) : undefined,
       },
     });
     res.json(product);

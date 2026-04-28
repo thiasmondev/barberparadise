@@ -4,8 +4,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { ArrowRight, Star, ChevronLeft, ChevronRight } from "lucide-react";
-import { getProducts, getCategories } from "@/lib/api";
-import type { Product, Category } from "@/types";
+import { getProducts } from "@/lib/api";
+import type { Product } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
 
@@ -25,7 +25,6 @@ const REAL_BRANDS = [
 
 export default function HomePage() {
   const [featured, setFeatured] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentHeroIndex, setCurrentHeroIndex] = useState(0);
@@ -39,7 +38,7 @@ export default function HomePage() {
       cta1: "VOIR LES PRODUITS",
       cta2: "NOUVEAUTÉS",
       href1: "/catalogue",
-      href2: "/catalogue?sort=newest",
+      href2: "/nouveautes",
       image: "https://lh3.googleusercontent.com/aida-public/AB6AXuBZQYbGi78PWJQPcqgyK9KYdehlfjmpLBWWyB3Vfig1HI1bpjSLulat7qHjOjgP19n2oG9iZ-o5jf_UfGvNenDk_fzQDbZ8ozBlYcby3YWe0TiXOeS6fXIaMHYnOszA9hwUXcxHU5S3P3DeL3ReQSiA1QpEhczYAukQpOXGmqYp7Cv66P5QeWAc8CBYhBx9pTWJw9nnr2zdFGr2cWbIAycqQnU-PrRgnu2VFeLdAzgbvf0EzJ22hT9uPYgmkML66rQVzH_rgx3xYtc",
     },
     {
@@ -57,13 +56,8 @@ export default function HomePage() {
   useEffect(() => {
     async function load() {
       try {
-        const [productsData, categoriesData] = await Promise.all([
-          getProducts({ limit: 8, sort: "newest" }),
-          getCategories(),
-        ]);
+        const productsData = await getProducts({ limit: 8, sort: "newest" });
         setFeatured(productsData.products.slice(0, 8));
-        // Catégories racines exactement comme en base (parentSlug vide ou absent)
-        setCategories(categoriesData.filter((c: Category) => !c.parentSlug || c.parentSlug === '').slice(0, 8));
 
         // Avis publics
         try {
@@ -171,31 +165,6 @@ export default function HomePage() {
           ))}
         </div>
       </section>
-
-      {/* ─── CATÉGORIES ─── */}
-      {categories.length > 0 && (
-        <section className="py-12 bg-[#0e0e0e] border-y border-white/5">
-          <div className="max-w-[1440px] mx-auto px-8">
-            <div className="flex flex-wrap justify-center gap-3">
-              {categories.map((cat) => (
-                <Link
-                  key={cat.id}
-                  href={`/catalogue?category=${cat.slug}`}
-                  className="px-6 py-2.5 border border-white/10 text-[10px] font-black tracking-[0.25em] uppercase text-white/60 hover:border-[#ff4a8d] hover:text-white transition-all duration-200"
-                >
-                  {cat.name}
-                </Link>
-              ))}
-              <Link
-                href="/catalogue"
-                className="px-6 py-2.5 border border-[#ff4a8d]/30 text-[10px] font-black tracking-[0.25em] uppercase text-[#ff4a8d] hover:border-[#ff4a8d] hover:bg-[#ff4a8d]/10 transition-all duration-200"
-              >
-                TOUT VOIR →
-              </Link>
-            </div>
-          </div>
-        </section>
-      )}
 
       {/* ─── THE PARADISE — Produits phares ─── */}
       <section className="py-24 bg-[#131313]">

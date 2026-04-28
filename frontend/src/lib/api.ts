@@ -23,7 +23,8 @@ export async function getProducts(params?: {
   subcategory?: string;
   brand?: string;
   search?: string;
-  sort?: string;
+  sort?: "name_asc" | "price_asc" | "price_desc" | "rating_desc" | "newest" | "updated_desc" | string;
+  isNew?: boolean;
   minPrice?: number;
   maxPrice?: number;
 }) {

@@ -74,6 +74,7 @@ productsRouter.get("/", async (req: Request, res: Response): Promise<void> => {
     if (sort === "price_asc") orderBy = { price: "asc" };
     else if (sort === "price_desc") orderBy = { price: "desc" };
     else if (sort === "rating_desc") orderBy = { rating: "desc" };
+    else if (sort === "updated_desc") orderBy = { updatedAt: "desc" };
     else if (sort === "newest") orderBy = { createdAt: "desc" };
 
     const [products, total] = await Promise.all([

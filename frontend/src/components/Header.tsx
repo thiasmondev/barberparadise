@@ -34,7 +34,7 @@ const NAV_MAIN: NavItem[] = [
   { label: "PRODUITS", href: "/catalogue?category=produit", megaMenu: "produits" },
   { label: "MATÉRIEL", href: "/catalogue?category=materiel", megaMenu: "materiel" },
   { label: "MARQUES", href: "/marques", megaMenu: "marques" },
-  { label: "NOUVEAUTÉS", href: "/catalogue?sort=newest" },
+  { label: "NOUVEAUTÉS", href: "/nouveautes" },
 ];
 
 const NAV_BURGER = [
@@ -44,7 +44,7 @@ const NAV_BURGER = [
   { label: "RASAGE", href: "/catalogue?category=rasage" },
   { label: "BARBE", href: "/catalogue?category=barbe" },
   { label: "MARQUES", href: "/marques" },
-  { label: "NOUVEAUTÉS", href: "/catalogue?sort=newest" },
+  { label: "NOUVEAUTÉS", href: "/nouveautes" },
   { label: "PROMOTIONS", href: "/catalogue?promo=true" },
 ];
 

@@ -360,6 +360,8 @@ export default function SeoProductPage() {
   const [optimizing, setOptimizing] = useState(false);
   const [applying, setApplying] = useState(false);
   const [applied, setApplied] = useState(false);
+  const [isNewSaving, setIsNewSaving] = useState(false);
+  const [isNewSaved, setIsNewSaved] = useState(false);
   const [error, setError] = useState("");
   const [showPreview, setShowPreview] = useState(true);
   // Onglet actif : "seo" ou "geo"
@@ -502,6 +504,27 @@ export default function SeoProductPage() {
       setEditTags(optimization.suggestedTags);
     }
     setApplied(false);
+  };
+
+  const handleToggleIsNew = async () => {
+    if (!productId || !product || isNewSaving) return;
+    const previous = Boolean(product.isNew);
+    const next = !previous;
+    setIsNewSaving(true);
+    setIsNewSaved(false);
+    setError("");
+    setProduct({ ...product, isNew: next });
+    try {
+      const updated = await updateProduct(productId, { isNew: next });
+      setProduct((current) => current ? { ...current, isNew: updated.isNew } : updated);
+      setIsNewSaved(true);
+      setTimeout(() => setIsNewSaved(false), 2000);
+    } catch (err: any) {
+      setProduct({ ...product, isNew: previous });
+      setError(err.message || "Erreur lors de la mise à jour du statut Nouveauté");
+    } finally {
+      setIsNewSaving(false);
+    }
   };
 
   // ─── GEO Handlers ────────────────────────────────────────────
@@ -762,6 +785,35 @@ export default function SeoProductPage() {
                   />
                 </div>
               )}
+              <div className="flex items-center justify-between gap-4 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Mettre en avant dans Nouveautés</p>
+                  <p className="text-xs text-gray-500">
+                    Le produit apparaîtra sur la page dédiée /nouveautes dès l’activation.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {isNewSaving && <Loader2 size={14} className="animate-spin text-gray-400" />}
+                  {isNewSaved && <span className="text-xs font-medium text-emerald-600">Enregistré</span>}
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={Boolean(product?.isNew)}
+                    aria-label="Mettre en avant dans Nouveautés"
+                    onClick={handleToggleIsNew}
+                    disabled={isNewSaving || !product}
+                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-bp-pink/40 disabled:cursor-not-allowed disabled:opacity-70 ${
+                      product?.isNew ? "bg-bp-pink" : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
+                        product?.isNew ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
