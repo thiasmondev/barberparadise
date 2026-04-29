@@ -1,21 +1,29 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { ShoppingCart, Minus, Plus, Check, Truck, Shield, RotateCcw, ChevronLeft } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ShoppingCart, Minus, Plus, Check, Truck, Shield, RotateCcw, ChevronLeft, Heart, Loader2 } from "lucide-react";
 import { Product, ProductVariant } from "@/types";
 import { parseImages, formatPrice, getDiscount } from "@/lib/utils";
 import { useCart } from "@/contexts/CartContext";
+import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
+import { addCustomerWishlist, getCustomerWishlist, removeCustomerWishlist } from "@/lib/customer-api";
 
 export default function ProductDetail({ product }: { product: Product }) {
+  const router = useRouter();
   const { addItem } = useCart();
+  const { isAuthenticated, isLoading: authLoading } = useCustomerAuth();
   const images = parseImages(product.images);
   const [selectedImage, setSelectedImage] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [descOpen, setDescOpen] = useState(false);
+  const [isWishlisted, setIsWishlisted] = useState(false);
+  const [wishlistLoading, setWishlistLoading] = useState(false);
+  const [wishlistMessage, setWishlistMessage] = useState("");
   const discount = getDiscount(product.price, product.originalPrice);
 
   const variants = product.variants ?? [];
@@ -33,6 +41,29 @@ export default function ProductDetail({ product }: { product: Product }) {
     return images;
   }, [selectedVariant, images]);
 
+  useEffect(() => {
+    if (authLoading) return;
+    if (!isAuthenticated) {
+      setIsWishlisted(false);
+      return;
+    }
+
+    let cancelled = false;
+    async function loadWishlistStatus() {
+      try {
+        const products = await getCustomerWishlist();
+        if (!cancelled) setIsWishlisted(products.some((item) => item.id === product.id));
+      } catch {
+        if (!cancelled) setWishlistMessage("Impossible de vérifier votre wishlist pour le moment.");
+      }
+    }
+
+    loadWishlistStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, isAuthenticated, product.id]);
+
   const handleAddToCart = () => {
     const productToAdd = selectedVariant?.price != null
       ? { ...product, price: selectedVariant.price, name: `${product.name} - ${selectedVariant.name}` }
@@ -45,6 +76,32 @@ export default function ProductDetail({ product }: { product: Product }) {
   const handleSelectVariant = (v: ProductVariant) => {
     setSelectedVariant(selectedVariant?.id === v.id ? null : v);
     setSelectedImage(0);
+  };
+
+  const handleWishlistToggle = async () => {
+    if (authLoading || wishlistLoading) return;
+    if (!isAuthenticated) {
+      router.push("/connexion");
+      return;
+    }
+
+    setWishlistLoading(true);
+    setWishlistMessage("");
+    try {
+      if (isWishlisted) {
+        await removeCustomerWishlist(product.id);
+        setIsWishlisted(false);
+        setWishlistMessage("Produit retiré de votre wishlist.");
+      } else {
+        await addCustomerWishlist(product.id);
+        setIsWishlisted(true);
+        setWishlistMessage("Produit ajouté à votre wishlist.");
+      }
+    } catch (err) {
+      setWishlistMessage(err instanceof Error ? err.message : "Impossible de mettre à jour votre wishlist.");
+    } finally {
+      setWishlistLoading(false);
+    }
   };
 
   return (
@@ -310,6 +367,22 @@ export default function ProductDetail({ product }: { product: Product }) {
                 )}
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={handleWishlistToggle}
+              disabled={authLoading || wishlistLoading}
+              className={`mb-3 flex w-full items-center justify-center gap-3 border px-5 py-4 text-xs font-black uppercase tracking-widest transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                isWishlisted
+                  ? "border-[#ff4a8d] bg-[#ff4a8d]/10 text-[#ff8fbd] hover:bg-[#ff4a8d]/20"
+                  : "border-white/10 text-gray-300 hover:border-[#ff4a8d] hover:text-white"
+              }`}
+              aria-pressed={isWishlisted}
+            >
+              {wishlistLoading ? <Loader2 size={16} className="animate-spin" /> : <Heart size={16} fill={isWishlisted ? "currentColor" : "none"} />}
+              {isWishlisted ? "Retirer de ma wishlist" : "Ajouter à ma wishlist"}
+            </button>
+            {wishlistMessage && <p className="mb-6 text-xs font-semibold text-[#ff8fbd]">{wishlistMessage}</p>}
 
             {/* Garanties */}
             <div className="border border-white/5 p-5 space-y-4">

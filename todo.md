@@ -12,3 +12,5 @@
 - [ ] Corriger l’échec de build Vercel au pré-rendu de /compte et sécuriser les pages client contre les erreurs de rendu statique Next.js.
 
 - [x] Corriger le build Next.js en production lié aux hooks de navigation App Router et au pré-rendu.
+- [x] Rendre les adresses du compte client cliquables et modifiables avec sauvegarde des changements.
+- [x] Ajouter la possibilité d’ajouter/retirer un produit en wishlist depuis les fiches produit et l’afficher dans l’onglet wishlist du compte.

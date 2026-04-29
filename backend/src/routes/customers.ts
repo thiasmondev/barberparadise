@@ -95,6 +95,36 @@ customersRouter.post("/me/addresses", requireAuth, async (req: AuthRequest, res:
   }
 });
 
+// PUT /api/customers/me/addresses/:id — Modifier une adresse client
+customersRouter.put("/me/addresses/:id", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { firstName, lastName, address, postalCode, city, country = "France" } = req.body;
+    if (!firstName || !lastName || !address || !postalCode || !city || !country) {
+      res.status(400).json({ error: "Champs requis manquants" });
+      return;
+    }
+
+    const updated = await prisma.address.updateMany({
+      where: { id: req.params.id, customerId: req.user!.id },
+      data: { firstName, lastName, address, postalCode, city, country },
+    });
+
+    if (updated.count === 0) {
+      res.status(404).json({ error: "Adresse non trouvée" });
+      return;
+    }
+
+    const savedAddress = await prisma.address.findFirst({
+      where: { id: req.params.id, customerId: req.user!.id },
+    });
+
+    res.json(savedAddress);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur mise à jour adresse" });
+  }
+});
+
 // DELETE /api/customers/me/addresses/:id — Supprimer une adresse client
 customersRouter.delete("/me/addresses/:id", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   try {

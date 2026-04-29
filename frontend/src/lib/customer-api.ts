@@ -121,6 +121,13 @@ export async function createCustomerAddress(data: CustomerAddressInput): Promise
   });
 }
 
+export async function updateCustomerAddress(id: string, data: CustomerAddressInput): Promise<CustomerAddress> {
+  return customerFetch<CustomerAddress>(`/api/customers/me/addresses/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
 export async function deleteCustomerAddress(id: string): Promise<{ success: boolean }> {
   return customerFetch<{ success: boolean }>(`/api/customers/me/addresses/${id}`, {
     method: "DELETE",
