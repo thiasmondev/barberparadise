@@ -5,7 +5,6 @@ import Image from "next/image";
 import { useState, useEffect, useRef } from "react";
 import { ShoppingBag, Search, Menu, X, User, ChevronRight, ChevronDown, LogOut, Heart, Package } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { isExactActiveHref } from "@/utils/navigation";
 import { getMegaMenuChildren, hasMegaMenuChildren } from "@/utils/megaMenu";
 import type { Brand } from "@/types";
@@ -401,15 +400,14 @@ function MegaMenuMarques({
 export default function Header() {
   const { itemCount } = useCart();
   const { customer, isAuthenticated, logout } = useCustomerAuth();
-  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [allCategories, setAllCategories] = useState<ApiCategory[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const [pathname, setPathname] = useState("/");
+  const [currentSearchParams, setCurrentSearchParams] = useState(() => new URLSearchParams());
   const isHome = pathname === "/";
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -418,6 +416,17 @@ export default function Header() {
     const handleScroll = () => setScrolled(window.scrollY > 50);
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const syncLocation = () => {
+      setPathname(window.location.pathname);
+      setCurrentSearchParams(new URLSearchParams(window.location.search));
+    };
+
+    syncLocation();
+    window.addEventListener("popstate", syncLocation);
+    return () => window.removeEventListener("popstate", syncLocation);
   }, []);
 
   useEffect(() => {
@@ -455,7 +464,7 @@ export default function Header() {
   const handleCustomerLogout = () => {
     logout();
     setAccountOpen(false);
-    router.push("/");
+    window.location.assign("/");
   };
 
   return (
@@ -552,7 +561,7 @@ export default function Header() {
         {/* ─── NAVIGATION DESKTOP ─── */}
         <nav className="hidden md:flex items-center justify-center gap-2 pb-4">
           {NAV_MAIN.map((item) => {
-            const isActive = isExactActiveHref(pathname, searchParams, item.href);
+            const isActive = isExactActiveHref(pathname, currentSearchParams, item.href);
             const hasMega = !!item.megaMenu;
             const isOpen = openMenu === item.label;
 

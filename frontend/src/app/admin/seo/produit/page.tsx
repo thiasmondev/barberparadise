@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import Image from "next/image";
@@ -318,6 +318,14 @@ function ProductPreview({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SeoProductPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-400">Chargement...</div>}>
+      <SeoProductPageContent />
+    </Suspense>
+  );
+}
+
+function SeoProductPageContent() {
   const searchParams = useSearchParams();
   const productId = searchParams.get("id");
 

@@ -1,8 +1,7 @@
 "use client";
 
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import AdminLoginPage from "./AdminLoginPage";
 import {
@@ -37,8 +36,15 @@ const NAV_ITEMS = [
 
 export default function AdminShell({ children }: { children: ReactNode }) {
   const { admin, logout, isLoading } = useAdminAuth();
-  const pathname = usePathname();
+  const [pathname, setPathname] = useState("/admin");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    const syncLocation = () => setPathname(window.location.pathname);
+    syncLocation();
+    window.addEventListener("popstate", syncLocation);
+    return () => window.removeEventListener("popstate", syncLocation);
+  }, []);
 
   if (isLoading) {
     return (

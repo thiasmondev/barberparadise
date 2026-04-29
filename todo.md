@@ -9,3 +9,6 @@
 - [x] Mettre à jour le header pour envoyer vers /connexion si non connecté et afficher un dropdown compte si connecté.
 - [x] Ajouter les tests de régression frontend pour l’authentification client et exécuter les vérifications avant push GitHub.
 - [x] Compléter si nécessaire les endpoints client manquants GET /api/customers/me/orders, GET/POST/DELETE /api/customers/me/addresses pour rendre la page /compte réellement fonctionnelle.
+- [ ] Corriger l’échec de build Vercel au pré-rendu de /compte et sécuriser les pages client contre les erreurs de rendu statique Next.js.
+
+- [x] Corriger le build Next.js en production lié aux hooks de navigation App Router et au pré-rendu.

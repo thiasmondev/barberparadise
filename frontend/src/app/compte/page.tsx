@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { Heart, Loader2, LogOut, MapPin, Package, Trash2, UserRound } from "lucide-react";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
 import type { Order, Product } from "@/types";
@@ -66,7 +66,25 @@ function getProductImage(product: Product): string {
   }
 }
 
+function AccountLoadingState() {
+  return (
+    <section className="min-h-[calc(100vh-160px)] bg-[#0b0b0b] px-6 py-20 text-white">
+      <div className="mx-auto flex max-w-4xl items-center justify-center gap-3 border border-white/10 bg-[#131313] p-10 text-white/60">
+        <Loader2 className="animate-spin text-[#E91E8C]" size={22} /> Chargement de votre espace client...
+      </div>
+    </section>
+  );
+}
+
 export default function ComptePage() {
+  return (
+    <Suspense fallback={<AccountLoadingState />}>
+      <ComptePageContent />
+    </Suspense>
+  );
+}
+
+function ComptePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedTab = searchParams.get("tab") as AccountTab | null;
@@ -123,13 +141,7 @@ export default function ComptePage() {
   const totalWishlist = useMemo(() => wishlist.length, [wishlist.length]);
 
   if (isLoading || !isAuthenticated || !customer) {
-    return (
-      <section className="min-h-[calc(100vh-160px)] bg-[#0b0b0b] px-6 py-20 text-white">
-        <div className="mx-auto flex max-w-4xl items-center justify-center gap-3 border border-white/10 bg-[#131313] p-10 text-white/60">
-          <Loader2 className="animate-spin text-[#E91E8C]" size={22} /> Chargement de votre espace client...
-        </div>
-      </section>
-    );
+    return <AccountLoadingState />;
   }
 
   return (
