@@ -77,3 +77,71 @@ describe("suppression définitive des marques", () => {
     expect(homePage).toContain("/marques/${brand.slug}");
   });
 });
+
+describe("authentification client frontend", () => {
+  const customerApi = readSource("frontend/src/lib/customer-api.ts");
+  const customerContext = readSource("frontend/src/contexts/CustomerAuthContext.tsx");
+  const clientLayout = readSource("frontend/src/components/ClientLayout.tsx");
+  const connexionPage = readSource("frontend/src/app/connexion/page.tsx");
+  const inscriptionPage = readSource("frontend/src/app/inscription/page.tsx");
+  const comptePage = readSource("frontend/src/app/compte/page.tsx");
+  const header = readSource("frontend/src/components/Header.tsx");
+  const customerRoutes = readSource("backend/src/routes/customers.ts");
+
+  it("centralise les appels API client avec JWT localStorage et hydratation /api/customers/me", () => {
+    expect(customerApi).toContain('CUSTOMER_TOKEN_KEY = "bp_customer_token"');
+    expect(customerApi).toContain('"/api/auth/login"');
+    expect(customerApi).toContain('"/api/auth/register"');
+    expect(customerApi).toContain('"/api/customers/me"');
+    expect(customerApi).toContain('headers.set("Authorization", `Bearer ${authToken}`)');
+    expect(customerContext).toContain("interface CustomerAuthContextValue");
+    expect(customerContext).toContain("localStorage.setItem(CUSTOMER_TOKEN_KEY, response.token)");
+    expect(customerContext).toContain("getCustomerMe(token)");
+    expect(customerContext).toContain("localStorage.removeItem(CUSTOMER_TOKEN_KEY)");
+    expect(clientLayout).toContain("<CustomerAuthProvider>");
+  });
+
+  it("crée les pages connexion et inscription avec validations et redirection vers /compte", () => {
+    expect(connexionPage).toContain('router.replace("/compte")');
+    expect(connexionPage).toContain("login(email.trim().toLowerCase(), password)");
+    expect(connexionPage).toContain("Veuillez saisir une adresse email valide.");
+    expect(connexionPage).toContain("Pas encore de compte ?");
+    expect(connexionPage).toContain('href="/inscription"');
+    expect(inscriptionPage).toContain('router.replace("/compte")');
+    expect(inscriptionPage).toContain("register({");
+    expect(inscriptionPage).toContain("Le mot de passe doit contenir au moins 8 caractères");
+    expect(inscriptionPage).toContain("La confirmation du mot de passe ne correspond pas.");
+    expect(inscriptionPage).toContain("Déjà un compte ?");
+    expect(inscriptionPage).toContain('href="/connexion"');
+  });
+
+  it("protège /compte et connecte informations, commandes, adresses et wishlist", () => {
+    expect(comptePage).toContain('router.replace("/connexion")');
+    expect(comptePage).toContain("getCustomerOrders()");
+    expect(comptePage).toContain("getCustomerAddresses()");
+    expect(comptePage).toContain("createCustomerAddress");
+    expect(comptePage).toContain("deleteCustomerAddress");
+    expect(comptePage).toContain("getCustomerWishlist()");
+    expect(comptePage).toContain("removeCustomerWishlist");
+    expect(comptePage).toContain("Mes informations");
+    expect(comptePage).toContain("Mes commandes");
+    expect(comptePage).toContain("Mes adresses");
+    expect(comptePage).toContain("Ma wishlist");
+  });
+
+  it("expose les endpoints commandes et adresses attendus côté backend", () => {
+    expect(customerRoutes).toContain('customersRouter.get("/me/orders"');
+    expect(customerRoutes).toContain('customersRouter.get("/me/addresses"');
+    expect(customerRoutes).toContain('customersRouter.post("/me/addresses"');
+    expect(customerRoutes).toContain('customersRouter.delete("/me/addresses/:id"');
+  });
+
+  it("met à jour le header avec un lien connexion ou un dropdown client connecté", () => {
+    expect(header).toContain("useCustomerAuth");
+    expect(header).toContain('href="/connexion"');
+    expect(header).toContain('href="/compte?tab=commandes"');
+    expect(header).toContain('href="/compte?tab=wishlist"');
+    expect(header).toContain("handleCustomerLogout");
+    expect(header).toContain("Se déconnecter");
+  });
+});

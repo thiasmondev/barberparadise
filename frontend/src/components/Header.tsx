@@ -3,12 +3,13 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useState, useEffect, useRef } from "react";
-import { ShoppingBag, Search, Menu, X, User, ChevronRight } from "lucide-react";
+import { ShoppingBag, Search, Menu, X, User, ChevronRight, ChevronDown, LogOut, Heart, Package } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { isExactActiveHref } from "@/utils/navigation";
 import { getMegaMenuChildren, hasMegaMenuChildren } from "@/utils/megaMenu";
 import type { Brand } from "@/types";
+import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
 
@@ -399,9 +400,12 @@ function MegaMenuMarques({
 // ─── Header principal ─────────────────────────────────────────
 export default function Header() {
   const { itemCount } = useCart();
+  const { customer, isAuthenticated, logout } = useCustomerAuth();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [allCategories, setAllCategories] = useState<ApiCategory[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const pathname = usePathname();
@@ -419,6 +423,7 @@ export default function Header() {
   useEffect(() => {
     setMobileOpen(false);
     setOpenMenu(null);
+    setAccountOpen(false);
   }, [pathname]);
 
   // Charger catégories et marques
@@ -445,6 +450,12 @@ export default function Header() {
 
   const handleMenuEnter = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
+  };
+
+  const handleCustomerLogout = () => {
+    logout();
+    setAccountOpen(false);
+    router.push("/");
   };
 
   return (
@@ -486,9 +497,47 @@ export default function Header() {
             <button className="text-white hover:text-[#ff4a8d] transition-colors hidden sm:block">
               <Search size={18} />
             </button>
-            <Link href="/compte" className="text-white hover:text-[#ff4a8d] transition-colors hidden sm:block">
-              <User size={18} />
-            </Link>
+            <div className="relative hidden sm:block">
+              {!isAuthenticated ? (
+                <Link href="/connexion" className="text-white hover:text-[#ff4a8d] transition-colors" aria-label="Connexion client">
+                  <User size={18} />
+                </Link>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setAccountOpen((open) => !open)}
+                    className="flex items-center gap-1 text-white hover:text-[#ff4a8d] transition-colors"
+                    aria-label="Menu compte client"
+                    aria-expanded={accountOpen}
+                  >
+                    <User size={18} />
+                    <ChevronDown size={12} className={accountOpen ? "rotate-180 transition-transform" : "transition-transform"} />
+                  </button>
+                  {accountOpen && (
+                    <div className="absolute right-0 top-8 z-50 w-64 border border-white/10 bg-[#111] p-2 shadow-2xl shadow-black/40">
+                      <div className="border-b border-white/10 px-4 py-3">
+                        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#ff4a8d]">Compte client</p>
+                        <p className="mt-1 truncate text-sm font-semibold text-white">{customer?.firstName} {customer?.lastName}</p>
+                      </div>
+                      <Link href="/compte" className="flex items-center gap-3 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white/65 hover:bg-white/5 hover:text-white">
+                        <User size={15} /> Mon compte
+                      </Link>
+                      <Link href="/compte?tab=commandes" className="flex items-center gap-3 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white/65 hover:bg-white/5 hover:text-white">
+                        <Package size={15} /> Mes commandes
+                      </Link>
+                      <Link href="/compte?tab=wishlist" className="flex items-center gap-3 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white/65 hover:bg-white/5 hover:text-white">
+                        <Heart size={15} /> Ma wishlist
+                      </Link>
+                      <div className="my-2 h-px bg-white/10" />
+                      <button type="button" onClick={handleCustomerLogout} className="flex w-full items-center gap-3 px-4 py-3 text-left text-[11px] font-black uppercase tracking-[0.14em] text-red-300 hover:bg-red-500/10 hover:text-red-200">
+                        <LogOut size={15} /> Se déconnecter
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
             <Link href="/panier" className="relative group">
               <ShoppingBag size={20} className="text-white group-hover:text-[#ff4a8d] transition-colors" />
               {itemCount > 0 && (
@@ -630,6 +679,22 @@ export default function Header() {
               </Link>
             </div>
           )}
+
+          <div className="px-8 pt-6 pb-4 border-t border-white/5">
+            <p className="text-[10px] font-black tracking-[0.3em] uppercase text-[#ff4a8d] mb-4">COMPTE CLIENT</p>
+            {!isAuthenticated ? (
+              <Link href="/connexion" onClick={() => setMobileOpen(false)} className="block py-3 text-sm font-black uppercase tracking-[0.18em] text-white/70 hover:text-white">
+                Se connecter
+              </Link>
+            ) : (
+              <div className="grid gap-1">
+                <Link href="/compte" onClick={() => setMobileOpen(false)} className="block py-3 text-sm font-black uppercase tracking-[0.18em] text-white/70 hover:text-white">Mon compte</Link>
+                <Link href="/compte?tab=commandes" onClick={() => setMobileOpen(false)} className="block py-3 text-sm font-black uppercase tracking-[0.18em] text-white/70 hover:text-white">Mes commandes</Link>
+                <Link href="/compte?tab=wishlist" onClick={() => setMobileOpen(false)} className="block py-3 text-sm font-black uppercase tracking-[0.18em] text-white/70 hover:text-white">Ma wishlist</Link>
+                <button type="button" onClick={handleCustomerLogout} className="py-3 text-left text-sm font-black uppercase tracking-[0.18em] text-red-300 hover:text-red-200">Se déconnecter</button>
+              </div>
+            )}
+          </div>
 
           <div className="mt-auto px-8 py-8 border-t border-white/5 flex-shrink-0">
             <p className="text-[10px] font-black tracking-[0.3em] uppercase text-gray-600">

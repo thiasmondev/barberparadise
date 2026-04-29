@@ -173,10 +173,13 @@ export interface Customer {
   orders?: Order[];
   addresses?: {
     id: string;
+    firstName: string;
+    lastName: string;
     address: string;
     city: string;
     postalCode: string;
     country: string;
     isDefault: boolean;
+    phone?: string;
   }[];
 }

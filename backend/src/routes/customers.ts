@@ -39,6 +39,75 @@ customersRouter.put("/me", requireAuth, async (req: AuthRequest, res: Response):
   }
 });
 
+// GET /api/customers/me/orders — Commandes du client connecté
+customersRouter.get("/me/orders", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const orders = await prisma.order.findMany({
+      where: { customerId: req.user!.id },
+      include: { items: true, shippingAddress: true },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(orders);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur récupération commandes" });
+  }
+});
+
+// GET /api/customers/me/addresses — Adresses du client connecté
+customersRouter.get("/me/addresses", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const addresses = await prisma.address.findMany({
+      where: { customerId: req.user!.id },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(addresses);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur récupération adresses" });
+  }
+});
+
+// POST /api/customers/me/addresses — Ajouter une adresse client
+customersRouter.post("/me/addresses", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { firstName, lastName, address, postalCode, city, country = "France" } = req.body;
+    if (!firstName || !lastName || !address || !postalCode || !city || !country) {
+      res.status(400).json({ error: "Champs requis manquants" });
+      return;
+    }
+
+    const created = await prisma.address.create({
+      data: {
+        customerId: req.user!.id,
+        firstName,
+        lastName,
+        address,
+        postalCode,
+        city,
+        country,
+      },
+    });
+    res.status(201).json(created);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur création adresse" });
+  }
+});
+
+// DELETE /api/customers/me/addresses/:id — Supprimer une adresse client
+customersRouter.delete("/me/addresses/:id", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    await prisma.address.deleteMany({
+      where: { id: req.params.id, customerId: req.user!.id },
+    });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur suppression adresse" });
+  }
+});
+
 // GET /api/customers/me/wishlist — Wishlist
 customersRouter.get("/me/wishlist", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
