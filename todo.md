@@ -14,3 +14,5 @@
 - [x] Corriger le build Next.js en production lié aux hooks de navigation App Router et au pré-rendu.
 - [x] Rendre les adresses du compte client cliquables et modifiables avec sauvegarde des changements.
 - [x] Ajouter la possibilité d’ajouter/retirer un produit en wishlist depuis les fiches produit et l’afficher dans l’onglet wishlist du compte.
+- [x] Tester les routes backend auth/compte Render avec curl et documenter les statuts HTTP ainsi que les JSON complets.
+- [x] Ajouter un encadré « Extension » sous le formulaire d’adresse dans l’onglet Mes adresses du compte.

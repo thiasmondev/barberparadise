@@ -71,7 +71,7 @@ customersRouter.get("/me/addresses", requireAuth, async (req: AuthRequest, res: 
 // POST /api/customers/me/addresses — Ajouter une adresse client
 customersRouter.post("/me/addresses", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { firstName, lastName, address, postalCode, city, country = "France" } = req.body;
+    const { firstName, lastName, address, extension = "", postalCode, city, country = "France" } = req.body;
     if (!firstName || !lastName || !address || !postalCode || !city || !country) {
       res.status(400).json({ error: "Champs requis manquants" });
       return;
@@ -83,6 +83,7 @@ customersRouter.post("/me/addresses", requireAuth, async (req: AuthRequest, res:
         firstName,
         lastName,
         address,
+        extension,
         postalCode,
         city,
         country,
@@ -98,7 +99,7 @@ customersRouter.post("/me/addresses", requireAuth, async (req: AuthRequest, res:
 // PUT /api/customers/me/addresses/:id — Modifier une adresse client
 customersRouter.put("/me/addresses/:id", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { firstName, lastName, address, postalCode, city, country = "France" } = req.body;
+    const { firstName, lastName, address, extension = "", postalCode, city, country = "France" } = req.body;
     if (!firstName || !lastName || !address || !postalCode || !city || !country) {
       res.status(400).json({ error: "Champs requis manquants" });
       return;
@@ -106,7 +107,7 @@ customersRouter.put("/me/addresses/:id", requireAuth, async (req: AuthRequest, r
 
     const updated = await prisma.address.updateMany({
       where: { id: req.params.id, customerId: req.user!.id },
-      data: { firstName, lastName, address, postalCode, city, country },
+      data: { firstName, lastName, address, extension, postalCode, city, country },
     });
 
     if (updated.count === 0) {

@@ -51,6 +51,7 @@ const emptyAddress: CustomerAddressInput = {
   firstName: "",
   lastName: "",
   address: "",
+  extension: "",
   postalCode: "",
   city: "",
   country: "France",
@@ -308,6 +309,7 @@ function AddressesPanel({ addresses, setAddresses, setMessage }: { addresses: Cu
       firstName: item.firstName,
       lastName: item.lastName,
       address: item.address,
+      extension: item.extension || "",
       postalCode: item.postalCode,
       city: item.city,
       country: item.country || "France",
@@ -324,6 +326,7 @@ function AddressesPanel({ addresses, setAddresses, setMessage }: { addresses: Cu
       firstName: form.firstName.trim(),
       lastName: form.lastName.trim(),
       address: form.address.trim(),
+      extension: form.extension?.trim() || "",
       postalCode: form.postalCode.trim(),
       city: form.city.trim(),
       country: form.country.trim() || "France",
@@ -380,6 +383,7 @@ function AddressesPanel({ addresses, setAddresses, setMessage }: { addresses: Cu
           <AccountInput label="Prénom" value={form.firstName} onChange={(value) => setField("firstName", value)} />
           <AccountInput label="Nom" value={form.lastName} onChange={(value) => setField("lastName", value)} />
           <AccountInput label="Adresse" value={form.address} onChange={(value) => setField("address", value)} className="sm:col-span-2" />
+          <AccountInput label="Extension (bâtiment, étage, appartement...)" value={form.extension || ""} onChange={(value) => setField("extension", value)} className="sm:col-span-2" />
           <AccountInput label="Code postal" value={form.postalCode} onChange={(value) => setField("postalCode", value)} />
           <AccountInput label="Ville" value={form.city} onChange={(value) => setField("city", value)} />
           <AccountInput label="Pays" value={form.country} onChange={(value) => setField("country", value)} />
@@ -405,7 +409,7 @@ function AddressesPanel({ addresses, setAddresses, setMessage }: { addresses: Cu
                 aria-label={`Modifier l’adresse de ${item.firstName} ${item.lastName}`}
               >
                 <span className="block font-black uppercase">{item.firstName} {item.lastName}</span>
-                <span className="mt-3 block text-sm leading-6 text-white/55">{item.address}<br />{item.postalCode} {item.city}<br />{item.country}</span>
+                <span className="mt-3 block text-sm leading-6 text-white/55">{item.address}{item.extension ? <><br />{item.extension}</> : null}<br />{item.postalCode} {item.city}<br />{item.country}</span>
                 {item.phone && <span className="mt-2 block text-sm text-white/45">{item.phone}</span>}
                 <span className="mt-4 block text-[10px] font-black uppercase tracking-[0.18em] text-[#E91E8C]">Cliquer pour modifier</span>
               </button>

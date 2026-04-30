@@ -28,6 +28,7 @@ export interface CustomerAddress {
   firstName: string;
   lastName: string;
   address: string;
+  extension?: string;
   city: string;
   postalCode: string;
   country: string;
@@ -39,6 +40,7 @@ export interface CustomerAddressInput {
   firstName: string;
   lastName: string;
   address: string;
+  extension?: string;
   postalCode: string;
   city: string;
   country: string;

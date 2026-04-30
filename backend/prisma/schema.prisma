@@ -110,6 +110,7 @@ model Address {
   firstName  String
   lastName   String
   address    String
+  extension  String?  @default("")
   city       String
   postalCode String
   country    String   @default("France")
