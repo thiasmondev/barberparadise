@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
@@ -10,6 +10,8 @@ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function ConnexionPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get("redirect") || "/compte";
   const { login, isAuthenticated, isLoading } = useCustomerAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -19,9 +21,9 @@ export default function ConnexionPage() {
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace("/compte");
+      router.replace(redirectTo);
     }
-  }, [isAuthenticated, isLoading, router]);
+  }, [isAuthenticated, isLoading, redirectTo, router]);
 
   const validate = () => {
     if (!email.trim() || !password) return "Tous les champs sont obligatoires.";
@@ -41,7 +43,7 @@ export default function ConnexionPage() {
     setError("");
     try {
       await login(email.trim().toLowerCase(), password);
-      router.replace("/compte");
+      router.replace(redirectTo);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Identifiants incorrects.");
     } finally {

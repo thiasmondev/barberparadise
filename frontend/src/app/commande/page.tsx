@@ -5,6 +5,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { ArrowLeft, Lock, ChevronDown, ShoppingBag, CreditCard, Landmark, WalletCards, ReceiptText, AlertCircle, Smartphone } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
+import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
+import { getCustomerAddresses, type CustomerAddress } from "@/lib/customer-api";
 import { parseImages, formatPrice } from "@/lib/utils";
 
 type Step = "contact" | "livraison" | "paiement";
@@ -43,8 +45,8 @@ const COUNTRY_CODE_BY_NAME: Record<string, string> = {
 const METHOD_CONFIG: Record<PaymentMethod, { label: string; description: string; badge: string; icon: typeof CreditCard }> = {
   card: { label: "Carte bancaire", description: "Visa, Mastercard, CB — 3D Secure via Mollie.", badge: "CB", icon: CreditCard },
   pay_by_bank: { label: "Virement bancaire", description: "Paiement direct depuis votre banque via Mollie.", badge: "BANK", icon: Landmark },
-  sepa: { label: "Prélèvement SEPA", description: "Débit direct SEPA pour paiements récurrents ou professionnels.", badge: "SEPA", icon: ReceiptText },
-  paypal_4x: { label: "PayPal 4x sans frais", description: "Paiement en 4 fois sans intérêts, réservé aux clients B2C.", badge: "PP", icon: WalletCards },
+  sepa: { label: "Prélèvement SEPA", description: "Débit direct SEPA sécurisé.", badge: "SEPA", icon: ReceiptText },
+  paypal_4x: { label: "PayPal 4x sans frais", description: "Paiement en 4 fois sans intérêts.", badge: "PP", icon: WalletCards },
   apple_pay: { label: "Apple Pay", description: "Paiement rapide compatible Face ID ou Touch ID.", badge: "APPLE", icon: Smartphone },
   google_pay: { label: "Google Pay", description: "Paiement rapide depuis un appareil ou compte Google compatible.", badge: "GPAY", icon: Smartphone },
   bancontact: { label: "Bancontact", description: "Paiement local sécurisé pour la Belgique.", badge: "BE", icon: Landmark },
@@ -67,12 +69,13 @@ function supportsApplePay(): boolean {
 
 export default function CheckoutPage() {
   const { items, total } = useCart();
+  const { customer, isAuthenticated, isLoading: customerLoading } = useCustomerAuth();
   const [step, setStep] = useState<Step>("contact");
+  const [guestCheckout, setGuestCheckout] = useState(false);
   const [orderSummaryOpen, setOrderSummaryOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
   const [availableMethods, setAvailableMethods] = useState<PaymentMethod[]>([]);
   const [methodsLoading, setMethodsLoading] = useState(false);
-  const [isB2B, setIsB2B] = useState(false);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState("");
 
@@ -98,11 +101,64 @@ export default function CheckoutPage() {
     [availableMethods],
   );
 
+  const checkoutSteps: Step[] = isAuthenticated ? ["livraison", "paiement"] : ["contact", "livraison", "paiement"];
+
+  useEffect(() => {
+    if (customerLoading) return;
+    if (isAuthenticated) {
+      setStep("livraison");
+      setGuestCheckout(false);
+    } else {
+      setStep((current) => (current === "paiement" ? "livraison" : current));
+    }
+  }, [customerLoading, isAuthenticated]);
+
+  useEffect(() => {
+    if (!customer) return;
+
+    setForm((prev) => ({
+      ...prev,
+      email: customer.email || prev.email,
+      prenom: customer.firstName || prev.prenom,
+      nom: customer.lastName || prev.nom,
+      telephone: customer.phone || prev.telephone,
+    }));
+  }, [customer]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+
+    async function loadDefaultAddress() {
+      try {
+        const addresses = await getCustomerAddresses();
+        const selectedAddress: CustomerAddress | undefined = addresses.find((address) => address.isDefault) || addresses[0];
+        if (!selectedAddress || cancelled) return;
+        setForm((prev) => ({
+          ...prev,
+          prenom: selectedAddress.firstName || prev.prenom,
+          nom: selectedAddress.lastName || prev.nom,
+          adresse: selectedAddress.address || prev.adresse,
+          complement: selectedAddress.extension || prev.complement,
+          ville: selectedAddress.city || prev.ville,
+          codePostal: selectedAddress.postalCode || prev.codePostal,
+          pays: selectedAddress.country || prev.pays,
+          telephone: selectedAddress.phone || prev.telephone,
+        }));
+      } catch {
+        // Le tunnel reste utilisable même si les adresses enregistrées ne peuvent pas être chargées.
+      }
+    }
+
+    loadDefaultAddress();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
+
   useEffect(() => {
     const storedMethod = sessionStorage.getItem("barberparadise-payment-method") as PaymentMethod | null;
-    const storedB2B = sessionStorage.getItem("barberparadise-payment-b2b");
     if (storedMethod && Object.keys(METHOD_CONFIG).includes(storedMethod)) setPaymentMethod(storedMethod);
-    if (storedB2B) setIsB2B(storedB2B === "true");
   }, []);
 
   useEffect(() => {
@@ -111,7 +167,7 @@ export default function CheckoutPage() {
       setMethodsLoading(true);
       setPaymentError("");
       try {
-        const res = await fetch(`${API_URL}/api/checkout/available-methods?country=${countryCode}&isB2B=${isB2B}`, {
+        const res = await fetch(`${API_URL}/api/checkout/available-methods?country=${countryCode}&isB2B=false`, {
           signal: controller.signal,
         });
         const data = (await res.json()) as { methods?: PaymentMethod[]; error?: string };
@@ -130,7 +186,7 @@ export default function CheckoutPage() {
     }
     loadMethods();
     return () => controller.abort();
-  }, [countryCode, isB2B]);
+  }, [countryCode]);
 
   const updateForm = (key: string, value: string | boolean) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -147,6 +203,7 @@ export default function CheckoutPage() {
         body: JSON.stringify({
           cartItems: items.map((item) => ({ productId: item.product.id, quantity: item.quantity })),
           customerEmail: form.email,
+          customerId: isAuthenticated && customer ? customer.id : undefined,
           shippingAddress: {
             firstName: form.prenom,
             lastName: form.nom,
@@ -158,7 +215,7 @@ export default function CheckoutPage() {
             phone: form.telephone,
           },
           paymentMethod,
-          isB2B,
+          isB2B: false,
         }),
       });
 
@@ -221,24 +278,43 @@ export default function CheckoutPage() {
           )}
 
           <div className="flex items-center gap-3 mb-10">
-            {(["contact", "livraison", "paiement"] as Step[]).map((s, i) => (
+            {checkoutSteps.map((s, i) => (
               <div key={s} className="flex items-center gap-3">
-                <button onClick={() => { if (s === "livraison" && step === "paiement") setStep(s); if (s === "contact") setStep(s); }} className={`text-[10px] font-black tracking-[0.3em] uppercase transition-colors ${step === s ? "text-white" : "text-gray-600 hover:text-gray-400"}`}>{s.toUpperCase()}</button>
-                {i < 2 && <span className="text-gray-700 text-xs">›</span>}
+                <button
+                  onClick={() => {
+                    if (s === "livraison" && step === "paiement") setStep(s);
+                    if (s === "contact" && !isAuthenticated) setStep(s);
+                  }}
+                  className={`text-[10px] font-black tracking-[0.3em] uppercase transition-colors ${step === s ? "text-white" : "text-gray-600 hover:text-gray-400"}`}
+                >
+                  {s.toUpperCase()}
+                </button>
+                {i < checkoutSteps.length - 1 && <span className="text-gray-700 text-xs">›</span>}
               </div>
             ))}
           </div>
 
-          {step === "contact" && (
+          {!isAuthenticated && step === "contact" && (
             <div className="space-y-8">
               <div>
-                <h2 className="text-2xl font-black tracking-tighter italic uppercase mb-6">Contact</h2>
-                <div className="space-y-6">
-                  <div><label className={labelClass}>Adresse email</label><input type="email" value={form.email} onChange={(e) => updateForm("email", e.target.value)} placeholder="votre@email.com" className={inputClass} /></div>
-                  <label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" checked={form.newsletter} onChange={(e) => updateForm("newsletter", e.target.checked)} className="w-4 h-4 bg-transparent border border-white/20 text-[#ff4a8d] focus:ring-[#ff4a8d] focus:ring-offset-[#131313]" /><span className="text-xs text-gray-400">Recevoir les offres et nouveautés par email</span></label>
+                <h2 className="text-2xl font-black tracking-tighter italic uppercase mb-4">Contact</h2>
+                <p className="text-sm text-gray-500 leading-7 mb-6">Connectez-vous pour utiliser vos informations enregistrées, ou continuez en invité avec votre email et votre adresse de livraison.</p>
+                <div className="grid gap-3 sm:grid-cols-2 mb-8">
+                  <Link href="/connexion?redirect=/commande" className="flex items-center justify-center border border-[#ff4a8d] bg-[#ff4a8d] px-5 py-4 text-xs font-black uppercase tracking-widest text-white transition-colors hover:bg-[#ff1f70]">
+                    Se connecter
+                  </Link>
+                  <button type="button" onClick={() => setGuestCheckout(true)} className="border border-white/10 px-5 py-4 text-xs font-black uppercase tracking-widest text-white transition-colors hover:border-white/30">
+                    Continuer en tant qu'invité
+                  </button>
                 </div>
+                {guestCheckout && (
+                  <div className="space-y-6">
+                    <div><label className={labelClass}>Adresse email</label><input type="email" value={form.email} onChange={(e) => updateForm("email", e.target.value)} placeholder="votre@email.com" className={inputClass} /></div>
+                    <p className="text-[11px] text-gray-500 leading-6">Un compte client pourra être créé automatiquement à partir de ces informations à la finalisation de la commande.</p>
+                  </div>
+                )}
               </div>
-              <button onClick={() => setStep("livraison")} disabled={!form.email} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-not-allowed text-white py-5 text-xs font-black tracking-widest uppercase transition-colors">CONTINUER VERS LA LIVRAISON</button>
+              <button onClick={() => setStep("livraison")} disabled={!guestCheckout || !form.email} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-not-allowed text-white py-5 text-xs font-black tracking-widest uppercase transition-colors">CONTINUER VERS LA LIVRAISON</button>
             </div>
           )}
 
@@ -264,7 +340,7 @@ export default function CheckoutPage() {
                 </div>
               </div>
               <button onClick={() => setStep("paiement")} disabled={!form.prenom || !form.nom || !form.adresse || !form.ville || !form.codePostal} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-not-allowed text-white py-5 text-xs font-black tracking-widest uppercase transition-colors">CONTINUER VERS LE PAIEMENT</button>
-              <button onClick={() => setStep("contact")} className="w-full text-center text-xs text-gray-500 hover:text-white transition-colors uppercase tracking-widest font-black">← Retour au contact</button>
+              {!isAuthenticated && <button onClick={() => setStep("contact")} className="w-full text-center text-xs text-gray-500 hover:text-white transition-colors uppercase tracking-widest font-black">← Retour au contact</button>}
             </div>
           )}
 
@@ -272,11 +348,7 @@ export default function CheckoutPage() {
             <div className="space-y-8">
               <div>
                 <h2 className="text-2xl font-black tracking-tighter italic uppercase mb-2">Paiement</h2>
-                <p className="text-xs text-gray-500 uppercase tracking-widest mb-6 flex items-center gap-2"><Lock size={10} />Méthodes calculées selon {countryCode} et votre profil client</p>
-                <label className="flex items-start gap-3 border border-white/10 bg-[#1c1b1b] p-4 mb-5 cursor-pointer">
-                  <input type="checkbox" checked={isB2B} onChange={(e) => setIsB2B(e.target.checked)} className="mt-0.5 w-4 h-4 bg-transparent border border-white/20 text-[#ff4a8d] focus:ring-[#ff4a8d] focus:ring-offset-[#131313]" />
-                  <span><span className="block text-xs font-black tracking-widest uppercase text-white">Client professionnel</span><span className="block text-[11px] text-gray-500 mt-1">B2B : uniquement virement bancaire ou prélèvement SEPA en EEE. Hors EEE, aucune méthode B2B n’est proposée.</span></span>
-                </label>
+                <p className="text-xs text-gray-500 uppercase tracking-widest mb-6 flex items-center gap-2"><Lock size={10} />Méthodes calculées selon {countryCode}</p>
 
                 <div className="space-y-3">
                   {methodsLoading && <div className="border border-white/10 bg-[#1c1b1b] p-5 text-xs text-gray-500 uppercase tracking-widest">Chargement des moyens de paiement...</div>}

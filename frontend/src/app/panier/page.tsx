@@ -3,24 +3,22 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Trash2, Minus, Plus, ArrowLeft, ArrowRight, ShoppingBag, CreditCard, Landmark, WalletCards, ReceiptText } from "lucide-react";
+import { Trash2, Minus, Plus, ArrowLeft, ArrowRight, ShoppingBag, CreditCard, Landmark, WalletCards } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { parseImages, formatPrice } from "@/lib/utils";
 
-type PaymentMethod = "card" | "pay_by_bank" | "sepa" | "paypal_4x";
+type PaymentMethod = "card" | "pay_by_bank" | "paypal_4x";
 
 export default function CartPage() {
   const { items, removeItem, updateQuantity, total, itemCount } = useCart();
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
-  const [isB2B, setIsB2B] = useState(false);
 
   const shipping = total >= 49 ? 0 : 5.90;
   const grandTotal = total + shipping;
-  const paymentMethods: Array<{ id: PaymentMethod; label: string; description: string; icon: typeof CreditCard; b2bOnly?: boolean; b2cOnly?: boolean }> = [
-    { id: "card", label: "Carte bancaire", description: "B2C EEE via Mollie, hors EEE via Checkout.com", icon: CreditCard, b2cOnly: true },
-    { id: "paypal_4x", label: "PayPal 4x sans frais", description: "Réservé aux clients particuliers B2C", icon: WalletCards, b2cOnly: true },
-    { id: "pay_by_bank", label: "Virement bancaire", description: "Disponible en EEE pour B2C et B2B", icon: Landmark },
-    { id: "sepa", label: "Prélèvement SEPA", description: "Disponible en EEE pour B2B", icon: ReceiptText, b2bOnly: true },
+  const paymentMethods: Array<{ id: PaymentMethod; label: string; icon: typeof CreditCard }> = [
+    { id: "card", label: "CARTE BANCAIRE", icon: CreditCard },
+    { id: "paypal_4x", label: "PAYPAL 4X SANS FRAIS", icon: WalletCards },
+    { id: "pay_by_bank", label: "VIREMENT BANCAIRE", icon: Landmark },
   ];
 
   if (items.length === 0) {
@@ -182,24 +180,9 @@ export default function CartPage() {
               </div>
 
               <div className="mb-6">
-                <div className="flex items-center justify-between gap-3 mb-4">
-                  <h3 className="text-[10px] font-black tracking-[0.3em] uppercase text-gray-500">Paiement</h3>
-                  <label className="flex items-center gap-2 text-[10px] font-black tracking-widest uppercase text-gray-500 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={isB2B}
-                      onChange={(e) => {
-                        setIsB2B(e.target.checked);
-                        if (e.target.checked && ["card", "paypal_4x"].includes(paymentMethod)) setPaymentMethod("pay_by_bank");
-                        if (!e.target.checked && paymentMethod === "sepa") setPaymentMethod("card");
-                      }}
-                      className="w-3.5 h-3.5 bg-transparent border border-white/20 text-[#ff4a8d] focus:ring-[#ff4a8d]"
-                    />
-                    Pro
-                  </label>
-                </div>
+                <h3 className="text-[10px] font-black tracking-[0.3em] uppercase text-gray-500 mb-4">Paiement</h3>
                 <div className="space-y-2">
-                  {paymentMethods.filter((method) => (!method.b2bOnly || isB2B) && (!method.b2cOnly || !isB2B)).map((method) => {
+                  {paymentMethods.map((method) => {
                     const Icon = method.icon;
                     const active = paymentMethod === method.id;
                     return (
@@ -211,10 +194,7 @@ export default function CartPage() {
                       >
                         <div className="flex items-center gap-3">
                           <Icon size={15} className={active ? "text-[#ff4a8d]" : "text-gray-500"} />
-                          <div>
-                            <p className="text-[11px] font-black tracking-widest uppercase">{method.label}</p>
-                            <p className="text-[10px] text-gray-600 mt-1">{method.description}</p>
-                          </div>
+                          <p className="text-[11px] font-black tracking-widest uppercase">{method.label}</p>
                         </div>
                       </button>
                     );
@@ -226,7 +206,6 @@ export default function CartPage() {
                 href="/commande"
                 onClick={() => {
                   sessionStorage.setItem("barberparadise-payment-method", paymentMethod);
-                  sessionStorage.setItem("barberparadise-payment-b2b", String(isB2B));
                 }}
                 className="w-full flex items-center justify-center gap-3 bg-[#ff4a8d] hover:bg-[#ff1f70] text-white py-5 text-xs font-black tracking-widest uppercase transition-colors"
               >
@@ -241,7 +220,7 @@ export default function CartPage() {
                 </div>
                 <div className="flex items-center gap-3 text-[10px] text-gray-600 uppercase tracking-widest">
                   <span className="text-[#ff4a8d]">✓</span>
-                  Retours sous 30 jours
+                  Retours sous 14 jours
                 </div>
                 <div className="flex items-center gap-3 text-[10px] text-gray-600 uppercase tracking-widest">
                   <span className="text-[#ff4a8d]">✓</span>

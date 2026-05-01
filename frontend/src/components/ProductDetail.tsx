@@ -403,7 +403,7 @@ export default function ProductDetail({ product }: { product: Product }) {
               <div className="flex items-center gap-4">
                 <RotateCcw size={16} className="text-[#ff4a8d] shrink-0" />
                 <div>
-                  <p className="text-xs font-black tracking-widest uppercase">Retours 30 jours</p>
+                  <p className="text-xs font-black tracking-widest uppercase">Retours 14 jours</p>
                   <p className="text-[10px] text-gray-500 mt-0.5">Satisfait ou remboursé</p>
                 </div>
               </div>

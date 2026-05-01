@@ -32,3 +32,12 @@
 - [x] Ajouter `use client` en première ligne des pages interactives concernées par le build Next.js
 - [x] Relancer `pnpm run build` et corriger les erreurs jusqu’à obtenir un build frontend propre
 - [x] Committer et pousser la correction du build Next.js sur `main`
+
+- [x] Supprimer complètement le toggle ou checkbox `PRO` du récapitulatif panier B2C et toute mention B2B associée.
+- [ ] Simplifier les méthodes de paiement du panier avec les labels `CARTE BANCAIRE`, `PAYPAL 4X SANS FRAIS` et `VIREMENT BANCAIRE`, sans descriptions techniques.
+- [ ] Remplacer dans le frontend toute mention de retours sous `30 jours` par `14 jours` lorsque cela concerne les retours.
+- [ ] Adapter `/commande` pour commencer directement à l’étape LIVRAISON quand `useCustomerAuth()` indique un client connecté.
+- [ ] Adapter `/commande` pour afficher aux invités `Se connecter` vers `/connexion?redirect=/commande` et `Continuer en tant qu'invité`, puis garder CONTACT → LIVRAISON → PAIEMENT uniquement pour les invités.
+- [ ] Pré-remplir les informations client et livraison depuis le compte client connecté lorsque disponible.
+- [ ] Relancer `pnpm run build` après correction du tunnel B2C et corriger toute erreur restante.
+- [ ] Committer et pousser les corrections du tunnel B2C sur `main`.
