@@ -19,3 +19,12 @@
 - [x] Intégrer le système de paiement multi-PSP avec commandes Prisma, routage Mollie/PayPal/Fintecture/GoCardless/Checkout.com, webhooks sécurisés, frontend panier et pages de confirmation/annulation.
 - [x] Aligner l’intégration paiement avec le document B2B/B2C : méthodes autorisées par type client, méthode `sepa`, routage PSP, pages succès/annulation, variables Render et validations complètes.
 - [x] Exécuter les dernières instructions envoyées dans pasted_content_3.txt et aligner l’intégration paiement BarberParadise en conséquence.
+- [x] Exécuter la migration Prisma en production après confirmation des variables PSP Render
+- [x] Vérifier le résultat de `prisma migrate deploy` et synchroniser Prisma si nécessaire
+- [x] Marquer la migration production comme terminée et informer l’utilisateur
+- [x] Exécuter `npx prisma migrate deploy` depuis le Shell Render du service `barberparadise-backend`
+- [x] Vérifier la sortie Render de la migration Prisma production et confirmer l’absence d’erreur
+- [x] Exécuter `pnpm run build` dans le frontend et confirmer si le build passe sans erreur
+- [x] Confirmer l’existence des routes backend `GET /api/checkout/available-methods` et `POST /api/checkout/initiate`
+- [x] Confirmer l’existence des routes backend `POST /api/webhooks/mollie`, `POST /api/webhooks/paypal` et `POST /api/webhooks/checkout`
+- [x] Tester l’endpoint Render `/api/checkout/available-methods?country=FR&isB2B=false` et relever la réponse B2C France
