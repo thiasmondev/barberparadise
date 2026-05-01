@@ -42,19 +42,19 @@ const COUNTRY_CODE_BY_NAME: Record<string, string> = {
   Maroc: "MA",
 };
 
-const METHOD_CONFIG: Record<PaymentMethod, { label: string; description: string; badge: string; icon: typeof CreditCard }> = {
-  card: { label: "Carte bancaire", description: "Visa, Mastercard, CB — 3D Secure via Mollie.", badge: "CB", icon: CreditCard },
-  pay_by_bank: { label: "Virement bancaire", description: "Paiement direct depuis votre banque via Mollie.", badge: "BANK", icon: Landmark },
-  sepa: { label: "Prélèvement SEPA", description: "Débit direct SEPA sécurisé.", badge: "SEPA", icon: ReceiptText },
-  paypal_4x: { label: "PayPal 4x sans frais", description: "Paiement en 4 fois sans intérêts.", badge: "PP", icon: WalletCards },
-  apple_pay: { label: "Apple Pay", description: "Paiement rapide compatible Face ID ou Touch ID.", badge: "APPLE", icon: Smartphone },
-  google_pay: { label: "Google Pay", description: "Paiement rapide depuis un appareil ou compte Google compatible.", badge: "GPAY", icon: Smartphone },
-  bancontact: { label: "Bancontact", description: "Paiement local sécurisé pour la Belgique.", badge: "BE", icon: Landmark },
-  ideal: { label: "iDEAL", description: "Paiement local sécurisé pour les Pays-Bas.", badge: "NL", icon: Landmark },
-  blik: { label: "BLIK", description: "Paiement local sécurisé pour la Pologne.", badge: "PL", icon: Smartphone },
-  mb_way: { label: "MB WAY", description: "Paiement local mobile pour le Portugal.", badge: "PT", icon: Smartphone },
-  multibanco: { label: "Multibanco", description: "Paiement local portugais par référence bancaire.", badge: "PT", icon: Landmark },
-  card_international: { label: "Carte bancaire", description: "Visa, Mastercard — routage Checkout.com hors EEE.", badge: "INT", icon: CreditCard },
+const METHOD_CONFIG: Record<PaymentMethod, { label: string; badge: string; icon: typeof CreditCard }> = {
+  card: { label: "CARTE BANCAIRE", badge: "CB", icon: CreditCard },
+  pay_by_bank: { label: "VIREMENT BANCAIRE", badge: "BANK", icon: Landmark },
+  sepa: { label: "PRÉLÈVEMENT SEPA", badge: "SEPA", icon: ReceiptText },
+  paypal_4x: { label: "PAYPAL 4X SANS FRAIS", badge: "PP", icon: WalletCards },
+  apple_pay: { label: "APPLE PAY", badge: "APPLE", icon: Smartphone },
+  google_pay: { label: "GOOGLE PAY", badge: "GPAY", icon: Smartphone },
+  bancontact: { label: "BANCONTACT", badge: "BE", icon: Landmark },
+  ideal: { label: "IDEAL", badge: "NL", icon: Landmark },
+  blik: { label: "BLIK", badge: "PL", icon: Smartphone },
+  mb_way: { label: "MB WAY", badge: "PT", icon: Smartphone },
+  multibanco: { label: "MULTIBANCO", badge: "PT", icon: Landmark },
+  card_international: { label: "CARTE BANCAIRE", badge: "INT", icon: CreditCard },
 };
 
 function getCountryCode(countryName: string): string {
@@ -352,14 +352,14 @@ export default function CheckoutPage() {
 
                 <div className="space-y-3">
                   {methodsLoading && <div className="border border-white/10 bg-[#1c1b1b] p-5 text-xs text-gray-500 uppercase tracking-widest">Chargement des moyens de paiement...</div>}
-                  {!methodsLoading && displayMethods.length === 0 && <div className="border border-amber-500/30 bg-amber-500/10 p-5 text-xs text-amber-100 leading-relaxed">Aucun moyen de paiement disponible pour ce pays et ce profil client. Désactivez le mode professionnel ou choisissez un pays de livraison en EEE.</div>}
+                  {!methodsLoading && displayMethods.length === 0 && <div className="border border-amber-500/30 bg-amber-500/10 p-5 text-xs text-amber-100 leading-relaxed">Aucun moyen de paiement disponible pour ce pays de livraison.</div>}
                   {!methodsLoading && displayMethods.map((method) => {
                     const config = METHOD_CONFIG[method];
                     const Icon = config.icon;
                     const active = paymentMethod === method;
                     return (
                       <button key={method} type="button" onClick={() => setPaymentMethod(method)} className={`w-full text-left border p-5 transition-colors ${active ? "border-[#ff4a8d] bg-[#ff4a8d]/10" : "border-white/10 bg-[#1c1b1b] hover:border-white/25"}`}>
-                        <div className="flex items-start gap-4"><div className={`w-11 h-11 flex items-center justify-center border text-[10px] font-black ${active ? "border-[#ff4a8d] text-[#ff4a8d]" : "border-white/10 text-gray-500"}`}><Icon size={16} /></div><div className="flex-1 min-w-0"><div className="flex items-center justify-between gap-3"><span className="text-sm font-black tracking-widest uppercase">{config.label}</span><span className="text-[10px] font-black tracking-widest text-gray-500 border border-white/10 px-2 py-1">{config.badge}</span></div><p className="text-[11px] text-gray-500 mt-2 leading-relaxed">{config.description}</p></div></div>
+                        <div className="flex items-center gap-4"><div className={`w-11 h-11 flex items-center justify-center border text-[10px] font-black ${active ? "border-[#ff4a8d] text-[#ff4a8d]" : "border-white/10 text-gray-500"}`}><Icon size={16} /></div><div className="flex-1 min-w-0"><div className="flex items-center justify-between gap-3"><span className="text-sm font-black tracking-widest uppercase">{config.label}</span><span className="text-[10px] font-black tracking-widest text-gray-500 border border-white/10 px-2 py-1">{config.badge}</span></div></div></div>
                       </button>
                     );
                   })}

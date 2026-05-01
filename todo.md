@@ -34,10 +34,19 @@
 - [x] Committer et pousser la correction du build Next.js sur `main`
 
 - [x] Supprimer complètement le toggle ou checkbox `PRO` du récapitulatif panier B2C et toute mention B2B associée.
-- [ ] Simplifier les méthodes de paiement du panier avec les labels `CARTE BANCAIRE`, `PAYPAL 4X SANS FRAIS` et `VIREMENT BANCAIRE`, sans descriptions techniques.
-- [ ] Remplacer dans le frontend toute mention de retours sous `30 jours` par `14 jours` lorsque cela concerne les retours.
-- [ ] Adapter `/commande` pour commencer directement à l’étape LIVRAISON quand `useCustomerAuth()` indique un client connecté.
-- [ ] Adapter `/commande` pour afficher aux invités `Se connecter` vers `/connexion?redirect=/commande` et `Continuer en tant qu'invité`, puis garder CONTACT → LIVRAISON → PAIEMENT uniquement pour les invités.
-- [ ] Pré-remplir les informations client et livraison depuis le compte client connecté lorsque disponible.
-- [ ] Relancer `pnpm run build` après correction du tunnel B2C et corriger toute erreur restante.
-- [ ] Committer et pousser les corrections du tunnel B2C sur `main`.
+- [x] Simplifier les méthodes de paiement du panier avec les labels `CARTE BANCAIRE`, `PAYPAL 4X SANS FRAIS` et `VIREMENT BANCAIRE`, sans descriptions techniques.
+- [x] Remplacer dans le frontend toute mention de retours sous `30 jours` par `14 jours` lorsque cela concerne les retours.
+- [x] Adapter `/commande` pour commencer directement à l’étape LIVRAISON quand `useCustomerAuth()` indique un client connecté.
+- [x] Adapter `/commande` pour afficher aux invités `Se connecter` vers `/connexion?redirect=/commande` et `Continuer en tant qu'invité`, puis garder CONTACT → LIVRAISON → PAIEMENT uniquement pour les invités.
+- [x] Pré-remplir les informations client et livraison depuis le compte client connecté lorsque disponible.
+- [x] Relancer `pnpm run build` après correction du tunnel B2C et corriger toute erreur restante.
+- [x] Committer et pousser les corrections du tunnel B2C sur `main`.
+
+- [x] Corriger le bug Prisma production : colonne `Order.isB2B` manquante en base après migration non appliquée ou absente
+- [x] Vérifier ou créer la migration Prisma ajoutant `isB2B` à `Order`, puis préparer son application sur Render
+- [x] Supprimer toutes les descriptions sous les méthodes de paiement du tunnel et ne garder que icône, label majuscule et badge
+- [x] Relancer `pnpm run build` après correction Prisma/UI paiement et vérifier l’absence d’erreur
+
+- [x] Vérifier que `isB2B Boolean @default(false)` est présent dans le modèle Prisma `Order`
+- [x] Créer la migration manuelle `backend/prisma/migrations/20260501000000_add_isb2b_to_order/migration.sql` avec l’ajout conditionnel de la colonne `Order.isB2B`
+- [x] Pousser la migration dédiée `isB2B` sur GitHub pour application ensuite via `npx prisma migrate deploy` dans le Shell Render
