@@ -1,21 +1,38 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowLeft, Lock, ChevronDown, ShoppingBag } from "lucide-react";
+import { ArrowLeft, Lock, ChevronDown, ShoppingBag, CreditCard, Landmark, WalletCards, ReceiptText, AlertCircle } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { parseImages, formatPrice } from "@/lib/utils";
 
 type Step = "contact" | "livraison" | "paiement";
+type PaymentMethod = "card" | "paypal" | "bank_transfer" | "sepa_debit";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
 
 export default function CheckoutPage() {
   const { items, total } = useCart();
   const [step, setStep] = useState<Step>("contact");
   const [orderSummaryOpen, setOrderSummaryOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
+  const [cardCountry, setCardCountry] = useState("FR");
+  const [isB2B, setIsB2B] = useState(false);
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
 
   const shipping = total >= 49 ? 0 : 5.90;
   const grandTotal = total + shipping;
+
+  useEffect(() => {
+    const storedMethod = sessionStorage.getItem("barberparadise-payment-method") as PaymentMethod | null;
+    const storedB2B = sessionStorage.getItem("barberparadise-payment-b2b");
+    if (storedMethod && ["card", "paypal", "bank_transfer", "sepa_debit"].includes(storedMethod)) {
+      setPaymentMethod(storedMethod);
+    }
+    if (storedB2B) setIsB2B(storedB2B === "true");
+  }, []);
 
   const [form, setForm] = useState({
     email: "",
@@ -32,6 +49,58 @@ export default function CheckoutPage() {
 
   const updateForm = (key: string, value: string | boolean) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const paymentMethods: Array<{
+    id: PaymentMethod;
+    label: string;
+    description: string;
+    badge: string;
+    icon: typeof CreditCard;
+    proOnly?: boolean;
+  }> = [
+    { id: "card", label: "Carte bancaire", description: "Visa, Mastercard, CB. Routage Mollie en EEE, Checkout.com hors EEE.", badge: "CB", icon: CreditCard },
+    { id: "paypal", label: "PayPal 4x sans frais", description: "Redirection vers PayPal pour finaliser le paiement.", badge: "PP", icon: WalletCards },
+    { id: "bank_transfer", label: "Virement instantané", description: "Paiement bancaire via Fintecture, sans frais carte.", badge: "IBAN", icon: Landmark },
+    { id: "sepa_debit", label: "Prélèvement SEPA", description: "Réservé aux clients professionnels B2B via GoCardless.", badge: "SEPA", icon: ReceiptText, proOnly: true },
+  ];
+
+  const handleCheckout = async () => {
+    setPaymentError("");
+    setIsSubmittingPayment(true);
+
+    try {
+      const res = await fetch(`${API_URL}/api/checkout/initiate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cartItems: items.map((item) => ({ productId: item.product.id, quantity: item.quantity })),
+          customerEmail: form.email,
+          shippingAddress: {
+            firstName: form.prenom,
+            lastName: form.nom,
+            address: form.adresse,
+            extension: form.complement,
+            city: form.ville,
+            postalCode: form.codePostal,
+            country: form.pays,
+            phone: form.telephone,
+          },
+          paymentMethod,
+          cardCountry: paymentMethod === "card" ? cardCountry : undefined,
+          isB2B,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Impossible d'initialiser le paiement");
+      if (!data.checkoutUrl) throw new Error("URL de paiement indisponible");
+
+      window.location.href = data.checkoutUrl;
+    } catch (err) {
+      setPaymentError(err instanceof Error ? err.message : "Erreur paiement inconnue");
+      setIsSubmittingPayment(false);
+    }
   };
 
   if (items.length === 0) {
@@ -256,30 +325,85 @@ export default function CheckoutPage() {
                   Toutes les transactions sont sécurisées et chiffrées
                 </p>
 
-                <div className="border border-white/5 p-6 text-center">
-                  <div className="text-gray-600 mb-4">
-                    <Lock size={32} className="mx-auto mb-3 text-gray-700" />
-                    <p className="text-xs font-black tracking-widest uppercase text-gray-500 mb-2">Paiement Stripe</p>
-                    <p className="text-[10px] text-gray-600">
-                      Le système de paiement sécurisé sera disponible prochainement.
-                    </p>
-                  </div>
-                  <div className="flex justify-center gap-4 mt-4">
-                    {["VISA", "MC", "AMEX", "CB"].map((card) => (
-                      <span key={card} className="text-[10px] font-black tracking-widest text-gray-700 border border-white/5 px-2 py-1">
-                        {card}
-                      </span>
-                    ))}
-                  </div>
+                <label className="flex items-start gap-3 border border-white/10 bg-[#1c1b1b] p-4 mb-5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isB2B}
+                    onChange={(e) => {
+                      setIsB2B(e.target.checked);
+                      if (!e.target.checked && paymentMethod === "sepa_debit") setPaymentMethod("card");
+                    }}
+                    className="mt-0.5 w-4 h-4 bg-transparent border border-white/20 text-[#ff4a8d] focus:ring-[#ff4a8d] focus:ring-offset-[#131313]"
+                  />
+                  <span>
+                    <span className="block text-xs font-black tracking-widest uppercase text-white">Client professionnel</span>
+                    <span className="block text-[11px] text-gray-500 mt-1">Active le prélèvement SEPA GoCardless réservé aux comptes B2B.</span>
+                  </span>
+                </label>
+
+                <div className="space-y-3">
+                  {paymentMethods.filter((method) => !method.proOnly || isB2B).map((method) => {
+                    const Icon = method.icon;
+                    const active = paymentMethod === method.id;
+                    return (
+                      <button
+                        key={method.id}
+                        type="button"
+                        onClick={() => setPaymentMethod(method.id)}
+                        className={`w-full text-left border p-5 transition-colors ${
+                          active ? "border-[#ff4a8d] bg-[#ff4a8d]/10" : "border-white/10 bg-[#1c1b1b] hover:border-white/25"
+                        }`}
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className={`w-11 h-11 flex items-center justify-center border text-[10px] font-black ${active ? "border-[#ff4a8d] text-[#ff4a8d]" : "border-white/10 text-gray-500"}`}>
+                            <Icon size={16} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-sm font-black tracking-widest uppercase">{method.label}</span>
+                              <span className="text-[10px] font-black tracking-widest text-gray-500 border border-white/10 px-2 py-1">{method.badge}</span>
+                            </div>
+                            <p className="text-[11px] text-gray-500 mt-2 leading-relaxed">{method.description}</p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
+
+                {paymentMethod === "card" && (
+                  <div className="mt-5 border border-white/10 bg-[#1c1b1b] p-5">
+                    <label className={labelClass}>Pays d’émission de la carte</label>
+                    <select value={cardCountry} onChange={(e) => setCardCountry(e.target.value)} className={`${inputClass} appearance-none`}>
+                      <option value="FR">France</option>
+                      <option value="BE">Belgique</option>
+                      <option value="NL">Pays-Bas</option>
+                      <option value="DE">Allemagne</option>
+                      <option value="ES">Espagne</option>
+                      <option value="IT">Italie</option>
+                      <option value="US">États-Unis</option>
+                      <option value="GB">Royaume-Uni</option>
+                      <option value="CA">Canada</option>
+                    </select>
+                    <p className="text-[10px] text-gray-600 uppercase tracking-widest mt-3">EEE : Mollie. Hors EEE : Checkout.com.</p>
+                  </div>
+                )}
+
+                {paymentError && (
+                  <div className="mt-5 border border-red-500/30 bg-red-500/10 p-4 flex gap-3 text-red-200">
+                    <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+                    <p className="text-xs leading-relaxed">{paymentError}</p>
+                  </div>
+                )}
               </div>
 
               <button
-                disabled
-                className="w-full bg-white/5 text-gray-600 cursor-not-allowed py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2"
+                onClick={handleCheckout}
+                disabled={isSubmittingPayment}
+                className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-wait text-white py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 transition-colors"
               >
                 <Lock size={12} />
-                PAYER {formatPrice(grandTotal)} — BIENTÔT DISPONIBLE
+                {isSubmittingPayment ? "REDIRECTION EN COURS..." : `PAYER ${formatPrice(grandTotal)}`}
               </button>
 
               <button onClick={() => setStep("livraison")} className="w-full text-center text-xs text-gray-500 hover:text-white transition-colors uppercase tracking-widest font-black">

@@ -126,10 +126,20 @@ model Order {
   orderNumber String     @unique
   customerId String?
   email      String
-  status     String      @default("pending") // pending, processing, shipped, delivered, cancelled
+  status     String      @default("pending") // pending, pending_payment, paid, processing, shipped, delivered, cancelled
+  paymentMethod     String?
+  paymentProvider   String?
+  providerPaymentId String?
   subtotal   Float
   shipping   Float       @default(0)
   total      Float
+  totalHT    Float       @default(0)
+  vatRate    Float       @default(20)
+  vatAmount  Float       @default(0)
+  totalTTC   Float       @default(0)
+  currency   String      @default("EUR")
+  customerEmail String?
+  billingAddress Json?
   notes      String?
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
@@ -164,6 +174,8 @@ model ShippingAddress {
   city       String
   postalCode String
   country    String @default("France")
+  extension  String? @default("")
+  phone      String? @default("")
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }

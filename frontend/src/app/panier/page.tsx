@@ -1,16 +1,27 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Trash2, Minus, Plus, ArrowLeft, ArrowRight, ShoppingBag } from "lucide-react";
+import { Trash2, Minus, Plus, ArrowLeft, ArrowRight, ShoppingBag, CreditCard, Landmark, WalletCards, ReceiptText } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { parseImages, formatPrice } from "@/lib/utils";
 
+type PaymentMethod = "card" | "paypal" | "bank_transfer" | "sepa_debit";
+
 export default function CartPage() {
   const { items, removeItem, updateQuantity, total, itemCount } = useCart();
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
+  const [isB2B, setIsB2B] = useState(false);
 
   const shipping = total >= 49 ? 0 : 5.90;
   const grandTotal = total + shipping;
+  const paymentMethods: Array<{ id: PaymentMethod; label: string; description: string; icon: typeof CreditCard; proOnly?: boolean }> = [
+    { id: "card", label: "Carte bancaire", description: "Visa, Mastercard, CB", icon: CreditCard },
+    { id: "paypal", label: "PayPal 4x sans frais", description: "Payez en plusieurs fois via PayPal", icon: WalletCards },
+    { id: "bank_transfer", label: "Virement instantané", description: "Via Fintecture, sans frais carte", icon: Landmark },
+    { id: "sepa_debit", label: "Prélèvement SEPA", description: "Pour les clients professionnels", icon: ReceiptText, proOnly: true },
+  ];
 
   if (items.length === 0) {
     return (
@@ -170,11 +181,55 @@ export default function CartPage() {
                 </div>
               </div>
 
+              <div className="mb-6">
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <h3 className="text-[10px] font-black tracking-[0.3em] uppercase text-gray-500">Paiement</h3>
+                  <label className="flex items-center gap-2 text-[10px] font-black tracking-widest uppercase text-gray-500 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isB2B}
+                      onChange={(e) => {
+                        setIsB2B(e.target.checked);
+                        if (!e.target.checked && paymentMethod === "sepa_debit") setPaymentMethod("card");
+                      }}
+                      className="w-3.5 h-3.5 bg-transparent border border-white/20 text-[#ff4a8d] focus:ring-[#ff4a8d]"
+                    />
+                    Pro
+                  </label>
+                </div>
+                <div className="space-y-2">
+                  {paymentMethods.filter((method) => !method.proOnly || isB2B).map((method) => {
+                    const Icon = method.icon;
+                    const active = paymentMethod === method.id;
+                    return (
+                      <button
+                        key={method.id}
+                        type="button"
+                        onClick={() => setPaymentMethod(method.id)}
+                        className={`w-full border p-3 text-left transition-colors ${active ? "border-[#ff4a8d] bg-[#ff4a8d]/10" : "border-white/10 hover:border-white/25"}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Icon size={15} className={active ? "text-[#ff4a8d]" : "text-gray-500"} />
+                          <div>
+                            <p className="text-[11px] font-black tracking-widest uppercase">{method.label}</p>
+                            <p className="text-[10px] text-gray-600 mt-1">{method.description}</p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <Link
                 href="/commande"
+                onClick={() => {
+                  sessionStorage.setItem("barberparadise-payment-method", paymentMethod);
+                  sessionStorage.setItem("barberparadise-payment-b2b", String(isB2B));
+                }}
                 className="w-full flex items-center justify-center gap-3 bg-[#ff4a8d] hover:bg-[#ff1f70] text-white py-5 text-xs font-black tracking-widest uppercase transition-colors"
               >
-                PASSER LA COMMANDE
+                VALIDER LA COMMANDE
                 <ArrowRight size={14} />
               </Link>
 

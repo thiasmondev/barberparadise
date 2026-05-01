@@ -28,6 +28,8 @@ import { blogRouter } from "./routes/blog";
 import { seoRouter } from "./routes/seo";
 import importReviewsRouter from "./routes/import-reviews";
 import brandsRouter from "./routes/brands";
+import { checkoutRouter } from "./routes/checkout";
+import { webhooksRouter } from "./routes/webhooks";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -52,6 +54,8 @@ app.use("/api/blog", blogRouter);
 app.use("/api/admin/seo", seoRouter);
 app.use("/api/admin/import-reviews", importReviewsRouter);
 app.use("/api/brands", brandsRouter);
+app.use("/api/checkout", checkoutRouter);
+app.use("/api/webhooks", webhooksRouter);
 
 // ─── Root & Health Check ─────────────────────────────────────
 app.get("/", (_req, res) => {
@@ -64,6 +68,8 @@ app.get("/", (_req, res) => {
       products: "/api/products",
       categories: "/api/categories",
       orders: "/api/orders",
+      checkout: "/api/checkout/initiate",
+      webhooks: "/api/webhooks/:provider",
       auth: "/api/auth",
       blog: "/api/blog",
       admin: "/api/admin",

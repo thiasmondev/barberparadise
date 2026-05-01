@@ -16,3 +16,4 @@
 - [x] Ajouter la possibilité d’ajouter/retirer un produit en wishlist depuis les fiches produit et l’afficher dans l’onglet wishlist du compte.
 - [x] Tester les routes backend auth/compte Render avec curl et documenter les statuts HTTP ainsi que les JSON complets.
 - [x] Ajouter un encadré « Extension » sous le formulaire d’adresse dans l’onglet Mes adresses du compte.
+- [x] Intégrer le système de paiement multi-PSP avec commandes Prisma, routage Mollie/PayPal/Fintecture/GoCardless/Checkout.com, webhooks sécurisés, frontend panier et pages de confirmation/annulation.
