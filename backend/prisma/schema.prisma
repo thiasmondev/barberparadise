@@ -140,6 +140,7 @@ model Order {
   currency   String      @default("EUR")
   customerEmail String?
   billingAddress Json?
+  isB2B      Boolean     @default(false)
   notes      String?
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt

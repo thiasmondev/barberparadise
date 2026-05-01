@@ -7,7 +7,7 @@ import { Trash2, Minus, Plus, ArrowLeft, ArrowRight, ShoppingBag, CreditCard, La
 import { useCart } from "@/contexts/CartContext";
 import { parseImages, formatPrice } from "@/lib/utils";
 
-type PaymentMethod = "card" | "paypal" | "bank_transfer" | "sepa_debit";
+type PaymentMethod = "card" | "pay_by_bank" | "sepa" | "paypal_4x";
 
 export default function CartPage() {
   const { items, removeItem, updateQuantity, total, itemCount } = useCart();
@@ -16,11 +16,11 @@ export default function CartPage() {
 
   const shipping = total >= 49 ? 0 : 5.90;
   const grandTotal = total + shipping;
-  const paymentMethods: Array<{ id: PaymentMethod; label: string; description: string; icon: typeof CreditCard; proOnly?: boolean }> = [
-    { id: "card", label: "Carte bancaire", description: "Visa, Mastercard, CB", icon: CreditCard },
-    { id: "paypal", label: "PayPal 4x sans frais", description: "Payez en plusieurs fois via PayPal", icon: WalletCards },
-    { id: "bank_transfer", label: "Virement instantané", description: "Via Fintecture, sans frais carte", icon: Landmark },
-    { id: "sepa_debit", label: "Prélèvement SEPA", description: "Pour les clients professionnels", icon: ReceiptText, proOnly: true },
+  const paymentMethods: Array<{ id: PaymentMethod; label: string; description: string; icon: typeof CreditCard; b2bOnly?: boolean; b2cOnly?: boolean }> = [
+    { id: "card", label: "Carte bancaire", description: "B2C EEE via Mollie, hors EEE via Checkout.com", icon: CreditCard, b2cOnly: true },
+    { id: "paypal_4x", label: "PayPal 4x sans frais", description: "Réservé aux clients particuliers B2C", icon: WalletCards, b2cOnly: true },
+    { id: "pay_by_bank", label: "Virement bancaire", description: "Disponible en EEE pour B2C et B2B", icon: Landmark },
+    { id: "sepa", label: "Prélèvement SEPA", description: "Disponible en EEE pour B2B", icon: ReceiptText, b2bOnly: true },
   ];
 
   if (items.length === 0) {
@@ -190,7 +190,8 @@ export default function CartPage() {
                       checked={isB2B}
                       onChange={(e) => {
                         setIsB2B(e.target.checked);
-                        if (!e.target.checked && paymentMethod === "sepa_debit") setPaymentMethod("card");
+                        if (e.target.checked && ["card", "paypal_4x"].includes(paymentMethod)) setPaymentMethod("pay_by_bank");
+                        if (!e.target.checked && paymentMethod === "sepa") setPaymentMethod("card");
                       }}
                       className="w-3.5 h-3.5 bg-transparent border border-white/20 text-[#ff4a8d] focus:ring-[#ff4a8d]"
                     />
@@ -198,7 +199,7 @@ export default function CartPage() {
                   </label>
                 </div>
                 <div className="space-y-2">
-                  {paymentMethods.filter((method) => !method.proOnly || isB2B).map((method) => {
+                  {paymentMethods.filter((method) => (!method.b2bOnly || isB2B) && (!method.b2cOnly || !isB2B)).map((method) => {
                     const Icon = method.icon;
                     const active = paymentMethod === method.id;
                     return (

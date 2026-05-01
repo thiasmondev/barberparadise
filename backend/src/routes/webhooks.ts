@@ -4,7 +4,7 @@ import { prisma } from "../utils/prisma";
 
 export const webhooksRouter = Router();
 
-type WebhookProvider = "mollie" | "paypal" | "fintecture" | "gocardless" | "checkout";
+type WebhookProvider = "mollie" | "paypal" | "checkout";
 
 function timingSafeEqual(a: string, b: string): boolean {
   const left = Buffer.from(a);
@@ -81,6 +81,13 @@ async function verifyPaypalSignature(req: Request): Promise<boolean> {
   return response.ok && data.verification_status === "SUCCESS";
 }
 
+async function markOrderCanceled(orderId: string, providerPaymentId?: string): Promise<void> {
+  await prisma.order.update({
+    where: { id: orderId },
+    data: { status: "canceled", providerPaymentId },
+  });
+}
+
 async function markOrderPaid(orderId: string, provider: WebhookProvider, providerPaymentId?: string): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
@@ -144,6 +151,9 @@ webhooksRouter.post("/mollie", async (req: Request, res: Response): Promise<void
       const changed = await markOrderPaid(orderId, "mollie", payment.id);
       console.log("Webhook Mollie paid", { orderId, paymentId: payment.id, changed });
     }
+    if (["failed", "canceled", "expired"].includes(payment.status || "") && orderId) {
+      await markOrderCanceled(orderId, payment.id);
+    }
     res.json({ received: true });
   } catch (err) {
     console.error("Erreur webhook Mollie", err);
@@ -172,51 +182,6 @@ webhooksRouter.post("/paypal", async (req: Request, res: Response): Promise<void
   } catch (err) {
     console.error("Erreur webhook PayPal", err);
     res.status(500).json({ error: "Erreur webhook PayPal" });
-  }
-});
-
-webhooksRouter.post("/fintecture", async (req: Request, res: Response): Promise<void> => {
-  try {
-    const signature = getHeader(req, ["fintecture-signature", "x-fincture-signature", "x-fintecture-signature"]);
-    if (!verifyHmacSignature(req.body, signature, process.env.FINTECTURE_WEBHOOK_SECRET || process.env.FINTECTURE_PRIVATE_KEY)) {
-      res.status(401).json({ error: "Signature Fintecture invalide" });
-      return;
-    }
-
-    const status = req.body?.status || req.body?.event || req.body?.data?.status;
-    const orderId = req.body?.metadata?.orderId || req.body?.data?.metadata?.orderId || req.body?.orderId;
-    if (["payment_created", "payment_confirmed", "paid"].includes(status) && orderId) {
-      const changed = await markOrderPaid(orderId, "fintecture", req.body?.id || req.body?.data?.id);
-      console.log("Webhook Fintecture paid", { orderId, status, changed });
-    }
-    res.json({ received: true });
-  } catch (err) {
-    console.error("Erreur webhook Fintecture", err);
-    res.status(500).json({ error: "Erreur webhook Fintecture" });
-  }
-});
-
-webhooksRouter.post("/gocardless", async (req: Request, res: Response): Promise<void> => {
-  try {
-    const signature = getHeader(req, ["webhook-signature", "x-gocardless-signature"]);
-    if (!verifyHmacSignature(req.body, signature, process.env.GOCARDLESS_WEBHOOK_SECRET)) {
-      res.status(401).json({ error: "Signature GoCardless invalide" });
-      return;
-    }
-
-    const events = Array.isArray(req.body?.events) ? req.body.events : [req.body];
-    for (const event of events) {
-      const action = event?.action || event?.event;
-      const metadataOrderId = event?.metadata?.orderId || event?.links?.billing_request && (await findOrderIdByProviderPaymentId(event.links.billing_request));
-      if (["payment_paid_out", "paid_out", "confirmed"].includes(action) && metadataOrderId) {
-        const changed = await markOrderPaid(metadataOrderId, "gocardless", event?.links?.payment || event?.id);
-        console.log("Webhook GoCardless paid", { orderId: metadataOrderId, action, changed });
-      }
-    }
-    res.json({ received: true });
-  } catch (err) {
-    console.error("Erreur webhook GoCardless", err);
-    res.status(500).json({ error: "Erreur webhook GoCardless" });
   }
 });
 

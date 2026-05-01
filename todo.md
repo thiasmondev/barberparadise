@@ -17,3 +17,5 @@
 - [x] Tester les routes backend auth/compte Render avec curl et documenter les statuts HTTP ainsi que les JSON complets.
 - [x] Ajouter un encadré « Extension » sous le formulaire d’adresse dans l’onglet Mes adresses du compte.
 - [x] Intégrer le système de paiement multi-PSP avec commandes Prisma, routage Mollie/PayPal/Fintecture/GoCardless/Checkout.com, webhooks sécurisés, frontend panier et pages de confirmation/annulation.
+- [x] Aligner l’intégration paiement avec le document B2B/B2C : méthodes autorisées par type client, méthode `sepa`, routage PSP, pages succès/annulation, variables Render et validations complètes.
+- [x] Exécuter les dernières instructions envoyées dans pasted_content_3.txt et aligner l’intégration paiement BarberParadise en conséquence.
