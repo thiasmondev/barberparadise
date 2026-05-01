@@ -9,7 +9,7 @@
 - [x] Mettre à jour le header pour envoyer vers /connexion si non connecté et afficher un dropdown compte si connecté.
 - [x] Ajouter les tests de régression frontend pour l’authentification client et exécuter les vérifications avant push GitHub.
 - [x] Compléter si nécessaire les endpoints client manquants GET /api/customers/me/orders, GET/POST/DELETE /api/customers/me/addresses pour rendre la page /compte réellement fonctionnelle.
-- [ ] Corriger l’échec de build Vercel au pré-rendu de /compte et sécuriser les pages client contre les erreurs de rendu statique Next.js.
+- [x] Corriger l’échec de build Vercel au pré-rendu de /compte et sécuriser les pages client contre les erreurs de rendu statique Next.js.
 
 - [x] Corriger le build Next.js en production lié aux hooks de navigation App Router et au pré-rendu.
 - [x] Rendre les adresses du compte client cliquables et modifiables avec sauvegarde des changements.
@@ -28,3 +28,7 @@
 - [x] Confirmer l’existence des routes backend `GET /api/checkout/available-methods` et `POST /api/checkout/initiate`
 - [x] Confirmer l’existence des routes backend `POST /api/webhooks/mollie`, `POST /api/webhooks/paypal` et `POST /api/webhooks/checkout`
 - [x] Tester l’endpoint Render `/api/checkout/available-methods?country=FR&isB2B=false` et relever la réponse B2C France
+- [x] Identifier toutes les pages App Router qui utilisent des hooks ou contextes React sans directive `use client`
+- [x] Ajouter `use client` en première ligne des pages interactives concernées par le build Next.js
+- [x] Relancer `pnpm run build` et corriger les erreurs jusqu’à obtenir un build frontend propre
+- [x] Committer et pousser la correction du build Next.js sur `main`

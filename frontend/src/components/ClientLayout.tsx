@@ -13,7 +13,9 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
         <Suspense fallback={<div className="h-20 bg-[#131313]" />}>
           <Header />
         </Suspense>
-        <main className="flex-1">{children}</main>
+        <Suspense fallback={<main className="flex-1 min-h-screen bg-light-50" />}>
+          <main className="flex-1">{children}</main>
+        </Suspense>
         <Footer />
       </CustomerAuthProvider>
     </CartProvider>
