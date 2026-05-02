@@ -63,4 +63,4 @@
 - [x] Brancher l’email de confirmation après création ou paiement de commande selon le flux existant.
 - [x] Brancher l’email d’expédition lors du passage de commande au statut expédié si le flux admin existe.
 - [x] Valider les builds backend/frontend après intégration emails transactionnels.
-- [ ] Committer et pousser l’intégration emails transactionnels sur `main`.
+- [x] Committer et pousser l’intégration emails transactionnels sur `main`.
