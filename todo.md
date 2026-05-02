@@ -75,4 +75,4 @@
 - [x] Ajouter dans le panel admin produit `/admin/seo/produit` une section `Données logistiques` avec poids, dimensions, fragilité, liquide, aérosol et note logistique.
 - [x] Créer la page `/admin/logistique/emballages` avec liste vide au départ, ajout, modification, suppression avec confirmation et calcul automatique du volume interne.
 - [x] Valider les builds backend/frontend après implémentation des étapes logistiques 1 et 2.
-- [ ] Committer et pousser les étapes logistiques 1 et 2 sur `main`.
+- [x] Committer et pousser les étapes logistiques 1 et 2 sur `main`.
