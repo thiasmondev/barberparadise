@@ -50,3 +50,4 @@
 - [x] Vérifier que `isB2B Boolean @default(false)` est présent dans le modèle Prisma `Order`
 - [x] Créer la migration manuelle `backend/prisma/migrations/20260501000000_add_isb2b_to_order/migration.sql` avec l’ajout conditionnel de la colonne `Order.isB2B`
 - [x] Pousser la migration dédiée `isB2B` sur GitHub pour application ensuite via `npx prisma migrate deploy` dans le Shell Render
+- [x] Lier les boutons de `/commande/succes` : `VOIR MES COMMANDES` vers `/compte?tab=commandes` et `CONTINUER MES ACHATS` vers `/catalogue`.
