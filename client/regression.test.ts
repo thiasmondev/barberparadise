@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { isExactActiveHref } from "../frontend/src/utils/navigation";
 import { buildCategorySlugFilter, collectChildSlugs } from "../backend/src/utils/categoryFilters";
+import { calculateFreeShippingRemaining, calculateShippingOptions } from "../backend/src/services/shippingCalculator";
 import { getMegaMenuChildren, hasMegaMenuChildren } from "../frontend/src/utils/megaMenu";
 
 describe("Header navigation active state", () => {
@@ -109,6 +110,38 @@ describe("Mega-menu category columns", () => {
     expect(colL1.map((category) => category.slug)).toEqual(["tondeuses"]);
     expect(colL2.map((category) => category.slug)).toEqual(["tondeuse-finition"]);
     expect(colL3.map((category) => category.slug)).toEqual(["lame-finition"]);
+  });
+});
+
+describe("Dynamic shipping calculator", () => {
+  it("returns free French delivery options once the threshold is reached", () => {
+    const options = calculateShippingOptions("FR", 49);
+
+    expect(options).toHaveLength(2);
+    expect(options.map((option) => option.price)).toEqual([0, 0]);
+    expect(options.every((option) => option.isFree)).toBe(true);
+    expect(calculateFreeShippingRemaining(49)).toBe(0);
+  });
+
+  it("keeps the cheapest France estimate below the free-shipping threshold", () => {
+    const options = calculateShippingOptions("FR", 24.5);
+
+    expect(options[0]).toMatchObject({ id: "colissimo_fr", price: 5.9, isFree: false });
+    expect(options[1]).toMatchObject({ id: "mondial_relay_fr", price: 3.99, isFree: false });
+    expect(calculateFreeShippingRemaining(24.5)).toBe(24.5);
+  });
+
+  it("applies country-specific options for Belgium, Europe and international destinations", () => {
+    expect(calculateShippingOptions("BE", 20).map((option) => option.id)).toEqual([
+      "colissimo_be",
+      "mondial_relay_be",
+    ]);
+    expect(calculateShippingOptions("DE", 20)[0]).toMatchObject({ id: "colissimo_eu", price: 12.9 });
+    expect(calculateShippingOptions("US", 120)[0]).toMatchObject({
+      id: "colissimo_world",
+      price: 19.9,
+      isFree: false,
+    });
   });
 });
 

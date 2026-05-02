@@ -10,6 +10,7 @@ import {
   PaymentMethod,
   PaymentProvider,
 } from "../services/paymentRouter";
+import { calculateShippingOptions } from "../services/shippingCalculator";
 
 export const checkoutRouter = Router();
 
@@ -37,13 +38,12 @@ type CheckoutRequestBody = {
   shippingAddress: CheckoutAddress;
   billingAddress?: CheckoutAddress;
   paymentMethod: PaymentMethod;
+  shippingOptionId?: string;
   isB2B?: boolean;
 };
 
 const CURRENCY = "EUR";
 const VAT_RATE = 20;
-const SHIPPING_PRICE = 5.9;
-const FREE_SHIPPING_THRESHOLD = 49;
 
 function generateOrderNumber(): string {
   const date = new Date();
@@ -217,6 +217,14 @@ checkoutRouter.get("/available-methods", (req: Request, res: Response): void => 
   res.json({ methods, country, isB2B });
 });
 
+checkoutRouter.get("/shipping-options", (req: Request, res: Response): void => {
+  const country = normalizeCountry(typeof req.query.country === "string" ? req.query.country : "FR");
+  const totalParam = typeof req.query.total === "string" ? Number(req.query.total) : 0;
+  const orderTotal = Number.isFinite(totalParam) ? totalParam : 0;
+  const options = calculateShippingOptions(country, orderTotal);
+  res.json({ options, country, orderTotal });
+});
+
 checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<void> => {
   try {
     const body = req.body as CheckoutRequestBody;
@@ -269,7 +277,13 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
     }
 
     subtotalTTC = money(subtotalTTC);
-    const shipping = subtotalTTC >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_PRICE;
+    const shippingOptions = calculateShippingOptions(country, subtotalTTC);
+    const selectedShippingOption = shippingOptions.find((option) => option.id === body.shippingOptionId) || shippingOptions[0];
+    if (!selectedShippingOption) {
+      res.status(400).json({ error: "Aucune option de livraison disponible pour ce pays" });
+      return;
+    }
+    const shipping = selectedShippingOption.price;
     const totalTTC = money(subtotalTTC + shipping);
     const totalHT = money(totalTTC / (1 + VAT_RATE / 100));
     const vatAmount = money(totalTTC - totalHT);

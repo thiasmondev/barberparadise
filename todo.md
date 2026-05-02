@@ -112,3 +112,9 @@
 - [x] Ajouter dans l’agent SEO une option de recherche permettant de retrouver un produit existant par nom, slug, marque ou catégorie, puis de le sélectionner pour travailler dessus.
 - [x] Créer `scripts/generate-og-image.ts` pour générer l’image Open Graph BarberParadise 1200×630 avec fond noir, logo à gauche, séparateur rose, textes à droite et export JPEG qualité 90 dans `frontend/public/og-image.jpg`.
 - [x] Valider techniquement et visuellement `frontend/public/og-image.jpg`, puis committer et pousser l’image et le script sur GitHub.
+- [x] Créer `backend/src/services/shippingCalculator.ts` avec les options Colissimo/Mondial Relay dynamiques par pays et seuil de livraison gratuite à 49 €.
+- [x] Ajouter l’endpoint backend `GET /api/checkout/shipping-options` retournant les options de livraison, le seuil gratuit et le montant restant.
+- [x] Mettre à jour `POST /api/checkout/initiate` pour utiliser `shippingOptionId`, calculer les frais via l’adresse de livraison et intégrer le total avec livraison aux PSP.
+- [x] Mettre à jour l’étape livraison de `/commande` pour charger, afficher et sélectionner les options de livraison dynamiques après saisie du pays.
+- [x] Mettre à jour `/panier` pour remplacer les frais hardcodés par l’affichage livraison gratuite ou à partir de 3,99 € avec bandeau montant restant.
+- [x] Valider les builds frontend/backend et les tests après remplacement des frais de livraison hardcodés.

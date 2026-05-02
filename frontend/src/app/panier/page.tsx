@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Trash2, Minus, Plus, ArrowLeft, ArrowRight, ShoppingBag, CreditCard, Landmark, WalletCards } from "lucide-react";
@@ -9,17 +9,61 @@ import { parseImages, formatPrice } from "@/lib/utils";
 
 type PaymentMethod = "card" | "pay_by_bank" | "paypal_4x";
 
+type ShippingOption = {
+  id: string;
+  label: string;
+  price: number;
+  carrier: string;
+  days: string;
+  isFree: boolean;
+};
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
+
 export default function CartPage() {
   const { items, removeItem, updateQuantity, total, itemCount } = useCart();
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
+  const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
+  const [shippingLoading, setShippingLoading] = useState(false);
+  const [shippingError, setShippingError] = useState("");
 
-  const shipping = total >= 49 ? 0 : 5.90;
+  const estimatedShippingOption = useMemo(() => shippingOptions[0], [shippingOptions]);
+  const shipping = estimatedShippingOption?.price ?? 0;
   const grandTotal = total + shipping;
   const paymentMethods: Array<{ id: PaymentMethod; label: string; icon: typeof CreditCard }> = [
     { id: "card", label: "CARTE BANCAIRE", icon: CreditCard },
     { id: "paypal_4x", label: "PAYPAL 4X SANS FRAIS", icon: WalletCards },
     { id: "pay_by_bank", label: "VIREMENT BANCAIRE", icon: Landmark },
   ];
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    const controller = new AbortController();
+
+    async function loadEstimatedShipping() {
+      setShippingLoading(true);
+      setShippingError("");
+      try {
+        const params = new URLSearchParams({ country: "FR", total: String(total) });
+        const res = await fetch(`${API_URL}/api/checkout/shipping-options?${params.toString()}`, {
+          signal: controller.signal,
+        });
+        const data = (await res.json()) as { options?: ShippingOption[]; error?: string };
+        if (!res.ok) throw new Error(data.error || "Impossible d’estimer la livraison");
+        setShippingOptions(data.options || []);
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") {
+          setShippingOptions([]);
+          setShippingError(err instanceof Error ? err.message : "Erreur d’estimation livraison");
+        }
+      } finally {
+        if (!controller.signal.aborted) setShippingLoading(false);
+      }
+    }
+
+    loadEstimatedShipping();
+    return () => controller.abort();
+  }, [items.length, total]);
 
   if (items.length === 0) {
     return (
@@ -161,14 +205,24 @@ export default function CartPage() {
                   <span className="text-sm font-black">{formatPrice(total)}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>
-                  {shipping === 0 ? (
+                  <span className="text-xs text-gray-400 uppercase tracking-widest">Livraison estimée</span>
+                  {shippingLoading ? (
+                    <span className="text-[10px] text-gray-500 uppercase tracking-widest">Calcul...</span>
+                  ) : shipping === 0 ? (
                     <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span>
                   ) : (
                     <span className="text-sm font-black">{formatPrice(shipping)}</span>
                   )}
                 </div>
-                {shipping > 0 && (
+                {estimatedShippingOption && (
+                  <p className="text-[10px] text-gray-600 uppercase tracking-widest">
+                    {estimatedShippingOption.carrier} · {estimatedShippingOption.days} · estimation France
+                  </p>
+                )}
+                {shippingError && (
+                  <p className="text-[10px] text-red-300 uppercase tracking-widest">{shippingError}</p>
+                )}
+                {shipping > 0 && total < 49 && (
                   <p className="text-[10px] text-gray-600 uppercase tracking-widest">
                     Plus que {formatPrice(49 - total)} pour la livraison gratuite
                   </p>

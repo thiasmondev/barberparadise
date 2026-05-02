@@ -24,6 +24,15 @@ type PaymentMethod =
   | "multibanco"
   | "card_international";
 
+type ShippingOption = {
+  id: string;
+  label: string;
+  price: number;
+  carrier: string;
+  days: string;
+  isFree: boolean;
+};
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
 
 const COUNTRY_CODE_BY_NAME: Record<string, string> = {
@@ -76,10 +85,18 @@ export default function CheckoutPage() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
   const [availableMethods, setAvailableMethods] = useState<PaymentMethod[]>([]);
   const [methodsLoading, setMethodsLoading] = useState(false);
+  const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
+  const [shippingLoading, setShippingLoading] = useState(false);
+  const [shippingError, setShippingError] = useState("");
+  const [selectedShippingOptionId, setSelectedShippingOptionId] = useState("");
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState("");
 
-  const shipping = total >= 49 ? 0 : 5.9;
+  const selectedShippingOption = useMemo(
+    () => shippingOptions.find((option) => option.id === selectedShippingOptionId) || shippingOptions[0],
+    [selectedShippingOptionId, shippingOptions],
+  );
+  const shipping = selectedShippingOption?.price ?? 0;
   const grandTotal = total + shipping;
 
   const [form, setForm] = useState({
@@ -188,6 +205,34 @@ export default function CheckoutPage() {
     return () => controller.abort();
   }, [countryCode]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    async function loadShippingOptions() {
+      setShippingLoading(true);
+      setShippingError("");
+      try {
+        const params = new URLSearchParams({ country: countryCode, total: String(total) });
+        const res = await fetch(`${API_URL}/api/checkout/shipping-options?${params.toString()}`, {
+          signal: controller.signal,
+        });
+        const data = (await res.json()) as { options?: ShippingOption[]; error?: string };
+        if (!res.ok) throw new Error(data.error || "Impossible de récupérer les options de livraison");
+        const options = data.options || [];
+        setShippingOptions(options);
+        setSelectedShippingOptionId((current) => (options.some((option) => option.id === current) ? current : options[0]?.id || ""));
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") {
+          setShippingOptions([]);
+          setShippingError(err instanceof Error ? err.message : "Erreur lors du chargement de la livraison");
+        }
+      } finally {
+        if (!controller.signal.aborted) setShippingLoading(false);
+      }
+    }
+    loadShippingOptions();
+    return () => controller.abort();
+  }, [countryCode, total]);
+
   const updateForm = (key: string, value: string | boolean) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
@@ -215,6 +260,7 @@ export default function CheckoutPage() {
             phone: form.telephone,
           },
           paymentMethod,
+          shippingOptionId: selectedShippingOption?.id,
           isB2B: false,
         }),
       });
@@ -339,7 +385,26 @@ export default function CheckoutPage() {
                   <div><label className={labelClass}>Téléphone</label><input type="tel" value={form.telephone} onChange={(e) => updateForm("telephone", e.target.value)} placeholder="+33 6 12 34 56 78" className={inputClass} /></div>
                 </div>
               </div>
-              <button onClick={() => setStep("paiement")} disabled={!form.prenom || !form.nom || !form.adresse || !form.ville || !form.codePostal} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-not-allowed text-white py-5 text-xs font-black tracking-widest uppercase transition-colors">CONTINUER VERS LE PAIEMENT</button>
+              <div className="space-y-3">
+                <h3 className="text-[10px] font-black tracking-[0.3em] uppercase text-gray-500">Mode de livraison</h3>
+                {shippingLoading && <div className="border border-white/10 bg-[#1c1b1b] p-5 text-xs text-gray-500 uppercase tracking-widest">Calcul des options de livraison...</div>}
+                {!shippingLoading && shippingError && <div className="border border-red-500/30 bg-red-500/10 p-5 text-xs text-red-200 leading-relaxed">{shippingError}</div>}
+                {!shippingLoading && !shippingError && shippingOptions.map((option) => {
+                  const active = selectedShippingOptionId === option.id;
+                  return (
+                    <button key={option.id} type="button" onClick={() => setSelectedShippingOptionId(option.id)} className={`w-full border p-5 text-left transition-colors ${active ? "border-[#ff4a8d] bg-[#ff4a8d]/10" : "border-white/10 bg-[#1c1b1b] hover:border-white/25"}`}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-black uppercase tracking-widest text-white">{option.label}</p>
+                          <p className="mt-2 text-[11px] uppercase tracking-widest text-gray-500">{option.carrier} · {option.days}</p>
+                        </div>
+                        {option.price === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black text-white">{formatPrice(option.price)}</span>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <button onClick={() => setStep("paiement")} disabled={!form.prenom || !form.nom || !form.adresse || !form.ville || !form.codePostal || shippingLoading || !selectedShippingOption} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-not-allowed text-white py-5 text-xs font-black tracking-widest uppercase transition-colors">CONTINUER VERS LE PAIEMENT</button>
               {!isAuthenticated && <button onClick={() => setStep("contact")} className="w-full text-center text-xs text-gray-500 hover:text-white transition-colors uppercase tracking-widest font-black">← Retour au contact</button>}
             </div>
           )}
@@ -368,7 +433,7 @@ export default function CheckoutPage() {
                 {paymentError && <div className="mt-5 border border-red-500/30 bg-red-500/10 p-4 flex gap-3 text-red-200"><AlertCircle size={16} className="mt-0.5 flex-shrink-0" /><p className="text-xs leading-relaxed">{paymentError}</p></div>}
               </div>
 
-              <button onClick={handleCheckout} disabled={isSubmittingPayment || displayMethods.length === 0 || methodsLoading} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-wait text-white py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 transition-colors"><Lock size={12} />{isSubmittingPayment ? "REDIRECTION EN COURS..." : `PAYER ${formatPrice(grandTotal)}`}</button>
+              <button onClick={handleCheckout} disabled={isSubmittingPayment || displayMethods.length === 0 || methodsLoading || shippingLoading || !selectedShippingOption} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-wait text-white py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 transition-colors"><Lock size={12} />{isSubmittingPayment ? "REDIRECTION EN COURS..." : `PAYER ${formatPrice(grandTotal)}`}</button>
               <button onClick={() => setStep("livraison")} className="w-full text-center text-xs text-gray-500 hover:text-white transition-colors uppercase tracking-widest font-black">← Retour à la livraison</button>
             </div>
           )}
