@@ -76,3 +76,9 @@
 - [x] Créer la page `/admin/logistique/emballages` avec liste vide au départ, ajout, modification, suppression avec confirmation et calcul automatique du volume interne.
 - [x] Valider les builds backend/frontend après implémentation des étapes logistiques 1 et 2.
 - [x] Committer et pousser les étapes logistiques 1 et 2 sur `main`.
+- [x] Récupérer le contenu principal Shopify des pages CGV, mentions légales, politique de confidentialité et cookies, sans header/footer.
+- [x] Créer les routes `/cgv`, `/mentions-legales`, `/politique-de-confidentialite` et `/cookies` avec fond noir, texte blanc/gris et titres roses.
+- [x] Nettoyer les références Shopify non pertinentes dans les contenus légaux importés.
+- [x] Ajouter dans le footer les liens vers les quatre pages légales.
+- [x] Valider le build frontend après ajout des pages légales.
+- [ ] Committer et pousser les pages légales sur `main`.

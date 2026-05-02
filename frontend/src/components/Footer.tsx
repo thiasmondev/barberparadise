@@ -66,9 +66,9 @@ export default function Footer() {
               {[
                 { label: "RECHERCHE", href: "/catalogue" },
                 { label: "CONDITIONS GÉNÉRALES", href: "/cgv" },
-                { label: "POLITIQUE DE CONFIDENTIALITÉ", href: "/confidentialite" },
-                { label: "LIVRAISON & RETOURS", href: "/livraison" },
-                { label: "AFFILIATION", href: "/affiliation" },
+                { label: "POLITIQUE DE CONFIDENTIALITÉ", href: "/politique-de-confidentialite" },
+                { label: "COOKIES", href: "/cookies" },
+                { label: "MENTIONS LÉGALES", href: "/mentions-legales" },
               ].map((link) => (
                 <li key={link.label}>
                   <Link
@@ -108,13 +108,13 @@ export default function Footer() {
           </p>
           <div className="flex flex-wrap justify-center gap-8">
             {[
-              "POLITIQUE DE REMBOURSEMENT",
-              "POLITIQUE DE CONFIDENTIALITÉ",
-              "CONDITIONS D'UTILISATION",
-              "MENTIONS LÉGALES"
-            ].map((text) => (
-              <Link key={text} href="#" className="text-[9px] font-bold text-gray-600 hover:text-white transition-colors tracking-[0.1em] uppercase">
-                {text}
+              { label: "CGV", href: "/cgv" },
+              { label: "POLITIQUE DE CONFIDENTIALITÉ", href: "/politique-de-confidentialite" },
+              { label: "COOKIES", href: "/cookies" },
+              { label: "MENTIONS LÉGALES", href: "/mentions-legales" },
+            ].map((link) => (
+              <Link key={link.label} href={link.href} className="text-[9px] font-bold text-gray-600 hover:text-white transition-colors tracking-[0.1em] uppercase">
+                {link.label}
               </Link>
             ))}
           </div>
