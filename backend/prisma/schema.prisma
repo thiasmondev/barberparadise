@@ -31,6 +31,15 @@ model Product {
   features        String   @default("[]") // JSON array
   inStock         Boolean  @default(true)
   stockCount      Int      @default(0)
+  weightG         Int?     // Poids en grammes
+  lengthCm        Float?   // Longueur cm
+  widthCm         Float?   // Largeur cm
+  heightCm        Float?   // Hauteur cm
+  isFragile       Boolean  @default(false)
+  isLiquid        Boolean  @default(false)
+  isAerosol       Boolean  @default(false)
+  requiresGlass   Boolean  @default(false)
+  logisticNote    String?  // Note spéciale ex: "ne pas coucher"
   rating          Float    @default(0)
   reviewCount     Int      @default(0)
   isNew           Boolean  @default(false)
@@ -50,6 +59,23 @@ model Product {
   @@index([brand])
   @@index([brandId])
   @@index([status])
+}
+
+// ─── EMBALLAGES LOGISTIQUES ───────────────────────────────────
+model Packaging {
+  id                Int     @id @default(autoincrement())
+  name              String  // ex: "Carton S", "Enveloppe bulle", "Carton renforcé L"
+  type              String  // 'carton', 'enveloppe', 'tube'
+  lengthCm          Float
+  widthCm           Float
+  heightCm          Float
+  internalVolumeCm3 Float   // volume utile calculé
+  maxWeightG        Int     // poids max supporté
+  selfWeightG       Int     // poids du carton vide
+  costEur           Float   // coût unitaire du carton
+  stock             Int     @default(0)
+  isReinforced      Boolean @default(false)
+  isActive          Boolean @default(true)
 }
 
 // ─── MARQUES ─────────────────────────────────────────────────

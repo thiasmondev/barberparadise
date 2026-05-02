@@ -25,6 +25,58 @@ const upload = multer({
 
 export const adminRouter = Router();
 
+type NumericInput = string | number | null | undefined;
+
+function toOptionalInt(value: NumericInput): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  const parsed = parseInt(String(value), 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toOptionalFloat(value: NumericInput): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  const parsed = parseFloat(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toRequiredInt(value: NumericInput, field: string): number {
+  const parsed = toOptionalInt(value);
+  if (parsed === undefined || parsed === null) throw new Error(`${field} est requis`);
+  return parsed;
+}
+
+function toRequiredFloat(value: NumericInput, field: string): number {
+  const parsed = toOptionalFloat(value);
+  if (parsed === undefined || parsed === null) throw new Error(`${field} est requis`);
+  return parsed;
+}
+
+function toOptionalBoolean(value: unknown): boolean | undefined {
+  return value === undefined ? undefined : Boolean(value);
+}
+
+function buildPackagingData(body: Record<string, unknown>) {
+  const lengthCm = toRequiredFloat(body.lengthCm as NumericInput, "Longueur");
+  const widthCm = toRequiredFloat(body.widthCm as NumericInput, "Largeur");
+  const heightCm = toRequiredFloat(body.heightCm as NumericInput, "Hauteur");
+  return {
+    name: String(body.name || "").trim(),
+    type: String(body.type || "").trim(),
+    lengthCm,
+    widthCm,
+    heightCm,
+    internalVolumeCm3: Math.round(lengthCm * widthCm * heightCm * 100) / 100,
+    maxWeightG: toRequiredInt(body.maxWeightG as NumericInput, "Poids max supporté"),
+    selfWeightG: toRequiredInt(body.selfWeightG as NumericInput, "Poids du carton vide"),
+    costEur: toRequiredFloat(body.costEur as NumericInput, "Coût unitaire"),
+    stock: toRequiredInt(body.stock as NumericInput, "Stock disponible"),
+    isReinforced: Boolean(body.isReinforced),
+    isActive: body.isActive === undefined ? true : Boolean(body.isActive),
+  };
+}
+
 // GET /api/admin/stats — Statistiques du tableau de bord
 adminRouter.get("/stats", requireAdmin, async (_req: Request, res: Response): Promise<void> => {
   try {
@@ -222,7 +274,11 @@ adminRouter.get("/products", requireAdmin, async (req: Request, res: Response): 
 // PATCH /api/admin/products/:id — Modifier un produit
 adminRouter.patch("/products/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, brand, category, subcategory, subsubcategory, price, originalPrice, inStock, description, isActive, isNew } = req.body;
+    const {
+      name, brand, category, subcategory, subsubcategory, price, originalPrice, inStock,
+      description, isActive, isNew, weightG, lengthCm, widthCm, heightCm, isFragile,
+      isLiquid, isAerosol, requiresGlass, logisticNote,
+    } = req.body;
     const product = await prisma.product.update({
       where: { id: req.params.id },
       data: {
@@ -232,11 +288,20 @@ adminRouter.patch("/products/:id", requireAdmin, async (req: Request, res: Respo
         subcategory: subcategory || undefined,
         subsubcategory: subsubcategory !== undefined ? (subsubcategory || "") : undefined,
         price: price !== undefined ? parseFloat(price) : undefined,
-        originalPrice: originalPrice ? parseFloat(originalPrice) : undefined,
-        inStock: inStock ? true : false,
+        originalPrice: originalPrice !== undefined ? toOptionalFloat(originalPrice) : undefined,
+        inStock: inStock !== undefined ? Boolean(inStock) : undefined,
         description: description || undefined,
         status: isActive !== undefined ? (isActive ? "active" : "inactive") : undefined,
         isNew: isNew !== undefined ? Boolean(isNew) : undefined,
+        weightG: toOptionalInt(weightG),
+        lengthCm: toOptionalFloat(lengthCm),
+        widthCm: toOptionalFloat(widthCm),
+        heightCm: toOptionalFloat(heightCm),
+        isFragile: toOptionalBoolean(isFragile),
+        isLiquid: toOptionalBoolean(isLiquid),
+        isAerosol: toOptionalBoolean(isAerosol),
+        requiresGlass: toOptionalBoolean(requiresGlass),
+        logisticNote: logisticNote !== undefined ? (String(logisticNote).trim() || null) : undefined,
       },
     });
     res.json(product);
@@ -260,7 +325,10 @@ adminRouter.delete("/products/:id", requireAdmin, async (req: Request, res: Resp
 // POST /api/admin/products — Créer un produit
 adminRouter.post("/products", requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, brand, category, subcategory, price, originalPrice, inStock, description, isActive } = req.body;
+    const {
+      name, brand, category, subcategory, price, originalPrice, inStock, description, isActive,
+      weightG, lengthCm, widthCm, heightCm, isFragile, isLiquid, isAerosol, requiresGlass, logisticNote,
+    } = req.body;
     const product = await prisma.product.create({
       data: {
         handle: name.toLowerCase().replace(/ +/g, "-"),
@@ -275,6 +343,15 @@ adminRouter.post("/products", requireAdmin, async (req: Request, res: Response):
         inStock: inStock ? true : false,
         description,
         status: isActive ? "active" : "inactive",
+        weightG: toOptionalInt(weightG),
+        lengthCm: toOptionalFloat(lengthCm),
+        widthCm: toOptionalFloat(widthCm),
+        heightCm: toOptionalFloat(heightCm),
+        isFragile: Boolean(isFragile),
+        isLiquid: Boolean(isLiquid),
+        isAerosol: Boolean(isAerosol),
+        requiresGlass: Boolean(requiresGlass),
+        logisticNote: logisticNote !== undefined ? (String(logisticNote).trim() || null) : null,
         images: "[]",
         tags: "[]",
       },
@@ -283,6 +360,68 @@ adminRouter.post("/products", requireAdmin, async (req: Request, res: Response):
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur création produit" });
+  }
+});
+
+// GET /api/admin/packaging — Liste des emballages logistiques
+adminRouter.get("/packaging", requireAdmin, async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const packaging = await prisma.packaging.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }] });
+    res.json({ packaging });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur chargement emballages" });
+  }
+});
+
+// POST /api/admin/packaging — Créer un emballage logistique
+adminRouter.post("/packaging", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const data = buildPackagingData(req.body || {});
+    if (!data.name) {
+      res.status(400).json({ error: "Le nom de l'emballage est requis" });
+      return;
+    }
+    if (!["carton", "enveloppe", "tube"].includes(data.type)) {
+      res.status(400).json({ error: "Le type doit être carton, enveloppe ou tube" });
+      return;
+    }
+    const packaging = await prisma.packaging.create({ data });
+    res.status(201).json(packaging);
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: err instanceof Error ? err.message : "Erreur création emballage" });
+  }
+});
+
+// PATCH /api/admin/packaging/:id — Modifier un emballage logistique
+adminRouter.patch("/packaging/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const data = buildPackagingData(req.body || {});
+    if (!data.name) {
+      res.status(400).json({ error: "Le nom de l'emballage est requis" });
+      return;
+    }
+    if (!["carton", "enveloppe", "tube"].includes(data.type)) {
+      res.status(400).json({ error: "Le type doit être carton, enveloppe ou tube" });
+      return;
+    }
+    const packaging = await prisma.packaging.update({ where: { id: parseInt(req.params.id, 10) }, data });
+    res.json(packaging);
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: err instanceof Error ? err.message : "Erreur mise à jour emballage" });
+  }
+});
+
+// DELETE /api/admin/packaging/:id — Supprimer un emballage logistique
+adminRouter.delete("/packaging/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    await prisma.packaging.delete({ where: { id: parseInt(req.params.id, 10) } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur suppression emballage" });
   }
 });
 

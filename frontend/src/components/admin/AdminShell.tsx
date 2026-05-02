@@ -19,6 +19,7 @@ import {
   Settings,
   MessageSquare,
   Tag,
+  Boxes,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -30,6 +31,7 @@ const NAV_ITEMS = [
   { href: "/admin/brands", label: "Marques", icon: Tag },
   { href: "/admin/seo", label: "Agent SEO", icon: Search },
   { href: "/admin/geo", label: "Outils GEO", icon: Globe },
+  { href: "/admin/logistique/emballages", label: "Logistique", icon: Boxes },
   { href: "/admin/import-reviews", label: "Import Avis", icon: MessageSquare },
   { href: "/admin/parametres", label: "Paramètres", icon: Settings },
 ];

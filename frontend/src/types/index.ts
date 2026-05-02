@@ -15,6 +15,15 @@ export interface Product {
   features: string | string[];
   inStock: boolean;
   stockCount: number;
+  weightG?: number | null;
+  lengthCm?: number | null;
+  widthCm?: number | null;
+  heightCm?: number | null;
+  isFragile?: boolean;
+  isLiquid?: boolean;
+  isAerosol?: boolean;
+  requiresGlass?: boolean;
+  logisticNote?: string | null;
   rating: number;
   reviewCount: number;
   isNew: boolean;
@@ -33,6 +42,22 @@ export interface Product {
   updatedAt: string;
   variants?: ProductVariant[];
   [key: string]: unknown;
+}
+
+export interface Packaging {
+  id: number;
+  name: string;
+  type: "carton" | "enveloppe" | "tube" | string;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
+  internalVolumeCm3: number;
+  maxWeightG: number;
+  selfWeightG: number;
+  costEur: number;
+  stock: number;
+  isReinforced: boolean;
+  isActive: boolean;
 }
 
 export interface ProductVariant {

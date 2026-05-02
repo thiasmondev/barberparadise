@@ -1,0 +1,27 @@
+-- Add logistics fields to products and packaging catalog
+ALTER TABLE "Product" ADD COLUMN "weightG" INTEGER;
+ALTER TABLE "Product" ADD COLUMN "lengthCm" DOUBLE PRECISION;
+ALTER TABLE "Product" ADD COLUMN "widthCm" DOUBLE PRECISION;
+ALTER TABLE "Product" ADD COLUMN "heightCm" DOUBLE PRECISION;
+ALTER TABLE "Product" ADD COLUMN "isFragile" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "Product" ADD COLUMN "isLiquid" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "Product" ADD COLUMN "isAerosol" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "Product" ADD COLUMN "requiresGlass" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "Product" ADD COLUMN "logisticNote" TEXT;
+
+CREATE TABLE "Packaging" (
+  "id" SERIAL NOT NULL,
+  "name" TEXT NOT NULL,
+  "type" TEXT NOT NULL,
+  "lengthCm" DOUBLE PRECISION NOT NULL,
+  "widthCm" DOUBLE PRECISION NOT NULL,
+  "heightCm" DOUBLE PRECISION NOT NULL,
+  "internalVolumeCm3" DOUBLE PRECISION NOT NULL,
+  "maxWeightG" INTEGER NOT NULL,
+  "selfWeightG" INTEGER NOT NULL,
+  "costEur" DOUBLE PRECISION NOT NULL,
+  "stock" INTEGER NOT NULL DEFAULT 0,
+  "isReinforced" BOOLEAN NOT NULL DEFAULT false,
+  "isActive" BOOLEAN NOT NULL DEFAULT true,
+  CONSTRAINT "Packaging_pkey" PRIMARY KEY ("id")
+);

@@ -346,6 +346,15 @@ function SeoProductPageContent() {
   const [editSubsubcategory, setEditSubsubcategory] = useState("");
   const [editImages, setEditImages] = useState<string[]>([]);
   const [editImageAlts, setEditImageAlts] = useState<string[]>([]);
+  const [editWeightG, setEditWeightG] = useState("");
+  const [editLengthCm, setEditLengthCm] = useState("");
+  const [editWidthCm, setEditWidthCm] = useState("");
+  const [editHeightCm, setEditHeightCm] = useState("");
+  const [editIsFragile, setEditIsFragile] = useState(false);
+  const [editIsLiquid, setEditIsLiquid] = useState(false);
+  const [editIsAerosol, setEditIsAerosol] = useState(false);
+  const [editRequiresGlass, setEditRequiresGlass] = useState(false);
+  const [editLogisticNote, setEditLogisticNote] = useState("");
 
   // Autocomplétion (suggestions enrichies avec labels hiérarchiques)
   const [allCategories, setAllCategories] = useState<CategorySuggestion[]>([]);
@@ -435,6 +444,15 @@ function SeoProductPageContent() {
         setEditSubsubcategory((data.product as any).subsubcategory || "");
         setEditImages(parseImages(data.product.images));
         setEditImageAlts(JSON.parse((data.product as any).imageAlts || "[]"));
+        setEditWeightG(data.product.weightG != null ? String(data.product.weightG) : "");
+        setEditLengthCm(data.product.lengthCm != null ? String(data.product.lengthCm) : "");
+        setEditWidthCm(data.product.widthCm != null ? String(data.product.widthCm) : "");
+        setEditHeightCm(data.product.heightCm != null ? String(data.product.heightCm) : "");
+        setEditIsFragile(Boolean(data.product.isFragile));
+        setEditIsLiquid(Boolean(data.product.isLiquid));
+        setEditIsAerosol(Boolean(data.product.isAerosol));
+        setEditRequiresGlass(Boolean(data.product.requiresGlass));
+        setEditLogisticNote(data.product.logisticNote || "");
         setEditTags(
           Array.isArray(data.product.tags)
             ? data.product.tags
@@ -484,14 +502,21 @@ function SeoProductPageContent() {
         seoDescription: editDescription,
         suggestedTags: editTags,
       });
-      // Sauvegarder aussi catégorie, sous-catégorie et sous-sous-catégorie si modifiées
-      if (editCategory !== product.category || editSubcategory !== product.subcategory || editSubsubcategory !== ((product as any).subsubcategory || "")) {
-        await updateProduct(productId, {
-          category: editCategory,
-          subcategory: editSubcategory,
-          subsubcategory: editSubsubcategory,
-        });
-      }
+      // Sauvegarder aussi les données produit modifiables hors SEO, dont la logistique.
+      await updateProduct(productId, {
+        category: editCategory,
+        subcategory: editSubcategory,
+        subsubcategory: editSubsubcategory,
+        weightG: editWeightG,
+        lengthCm: editLengthCm,
+        widthCm: editWidthCm,
+        heightCm: editHeightCm,
+        isFragile: editIsFragile,
+        isLiquid: editIsLiquid,
+        isAerosol: editIsAerosol,
+        requiresGlass: editRequiresGlass,
+        logisticNote: editLogisticNote,
+      });
       setApplied(true);
       const data = await analyzeSeoProduct(productId);
       setProduct(data.product);
@@ -823,6 +848,36 @@ function SeoProductPageContent() {
                 </div>
               </div>
             </div>
+          </div>
+
+
+
+          {/* Données logistiques */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs font-semibold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded">DONNÉES LOGISTIQUES</span>
+              <span className="text-xs text-gray-400">Préparation colis et calcul transport</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div><label className="block text-xs text-gray-500 mb-1">Poids en grammes</label><input type="number" min="0" value={editWeightG} onChange={(e) => { setEditWeightG(e.target.value); setApplied(false); }} placeholder="ex: 250" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 outline-none" /></div>
+              <div><label className="block text-xs text-gray-500 mb-1">Longueur cm</label><input type="number" min="0" step="0.1" value={editLengthCm} onChange={(e) => { setEditLengthCm(e.target.value); setApplied(false); }} placeholder="ex: 12" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 outline-none" /></div>
+              <div><label className="block text-xs text-gray-500 mb-1">Largeur cm</label><input type="number" min="0" step="0.1" value={editWidthCm} onChange={(e) => { setEditWidthCm(e.target.value); setApplied(false); }} placeholder="ex: 6" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 outline-none" /></div>
+              <div><label className="block text-xs text-gray-500 mb-1">Hauteur cm</label><input type="number" min="0" step="0.1" value={editHeightCm} onChange={(e) => { setEditHeightCm(e.target.value); setApplied(false); }} placeholder="ex: 4" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 outline-none" /></div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+              {[
+                ["Produit fragile", editIsFragile, setEditIsFragile],
+                ["Liquide", editIsLiquid, setEditIsLiquid],
+                ["Aérosol", editIsAerosol, setEditIsAerosol],
+                ["Verre / protection renforcée", editRequiresGlass, setEditRequiresGlass],
+              ].map(([label, checked, setter]) => (
+                <label key={String(label)} className="flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                  <input type="checkbox" checked={Boolean(checked)} onChange={(e) => { (setter as (value: boolean) => void)(e.target.checked); setApplied(false); }} className="rounded border-gray-300 text-cyan-600 focus:ring-cyan-500" />
+                  {String(label)}
+                </label>
+              ))}
+            </div>
+            <div className="mt-4"><label className="block text-xs text-gray-500 mb-1">Note logistique spéciale</label><textarea value={editLogisticNote} onChange={(e) => { setEditLogisticNote(e.target.value); setApplied(false); }} placeholder="ex: ne pas coucher, ajouter calage, éviter point relais..." rows={2} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 outline-none" /></div>
           </div>
 
           {/* Gestion des images */}

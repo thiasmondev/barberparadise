@@ -1,5 +1,5 @@
 import { API_URL } from "./api";
-import type { DashboardStats, Product, Order, Customer, Category } from "@/types";
+import type { DashboardStats, Product, Order, Customer, Category, Packaging } from "@/types";
 
 const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "dopr7tgf8";
 const CLOUDINARY_UPLOAD_PRESET = "barberparadise_unsigned";
@@ -110,6 +110,31 @@ export function updateProduct(id: string, data: Record<string, unknown>) {
 
 export function deleteProduct(id: string) {
   return adminFetch<{ success: boolean }>(`/api/admin/products/${id}`, {
+    method: "DELETE",
+  });
+}
+
+// ─── Packaging ───────────────────────────────────────────────
+export function getAdminPackaging() {
+  return adminFetch<{ packaging: Packaging[] }>("/api/admin/packaging");
+}
+
+export function createPackaging(data: Record<string, unknown>) {
+  return adminFetch<Packaging>("/api/admin/packaging", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updatePackaging(id: number, data: Record<string, unknown>) {
+  return adminFetch<Packaging>(`/api/admin/packaging/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deletePackaging(id: number) {
+  return adminFetch<{ success: boolean }>(`/api/admin/packaging/${id}`, {
     method: "DELETE",
   });
 }

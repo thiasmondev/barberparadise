@@ -65,3 +65,14 @@
 - [x] Valider les builds backend/frontend après intégration emails transactionnels.
 - [x] Committer et pousser l’intégration emails transactionnels sur `main`.
 - [x] Corriger les boutons de `/commande/succes` pour utiliser des liens Next.js vers `/compte?tab=commandes` et `/catalogue`.
+- [ ] Cadrer l’Agent Logistique : préparation colis automatisée, choix du carton optimal, génération et impression des étiquettes transporteurs.
+- [ ] Étudier les intégrations transporteurs prioritaires pour l’Agent Logistique : Colissimo, Mondial Relay et autres transporteurs compatibles e-commerce.
+- [ ] Étudier les solutions d’assurance colis indépendantes ou intégrées, dont Sendcloud Shipping Protection et assureurs spécialisés, pour automatiser la couverture selon valeur, risque et transporteur.
+- [ ] Documenter l’approche de conception de l’Agent Logistique : MVP, règles métier, modèle de données, intégrations transporteurs et assurance colis.
+- [x] Ajouter dans Prisma les champs logistiques du modèle Product : poids, dimensions, fragilité, liquide, aérosol, verre requis et note logistique.
+- [x] Créer dans Prisma le modèle Packaging avec dimensions, volume interne calculé ou maintenu, poids, coût, stock, renforcement et statut actif.
+- [x] Générer la migration Prisma `add_logistics_fields` sans pré-remplir de catalogue d’emballages par défaut.
+- [x] Ajouter dans le panel admin produit `/admin/seo/produit` une section `Données logistiques` avec poids, dimensions, fragilité, liquide, aérosol et note logistique.
+- [x] Créer la page `/admin/logistique/emballages` avec liste vide au départ, ajout, modification, suppression avec confirmation et calcul automatique du volume interne.
+- [x] Valider les builds backend/frontend après implémentation des étapes logistiques 1 et 2.
+- [ ] Committer et pousser les étapes logistiques 1 et 2 sur `main`.
