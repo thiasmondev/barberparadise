@@ -51,3 +51,7 @@
 - [x] Créer la migration manuelle `backend/prisma/migrations/20260501000000_add_isb2b_to_order/migration.sql` avec l’ajout conditionnel de la colonne `Order.isB2B`
 - [x] Pousser la migration dédiée `isB2B` sur GitHub pour application ensuite via `npx prisma migrate deploy` dans le Shell Render
 - [x] Lier les boutons de `/commande/succes` : `VOIR MES COMMANDES` vers `/compte?tab=commandes` et `CONTINUER MES ACHATS` vers `/catalogue`.
+- [x] Créer ou compléter la route backend `GET /api/customers/me/orders/:orderId` pour retourner le détail complet d’une commande client authentifiée.
+- [x] Créer la page frontend `/compte/commandes/[orderId]` avec statut coloré, date, produits, livraison, récapitulatif financier, paiement et retour vers mes commandes.
+- [x] Connecter le bouton `VOIR LE DÉTAIL` dans `/compte?tab=commandes` vers `/compte/commandes/[orderId]`.
+- [x] Valider le build frontend et les vérifications backend ciblées avant push GitHub.

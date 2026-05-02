@@ -274,7 +274,7 @@ function OrdersPanel({ orders }: { orders: Order[] }) {
             </div>
             <div className="flex items-center gap-4">
               <p className="text-xl font-black">{order.total.toFixed(2)} €</p>
-              <Link href={`/compte?tab=commandes&order=${order.id}`} className="border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/70 hover:border-[#E91E8C] hover:text-white">Voir le détail</Link>
+              <Link href={`/compte/commandes/${order.id}`} className="border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/70 hover:border-[#E91E8C] hover:text-white">Voir le détail</Link>
             </div>
           </div>
         ))}

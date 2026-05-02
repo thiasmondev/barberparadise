@@ -112,6 +112,10 @@ export async function getCustomerOrders(): Promise<Order[]> {
   return customerFetch<Order[]>("/api/customers/me/orders");
 }
 
+export async function getCustomerOrder(orderId: string): Promise<Order> {
+  return customerFetch<Order>(`/api/customers/me/orders/${orderId}`);
+}
+
 export async function getCustomerAddresses(): Promise<CustomerAddress[]> {
   return customerFetch<CustomerAddress[]>("/api/customers/me/addresses");
 }

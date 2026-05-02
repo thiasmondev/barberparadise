@@ -54,6 +54,26 @@ customersRouter.get("/me/orders", requireAuth, async (req: AuthRequest, res: Res
   }
 });
 
+// GET /api/customers/me/orders/:orderId — Détail d'une commande du client connecté
+customersRouter.get("/me/orders/:orderId", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const order = await prisma.order.findFirst({
+      where: { id: req.params.orderId, customerId: req.user!.id },
+      include: { items: true, shippingAddress: true },
+    });
+
+    if (!order) {
+      res.status(404).json({ error: "Commande non trouvée" });
+      return;
+    }
+
+    res.json(order);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur récupération commande" });
+  }
+});
+
 // GET /api/customers/me/addresses — Adresses du client connecté
 customersRouter.get("/me/addresses", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   try {

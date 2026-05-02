@@ -122,9 +122,19 @@ export interface Order {
   customerId: string | null;
   email: string;
   status: string;
+  paymentMethod?: string | null;
+  paymentProvider?: string | null;
+  providerPaymentId?: string | null;
   subtotal: number;
   shipping: number;
   total: number;
+  totalHT?: number;
+  vatRate?: number;
+  vatAmount?: number;
+  totalTTC?: number;
+  currency?: string;
+  customerEmail?: string | null;
+  billingAddress?: unknown;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -156,6 +166,8 @@ export interface ShippingAddress {
   city: string;
   postalCode: string;
   country: string;
+  extension?: string | null;
+  phone?: string | null;
 }
 
 export interface Customer {
