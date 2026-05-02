@@ -89,3 +89,9 @@
 - [x] Charger les redirections produits dynamiques dans `next.config.js` avant les redirections statiques.
 - [x] Valider `pnpm run build` après ajout des redirections SEO.
 - [x] Committer et pousser les redirections SEO sur `main`.
+- [x] Vérifier que `NEXT_PUBLIC_SITE_URL` est configuré ou documenté pour pointer vers `https://barberparadise.fr` côté Vercel.
+- [x] Vérifier que les métadonnées Open Graph utilisent `https://barberparadise.fr` et non un domaine Vercel temporaire.
+- [x] Vérifier que le sitemap génère des URLs en `https://barberparadise.fr`.
+- [x] Vérifier que les emails transactionnels Resend pointent vers `https://barberparadise.fr`.
+- [x] Vérifier que les webhooks Mollie/PayPal utilisent le backend Render et non le frontend Vercel.
+- [x] Corriger et pousser les éventuels ajustements de code liés au domaine custom.

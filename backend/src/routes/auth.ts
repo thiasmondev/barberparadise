@@ -11,7 +11,7 @@ export const authRouter = Router();
 const PASSWORD_RESET_TOKEN_MINUTES = 60;
 
 function getFrontendUrl(): string {
-  return process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "http://localhost:3000";
+  return (process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "https://barberparadise.fr").replace(/\/$/, "");
 }
 
 function hashToken(token: string): string {

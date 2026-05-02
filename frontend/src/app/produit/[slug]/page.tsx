@@ -7,6 +7,7 @@ import ProductDetail from "@/components/ProductDetail";
 import ProductCard from "@/components/ProductCard";
 import type { Product } from "@/types";
 import Link from "next/link";
+import { absoluteUrl } from "@/lib/site";
 
 interface FaqItem {
   question: string;
@@ -43,7 +44,7 @@ function SchemaJsonLd({ product }: { product: Product }) {
       availability: product.inStock
         ? "https://schema.org/InStock"
         : "https://schema.org/OutOfStock",
-      url: `https://barberparadise.vercel.app/produit/${product.slug}`,
+      url: absoluteUrl(`/produit/${product.slug}`),
       seller: { "@type": "Organization", name: "Barber Paradise" },
       ...(comparePrice > price && {
         priceValidUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],

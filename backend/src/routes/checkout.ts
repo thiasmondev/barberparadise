@@ -57,11 +57,11 @@ function money(value: number): number {
 }
 
 function getFrontendUrl(): string {
-  return process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "http://localhost:3000";
+  return (process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "https://barberparadise.fr").replace(/\/$/, "");
 }
 
 function getBackendUrl(req: Request): string {
-  return process.env.BACKEND_URL || `${req.protocol}://${req.get("host")}`;
+  return (process.env.BACKEND_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
 }
 
 function requireEnv(name: string): string {
