@@ -88,4 +88,4 @@
 - [x] Générer et versionner `frontend/src/redirects/products.json` au format de redirections Next.js.
 - [x] Charger les redirections produits dynamiques dans `next.config.js` avant les redirections statiques.
 - [x] Valider `pnpm run build` après ajout des redirections SEO.
-- [ ] Committer et pousser les redirections SEO sur `main`.
+- [x] Committer et pousser les redirections SEO sur `main`.
