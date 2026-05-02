@@ -2,6 +2,7 @@
 // BARBER PARADISE — Routes API SEO Agent
 // ============================================================
 import { Router } from "express";
+import { v2 as cloudinary } from "cloudinary";
 import { requireAdmin, AuthRequest } from "../middleware/auth";
 import { prisma } from "../utils/prisma";
 import {
@@ -9,13 +10,174 @@ import {
   optimizeProduct,
   generateBlogArticle,
   generateImageAlts,
+  generateProductDraftFromUrl,
   type ProductData,
+  type ProductDraftFromUrl,
 } from "../services/seo-agent";
 
 export const seoRouter = Router();
 
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+function hasCloudinaryConfig(): boolean {
+  return Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET);
+}
+
+function isImportableImageUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+async function importDraftImagesToCloudinary(draft: ProductDraftFromUrl, productId: string): Promise<string[]> {
+  if (!hasCloudinaryConfig()) return [];
+
+  const candidates = Array.from(new Set((draft.imageUrls || []).filter(isImportableImageUrl))).slice(0, 8);
+  const imported: string[] = [];
+
+  for (const [index, imageUrl] of candidates.entries()) {
+    try {
+      const result = await cloudinary.uploader.upload(imageUrl, {
+        folder: `barberparadise/products/${productId}`,
+        public_id: `source-${index + 1}`,
+        overwrite: true,
+        resource_type: "image",
+        transformation: [{ width: 1200, height: 1200, crop: "limit", quality: "auto", fetch_format: "auto" }],
+      });
+      if (result.secure_url) imported.push(result.secure_url);
+    } catch (error) {
+      console.warn("[SEO PRODUCT URL] Image import skipped:", imageUrl, error);
+    }
+  }
+
+  return imported;
+}
+
+function slugifyProductUrlDraft(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 90) || "nouveau-produit";
+}
+
+async function getUniqueProductSlug(base: string): Promise<string> {
+  const cleanBase = slugifyProductUrlDraft(base);
+  let slug = cleanBase;
+  let index = 2;
+  while (await prisma.product.findUnique({ where: { slug } })) {
+    slug = `${cleanBase}-${index}`;
+    index += 1;
+  }
+  return slug;
+}
+
+function productDraftToCreateData(draft: ProductDraftFromUrl, slug: string, importedImageUrls: string[] = []) {
+  const price = typeof draft.price === "number" && Number.isFinite(draft.price) ? draft.price : 0;
+  return {
+    handle: slug,
+    slug,
+    name: draft.name.trim(),
+    brand: draft.brand.trim() || "À compléter",
+    category: draft.category.trim() || "accessoires",
+    subcategory: draft.subcategory.trim() || "nouveautes",
+    subsubcategory: draft.subsubcategory?.trim() || "",
+    price,
+    originalPrice: typeof draft.originalPrice === "number" && Number.isFinite(draft.originalPrice) ? draft.originalPrice : null,
+    images: JSON.stringify(importedImageUrls.slice(0, 8)),
+    imageAlts: JSON.stringify(Array.isArray(draft.imageAlts) ? draft.imageAlts.slice(0, importedImageUrls.length || 8) : []),
+    description: draft.seoDescription || draft.directAnswerIntro || draft.shortDescription,
+    shortDescription: (draft.shortDescription || draft.directAnswerIntro || draft.name).slice(0, 180),
+    features: JSON.stringify(Array.isArray(draft.features) ? draft.features.slice(0, 12) : []),
+    tags: JSON.stringify(Array.isArray(draft.suggestedTags) ? draft.suggestedTags.slice(0, 12) : []),
+    inStock: true,
+    stockCount: 0,
+    weightG: typeof draft.weightG === "number" ? Math.round(draft.weightG) : null,
+    lengthCm: typeof draft.lengthCm === "number" ? draft.lengthCm : null,
+    widthCm: typeof draft.widthCm === "number" ? draft.widthCm : null,
+    heightCm: typeof draft.heightCm === "number" ? draft.heightCm : null,
+    isFragile: Boolean(draft.isFragile),
+    isLiquid: Boolean(draft.isLiquid),
+    isAerosol: Boolean(draft.isAerosol),
+    requiresGlass: Boolean(draft.requiresGlass),
+    logisticNote: draft.logisticNote || `Brouillon créé depuis ${draft.sourceUrl}. Vérifier prix, stock, images et caractéristiques avant publication.`,
+    status: "draft",
+    isNew: true,
+  };
+}
+
+
 // All SEO routes require admin auth
 seoRouter.use(requireAdmin as any);
+
+
+// ─── Create Product Draft from Brand URL ──────────────────────
+seoRouter.post("/product-url/draft", async (req, res) => {
+  try {
+    const { url } = req.body || {};
+    if (!url || typeof url !== "string") {
+      res.status(400).json({ error: "URL produit requise" });
+      return;
+    }
+
+    const draft = await generateProductDraftFromUrl(url);
+    res.json({ draft });
+  } catch (err: any) {
+    console.error("SEO Product URL draft error:", err);
+    res.status(500).json({ error: err.message || "Erreur génération fiche produit depuis URL" });
+  }
+});
+
+seoRouter.post("/product-url/create", async (req, res) => {
+  try {
+    const draft = req.body?.draft as ProductDraftFromUrl | undefined;
+    if (!draft || !draft.name || !draft.seoDescription) {
+      res.status(400).json({ error: "Brouillon produit incomplet" });
+      return;
+    }
+
+    const slug = await getUniqueProductSlug(draft.name);
+    const created = await prisma.product.create({ data: productDraftToCreateData(draft, slug, []) });
+    const importedImages = await importDraftImagesToCloudinary(draft, created.id);
+    const product = importedImages.length > 0
+      ? await prisma.product.update({
+          where: { id: created.id },
+          data: {
+            images: JSON.stringify(importedImages),
+            imageAlts: JSON.stringify(Array.isArray(draft.imageAlts) ? draft.imageAlts.slice(0, importedImages.length) : []),
+          },
+        })
+      : created;
+
+    res.status(201).json({
+      success: true,
+      imageImport: {
+        imported: importedImages.length,
+        candidates: Array.isArray(draft.imageUrls) ? draft.imageUrls.length : 0,
+        storage: importedImages.length > 0 ? "cloudinary" : "manual_review_required",
+      },
+      product: {
+        ...product,
+        images: JSON.parse(product.images || "[]"),
+        imageAlts: JSON.parse(product.imageAlts || "[]"),
+        tags: JSON.parse(product.tags || "[]"),
+        features: JSON.parse(product.features || "[]"),
+      },
+    });
+  } catch (err: any) {
+    console.error("SEO Product URL create error:", err);
+    res.status(500).json({ error: err.message || "Erreur création brouillon produit" });
+  }
+});
 
 // ─── Dashboard SEO Stats ────────────────────────────────────
 seoRouter.get("/dashboard", async (_req, res) => {

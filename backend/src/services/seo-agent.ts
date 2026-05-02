@@ -60,6 +60,50 @@ export interface LlmsTxtData {
   content: string;  // Contenu complet du fichier llms.txt
 }
 
+export interface ProductUrlSource {
+  url: string;
+  domain: string;
+  title: string;
+  metaDescription: string;
+  headings: string[];
+  bodyText: string;
+  jsonLd: unknown[];
+  images: string[];
+}
+
+export interface ProductDraftFromUrl {
+  sourceUrl: string;
+  sourceDomain: string;
+  name: string;
+  brand: string;
+  category: string;
+  subcategory: string;
+  subsubcategory: string;
+  price: number | null;
+  originalPrice: number | null;
+  shortDescription: string;
+  seoDescription: string;
+  suggestedTags: string[];
+  imageUrls: string[];
+  imageAlts: string[];
+  features: string[];
+  schemaJsonLd: string;
+  faqItems: { question: string; answer: string }[];
+  directAnswerIntro: string;
+  geoSuggestions: string[];
+  weightG: number | null;
+  lengthCm: number | null;
+  widthCm: number | null;
+  heightCm: number | null;
+  isFragile: boolean;
+  isLiquid: boolean;
+  isAerosol: boolean;
+  requiresGlass: boolean;
+  logisticNote: string | null;
+  confidenceWarnings: string[];
+  extractedSource: { title: string; metaDescription: string; imageCount: number; bodyLength: number };
+}
+
 // ─── SEO Score Calculator ───────────────────────────────────
 
 export function calculateSeoScore(product: ProductData): {
@@ -270,6 +314,161 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, " ").replace(/&[a-z]+;/gi, " ").replace(/\s+/g, " ").trim();
 }
 
+
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(parseInt(code, 16)));
+}
+
+function uniqueStrings(values: string[], max = 20): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of values) {
+    const value = raw.trim();
+    const key = value.toLowerCase();
+    if (!value || seen.has(key)) continue;
+    seen.add(key);
+    result.push(value);
+    if (result.length >= max) break;
+  }
+  return result;
+}
+
+function absolutizeUrl(value: string, baseUrl: string): string | null {
+  try {
+    return new URL(value, baseUrl).toString();
+  } catch {
+    return null;
+  }
+}
+
+function extractMetaContent(html: string, name: string): string {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
+    new RegExp(`<meta[^>]+(?:property|name)=["']${escaped}["'][^>]+content=["']([^"']+)["'][^>]*>`, "i"),
+    new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${escaped}["'][^>]*>`, "i"),
+  ];
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match?.[1]) return decodeHtmlEntities(match[1]).trim();
+  }
+  return "";
+}
+
+function extractTitle(html: string): string {
+  const ogTitle = extractMetaContent(html, "og:title");
+  if (ogTitle) return ogTitle;
+  const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "";
+  return decodeHtmlEntities(stripHtml(title));
+}
+
+function extractJsonLd(html: string): unknown[] {
+  const blocks = [...html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+  const parsed: unknown[] = [];
+  for (const block of blocks) {
+    const content = decodeHtmlEntities(block[1] || "").trim();
+    if (!content) continue;
+    try {
+      parsed.push(JSON.parse(content));
+    } catch {
+      // Les JSON-LD de sites marchands contiennent parfois des caractères non échappés : on ignore le bloc illisible.
+    }
+  }
+  return parsed;
+}
+
+function extractImages(html: string, baseUrl: string): string[] {
+  const candidates: string[] = [];
+  for (const key of ["og:image", "og:image:secure_url", "twitter:image"]) {
+    const value = extractMetaContent(html, key);
+    if (value) candidates.push(value);
+  }
+  const srcMatches = [...html.matchAll(/<img[^>]+(?:src|data-src|data-original|data-zoom-image)=["']([^"']+)["'][^>]*>/gi)];
+  for (const match of srcMatches) candidates.push(match[1]);
+  const srcsetMatches = [...html.matchAll(/<img[^>]+srcset=["']([^"']+)["'][^>]*>/gi)];
+  for (const match of srcsetMatches) {
+    const first = (match[1] || "").split(",")[0]?.trim().split(/\s+/)[0];
+    if (first) candidates.push(first);
+  }
+  return uniqueStrings(
+    candidates
+      .map((src) => absolutizeUrl(decodeHtmlEntities(src), baseUrl))
+      .filter((src): src is string => Boolean(src))
+      .filter((src) => /^https?:\/\//i.test(src))
+      .filter((src) => !/sprite|placeholder|favicon|logo|icon|avatar|loading/i.test(src)),
+    12,
+  );
+}
+
+function extractHeadings(html: string): string[] {
+  const headings = [...html.matchAll(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi)].map((m) => stripHtml(decodeHtmlEntities(m[1] || "")));
+  return uniqueStrings(headings, 12);
+}
+
+function compactBodyText(html: string): string {
+  const cleaned = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ");
+  return decodeHtmlEntities(stripHtml(cleaned)).replace(/\s+/g, " ").trim().slice(0, 9000);
+}
+
+function normalizeArray(value: unknown, max = 12): string[] {
+  if (!Array.isArray(value)) return [];
+  return uniqueStrings(value.map((item) => String(item || "").trim()).filter(Boolean), max);
+}
+
+function normalizeNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = typeof value === "number" ? value : parseFloat(String(value).replace(",", ".").replace(/[^0-9.]/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeBoolean(value: unknown): boolean {
+  return value === true || value === "true";
+}
+
+export async function extractProductSourceFromUrl(url: string): Promise<ProductUrlSource> {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    throw new Error("URL produit invalide");
+  }
+  if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+    throw new Error("Seules les URLs http(s) sont acceptées");
+  }
+
+  const response = await fetch(parsedUrl.toString(), {
+    headers: {
+      "user-agent": "Mozilla/5.0 (compatible; BarberParadiseSEOAgent/1.0; +https://barberparadise.fr)",
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+  });
+  if (!response.ok) throw new Error(`Impossible de lire la fiche produit source (${response.status})`);
+
+  const html = (await response.text()).slice(0, 2_500_000);
+  const metaDescription = extractMetaContent(html, "description") || extractMetaContent(html, "og:description") || extractMetaContent(html, "twitter:description");
+
+  return {
+    url: parsedUrl.toString(),
+    domain: parsedUrl.hostname.replace(/^www\./, ""),
+    title: extractTitle(html),
+    metaDescription,
+    headings: extractHeadings(html),
+    bodyText: compactBodyText(html),
+    jsonLd: extractJsonLd(html),
+    images: extractImages(html, parsedUrl.toString()),
+  };
+}
+
 // ─── Helper: call Claude and parse JSON response ─────────────
 
 async function callClaude(prompt: string, maxTokens: number): Promise<string> {
@@ -290,6 +489,127 @@ function parseJsonResponse(raw: string): Record<string, unknown> {
   const objMatch = jsonStr.match(/\{[\s\S]*\}/);
   if (objMatch) jsonStr = objMatch[0];
   return JSON.parse(jsonStr);
+}
+
+
+// ─── Création produit depuis URL marque ──────────────────────
+
+export async function generateProductDraftFromUrl(url: string): Promise<ProductDraftFromUrl> {
+  const source = await extractProductSourceFromUrl(url);
+  const jsonLdSummary = JSON.stringify(source.jsonLd).slice(0, 6000);
+  const imagesList = source.images.map((image, index) => `${index + 1}. ${image}`).join("\n");
+  const headings = source.headings.map((heading) => `- ${heading}`).join("\n");
+
+  const prompt = `Tu es l'agent SEO/GEO de Barber Paradise, e-commerce français spécialisé en matériel professionnel de barbier et coiffure.
+
+OBJECTIF : créer un BROUILLON de fiche produit BarberParadise à partir d'une fiche produit de marque.
+
+SOURCE À ANALYSER :
+- URL : ${source.url}
+- Domaine : ${source.domain}
+- Titre page : ${source.title}
+- Meta description : ${source.metaDescription}
+- Titres visibles :
+${headings || "Aucun titre extrait"}
+- Images candidates :
+${imagesList || "Aucune image extraite"}
+- JSON-LD extrait : ${jsonLdSummary || "Aucun JSON-LD exploitable"}
+- Texte visible extrait : ${source.bodyText.substring(0, 8000)}
+
+RÈGLES CRITIQUES :
+1. Tu dois produire une fiche BarberParadise originale en français, pas une copie brute du texte source.
+2. Ne crée pas de caractéristiques techniques non présentes dans la source. Si une information manque, laisse-la générique ou ajoute un avertissement dans confidenceWarnings.
+3. Optimise SEO Google France ET GEO pour être cité par ChatGPT, Claude, Perplexity et AI Overviews.
+4. Le produit doit rester en brouillon : prix et logistique peuvent être complétés ensuite si absents.
+5. Catégories attendues : tondeuses, shavers, tondeuses-de-finition, ciseaux, rasage, barbe, cheveux, soins, accessoires, mobilier, hygiene. Choisis la plus proche.
+6. Le champ seoDescription doit être du HTML propre avec h2, ul/li, strong et une FAQ courte si les informations source le permettent.
+
+Réponds UNIQUEMENT avec un JSON valide contenant exactement :
+{
+  "name": "Titre produit BarberParadise optimisé 50-75 caractères",
+  "brand": "Marque",
+  "category": "slug categorie principal",
+  "subcategory": "slug sous-categorie",
+  "subsubcategory": "slug sous-sous-categorie ou chaîne vide",
+  "price": number ou null,
+  "originalPrice": number ou null,
+  "shortDescription": "Meta description 120-155 caractères",
+  "seoDescription": "Description HTML SEO/GEO 700-1200 mots",
+  "suggestedTags": ["8 à 12 mots clés français"],
+  "imageAlts": ["un alt text SEO pour chaque image candidate conservée"],
+  "features": ["5 à 10 caractéristiques factuelles"],
+  "schemaJsonLd": "JSON-LD Product sous forme de string, url BarberParadise temporaire https://barberparadise.fr/produit/slug-a-creer",
+  "faqItems": [{"question":"...", "answer":"..."}],
+  "directAnswerIntro": "100-150 mots, réponse directe orientée LLM",
+  "geoSuggestions": ["3 à 5 conseils GEO"],
+  "weightG": number ou null,
+  "lengthCm": number ou null,
+  "widthCm": number ou null,
+  "heightCm": number ou null,
+  "isFragile": boolean,
+  "isLiquid": boolean,
+  "isAerosol": boolean,
+  "requiresGlass": boolean,
+  "logisticNote": string ou null,
+  "confidenceWarnings": ["points à vérifier avant publication"]
+}`;
+
+  const raw = await callClaude(prompt, 7000);
+
+  try {
+    const result = parseJsonResponse(raw) as Record<string, unknown>;
+    const imageUrls = source.images.slice(0, 8);
+    const imageAlts = normalizeArray(result.imageAlts, imageUrls.length || 8);
+    while (imageUrls.length > imageAlts.length) {
+      imageAlts.push(`${String(result.brand || "Barber Paradise")} ${String(result.name || "produit professionnel")} - visuel ${imageAlts.length + 1}`);
+    }
+
+    return {
+      sourceUrl: source.url,
+      sourceDomain: source.domain,
+      name: String(result.name || source.title || "Nouveau produit professionnel").trim(),
+      brand: String(result.brand || source.domain.split(".")[0] || "").trim(),
+      category: String(result.category || "accessoires").trim().toLowerCase(),
+      subcategory: String(result.subcategory || "nouveautes").trim().toLowerCase(),
+      subsubcategory: String(result.subsubcategory || "").trim().toLowerCase(),
+      price: normalizeNumber(result.price),
+      originalPrice: normalizeNumber(result.originalPrice),
+      shortDescription: String(result.shortDescription || source.metaDescription || "").trim().slice(0, 180),
+      seoDescription: String(result.seoDescription || source.metaDescription || source.bodyText.substring(0, 1200)).trim(),
+      suggestedTags: normalizeArray(result.suggestedTags, 12),
+      imageUrls,
+      imageAlts,
+      features: normalizeArray(result.features, 12),
+      schemaJsonLd: String(result.schemaJsonLd || "{}").trim(),
+      faqItems: Array.isArray(result.faqItems)
+        ? result.faqItems
+            .map((item) => item as { question?: unknown; answer?: unknown })
+            .filter((item) => item.question && item.answer)
+            .slice(0, 6)
+            .map((item) => ({ question: String(item.question), answer: String(item.answer) }))
+        : [],
+      directAnswerIntro: String(result.directAnswerIntro || "").trim(),
+      geoSuggestions: normalizeArray(result.geoSuggestions, 6),
+      weightG: normalizeNumber(result.weightG),
+      lengthCm: normalizeNumber(result.lengthCm),
+      widthCm: normalizeNumber(result.widthCm),
+      heightCm: normalizeNumber(result.heightCm),
+      isFragile: normalizeBoolean(result.isFragile),
+      isLiquid: normalizeBoolean(result.isLiquid),
+      isAerosol: normalizeBoolean(result.isAerosol),
+      requiresGlass: normalizeBoolean(result.requiresGlass),
+      logisticNote: result.logisticNote ? String(result.logisticNote).trim() : null,
+      confidenceWarnings: normalizeArray(result.confidenceWarnings, 8),
+      extractedSource: {
+        title: source.title,
+        metaDescription: source.metaDescription,
+        imageCount: source.images.length,
+        bodyLength: source.bodyText.length,
+      },
+    };
+  } catch {
+    throw new Error("Erreur de parsing de la fiche produit générée. Réessayez.");
+  }
 }
 
 // ─── AI SEO Optimization (améliorée avec GEO) ───────────────

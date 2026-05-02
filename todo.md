@@ -95,3 +95,11 @@
 - [x] Vérifier que les emails transactionnels Resend pointent vers `https://barberparadise.fr`.
 - [x] Vérifier que les webhooks Mollie/PayPal utilisent le backend Render et non le frontend Vercel.
 - [x] Corriger et pousser les éventuels ajustements de code liés au domaine custom.
+
+- [x] Ajouter dans l’agent SEO une option visible `Créer un nouveau produit` permettant de saisir l’URL d’une fiche produit de marque.
+- [x] Créer côté backend une route admin qui récupère le contenu public d’une URL produit, extrait titre, marque, description, caractéristiques, prix indicatif si disponible et images candidates.
+- [x] Générer automatiquement une proposition de fiche produit BarberParadise avec nom, slug, description courte, description longue, méta title, méta description, mots-clés SEO, contenu GEO/LLM, FAQ et données structurées produit.
+- [x] Prévoir une étape de validation humaine avant publication afin que le produit généré reste modifiable et ne soit créé qu’en brouillon ou statut non publié par défaut.
+- [x] Importer ou rattacher les images pertinentes au produit via le flux média existant sans hotlink direct vers le site de la marque.
+- [x] Connecter l’interface admin SEO au nouveau flux : champ URL, bouton d’analyse, état de chargement, prévisualisation éditable, création de la fiche produit et messages d’erreur.
+- [x] Valider le flux avec une URL produit exemple, puis exécuter les builds frontend/backend avant push GitHub.

@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import Image from "next/image";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   analyzeSeoProduct,
   optimizeSeoProduct,
@@ -18,10 +18,13 @@ import {
   generateImageAltsSeo,
   saveImageAltsSeo,
   bulkGenerateImageAlts,
+  generateProductDraftFromUrl,
+  createProductFromUrlDraft,
   type SeoOptimization,
   type GeoOptimization,
   type GeoEnrichedContent,
   type CategorySuggestion,
+  type ProductUrlDraft,
 } from "@/lib/admin-api";
 import type { Product } from "@/types";
 import { parseImages, formatPrice, getDiscount } from "@/lib/utils";
@@ -327,6 +330,7 @@ export default function SeoProductPage() {
 
 function SeoProductPageContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const productId = searchParams.get("id");
 
   const [product, setProduct] = useState<Product | null>(null);
@@ -406,6 +410,14 @@ function SeoProductPageContent() {
   const [editBuyingGuideSnippet, setEditBuyingGuideSnippet] = useState("");
   const [editEntityKeywords, setEditEntityKeywords] = useState<string[]>([]);
   const [geoSubTab, setGeoSubTab] = useState<"base" | "enrichi">("base");
+
+
+  // Création d’un nouveau produit depuis URL de marque
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [urlDraft, setUrlDraft] = useState<ProductUrlDraft | null>(null);
+  const [urlGenerating, setUrlGenerating] = useState(false);
+  const [urlCreating, setUrlCreating] = useState(false);
+  const [urlSuccess, setUrlSuccess] = useState("");
 
   // Charger les métadonnées pour l'autocomplétion
   useEffect(() => {
@@ -560,6 +572,42 @@ function SeoProductPageContent() {
     }
   };
 
+  const handleGenerateProductFromUrl = async () => {
+    const cleanUrl = sourceUrl.trim();
+    if (!cleanUrl) {
+      setError("Colle l’URL de la fiche produit de la marque avant de lancer la création.");
+      return;
+    }
+
+    setUrlGenerating(true);
+    setUrlSuccess("");
+    setError("");
+    try {
+      const data = await generateProductDraftFromUrl(cleanUrl);
+      setUrlDraft(data.draft);
+    } catch (err: any) {
+      setError(err.message || "Impossible de générer la fiche produit depuis cette URL.");
+    } finally {
+      setUrlGenerating(false);
+    }
+  };
+
+  const handleCreateProductFromUrlDraft = async () => {
+    if (!urlDraft) return;
+    setUrlCreating(true);
+    setUrlSuccess("");
+    setError("");
+    try {
+      const data = await createProductFromUrlDraft(urlDraft);
+      setUrlSuccess(`Brouillon créé : ${data.product.name}`);
+      router.push(`/admin/seo/produit?id=${data.product.id}`);
+    } catch (err: any) {
+      setError(err.message || "Impossible de créer le brouillon produit.");
+    } finally {
+      setUrlCreating(false);
+    }
+  };
+
   // ─── GEO Handlers ────────────────────────────────────────────
   const handleGeoOptimize = async () => {
     if (!productId) return;
@@ -650,9 +698,125 @@ function SeoProductPageContent() {
 
   if (!productId) {
     return (
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-amber-700">
-        Aucun produit sélectionné.{" "}
-        <Link href="/admin/seo" className="underline">Retour à la liste</Link>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <Link href="/admin/seo" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-violet-600 mb-3">
+              <ChevronLeft size={16} /> Retour à l’agent SEO
+            </Link>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+              <Sparkles className="text-violet-500" size={26} /> Créer un nouveau produit depuis une URL
+            </h1>
+            <p className="text-sm text-gray-500 mt-1 max-w-3xl">
+              Colle l’URL officielle d’une fiche produit de marque. L’agent extrait les données visibles, prépare les images candidates, rédige une fiche SEO/GEO en français et crée un brouillon à valider avant publication.
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <label className="block text-sm font-semibold text-gray-800 mb-2">URL de la fiche produit source</label>
+          <div className="flex flex-col md:flex-row gap-3">
+            <input
+              type="url"
+              value={sourceUrl}
+              onChange={(e) => setSourceUrl(e.target.value)}
+              placeholder="https://marque.com/products/tondeuse-professionnelle"
+              className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-300"
+            />
+            <button
+              onClick={handleGenerateProductFromUrl}
+              disabled={urlGenerating}
+              className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:opacity-60"
+            >
+              {urlGenerating ? <Loader2 size={16} className="animate-spin" /> : <Globe size={16} />}
+              {urlGenerating ? "Analyse en cours..." : "Générer la fiche"}
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Le résultat reste un brouillon : vérifie toujours le prix, le stock, les droits d’utilisation des images importées et les caractéristiques techniques avant publication.
+          </p>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
+            <AlertCircle size={16} className="inline mr-2" /> {error}
+          </div>
+        )}
+
+        {urlSuccess && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-emerald-700 text-sm">
+            <CheckCircle size={16} className="inline mr-2" /> {urlSuccess}
+          </div>
+        )}
+
+        {urlDraft && (
+          <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold text-violet-600 uppercase tracking-wide">Brouillon généré depuis {urlDraft.sourceDomain}</p>
+                  <h2 className="text-xl font-bold text-gray-900 mt-1">{urlDraft.name}</h2>
+                  <p className="text-sm text-gray-500 mt-1">{urlDraft.shortDescription}</p>
+                </div>
+                <span className="px-3 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-semibold border border-amber-200">Brouillon</span>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-3 text-sm">
+                <div className="bg-gray-50 rounded-xl p-3"><span className="text-gray-400">Marque</span><p className="font-semibold text-gray-900">{urlDraft.brand || "À compléter"}</p></div>
+                <div className="bg-gray-50 rounded-xl p-3"><span className="text-gray-400">Prix détecté</span><p className="font-semibold text-gray-900">{urlDraft.price != null ? formatPrice(urlDraft.price) : "À compléter"}</p></div>
+                <div className="bg-gray-50 rounded-xl p-3"><span className="text-gray-400">Catégorie</span><p className="font-semibold text-gray-900">{urlDraft.category} / {urlDraft.subcategory}</p></div>
+                <div className="bg-gray-50 rounded-xl p-3"><span className="text-gray-400">Images trouvées</span><p className="font-semibold text-gray-900">{urlDraft.imageUrls.length} image(s)</p></div>
+              </div>
+
+              {urlDraft.confidenceWarnings.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  <p className="text-sm font-semibold text-amber-800 mb-2">Points à vérifier avant publication</p>
+                  <ul className="space-y-1 text-sm text-amber-700 list-disc pl-5">
+                    {urlDraft.confidenceWarnings.map((warning) => <li key={warning}>{warning}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              <div>
+                <p className="text-sm font-semibold text-gray-800 mb-2">Tags SEO proposés</p>
+                <div className="flex flex-wrap gap-2">
+                  {urlDraft.suggestedTags.map((tag) => (
+                    <span key={tag} className="px-2.5 py-1 rounded-full bg-violet-50 text-violet-700 text-xs font-medium">{tag}</span>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold text-gray-800 mb-2">Aperçu description SEO/GEO</p>
+                <div className="prose prose-sm max-w-none bg-gray-50 rounded-xl p-4 text-gray-700 max-h-72 overflow-y-auto" dangerouslySetInnerHTML={{ __html: urlDraft.seoDescription }} />
+              </div>
+
+              <button
+                onClick={handleCreateProductFromUrlDraft}
+                disabled={urlCreating}
+                className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {urlCreating ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                {urlCreating ? "Création du brouillon..." : "Créer le produit brouillon et l’ouvrir dans l’agent SEO"}
+              </button>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <p className="text-sm font-semibold text-gray-800 mb-3">Images candidates</p>
+              <div className="grid grid-cols-2 gap-3">
+                {urlDraft.imageUrls.slice(0, 6).map((image, index) => (
+                  <div key={image} className="aspect-square bg-gray-50 rounded-xl border border-gray-100 relative overflow-hidden">
+                    <Image src={image} alt={urlDraft.imageAlts[index] || urlDraft.name} fill className="object-contain p-2" sizes="180px" unoptimized />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">
+                <p className="font-semibold mb-1">Garde-fou qualité</p>
+                <p>Les images sont d’abord affichées comme candidates, puis importées dans le stockage média lors de la création du brouillon lorsque la configuration Cloudinary est disponible. Après création, tu pourras les remplacer ou les réordonner dans le gestionnaire d’images produit.</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

@@ -78,6 +78,33 @@ describe("suppression définitive des marques", () => {
   });
 });
 
+describe("agent SEO produit depuis URL", () => {
+  const seoRoutes = readSource("backend/src/routes/seo.ts");
+  const seoAgent = readSource("backend/src/services/seo-agent.ts");
+  const adminApi = readSource("frontend/src/lib/admin-api.ts");
+  const seoProductPage = readSource("frontend/src/app/admin/seo/produit/page.tsx");
+  const seoDashboardPage = readSource("frontend/src/app/admin/seo/page.tsx");
+
+  it("expose un générateur de brouillon produit depuis URL et une création de produit inactif", () => {
+    expect(seoAgent).toContain("export async function generateProductDraftFromUrl");
+    expect(seoAgent).toContain("imageUrls");
+    expect(seoAgent).toContain("schemaJsonLd");
+    expect(seoAgent).toContain("faqItems");
+    expect(seoRoutes).toContain('seoRouter.post("/product-url/draft"');
+    expect(seoRoutes).toContain('seoRouter.post("/product-url/create"');
+    expect(seoRoutes).toContain('status: "draft"');
+  });
+
+  it("fournit les appels API et l’interface de création depuis une URL de marque", () => {
+    expect(adminApi).toContain("export function generateProductDraftFromUrl");
+    expect(adminApi).toContain("export function createProductFromUrlDraft");
+    expect(seoProductPage).toContain("Créer un nouveau produit depuis une URL");
+    expect(seoProductPage).toContain("handleGenerateProductFromUrl");
+    expect(seoProductPage).toContain("handleCreateProductFromUrlDraft");
+    expect(seoDashboardPage).toContain("Créer depuis une URL");
+  });
+});
+
 describe("authentification client frontend", () => {
   const customerApi = readSource("frontend/src/lib/customer-api.ts");
   const customerContext = readSource("frontend/src/contexts/CustomerAuthContext.tsx");
@@ -102,7 +129,8 @@ describe("authentification client frontend", () => {
   });
 
   it("crée les pages connexion et inscription avec validations et redirection vers /compte", () => {
-    expect(connexionPage).toContain('router.replace("/compte")');
+    expect(connexionPage).toContain('const redirectTo = searchParams.get("redirect") || "/compte"');
+    expect(connexionPage).toContain("router.replace(redirectTo)");
     expect(connexionPage).toContain("login(email.trim().toLowerCase(), password)");
     expect(connexionPage).toContain("Veuillez saisir une adresse email valide.");
     expect(connexionPage).toContain("Pas encore de compte ?");

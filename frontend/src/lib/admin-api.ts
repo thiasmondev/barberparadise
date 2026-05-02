@@ -66,6 +66,56 @@ export function getDashboardStats() {
   return adminFetch<DashboardStats>("/api/admin/stats");
 }
 
+
+// ─── SEO Product URL Drafts ───────────────────────────────────
+
+export interface ProductUrlDraft {
+  sourceUrl: string;
+  sourceDomain: string;
+  name: string;
+  brand: string;
+  category: string;
+  subcategory: string;
+  subsubcategory: string;
+  price: number | null;
+  originalPrice: number | null;
+  shortDescription: string;
+  seoDescription: string;
+  suggestedTags: string[];
+  imageUrls: string[];
+  imageAlts: string[];
+  features: string[];
+  schemaJsonLd: string;
+  faqItems: { question: string; answer: string }[];
+  directAnswerIntro: string;
+  geoSuggestions: string[];
+  weightG: number | null;
+  lengthCm: number | null;
+  widthCm: number | null;
+  heightCm: number | null;
+  isFragile: boolean;
+  isLiquid: boolean;
+  isAerosol: boolean;
+  requiresGlass: boolean;
+  logisticNote: string | null;
+  confidenceWarnings: string[];
+  extractedSource: { title: string; metaDescription: string; imageCount: number; bodyLength: number };
+}
+
+export function generateProductDraftFromUrl(url: string) {
+  return adminFetch<{ draft: ProductUrlDraft }>("/api/admin/seo/product-url/draft", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
+}
+
+export function createProductFromUrlDraft(draft: ProductUrlDraft) {
+  return adminFetch<{ success: boolean; product: Product }>("/api/admin/seo/product-url/create", {
+    method: "POST",
+    body: JSON.stringify({ draft }),
+  });
+}
+
 // ─── Products ────────────────────────────────────────────────
 
 export type CategorySuggestion = { slug: string; label: string; parent?: string };

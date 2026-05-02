@@ -14,6 +14,7 @@ import {
   ArrowRight,
   Target,
   BookOpen,
+  Plus,
 } from "lucide-react";
 function ScoreBadge({ score }: { score: number }) {
   const color =
@@ -115,7 +116,14 @@ export default function SeoDashboardPage() {
             <p className="text-sm text-gray-500">Optimisez vos fiches produits pour Google</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Link
+            href="/admin/seo/produit"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors shadow-sm"
+          >
+            <Plus size={16} />
+            Créer un produit
+          </Link>
           <Link
             href="/admin/seo/optimiser"
             className="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 transition-colors shadow-sm"
@@ -237,12 +245,12 @@ export default function SeoDashboardPage() {
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Link
-          href="/admin/seo/optimiser"
-          className="bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl p-5 text-white hover:from-violet-600 hover:to-purple-700 transition-all group"
+          href="/admin/seo/produit"
+          className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl p-5 text-white hover:from-emerald-600 hover:to-teal-700 transition-all group"
         >
-          <Zap size={24} className="mb-3 group-hover:scale-110 transition-transform" />
-          <h3 className="font-semibold mb-1">Optimisation en masse</h3>
-          <p className="text-sm text-violet-200">Sélectionnez et optimisez plusieurs produits d&apos;un coup avec l&apos;IA.</p>
+          <Plus size={24} className="mb-3 group-hover:scale-110 transition-transform" />
+          <h3 className="font-semibold mb-1">Créer depuis une URL</h3>
+          <p className="text-sm text-emerald-100">Collez une fiche produit de marque pour générer un brouillon optimisé SEO/GEO.</p>
         </Link>
         <Link
           href="/admin/seo/blog"
