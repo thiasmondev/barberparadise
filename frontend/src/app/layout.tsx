@@ -3,13 +3,27 @@ import "./globals.css";
 import ClientLayout from "@/components/ClientLayout";
 import { SITE_URL } from "@/lib/site";
 
+const siteTitle = "Barber Paradise — Matériel & Cosmétiques Barber Professionnels";
 const siteDescription =
-  "Boutique en ligne spécialisée dans le matériel et les produits professionnels pour barbiers et coiffeurs. Tondeuses, ciseaux, rasoirs, soins et accessoires.";
+  "Barber Paradise, la référence du matériel barber professionnel. Tondeuses, ciseaux, cosmétiques barber — Livraison rapide en France et en Europe.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: "Barber Paradise - Matériel & Produits de Barbier Professionnel",
+  title: {
+    default: siteTitle,
+    template: "%s | Barber Paradise",
+  },
   description: siteDescription,
+  keywords: [
+    "barber",
+    "tondeuse professionnelle",
+    "matériel barbier",
+    "ciseaux coiffeur",
+    "cosmétiques barbe",
+    "JRL",
+    "Wahl",
+    "Gamma+",
+  ],
   alternates: {
     canonical: "/",
   },
@@ -18,13 +32,26 @@ export const metadata: Metadata = {
     locale: "fr_FR",
     url: SITE_URL,
     siteName: "Barber Paradise",
-    title: "Barber Paradise - Matériel & Produits de Barbier Professionnel",
+    title: siteTitle,
     description: siteDescription,
+    images: [
+      {
+        url: "/og-image.jpg",
+        width: 1200,
+        height: 630,
+        alt: "Barber Paradise",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Barber Paradise - Matériel & Produits de Barbier Professionnel",
+    site: "@barberparadise",
+    title: siteTitle,
     description: siteDescription,
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 

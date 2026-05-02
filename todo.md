@@ -103,3 +103,9 @@
 - [x] Importer ou rattacher les images pertinentes au produit via le flux média existant sans hotlink direct vers le site de la marque.
 - [x] Connecter l’interface admin SEO au nouveau flux : champ URL, bouton d’analyse, état de chargement, prévisualisation éditable, création de la fiche produit et messages d’erreur.
 - [x] Valider le flux avec une URL produit exemple, puis exécuter les builds frontend/backend avant push GitHub.
+
+- [x] Vérifier ou créer `frontend/src/app/sitemap.ts` avec pages statiques, produits actifs, marques et catégories dynamiques en domaine canonique BarberParadise.
+- [x] Vérifier ou créer `frontend/src/app/robots.ts` avec règles publiques, exclusions admin/compte/commande/panier/auth/API et lien vers le sitemap.
+- [x] Vérifier que `frontend/src/app/layout.tsx` définit correctement `metadataBase`, Open Graph, Twitter, keywords et robots globaux.
+- [x] Valider que le build Next.js passe proprement après les ajustements sitemap, robots et métadonnées.
+- [x] Vérifier localement que `/sitemap.xml` et `/robots.txt` répondent correctement avant push GitHub.

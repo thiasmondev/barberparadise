@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { API_URL } from "@/lib/api";
 import { absoluteUrl } from "@/lib/site";
-import type { Category, Product } from "@/types";
+import type { Brand, Category, Product } from "@/types";
 
 const now = new Date();
 
@@ -19,31 +19,31 @@ async function safeFetch<T>(endpoint: string): Promise<T | null> {
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticRoutes: MetadataRoute.Sitemap = [
-    "",
-    "/catalogue",
-    "/contact",
-    "/compte",
-    "/connexion",
-    "/inscription",
-    "/panier",
-    "/blog",
-    "/cgv",
-    "/mentions-legales",
-    "/politique-de-confidentialite",
-    "/cookies",
-  ].map((path) => ({
-    url: absoluteUrl(path || "/"),
+    { path: "/", changeFrequency: "daily" as const, priority: 1 },
+    { path: "/catalogue", changeFrequency: "daily" as const, priority: 0.9 },
+    { path: "/marques", changeFrequency: "weekly" as const, priority: 0.8 },
+    { path: "/nouveautes", changeFrequency: "daily" as const, priority: 0.8 },
+    { path: "/blog", changeFrequency: "weekly" as const, priority: 0.7 },
+    { path: "/contact", changeFrequency: "monthly" as const, priority: 0.5 },
+    { path: "/cgv", changeFrequency: "monthly" as const, priority: 0.3 },
+    { path: "/mentions-legales", changeFrequency: "monthly" as const, priority: 0.3 },
+    { path: "/politique-de-confidentialite", changeFrequency: "monthly" as const, priority: 0.3 },
+    { path: "/cookies", changeFrequency: "monthly" as const, priority: 0.3 },
+  ].map(({ path, changeFrequency, priority }) => ({
+    url: absoluteUrl(path),
     lastModified: now,
-    changeFrequency: path === "" || path === "/catalogue" ? "daily" : "monthly",
-    priority: path === "" ? 1 : path === "/catalogue" ? 0.9 : 0.5,
+    changeFrequency,
+    priority,
   }));
 
-  const productsResponse = await safeFetch<{
-    products: Product[];
-    pagination?: { total: number; page: number; pages: number; limit: number };
-  }>("/api/products?limit=500&sort=updated_desc");
-
-  const categories = await safeFetch<Category[]>("/api/categories");
+  const [productsResponse, categories, brands] = await Promise.all([
+    safeFetch<{
+      products: Product[];
+      pagination?: { total: number; page: number; pages: number; limit: number };
+    }>("/api/products?limit=500&sort=updated_desc"),
+    safeFetch<Category[]>("/api/categories"),
+    safeFetch<Brand[]>("/api/brands"),
+  ]);
 
   const productRoutes: MetadataRoute.Sitemap = (productsResponse?.products || [])
     .filter((product) => product.slug)
@@ -63,5 +63,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.7,
     }));
 
-  return [...staticRoutes, ...categoryRoutes, ...productRoutes];
+  const brandRoutes: MetadataRoute.Sitemap = (brands || [])
+    .filter((brand) => brand.slug)
+    .map((brand) => ({
+      url: absoluteUrl(`/marques/${brand.slug}`),
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.7,
+    }));
+
+  return [...staticRoutes, ...productRoutes, ...categoryRoutes, ...brandRoutes];
 }
