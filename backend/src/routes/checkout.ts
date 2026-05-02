@@ -46,6 +46,7 @@ type CheckoutRequestBody = {
 
 const CURRENCY = "EUR";
 const STANDARD_VAT_RATE = 20;
+const PRO_MINIMUM_ORDER_HT = 200;
 
 function generateOrderNumber(): string {
   const date = new Date();
@@ -244,8 +245,19 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
     }
 
     const country = normalizeCountry(shippingAddress.country);
-    const isB2B = Boolean(body.isB2B);
-    const vatNumber = typeof body.vatNumber === "string" ? body.vatNumber.trim().toUpperCase() : undefined;
+    const requestedB2B = Boolean(body.isB2B);
+    const proAccount = body.customerId
+      ? await prisma.proAccount.findUnique({ where: { customerId: body.customerId } })
+      : null;
+    const isApprovedPro = proAccount?.status === "approved";
+
+    if (requestedB2B && !isApprovedPro) {
+      res.status(403).json({ error: "Compte professionnel non approuvé" });
+      return;
+    }
+
+    const isB2B = isApprovedPro;
+    const vatNumber = typeof body.vatNumber === "string" ? body.vatNumber.trim().toUpperCase() : proAccount?.vatNumber || undefined;
     const allowedMethods = getAvailableMethods(country, isB2B);
     if (!allowedMethods.includes(body.paymentMethod)) {
       res.status(400).json({ error: "Méthode non disponible pour ce pays/profil" });
@@ -254,6 +266,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
 
     const orderItems = [];
     let subtotalTTC = 0;
+    let subtotalHT = 0;
     for (const item of body.cartItems) {
       const productId = item.productId || item.id;
       if (!productId || !Number.isInteger(item.quantity) || item.quantity <= 0) {
@@ -269,25 +282,37 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         res.status(400).json({ error: `Stock insuffisant pour ${product.name}` });
         return;
       }
-      subtotalTTC += product.price * item.quantity;
+
+      const unitHT = isB2B ? money(product.priceProEur ?? product.price / (1 + STANDARD_VAT_RATE / 100)) : money(product.price / (1 + STANDARD_VAT_RATE / 100));
+      const unitTTC = isB2B ? money(unitHT * (1 + getVatRate(country, true, vatNumber) / 100)) : product.price;
+      subtotalHT += unitHT * item.quantity;
+      subtotalTTC += unitTTC * item.quantity;
+
       orderItems.push({
         productId: product.id,
         name: product.name,
-        price: product.price,
+        price: isB2B ? unitHT : product.price,
         quantity: item.quantity,
         image: JSON.parse(product.images || "[]")[0] || "",
       });
     }
 
+    subtotalHT = money(subtotalHT);
     subtotalTTC = money(subtotalTTC);
-    const shippingOptions = calculateShippingOptions(country, subtotalTTC);
+
+    if (isB2B && subtotalHT < PRO_MINIMUM_ORDER_HT) {
+      res.status(400).json({ error: `Le minimum de commande professionnel est de ${PRO_MINIMUM_ORDER_HT} € HT` });
+      return;
+    }
+
+    const shippingOptions = calculateShippingOptions(country, isB2B ? subtotalHT : subtotalTTC);
     const selectedShippingOption = shippingOptions.find((option) => option.id === body.shippingOptionId) || shippingOptions[0];
     if (!selectedShippingOption) {
       res.status(400).json({ error: "Aucune option de livraison disponible pour ce pays" });
       return;
     }
     const shipping = selectedShippingOption.price;
-    const totalHT = money(subtotalTTC / (1 + STANDARD_VAT_RATE / 100));
+    const totalHT = subtotalHT;
     const vatRate = getVatRate(country, isB2B, vatNumber);
     const vatAmount = money(totalHT * (vatRate / 100));
     const totalTTC = money(totalHT + vatAmount + shipping);
@@ -303,7 +328,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         paymentMethod: body.paymentMethod,
         paymentProvider: provider,
         isB2B,
-        subtotal: subtotalTTC,
+        subtotal: isB2B ? subtotalHT : subtotalTTC,
         shipping,
         total: totalTTC,
         totalHT,

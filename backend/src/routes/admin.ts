@@ -280,7 +280,7 @@ adminRouter.get("/products", requireAdmin, async (req: Request, res: Response): 
 adminRouter.patch("/products/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const {
-      name, brand, category, subcategory, subsubcategory, price, originalPrice, inStock,
+      name, brand, category, subcategory, subsubcategory, price, priceProEur, originalPrice, inStock,
       description, isActive, isNew, weightG, lengthCm, widthCm, heightCm, isFragile,
       isLiquid, isAerosol, requiresGlass, logisticNote,
     } = req.body;
@@ -293,6 +293,7 @@ adminRouter.patch("/products/:id", requireAdmin, async (req: Request, res: Respo
         subcategory: subcategory || undefined,
         subsubcategory: subsubcategory !== undefined ? (subsubcategory || "") : undefined,
         price: price !== undefined ? parseFloat(price) : undefined,
+        priceProEur: toOptionalFloat(priceProEur),
         originalPrice: originalPrice !== undefined ? toOptionalFloat(originalPrice) : undefined,
         inStock: inStock !== undefined ? Boolean(inStock) : undefined,
         description: description || undefined,
@@ -331,7 +332,7 @@ adminRouter.delete("/products/:id", requireAdmin, async (req: Request, res: Resp
 adminRouter.post("/products", requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const {
-      name, brand, category, subcategory, price, originalPrice, inStock, description, isActive,
+      name, brand, category, subcategory, price, priceProEur, originalPrice, inStock, description, isActive,
       weightG, lengthCm, widthCm, heightCm, isFragile, isLiquid, isAerosol, requiresGlass, logisticNote,
     } = req.body;
     const product = await prisma.product.create({
@@ -344,6 +345,7 @@ adminRouter.post("/products", requireAdmin, async (req: Request, res: Response):
         category,
         subcategory,
         price: parseFloat(price),
+        priceProEur: toOptionalFloat(priceProEur) ?? null,
         originalPrice: originalPrice ? parseFloat(originalPrice) : null,
         inStock: inStock ? true : false,
         description,

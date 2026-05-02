@@ -54,6 +54,54 @@ customersRouter.get("/me/orders", requireAuth, async (req: AuthRequest, res: Res
   }
 });
 
+// GET /api/customers/me/invoices — Factures professionnelles du client connecté
+customersRouter.get("/me/invoices", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const invoices = await prisma.order.findMany({
+      where: {
+        customerId: req.user!.id,
+        isB2B: true,
+        proInvoiceNumber: { not: null },
+        proInvoiceUrl: { not: null },
+      },
+      select: {
+        id: true,
+        orderNumber: true,
+        proInvoiceNumber: true,
+        proInvoiceUrl: true,
+        totalHT: true,
+        vatRate: true,
+        vatAmount: true,
+        totalTTC: true,
+        total: true,
+        currency: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json({
+      invoices: invoices.map((invoice) => ({
+        id: invoice.id,
+        orderNumber: invoice.orderNumber,
+        invoiceNumber: invoice.proInvoiceNumber,
+        invoiceUrl: invoice.proInvoiceUrl,
+        downloadUrl: invoice.proInvoiceUrl,
+        issuedAt: invoice.updatedAt,
+        totalHT: invoice.totalHT,
+        vatRate: invoice.vatRate,
+        vatAmount: invoice.vatAmount,
+        totalTTC: invoice.totalTTC || invoice.total,
+        currency: invoice.currency,
+      })),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur récupération factures" });
+  }
+});
+
 // GET /api/customers/me/orders/:orderId — Détail d'une commande du client connecté
 customersRouter.get("/me/orders/:orderId", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   try {

@@ -158,6 +158,9 @@ export interface Order {
   vatAmount?: number;
   totalTTC?: number;
   currency?: string;
+  isB2B?: boolean;
+  proInvoiceNumber?: string | null;
+  proInvoiceUrl?: string | null;
   customerEmail?: string | null;
   billingAddress?: unknown;
   notes: string | null;

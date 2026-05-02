@@ -30,6 +30,7 @@ import importReviewsRouter from "./routes/import-reviews";
 import brandsRouter from "./routes/brands";
 import { checkoutRouter } from "./routes/checkout";
 import { webhooksRouter } from "./routes/webhooks";
+import { proRouter } from "./routes/pro";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -56,6 +57,7 @@ app.use("/api/admin/import-reviews", importReviewsRouter);
 app.use("/api/brands", brandsRouter);
 app.use("/api/checkout", checkoutRouter);
 app.use("/api/webhooks", webhooksRouter);
+app.use("/api/pro", proRouter);
 
 // ─── Root & Health Check ─────────────────────────────────────
 app.get("/", (_req, res) => {
@@ -70,6 +72,7 @@ app.get("/", (_req, res) => {
       orders: "/api/orders",
       checkout: "/api/checkout/initiate",
       webhooks: "/api/webhooks/:provider",
+      pro: "/api/pro",
       auth: "/api/auth",
       blog: "/api/blog",
       admin: "/api/admin",

@@ -128,3 +128,32 @@
 - [x] Ajouter ou mettre à jour les tests de régression TVA multi-pays.
 - [x] Valider les builds frontend/backend et les tests avant push GitHub.
 - [x] Committer et pousser la gestion TVA multi-pays sur `main`.
+
+- [x] Ajouter le modèle Prisma `ProAccount` avec statut de demande pro, informations entreprise, SIRET, TVA, téléphone, approbation et refus.
+- [x] Ajouter le champ Prisma `Product.priceProEur` pour le prix professionnel HT optionnel.
+- [x] Créer la migration Prisma `add_b2b` pour `ProAccount` et `priceProEur`.
+- [ ] Créer la page publique `/pro` avec avantages, FAQ, CTA et liens header/footer.
+- [ ] Créer la page `/pro/inscription` avec formulaire pro validant activité, téléphone, SIRET optionnel et TVA optionnelle.
+- [x] Créer `POST /api/pro/register` pour enregistrer une demande pro connectée au statut `pending` et envoyer les emails requis.
+- [x] Créer les endpoints admin pro pour lister, consulter, approuver, refuser et suspendre les demandes professionnelles.
+- [ ] Créer le panel admin `/admin/pro` avec onglets En attente, Approuvés et Refusés.
+- [ ] Créer la page détail admin `/admin/pro/[id]` avec actions Approuver, Refuser et Suspendre.
+- [ ] Ajouter dans `/admin/seo/produit` le champ `Prix pro HT (€)` avec validation inférieure au prix public TTC.
+- [x] Adapter `GET /api/products` et `GET /api/products/:slug` pour retourner les prix professionnels si le client connecté est pro approuvé.
+- [ ] Adapter catalogue et fiches produit pour afficher prix public barré, prix pro HT et badge `PRIX PRO`.
+- [ ] Adapter le panier pour afficher le minimum de commande pro 200 € HT et désactiver la validation si non atteint.
+- [x] Adapter `POST /api/checkout/initiate` pour bloquer les commandes pro sous 200 € HT.
+- [x] Adapter le tunnel de commande pro pour limiter les paiements à Pay by Bank et prélèvement SEPA, afficher les prix HT et appliquer la TVA selon situation.
+- [x] Générer une facture PDF pro après commande B2B payée avec mentions légales, TVA, lignes et totaux.
+- [x] Stocker la facture pro et l’envoyer en pièce jointe dans l’email de confirmation pro.
+- [x] Ajouter dans `/compte?tab=commandes` un bouton de téléchargement de facture pro.
+- [ ] Ajouter un bandeau header pour les comptes professionnels actifs.
+- [ ] Ajouter dans `/compte` un encart de demande pro pour non-pro et un état demande en attente.
+- [x] Valider les builds frontend/backend, les tests et les scénarios B2B ciblés avant push GitHub.
+- [ ] Committer et pousser l’espace B2B complet sur `main`.
+
+- [x] Générer automatiquement une facture PDF B2B conforme après confirmation du paiement avec numéro séquentiel `BP-PRO-2026-0001`, date d’émission, vendeur, client pro, SIRET, TVA intracommunautaire, lignes produits HT/TVA/TTC, totaux, mentions légales B2B, délai de paiement, pénalités de retard et rappel du minimum de commande 200 € HT.
+- [x] Stocker chaque facture pro générée sur Cloudinary et enregistrer son lien de téléchargement dans la commande ou un modèle de facture dédié.
+- [x] Envoyer automatiquement la facture PDF pro au client par email via Resend après confirmation du paiement.
+- [x] Créer la route authentifiée `GET /api/customers/me/invoices` retournant toutes les factures du client pro avec numéro, date, commande, montants et lien PDF.
+- [x] Ajouter dans l’espace client pro un onglet `Mes factures` listant les factures et proposant un bouton de téléchargement PDF.

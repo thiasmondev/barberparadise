@@ -47,6 +47,20 @@ export interface CustomerAddressInput {
   phone?: string;
 }
 
+export interface CustomerInvoice {
+  id: string;
+  orderNumber: string;
+  invoiceNumber: string;
+  invoiceUrl: string;
+  downloadUrl: string;
+  issuedAt: string;
+  totalHT: number;
+  vatRate: number;
+  vatAmount: number;
+  totalTTC: number;
+  currency: string;
+}
+
 async function parseApiError(response: Response, fallback: string): Promise<string> {
   try {
     const data = await response.json();
@@ -114,6 +128,11 @@ export async function getCustomerOrders(): Promise<Order[]> {
 
 export async function getCustomerOrder(orderId: string): Promise<Order> {
   return customerFetch<Order>(`/api/customers/me/orders/${orderId}`);
+}
+
+export async function getCustomerInvoices(): Promise<CustomerInvoice[]> {
+  const response = await customerFetch<{ invoices: CustomerInvoice[] }>("/api/customers/me/invoices");
+  return response.invoices;
 }
 
 export async function getCustomerAddresses(): Promise<CustomerAddress[]> {

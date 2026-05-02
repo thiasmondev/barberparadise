@@ -1,9 +1,67 @@
 import { Router, Request, Response } from "express";
+import jwt from "jsonwebtoken";
 import { prisma } from "../utils/prisma";
 import { requireAdmin } from "../middleware/auth";
 import { buildCategorySlugFilter, collectChildSlugs } from "../utils/categoryFilters";
 
 export const productsRouter = Router();
+
+type CustomerToken = { id: string; email: string };
+
+type JsonProduct = {
+  images?: string | null;
+  features?: string | null;
+  tags?: string | null;
+  priceProEur?: number | null;
+};
+
+async function isApprovedProRequest(req: Request): Promise<boolean> {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token || !process.env.JWT_SECRET) return false;
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET) as CustomerToken;
+    const account = await prisma.proAccount.findUnique({
+      where: { customerId: decoded.id },
+      select: { status: true },
+    });
+    return account?.status === "approved";
+  } catch {
+    return false;
+  }
+}
+
+function parseJsonArray(value?: string | null): unknown[] {
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function serializeProduct<T extends JsonProduct>(product: T, isApprovedPro: boolean) {
+  const parsed = {
+    ...product,
+    images: parseJsonArray(product.images),
+    features: parseJsonArray(product.features),
+    tags: parseJsonArray(product.tags),
+  } as Omit<T, "images" | "features" | "tags"> & {
+    images: unknown[];
+    features: unknown[];
+    tags: unknown[];
+    priceProEur?: number | null;
+    proPrice?: number | null;
+  };
+
+  if (isApprovedPro) {
+    parsed.proPrice = parsed.priceProEur ?? null;
+    return parsed;
+  }
+
+  const { priceProEur: _priceProEur, ...publicProduct } = parsed;
+  return publicProduct;
+}
 
 async function getAllChildSlugs(parentSlug: string): Promise<string[]> {
   return collectChildSlugs(parentSlug, (slug) =>
@@ -77,21 +135,14 @@ productsRouter.get("/", async (req: Request, res: Response): Promise<void> => {
     else if (sort === "updated_desc") orderBy = { updatedAt: "desc" };
     else if (sort === "newest") orderBy = { createdAt: "desc" };
 
-    const [products, total] = await Promise.all([
+    const [products, total, isApprovedPro] = await Promise.all([
       prisma.product.findMany({ where, orderBy, skip, take }),
       prisma.product.count({ where }),
+      isApprovedProRequest(req),
     ]);
 
-    // Parser les champs JSON
-    const parsed = products.map(p => ({
-      ...p,
-      images: JSON.parse(p.images || "[]"),
-      features: JSON.parse(p.features || "[]"),
-      tags: JSON.parse(p.tags || "[]"),
-    }));
-
     res.json({
-      products: parsed,
+      products: products.map((product) => serializeProduct(product, isApprovedPro)),
       pagination: {
         page: parseInt(page),
         limit: take,
@@ -106,14 +157,17 @@ productsRouter.get("/", async (req: Request, res: Response): Promise<void> => {
 });
 
 // GET /api/products/featured — Produits mis en avant
-productsRouter.get("/featured", async (_req: Request, res: Response): Promise<void> => {
+productsRouter.get("/featured", async (req: Request, res: Response): Promise<void> => {
   try {
-    const products = await prisma.product.findMany({
-      where: { status: "active", rating: { gte: 4.5 } },
-      orderBy: { rating: "desc" },
-      take: 8,
-    });
-    res.json(products.map(p => ({ ...p, images: JSON.parse(p.images || "[]"), tags: JSON.parse(p.tags || "[]") })));
+    const [products, isApprovedPro] = await Promise.all([
+      prisma.product.findMany({
+        where: { status: "active", rating: { gte: 4.5 } },
+        orderBy: { rating: "desc" },
+        take: 8,
+      }),
+      isApprovedProRequest(req),
+    ]);
+    res.json(products.map((product) => serializeProduct(product, isApprovedPro)));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur serveur" });
@@ -121,14 +175,35 @@ productsRouter.get("/featured", async (_req: Request, res: Response): Promise<vo
 });
 
 // GET /api/products/promo — Produits en promotion
-productsRouter.get("/promo", async (_req: Request, res: Response): Promise<void> => {
+productsRouter.get("/promo", async (req: Request, res: Response): Promise<void> => {
   try {
-    const products = await prisma.product.findMany({
-      where: { status: "active", isPromo: true },
-      orderBy: { rating: "desc" },
-      take: 12,
+    const [products, isApprovedPro] = await Promise.all([
+      prisma.product.findMany({
+        where: { status: "active", isPromo: true },
+        orderBy: { rating: "desc" },
+        take: 12,
+      }),
+      isApprovedProRequest(req),
+    ]);
+    res.json(products.map((product) => serializeProduct(product, isApprovedPro)));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// GET /api/products/reviews/public — Avis approuvés pour la homepage
+productsRouter.get("/reviews/public", async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const reviews = await prisma.review.findMany({
+      where: { approved: true },
+      orderBy: { createdAt: "desc" },
+      take: 6,
+      include: {
+        product: { select: { name: true, brand: true } },
+      },
     });
-    res.json(products.map(p => ({ ...p, images: JSON.parse(p.images || "[]"), tags: JSON.parse(p.tags || "[]") })));
+    res.json(reviews);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur serveur" });
@@ -138,23 +213,23 @@ productsRouter.get("/promo", async (_req: Request, res: Response): Promise<void>
 // GET /api/products/:slug — Détail d'un produit
 productsRouter.get("/:slug", async (req: Request, res: Response): Promise<void> => {
   try {
-    const product = await prisma.product.findUnique({
-      where: { slug: req.params.slug },
-      include: {
-        reviews: { where: { approved: true }, orderBy: { createdAt: "desc" }, take: 10 },
-        variants: { orderBy: { order: "asc" } },
-      },
-    });
+    const [product, isApprovedPro] = await Promise.all([
+      prisma.product.findUnique({
+        where: { slug: req.params.slug },
+        include: {
+          reviews: { where: { approved: true }, orderBy: { createdAt: "desc" }, take: 10 },
+          variants: { orderBy: { order: "asc" } },
+        },
+      }),
+      isApprovedProRequest(req),
+    ]);
+
     if (!product) {
       res.status(404).json({ error: "Produit non trouvé" });
       return;
     }
-    res.json({
-      ...product,
-      images: JSON.parse(product.images || "[]"),
-      features: JSON.parse(product.features || "[]"),
-      tags: JSON.parse(product.tags || "[]"),
-    });
+
+    res.json(serializeProduct(product, isApprovedPro));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur serveur" });
@@ -211,23 +286,5 @@ productsRouter.delete("/:id", requireAdmin, async (req: Request, res: Response):
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur suppression produit" });
-  }
-});
-
-// GET /api/products/reviews/public — Avis approuvés pour la homepage
-productsRouter.get("/reviews/public", async (_req: Request, res: Response): Promise<void> => {
-  try {
-    const reviews = await prisma.review.findMany({
-      where: { approved: true },
-      orderBy: { createdAt: "desc" },
-      take: 6,
-      include: {
-        product: { select: { name: true, brand: true } },
-      },
-    });
-    res.json(reviews);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Erreur serveur" });
   }
 });

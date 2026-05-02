@@ -23,6 +23,7 @@ model Product {
   subcategory     String
   subsubcategory  String   @default("")
   price           Float
+  priceProEur     Float?    // Prix pro HT — null = même prix que B2C
   originalPrice   Float?
   images          String   // JSON array
   imageAlts        String   @default("[]") // JSON array of alt texts matching images order
@@ -128,6 +129,27 @@ model Customer {
   orders              Order[]
   wishlist            WishlistItem[]
   passwordResetTokens PasswordResetToken[]
+  proAccount          ProAccount?
+}
+
+model ProAccount {
+  id              String    @id @default(cuid())
+  customerId      String    @unique
+  customer        Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  companyName     String
+  siret           String?
+  vatNumber       String?
+  activity        String
+  phone           String
+  status          String    @default("pending") // pending, approved, rejected
+  rejectionReason String?
+  approvedAt      DateTime?
+  approvedBy      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
 }
 
 // ─── ADRESSES ────────────────────────────────────────────────
@@ -169,6 +191,8 @@ model Order {
   billingAddress Json?
   isB2B      Boolean     @default(false)
   vatNumber  String?
+  proInvoiceNumber String?
+  proInvoiceUrl    String?
   notes      String?
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt

@@ -11,6 +11,7 @@ type SendEmailParams = {
   to: string;
   subject: string;
   html: string;
+  attachments?: Array<{ filename: string; content: string }>;
 };
 
 export async function sendEmail(params: SendEmailParams): Promise<{ sent: boolean; skipped?: boolean; id?: string }> {
@@ -25,6 +26,7 @@ export async function sendEmail(params: SendEmailParams): Promise<{ sent: boolea
       to: params.to,
       subject: params.subject,
       html: params.html,
+      attachments: params.attachments,
     });
 
     if (response.error) {

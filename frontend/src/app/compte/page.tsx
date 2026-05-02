@@ -4,13 +4,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
-import { Heart, Loader2, LogOut, MapPin, Package, Trash2, UserRound } from "lucide-react";
+import { Download, FileText, Heart, Loader2, LogOut, MapPin, Package, Trash2, UserRound } from "lucide-react";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
 import type { Order, Product } from "@/types";
 import {
   createCustomerAddress,
   deleteCustomerAddress,
   getCustomerAddresses,
+  getCustomerInvoices,
   getCustomerOrders,
   getCustomerWishlist,
   removeCustomerWishlist,
@@ -18,11 +19,13 @@ import {
   updateCustomerMe,
   type CustomerAddress,
   type CustomerAddressInput,
+  type CustomerInvoice,
 } from "@/lib/customer-api";
 
 const tabs = [
   { id: "infos", label: "Mes informations", icon: UserRound },
   { id: "commandes", label: "Mes commandes", icon: Package },
+  { id: "factures", label: "Mes factures", icon: FileText },
   { id: "adresses", label: "Mes adresses", icon: MapPin },
   { id: "wishlist", label: "Ma wishlist", icon: Heart },
 ] as const;
@@ -93,6 +96,7 @@ function ComptePageContent() {
   const { customer, isAuthenticated, isLoading, logout } = useCustomerAuth();
   const [activeTab, setActiveTab] = useState<AccountTab>(tabs.some((tab) => tab.id === requestedTab) ? requestedTab! : "infos");
   const [orders, setOrders] = useState<Order[]>([]);
+  const [invoices, setInvoices] = useState<CustomerInvoice[]>([]);
   const [addresses, setAddresses] = useState<CustomerAddress[]>([]);
   const [wishlist, setWishlist] = useState<Product[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
@@ -117,13 +121,15 @@ function ComptePageContent() {
     async function loadAccountData() {
       setDataLoading(true);
       try {
-        const [ordersData, addressesData, wishlistData] = await Promise.all([
+        const [ordersData, invoicesData, addressesData, wishlistData] = await Promise.all([
           getCustomerOrders(),
+          getCustomerInvoices(),
           getCustomerAddresses(),
           getCustomerWishlist(),
         ]);
         if (!cancelled) {
           setOrders(ordersData);
+          setInvoices(invoicesData);
           setAddresses(addressesData);
           setWishlist(wishlistData);
         }
@@ -173,7 +179,7 @@ function ComptePageContent() {
           <aside className="h-fit border border-white/10 bg-[#131313] p-3">
             {tabs.map((tab) => {
               const Icon = tab.icon;
-              const count = tab.id === "commandes" ? orders.length : tab.id === "adresses" ? addresses.length : tab.id === "wishlist" ? totalWishlist : undefined;
+              const count = tab.id === "commandes" ? orders.length : tab.id === "factures" ? invoices.length : tab.id === "adresses" ? addresses.length : tab.id === "wishlist" ? totalWishlist : undefined;
               return (
                 <button
                   key={tab.id}
@@ -198,6 +204,7 @@ function ComptePageContent() {
               <>
                 {activeTab === "infos" && <ProfilePanel customer={customer} setMessage={setMessage} />}
                 {activeTab === "commandes" && <OrdersPanel orders={orders} />}
+                {activeTab === "factures" && <InvoicesPanel invoices={invoices} />}
                 {activeTab === "adresses" && <AddressesPanel addresses={addresses} setAddresses={setAddresses} setMessage={setMessage} />}
                 {activeTab === "wishlist" && <WishlistPanel products={wishlist} setProducts={setWishlist} setMessage={setMessage} />}
               </>
@@ -272,11 +279,41 @@ function OrdersPanel({ orders }: { orders: Order[] }) {
               </div>
               <p className="mt-2 text-sm text-white/45">{new Date(order.createdAt).toLocaleDateString("fr-FR")} · {order.items?.length || 0} article(s)</p>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-3 sm:justify-end">
               <p className="text-xl font-black">{order.total.toFixed(2)} €</p>
+              {order.proInvoiceUrl && (
+                <a href={order.proInvoiceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/70 hover:border-[#E91E8C] hover:text-white">
+                  <Download size={14} /> Facture PDF
+                </a>
+              )}
               <Link href={`/compte/commandes/${order.id}`} className="border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/70 hover:border-[#E91E8C] hover:text-white">Voir le détail</Link>
             </div>
           </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InvoicesPanel({ invoices }: { invoices: CustomerInvoice[] }) {
+  return (
+    <div>
+      <PanelTitle title="Mes factures" subtitle="Téléchargez vos factures professionnelles générées après confirmation du paiement." />
+      <div className="mt-8 space-y-4">
+        {invoices.length === 0 ? <EmptyState text="Aucune facture professionnelle disponible pour le moment." /> : invoices.map((invoice) => (
+          <article key={invoice.id} className="flex flex-col gap-4 border border-white/10 bg-black/20 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#E91E8C]">Facture {invoice.invoiceNumber}</p>
+              <h3 className="mt-2 font-black uppercase">Commande {invoice.orderNumber}</h3>
+              <p className="mt-2 text-sm text-white/45">Émise le {new Date(invoice.issuedAt).toLocaleDateString("fr-FR")} · HT {invoice.totalHT.toFixed(2)} € · TVA {invoice.vatAmount.toFixed(2)} €</p>
+            </div>
+            <div className="flex flex-col gap-3 sm:items-end">
+              <p className="text-xl font-black">{invoice.totalTTC.toFixed(2)} € TTC</p>
+              <a href={invoice.downloadUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/70 hover:border-[#E91E8C] hover:text-white">
+                <Download size={15} /> Télécharger PDF
+              </a>
+            </div>
+          </article>
         ))}
       </div>
     </div>
