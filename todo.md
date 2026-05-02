@@ -82,3 +82,4 @@
 - [x] Ajouter dans le footer les liens vers les quatre pages légales.
 - [x] Valider le build frontend après ajout des pages légales.
 - [x] Committer et pousser les pages légales sur `main`.
+- [x] Retirer des pages légales les mentions « Contenu importé depuis l’ancien site » et la note explicative indiquant que les contenus sont repris des pages légales existantes.

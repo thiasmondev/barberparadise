@@ -48,7 +48,6 @@ export default function LegalPage({ content, updatedAt }: { content: LegalPageCo
           </h1>
           <p className="mt-7 max-w-3xl text-base md:text-lg leading-8 text-gray-400">{content.intro}</p>
           <div className="mt-8 flex flex-wrap gap-3 text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">
-            <span className="border border-white/10 px-4 py-2">Contenu importé depuis l’ancien site</span>
             {updatedAt ? <span className="border border-white/10 px-4 py-2">Mis à jour le {updatedAt}</span> : null}
           </div>
         </div>
@@ -63,11 +62,6 @@ export default function LegalPage({ content, updatedAt }: { content: LegalPageCo
           </div>
         </article>
 
-        <div className="mt-10 border-t border-white/10 pt-6 text-xs leading-6 text-gray-500">
-          <p>
-            Ces contenus sont repris des pages légales Barber Paradise existantes et intégrés au nouveau parcours e-commerce. Pour toute question, contactez Barber Paradise à l’adresse indiquée dans les mentions légales.
-          </p>
-        </div>
       </section>
     </main>
   );
