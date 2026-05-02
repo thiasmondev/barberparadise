@@ -35,6 +35,8 @@ type ShippingOption = {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
 
+const EU_COUNTRIES = ["FR", "BE", "NL", "DE", "IT", "ES", "PT", "AT", "LU", "IE", "GR", "FI", "SE", "DK", "PL", "CZ", "HU", "RO", "SK", "SI", "HR", "BG", "LT", "LV", "EE", "CY", "MT"];
+
 const COUNTRY_CODE_BY_NAME: Record<string, string> = {
   France: "FR",
   Belgique: "BE",
@@ -70,6 +72,13 @@ function getCountryCode(countryName: string): string {
   return COUNTRY_CODE_BY_NAME[countryName] || countryName.toUpperCase().slice(0, 2) || "FR";
 }
 
+function getEstimatedVatRate(country: string, isB2B: boolean, vatNumber: string): number {
+  const normalizedCountry = country.toUpperCase();
+  if (!EU_COUNTRIES.includes(normalizedCountry)) return 0;
+  if (isB2B && vatNumber.trim() && normalizedCountry !== "FR") return 0;
+  return 20;
+}
+
 function supportsApplePay(): boolean {
   if (typeof window === "undefined") return false;
   const applePaySession = (window as unknown as { ApplePaySession?: { canMakePayments?: () => boolean } }).ApplePaySession;
@@ -91,13 +100,8 @@ export default function CheckoutPage() {
   const [selectedShippingOptionId, setSelectedShippingOptionId] = useState("");
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState("");
-
-  const selectedShippingOption = useMemo(
-    () => shippingOptions.find((option) => option.id === selectedShippingOptionId) || shippingOptions[0],
-    [selectedShippingOptionId, shippingOptions],
-  );
-  const shipping = selectedShippingOption?.price ?? 0;
-  const grandTotal = total + shipping;
+  const [isB2B, setIsB2B] = useState(false);
+  const [vatNumber, setVatNumber] = useState("");
 
   const [form, setForm] = useState({
     email: "",
@@ -112,7 +116,17 @@ export default function CheckoutPage() {
     telephone: "",
   });
 
+  const selectedShippingOption = useMemo(
+    () => shippingOptions.find((option) => option.id === selectedShippingOptionId) || shippingOptions[0],
+    [selectedShippingOptionId, shippingOptions],
+  );
+  const shipping = selectedShippingOption?.price ?? 0;
   const countryCode = useMemo(() => getCountryCode(form.pays), [form.pays]);
+  const vatRate = useMemo(() => getEstimatedVatRate(countryCode, isB2B, vatNumber), [countryCode, isB2B, vatNumber]);
+  const subtotalHT = useMemo(() => Math.round((total / 1.2 + Number.EPSILON) * 100) / 100, [total]);
+  const vatAmount = useMemo(() => Math.round((subtotalHT * (vatRate / 100) + Number.EPSILON) * 100) / 100, [subtotalHT, vatRate]);
+  const grandTotal = subtotalHT + vatAmount + shipping;
+
   const displayMethods = useMemo(
     () => availableMethods.filter((method) => method !== "apple_pay" || supportsApplePay()),
     [availableMethods],
@@ -184,7 +198,7 @@ export default function CheckoutPage() {
       setMethodsLoading(true);
       setPaymentError("");
       try {
-        const res = await fetch(`${API_URL}/api/checkout/available-methods?country=${countryCode}&isB2B=false`, {
+        const res = await fetch(`${API_URL}/api/checkout/available-methods?country=${countryCode}&isB2B=${isB2B}`, {
           signal: controller.signal,
         });
         const data = (await res.json()) as { methods?: PaymentMethod[]; error?: string };
@@ -203,7 +217,7 @@ export default function CheckoutPage() {
     }
     loadMethods();
     return () => controller.abort();
-  }, [countryCode]);
+  }, [countryCode, isB2B]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -237,6 +251,10 @@ export default function CheckoutPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  useEffect(() => {
+    if (!isB2B || countryCode === "FR") setVatNumber("");
+  }, [countryCode, isB2B]);
+
   const handleCheckout = async () => {
     setPaymentError("");
     setIsSubmittingPayment(true);
@@ -261,7 +279,8 @@ export default function CheckoutPage() {
           },
           paymentMethod,
           shippingOptionId: selectedShippingOption?.id,
-          isB2B: false,
+          isB2B,
+          vatNumber: vatNumber.trim() || undefined,
         }),
       });
 
@@ -383,6 +402,19 @@ export default function CheckoutPage() {
                   <div><label className={labelClass}>Complément (optionnel)</label><input type="text" value={form.complement} onChange={(e) => updateForm("complement", e.target.value)} placeholder="Appartement, bâtiment..." className={inputClass} /></div>
                   <div className="grid grid-cols-2 gap-6"><div><label className={labelClass}>Code postal</label><input type="text" value={form.codePostal} onChange={(e) => updateForm("codePostal", e.target.value)} placeholder="75001" className={inputClass} /></div><div><label className={labelClass}>Ville</label><input type="text" value={form.ville} onChange={(e) => updateForm("ville", e.target.value)} placeholder="Paris" className={inputClass} /></div></div>
                   <div><label className={labelClass}>Téléphone</label><input type="tel" value={form.telephone} onChange={(e) => updateForm("telephone", e.target.value)} placeholder="+33 6 12 34 56 78" className={inputClass} /></div>
+                  <div className="border border-white/10 bg-[#1c1b1b] p-5">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input type="checkbox" checked={isB2B} onChange={(e) => setIsB2B(e.target.checked)} className="mt-1 h-4 w-4 accent-[#ff4a8d]" />
+                      <span><span className="block text-xs font-black uppercase tracking-widest text-white">Commande professionnelle B2B</span><span className="mt-2 block text-[11px] leading-5 text-gray-500">Activez cette option pour une facturation entreprise et, hors France dans l’Union européenne, l’autoliquidation si votre numéro TVA est renseigné.</span></span>
+                    </label>
+                  </div>
+                  {isB2B && countryCode !== "FR" && EU_COUNTRIES.includes(countryCode) && (
+                    <div className="vat-number-field">
+                      <label className={labelClass}>Numéro TVA intracommunautaire</label>
+                      <input type="text" placeholder="FR12345678901" value={vatNumber} onChange={(e) => setVatNumber(e.target.value.toUpperCase())} className={inputClass} />
+                      <p className="mt-2 text-[11px] leading-5 text-gray-500">Si vous disposez d'un numéro TVA valide, la TVA ne sera pas appliquée.</p>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="space-y-3">
@@ -454,7 +486,7 @@ export default function CheckoutPage() {
                 );
               })}
             </div>
-            <div className="border-t border-white/5 pt-6 space-y-3"><div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total</span><span className="text-sm font-black">{formatPrice(total)}</span></div><div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>{shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>}</div><div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL</span><span className="text-2xl font-black">{formatPrice(grandTotal)}</span></div></div>
+            <div className="border-t border-white/5 pt-6 space-y-3"><div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total TTC catalogue</span><span className="text-sm font-black">{formatPrice(total)}</span></div><div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total HT</span><span className="text-sm font-black">{formatPrice(subtotalHT)}</span></div><div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">TVA ({vatRate}%)</span><span className="text-sm font-black">{formatPrice(vatAmount)}</span></div><div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>{shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>}</div><div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL</span><span className="text-2xl font-black">{formatPrice(grandTotal)}</span></div></div>
           </div>
         </div>
       </div>

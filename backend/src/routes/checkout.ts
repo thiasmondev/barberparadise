@@ -11,6 +11,7 @@ import {
   PaymentProvider,
 } from "../services/paymentRouter";
 import { calculateShippingOptions } from "../services/shippingCalculator";
+import { getVatRate } from "../services/vatCalculator";
 
 export const checkoutRouter = Router();
 
@@ -40,10 +41,11 @@ type CheckoutRequestBody = {
   paymentMethod: PaymentMethod;
   shippingOptionId?: string;
   isB2B?: boolean;
+  vatNumber?: string;
 };
 
 const CURRENCY = "EUR";
-const VAT_RATE = 20;
+const STANDARD_VAT_RATE = 20;
 
 function generateOrderNumber(): string {
   const date = new Date();
@@ -243,6 +245,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
 
     const country = normalizeCountry(shippingAddress.country);
     const isB2B = Boolean(body.isB2B);
+    const vatNumber = typeof body.vatNumber === "string" ? body.vatNumber.trim().toUpperCase() : undefined;
     const allowedMethods = getAvailableMethods(country, isB2B);
     if (!allowedMethods.includes(body.paymentMethod)) {
       res.status(400).json({ error: "Méthode non disponible pour ce pays/profil" });
@@ -284,9 +287,10 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       return;
     }
     const shipping = selectedShippingOption.price;
-    const totalTTC = money(subtotalTTC + shipping);
-    const totalHT = money(totalTTC / (1 + VAT_RATE / 100));
-    const vatAmount = money(totalTTC - totalHT);
+    const totalHT = money(subtotalTTC / (1 + STANDARD_VAT_RATE / 100));
+    const vatRate = getVatRate(country, isB2B, vatNumber);
+    const vatAmount = money(totalHT * (vatRate / 100));
+    const totalTTC = money(totalHT + vatAmount + shipping);
     const provider = getProvider(body.paymentMethod, country);
 
     const order = await prisma.order.create({
@@ -303,10 +307,11 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         shipping,
         total: totalTTC,
         totalHT,
-        vatRate: VAT_RATE,
+        vatRate,
         vatAmount,
         totalTTC,
         currency: CURRENCY,
+        vatNumber: vatNumber || null,
         billingAddress: (body.billingAddress || shippingAddress) as object,
         items: { create: orderItems },
         shippingAddress: {

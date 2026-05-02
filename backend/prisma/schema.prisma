@@ -168,6 +168,7 @@ model Order {
   customerEmail String?
   billingAddress Json?
   isB2B      Boolean     @default(false)
+  vatNumber  String?
   notes      String?
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt

@@ -1,3 +1,4 @@
+import { getVatEmailLabel } from "../services/vatCalculator";
 import { emailLayout, escapeHtml, formatAddress, formatCurrency } from "./utils";
 
 export function orderConfirmationEmail(params: {
@@ -6,6 +7,9 @@ export function orderConfirmationEmail(params: {
   items: { name: string; quantity: number; price: number; image?: string | null }[];
   totalHT: number;
   vatAmount: number;
+  vatRate: number;
+  vatNumber?: string | null;
+  isB2B?: boolean;
   totalTTC: number;
   shippingCost: number;
   shippingAddress: any;
@@ -21,6 +25,13 @@ export function orderConfirmationEmail(params: {
       <td style="padding:12px;border-bottom:1px solid #2A2A2A;color:#FFFFFF;text-align:right;">${formatCurrency(item.price * item.quantity)}</td>
     </tr>
   `).join("");
+
+  const vatLabel = getVatEmailLabel({
+    country: params.shippingAddress?.country || "FR",
+    isB2B: Boolean(params.isB2B),
+    vatNumber: params.vatNumber || undefined,
+    vatRate: params.vatRate,
+  });
 
   return emailLayout(`
     <tr>
@@ -53,7 +64,7 @@ export function orderConfirmationEmail(params: {
       <td style="padding:0 32px 24px;">
         <table width="100%" style="background:#161616;border-radius:6px;padding:16px;">
           <tr><td style="padding:8px 16px;color:#A0A0A0;">Sous-total HT</td><td style="padding:8px 16px;color:#FFFFFF;text-align:right;">${formatCurrency(params.totalHT)}</td></tr>
-          <tr><td style="padding:8px 16px;color:#A0A0A0;">TVA (20%)</td><td style="padding:8px 16px;color:#FFFFFF;text-align:right;">${formatCurrency(params.vatAmount)}</td></tr>
+          <tr><td style="padding:8px 16px;color:#A0A0A0;">${escapeHtml(vatLabel)}</td><td style="padding:8px 16px;color:#FFFFFF;text-align:right;">${formatCurrency(params.vatAmount)}</td></tr>
           <tr><td style="padding:8px 16px;color:#A0A0A0;">Livraison</td><td style="padding:8px 16px;color:#FFFFFF;text-align:right;">${params.shippingCost === 0 ? "Gratuite" : formatCurrency(params.shippingCost)}</td></tr>
           <tr style="border-top:1px solid #2A2A2A;"><td style="padding:12px 16px;color:#FFFFFF;font-weight:bold;font-size:16px;">TOTAL</td><td style="padding:12px 16px;color:#E91E8C;font-weight:bold;font-size:16px;text-align:right;">${formatCurrency(params.totalTTC)}</td></tr>
         </table>

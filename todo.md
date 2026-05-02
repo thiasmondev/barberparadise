@@ -118,3 +118,13 @@
 - [x] Mettre à jour l’étape livraison de `/commande` pour charger, afficher et sélectionner les options de livraison dynamiques après saisie du pays.
 - [x] Mettre à jour `/panier` pour remplacer les frais hardcodés par l’affichage livraison gratuite ou à partir de 3,99 € avec bandeau montant restant.
 - [x] Valider les builds frontend/backend et les tests après remplacement des frais de livraison hardcodés.
+
+- [x] Ajouter les champs Prisma `Order.vatNumber` et `Order.vatRate`, puis générer la migration `add_vat_number_to_order`.
+- [x] Implémenter dans `POST /api/checkout/initiate` le calcul TVA multi-pays selon pays, profil B2B et numéro TVA intracommunautaire.
+- [x] Stocker le numéro TVA et le taux TVA appliqué dans la commande.
+- [x] Ajouter dans `/commande` un champ optionnel de numéro TVA intracommunautaire pour les clients B2B EU hors France.
+- [x] Transmettre `vatNumber` depuis le frontend checkout vers le backend.
+- [x] Mettre à jour les emails transactionnels de confirmation de commande pour afficher TVA normale, autoliquidation ou exportation exonérée selon le cas.
+- [x] Ajouter ou mettre à jour les tests de régression TVA multi-pays.
+- [x] Valider les builds frontend/backend et les tests avant push GitHub.
+- [x] Committer et pousser la gestion TVA multi-pays sur `main`.
