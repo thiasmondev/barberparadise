@@ -110,3 +110,5 @@
 - [x] Valider que le build Next.js passe proprement après les ajustements sitemap, robots et métadonnées.
 - [x] Vérifier localement que `/sitemap.xml` et `/robots.txt` répondent correctement avant push GitHub.
 - [x] Ajouter dans l’agent SEO une option de recherche permettant de retrouver un produit existant par nom, slug, marque ou catégorie, puis de le sélectionner pour travailler dessus.
+- [x] Créer `scripts/generate-og-image.ts` pour générer l’image Open Graph BarberParadise 1200×630 avec fond noir, logo à gauche, séparateur rose, textes à droite et export JPEG qualité 90 dans `frontend/public/og-image.jpg`.
+- [x] Valider techniquement et visuellement `frontend/public/og-image.jpg`, puis committer et pousser l’image et le script sur GitHub.
