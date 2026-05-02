@@ -20,6 +20,7 @@ import {
   bulkGenerateImageAlts,
   generateProductDraftFromUrl,
   createProductFromUrlDraft,
+  getAdminProducts,
   type SeoOptimization,
   type GeoOptimization,
   type GeoEnrichedContent,
@@ -419,6 +420,13 @@ function SeoProductPageContent() {
   const [urlCreating, setUrlCreating] = useState(false);
   const [urlSuccess, setUrlSuccess] = useState("");
 
+  // Recherche d’un produit existant dans l’agent SEO
+  const [productSearchTerm, setProductSearchTerm] = useState("");
+  const [productSearchResults, setProductSearchResults] = useState<Product[]>([]);
+  const [productSearchOpen, setProductSearchOpen] = useState(false);
+  const [productSearchLoading, setProductSearchLoading] = useState(false);
+  const [productSearchError, setProductSearchError] = useState("");
+
   // Charger les métadonnées pour l'autocomplétion
   useEffect(() => {
     getProductsMeta()
@@ -476,6 +484,40 @@ function SeoProductPageContent() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [productId]);
+
+  useEffect(() => {
+    const query = productSearchTerm.trim();
+    if (query.length < 2) {
+      setProductSearchResults([]);
+      setProductSearchLoading(false);
+      setProductSearchError("");
+      return;
+    }
+
+    let cancelled = false;
+    setProductSearchLoading(true);
+    setProductSearchError("");
+    const timer = setTimeout(() => {
+      getAdminProducts({ search: query, limit: 8 })
+        .then((data) => {
+          if (!cancelled) setProductSearchResults(data.products);
+        })
+        .catch((err: any) => {
+          if (!cancelled) {
+            setProductSearchResults([]);
+            setProductSearchError(err.message || "Impossible de rechercher les produits.");
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setProductSearchLoading(false);
+        });
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [productSearchTerm]);
 
   // Sync champs éditables quand l'IA génère
   useEffect(() => {
@@ -705,16 +747,70 @@ function SeoProductPageContent() {
               <ChevronLeft size={16} /> Retour à l’agent SEO
             </Link>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <Sparkles className="text-violet-500" size={26} /> Créer un nouveau produit depuis une URL
+              <Sparkles className="text-violet-500" size={26} /> Agent SEO produit
             </h1>
             <p className="text-sm text-gray-500 mt-1 max-w-3xl">
-              Colle l’URL officielle d’une fiche produit de marque. L’agent extrait les données visibles, prépare les images candidates, rédige une fiche SEO/GEO en français et crée un brouillon à valider avant publication.
+              Recherche un produit existant pour l’optimiser, ou colle l’URL officielle d’une fiche produit de marque pour générer un nouveau brouillon SEO/GEO à valider avant publication.
             </p>
           </div>
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <label className="block text-sm font-semibold text-gray-800 mb-2">URL de la fiche produit source</label>
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div>
+              <p className="text-xs font-semibold text-violet-600 uppercase tracking-wide">Produit existant</p>
+              <h2 className="text-lg font-bold text-gray-900 mt-1">Rechercher un produit à optimiser</h2>
+              <p className="text-sm text-gray-500 mt-1">Recherche par nom, slug, marque ou catégorie, puis ouvre directement la fiche dans l’agent SEO.</p>
+            </div>
+            <Search className="text-violet-400" size={22} />
+          </div>
+          <div className="relative">
+            <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={productSearchTerm}
+              onChange={(e) => { setProductSearchTerm(e.target.value); setProductSearchOpen(true); }}
+              onFocus={() => setProductSearchOpen(true)}
+              placeholder="Ex : tondeuse, babyliss, haircut-ciseaux, capes..."
+              className="w-full border border-gray-200 rounded-xl pl-11 pr-4 py-3 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-300"
+            />
+            {productSearchLoading && <Loader2 size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-violet-500 animate-spin" />}
+
+            {productSearchOpen && productSearchTerm.trim().length >= 2 && (
+              <div className="absolute z-20 mt-2 w-full bg-white border border-gray-200 rounded-xl shadow-xl max-h-80 overflow-y-auto">
+                {productSearchError ? (
+                  <div className="px-4 py-3 text-sm text-red-600">{productSearchError}</div>
+                ) : productSearchResults.length > 0 ? (
+                  productSearchResults.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => router.push(`/admin/seo/produit?id=${p.id}`)}
+                      className="w-full px-4 py-3 text-left hover:bg-violet-50 border-b border-gray-100 last:border-b-0 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-gray-900 truncate">{p.name}</p>
+                          <p className="text-xs text-gray-500 truncate">/{(p as any).slug || p.handle} · {(p as any).brand || "Sans marque"}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="inline-flex px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[11px] font-medium">{(p as any).status || "—"}</span>
+                          <p className="text-xs text-gray-400 mt-1 truncate max-w-36">{p.category || "Sans catégorie"}</p>
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                ) : productSearchLoading ? (
+                  <div className="px-4 py-3 text-sm text-gray-500">Recherche en cours...</div>
+                ) : (
+                  <div className="px-4 py-3 text-sm text-gray-500">Aucun produit trouvé.</div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <label className="block text-sm font-semibold text-gray-800 mb-2">Créer un nouveau produit depuis une URL de fiche produit source</label>
           <div className="flex flex-col md:flex-row gap-3">
             <input
               type="url"

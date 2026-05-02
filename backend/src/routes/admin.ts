@@ -244,7 +244,12 @@ adminRouter.get("/products", requireAdmin, async (req: Request, res: Response): 
     if (category) where.category = category;
     if (search) where.OR = [
       { name: { contains: search, mode: "insensitive" } },
+      { slug: { contains: search, mode: "insensitive" } },
+      { handle: { contains: search, mode: "insensitive" } },
       { brand: { contains: search, mode: "insensitive" } },
+      { category: { contains: search, mode: "insensitive" } },
+      { subcategory: { contains: search, mode: "insensitive" } },
+      { subsubcategory: { contains: search, mode: "insensitive" } },
     ];
     const [products, total] = await Promise.all([
       prisma.product.findMany({

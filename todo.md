@@ -109,3 +109,4 @@
 - [x] Vérifier que `frontend/src/app/layout.tsx` définit correctement `metadataBase`, Open Graph, Twitter, keywords et robots globaux.
 - [x] Valider que le build Next.js passe proprement après les ajustements sitemap, robots et métadonnées.
 - [x] Vérifier localement que `/sitemap.xml` et `/robots.txt` répondent correctement avant push GitHub.
+- [x] Ajouter dans l’agent SEO une option de recherche permettant de retrouver un produit existant par nom, slug, marque ou catégorie, puis de le sélectionner pour travailler dessus.
