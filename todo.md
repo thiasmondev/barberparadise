@@ -64,3 +64,4 @@
 - [x] Brancher l’email d’expédition lors du passage de commande au statut expédié si le flux admin existe.
 - [x] Valider les builds backend/frontend après intégration emails transactionnels.
 - [x] Committer et pousser l’intégration emails transactionnels sur `main`.
+- [x] Corriger les boutons de `/commande/succes` pour utiliser des liens Next.js vers `/compte?tab=commandes` et `/catalogue`.

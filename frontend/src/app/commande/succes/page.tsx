@@ -123,12 +123,20 @@ export default function OrderSuccessPage() {
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3">
-            <Link href="/compte?tab=commandes" className="flex-1 flex items-center justify-center gap-3 bg-[#ff4a8d] hover:bg-[#ff1f70] text-white py-5 text-xs font-black tracking-widest uppercase transition-colors">
-              Voir mes commandes
+            <Link
+              href={{ pathname: "/compte", query: { tab: "commandes" } }}
+              aria-label="Voir mes commandes"
+              className="flex-1 flex items-center justify-center gap-3 bg-[#ff4a8d] hover:bg-[#ff1f70] text-white py-5 text-xs font-black tracking-widest uppercase transition-colors cursor-pointer"
+            >
+              VOIR MES COMMANDES
               <ArrowRight size={14} />
             </Link>
-            <Link href="/catalogue" className="flex-1 flex items-center justify-center border border-white/10 hover:border-white/25 py-5 text-xs font-black tracking-widest uppercase transition-colors">
-              Continuer mes achats
+            <Link
+              href="/catalogue"
+              aria-label="Continuer mes achats"
+              className="flex-1 flex items-center justify-center border border-white/10 hover:border-white/25 py-5 text-xs font-black tracking-widest uppercase transition-colors cursor-pointer"
+            >
+              CONTINUER MES ACHATS
             </Link>
           </div>
         </div>
