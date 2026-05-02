@@ -55,3 +55,12 @@
 - [x] Créer la page frontend `/compte/commandes/[orderId]` avec statut coloré, date, produits, livraison, récapitulatif financier, paiement et retour vers mes commandes.
 - [x] Connecter le bouton `VOIR LE DÉTAIL` dans `/compte?tab=commandes` vers `/compte/commandes/[orderId]`.
 - [x] Valider le build frontend et les vérifications backend ciblées avant push GitHub.
+- [x] Installer les dépendances backend `resend` et `@react-email/components` pour les emails transactionnels.
+- [x] Ajouter la configuration email backend avec `RESEND_API_KEY` et `FROM_EMAIL`, sans exposer la clé dans le code.
+- [x] Créer le service `src/services/emailService.ts` avec envoi Resend sécurisé et désactivation contrôlée si la clé est absente.
+- [x] Créer les templates HTML transactionnels de confirmation de commande, expédition, bienvenue et réinitialisation de mot de passe.
+- [x] Brancher l’email de bienvenue à l’inscription client.
+- [x] Brancher l’email de confirmation après création ou paiement de commande selon le flux existant.
+- [x] Brancher l’email d’expédition lors du passage de commande au statut expédié si le flux admin existe.
+- [x] Valider les builds backend/frontend après intégration emails transactionnels.
+- [ ] Committer et pousser l’intégration emails transactionnels sur `main`.

@@ -98,9 +98,10 @@ model Customer {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  addresses Address[]
-  orders    Order[]
-  wishlist  WishlistItem[]
+  addresses           Address[]
+  orders              Order[]
+  wishlist            WishlistItem[]
+  passwordResetTokens PasswordResetToken[]
 }
 
 // ─── ADRESSES ────────────────────────────────────────────────
@@ -211,6 +212,19 @@ model WishlistItem {
 }
 
 // ─── ADMIN ───────────────────────────────────────────────────
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  customerId String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([expiresAt])
+}
+
 model Admin {
   id        String   @id @default(cuid())
   email     String   @unique

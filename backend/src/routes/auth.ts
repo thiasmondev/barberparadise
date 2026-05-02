@@ -1,10 +1,22 @@
 import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import rateLimit from "express-rate-limit";
 import { prisma } from "../utils/prisma";
+import { getCustomerName, sendPasswordResetEmail, sendWelcomeEmail } from "../services/emailService";
 
 export const authRouter = Router();
+
+const PASSWORD_RESET_TOKEN_MINUTES = 60;
+
+function getFrontendUrl(): string {
+  return process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "http://localhost:3000";
+}
+
+function hashToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
 
 // ─── Rate Limiting ────────────────────────────────────────────
 // Max 10 tentatives par IP sur 15 minutes pour login et register
@@ -45,6 +57,12 @@ authRouter.post("/register", authLimiter, async (req: Request, res: Response): P
       { expiresIn: "7d" }
     );
 
+    await sendWelcomeEmail({
+      to: customer.email,
+      customerName: getCustomerName(customer, customer.email),
+      catalogueUrl: `${getFrontendUrl()}/catalogue`,
+    });
+
     const { password: _, ...safeCustomer } = customer;
     res.status(201).json({ token, user: safeCustomer });
   } catch (err) {
@@ -82,6 +100,85 @@ authRouter.post("/login", authLimiter, async (req: Request, res: Response): Prom
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur connexion" });
+  }
+});
+
+// POST /api/auth/forgot-password — Demander un lien de réinitialisation
+// eslint-disable-next-line @typescript-eslint/no-misused-promises
+authRouter.post("/forgot-password", authLimiter, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email } = req.body as { email?: string };
+    if (!email) {
+      res.status(400).json({ error: "Email requis" });
+      return;
+    }
+
+    const customer = await prisma.customer.findUnique({ where: { email: email.toLowerCase() } });
+    if (customer) {
+      await prisma.passwordResetToken.updateMany({
+        where: { customerId: customer.id, usedAt: null, expiresAt: { gt: new Date() } },
+        data: { usedAt: new Date() },
+      });
+
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + PASSWORD_RESET_TOKEN_MINUTES * 60 * 1000);
+      await prisma.passwordResetToken.create({
+        data: {
+          customerId: customer.id,
+          tokenHash: hashToken(rawToken),
+          expiresAt,
+        },
+      });
+
+      await sendPasswordResetEmail({
+        to: customer.email,
+        customerName: getCustomerName(customer, customer.email),
+        resetUrl: `${getFrontendUrl()}/reinitialiser-mot-de-passe?token=${rawToken}`,
+        expiresInMinutes: PASSWORD_RESET_TOKEN_MINUTES,
+      });
+    }
+
+    res.json({ message: "Si un compte existe avec cet email, un lien de réinitialisation a été envoyé." });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// POST /api/auth/reset-password — Réinitialiser le mot de passe avec un token
+// eslint-disable-next-line @typescript-eslint/no-misused-promises
+authRouter.post("/reset-password", authLimiter, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { token, password } = req.body as { token?: string; password?: string };
+    if (!token || !password) {
+      res.status(400).json({ error: "Token et mot de passe requis" });
+      return;
+    }
+    if (password.length < 8) {
+      res.status(400).json({ error: "Le mot de passe doit contenir au moins 8 caractères" });
+      return;
+    }
+
+    const resetToken = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash: hashToken(token) },
+      include: { customer: true },
+    });
+
+    if (!resetToken || resetToken.usedAt || resetToken.expiresAt < new Date()) {
+      res.status(400).json({ error: "Lien de réinitialisation invalide ou expiré" });
+      return;
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 12);
+    await prisma.$transaction([
+      prisma.customer.update({ where: { id: resetToken.customerId }, data: { password: hashedPassword } }),
+      prisma.passwordResetToken.update({ where: { id: resetToken.id }, data: { usedAt: new Date() } }),
+    ]);
+
+    res.json({ message: "Mot de passe réinitialisé avec succès" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur serveur" });
   }
 });
 

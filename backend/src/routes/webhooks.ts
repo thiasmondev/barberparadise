@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import crypto from "crypto";
 import { prisma } from "../utils/prisma";
+import { formatPaymentMethod, getCustomerName, sendOrderConfirmationEmail } from "../services/emailService";
 
 export const webhooksRouter = Router();
 
@@ -124,6 +125,32 @@ async function markOrderPaid(orderId: string, provider: WebhookProvider, provide
   });
 }
 
+async function sendOrderPaidEmail(orderId: string): Promise<void> {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { items: true, shippingAddress: true, customer: true },
+  });
+  if (!order?.email) return;
+
+  await sendOrderConfirmationEmail({
+    to: order.email,
+    orderNumber: order.orderNumber,
+    customerName: getCustomerName(order.customer, order.email),
+    items: order.items.map(item => ({
+      name: item.name,
+      quantity: item.quantity,
+      price: item.price,
+      image: item.image,
+    })),
+    totalHT: order.subtotal,
+    vatAmount: order.vatAmount,
+    totalTTC: order.total,
+    shippingCost: order.shipping,
+    shippingAddress: order.shippingAddress,
+    paymentMethod: formatPaymentMethod(order.paymentMethod),
+  });
+}
+
 async function findOrderIdByProviderPaymentId(providerPaymentId: string): Promise<string | null> {
   const order = await prisma.order.findFirst({ where: { providerPaymentId }, select: { id: true } });
   return order?.id || null;
@@ -149,6 +176,7 @@ webhooksRouter.post("/mollie", async (req: Request, res: Response): Promise<void
     const orderId = payment.metadata?.orderId || (await findOrderIdByProviderPaymentId(payment.id));
     if (payment.status === "paid" && orderId) {
       const changed = await markOrderPaid(orderId, "mollie", payment.id);
+      if (changed) await sendOrderPaidEmail(orderId);
       console.log("Webhook Mollie paid", { orderId, paymentId: payment.id, changed });
     }
     if (["failed", "canceled", "expired"].includes(payment.status || "") && orderId) {
@@ -176,6 +204,7 @@ webhooksRouter.post("/paypal", async (req: Request, res: Response): Promise<void
 
     if (eventType === "PAYMENT.CAPTURE.COMPLETED" && orderId) {
       const changed = await markOrderPaid(orderId, "paypal", resource?.id || resource?.supplementary_data?.related_ids?.order_id);
+      if (changed) await sendOrderPaidEmail(orderId);
       console.log("Webhook PayPal paid", { orderId, eventType, changed });
     }
     res.json({ received: true });
@@ -197,6 +226,7 @@ webhooksRouter.post("/checkout", async (req: Request, res: Response): Promise<vo
     const orderId = req.body?.data?.reference || req.body?.reference;
     if (["payment_approved", "payment_captured", "payment_capture_pending"].includes(type) && orderId) {
       const changed = await markOrderPaid(orderId, "checkout", req.body?.data?.id || req.body?.id);
+      if (changed) await sendOrderPaidEmail(orderId);
       console.log("Webhook Checkout.com paid", { orderId, type, changed });
     }
     res.json({ received: true });

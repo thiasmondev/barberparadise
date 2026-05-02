@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../utils/prisma";
+import { getCustomerName, sendOrderShippedEmail } from "../services/emailService";
 import { requireAdmin, AuthRequest } from "../middleware/auth";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
@@ -332,10 +333,23 @@ adminRouter.get("/orders/:id", requireAdmin, async (req: Request, res: Response)
 adminRouter.patch("/orders/:id/status", requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const { status } = req.body;
+    const previousOrder = await prisma.order.findUnique({
+      where: { id: req.params.id },
+      include: { customer: true },
+    });
     const order = await prisma.order.update({
       where: { id: req.params.id },
       data: { status },
+      include: { customer: true },
     });
+    const shippingEmailStatuses = new Set(["shipped", "delivered", "EXPÉDIÉ"]);
+    if (shippingEmailStatuses.has(status) && !shippingEmailStatuses.has(previousOrder?.status || "") && order.email) {
+      await sendOrderShippedEmail({
+        to: order.email,
+        orderNumber: order.orderNumber,
+        customerName: getCustomerName(order.customer, order.email),
+      });
+    }
     res.json(order);
   } catch (err) {
     console.error(err);

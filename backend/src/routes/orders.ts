@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../utils/prisma";
+import { formatPaymentMethod, getCustomerName, sendOrderConfirmationEmail, sendOrderShippedEmail } from "../services/emailService";
 import { requireAuth, requireAdmin, AuthRequest } from "../middleware/auth";
 
 export const ordersRouter = Router();
@@ -67,6 +68,21 @@ ordersRouter.post("/", async (req: Request, res: Response): Promise<void> => {
       },
       include: { items: true, shippingAddress: true },
     });
+
+    if (order.email) {
+      await sendOrderConfirmationEmail({
+        to: order.email,
+        orderNumber: order.orderNumber,
+        customerName: getCustomerName(null, order.email),
+        items: order.items.map(item => ({ name: item.name, quantity: item.quantity, price: item.price, image: item.image })),
+        totalHT: order.subtotal,
+        vatAmount: order.vatAmount,
+        totalTTC: order.total,
+        shippingCost: order.shipping,
+        shippingAddress: order.shippingAddress,
+        paymentMethod: formatPaymentMethod(order.paymentMethod),
+      });
+    }
 
     res.status(201).json(order);
   } catch (err) {
@@ -139,10 +155,23 @@ ordersRouter.get("/", requireAdmin, async (req: Request, res: Response): Promise
 ordersRouter.put("/:id/status", requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const { status } = req.body;
+    const previousOrder = await prisma.order.findUnique({
+      where: { id: req.params.id },
+      include: { customer: true },
+    });
     const order = await prisma.order.update({
       where: { id: req.params.id },
       data: { status },
+      include: { customer: true },
     });
+    const shippingEmailStatuses = new Set(["shipped", "delivered", "EXPÉDIÉ"]);
+    if (shippingEmailStatuses.has(status) && !shippingEmailStatuses.has(previousOrder?.status || "") && order.email) {
+      await sendOrderShippedEmail({
+        to: order.email,
+        orderNumber: order.orderNumber,
+        customerName: getCustomerName(order.customer, order.email),
+      });
+    }
     res.json(order);
   } catch (err) {
     console.error(err);
