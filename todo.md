@@ -81,4 +81,4 @@
 - [x] Nettoyer les références Shopify non pertinentes dans les contenus légaux importés.
 - [x] Ajouter dans le footer les liens vers les quatre pages légales.
 - [x] Valider le build frontend après ajout des pages légales.
-- [ ] Committer et pousser les pages légales sur `main`.
+- [x] Committer et pousser les pages légales sur `main`.
