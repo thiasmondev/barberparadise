@@ -83,3 +83,9 @@
 - [x] Valider le build frontend après ajout des pages légales.
 - [x] Committer et pousser les pages légales sur `main`.
 - [x] Retirer des pages légales les mentions « Contenu importé depuis l’ancien site » et la note explicative indiquant que les contenus sont repris des pages légales existantes.
+- [x] Ajouter dans `next.config.js` les redirections 301 statiques Shopify vers les nouvelles routes BarberParadise.
+- [x] Créer `frontend/scripts/generate-redirects.ts` pour générer les redirections produits depuis la base de données.
+- [x] Générer et versionner `frontend/src/redirects/products.json` au format de redirections Next.js.
+- [x] Charger les redirections produits dynamiques dans `next.config.js` avant les redirections statiques.
+- [x] Valider `pnpm run build` après ajout des redirections SEO.
+- [ ] Committer et pousser les redirections SEO sur `main`.
