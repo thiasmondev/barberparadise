@@ -458,6 +458,7 @@ export interface ProductVariant {
   colorHex: string;
   size: string;
   price: number | null;
+  priceProEur?: number | null;
   stock: number;
   inStock: boolean;
   sku: string;
@@ -648,6 +649,14 @@ export function suspendAdminProAccount(id: string, reason?: string) { return adm
 
 // ─── Prix professionnels par marque ────────────────────────────
 
+export interface AdminProPriceVariant {
+  id: string;
+  name: string;
+  price: number | null;
+  priceProEur: number | null;
+  order?: number;
+}
+
 export interface AdminProPriceProduct {
   id: string;
   name: string;
@@ -657,6 +666,7 @@ export interface AdminProPriceProduct {
   price: number;
   priceProEur: number | null;
   status: string;
+  variants: AdminProPriceVariant[];
 }
 
 export interface AdminProPriceBrand {
@@ -679,7 +689,13 @@ export function getAdminProPricesByBrand(brandId: number) {
   return adminFetch<AdminProPricesResponse>(`/api/admin/pro/prices/${brandId}`);
 }
 
-export function saveAdminProPricesByBrand(brandId: number, prices: { productId: string; priceProEur: number | null }[]) {
+export interface AdminProPriceUpdate {
+  productId?: string;
+  variantId?: string;
+  priceProEur: number | null;
+}
+
+export function saveAdminProPricesByBrand(brandId: number, prices: AdminProPriceUpdate[]) {
   return adminFetch<AdminProPricesSaveResult>(`/api/admin/pro/prices/brand/${brandId}`, {
     method: "PUT",
     body: JSON.stringify({ prices }),

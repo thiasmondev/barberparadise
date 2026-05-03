@@ -201,3 +201,14 @@
 - [x] Rechercher et corriger toutes les mentions frontend de `49€` liées à la livraison pour respecter le profil pro.
 - [x] Valider les builds backend/frontend et les tests ciblés après correction de la livraison pro.
 - [x] Committer et pousser les corrections de livraison gratuite pro sur `main`.
+
+- [x] Ajouter `priceProEur Float?` au modèle Prisma `ProductVariant` avec migration `add_price_pro_to_variants`.
+- [x] Adapter les routes produit pour appliquer la priorité prix pro variante > prix pro produit > prix public variante/produit selon le statut pro approuvé.
+- [x] Adapter `/admin/pro/prices` pour afficher les variantes en sous-lignes indentées et masquer le champ produit parent quand des variantes existent.
+- [x] Adapter le bouton `Appliquer X% à tous` pour calculer les prix pros sur chaque variante individuellement.
+- [x] Adapter `GET /api/admin/pro/prices/:brandId` pour retourner les variantes avec `priceProEur` et les informations nécessaires à l’édition.
+- [x] Adapter `PUT /api/admin/pro/prices/brand/:brandId` pour accepter et valider les prix pros au niveau produit et variante.
+- [x] Adapter l’export CSV des prix pros pour produire une ligne par variante avec `id, slug, nom, variante, prix_public_ttc, prix_pro_ht`.
+- [x] Adapter l’import CSV des prix pros pour mettre à jour les prix produits ou variantes selon l’identifiant fourni.
+- [x] Valider la migration Prisma, les builds backend/frontend et les tests ciblés après ajout des prix pros variantes.
+- [ ] Committer et pousser la gestion des prix pros variantes sur `main`.

@@ -26,15 +26,18 @@ export default function ProductDetail({ product }: { product: Product }) {
   const [wishlistMessage, setWishlistMessage] = useState("");
   const publicPrice = typeof product.pricePublic === "number" ? product.pricePublic : product.price;
   const proPrice = typeof product.priceProEur === "number" ? product.priceProEur : null;
-  const showsProPrice = Boolean(product.isPro && proPrice !== null && !selectedVariant);
-  const discount = getDiscount(publicPrice, product.originalPrice);
+  const selectedVariantPublicPrice = typeof selectedVariant?.pricePublic === "number" ? selectedVariant.pricePublic : selectedVariant?.price ?? publicPrice;
+  const selectedVariantProPrice = selectedVariant && product.isPro && typeof selectedVariant.priceProEur === "number" ? selectedVariant.priceProEur : null;
+  const showsProPrice = Boolean(product.isPro && (selectedVariant ? selectedVariantProPrice !== null : proPrice !== null));
+  const referencePublicPrice = selectedVariant ? selectedVariantPublicPrice : publicPrice;
+  const discount = getDiscount(referencePublicPrice, product.originalPrice);
 
   const variants = product.variants ?? [];
   const colorVariants = variants.filter((v) => v.type === "color");
   const sizeVariants = variants.filter((v) => v.type === "size");
   const otherVariants = variants.filter((v) => v.type === "other");
 
-  const displayPrice = selectedVariant?.price != null ? selectedVariant.price : showsProPrice ? proPrice! : product.price;
+  const displayPrice = selectedVariant ? selectedVariantProPrice ?? selectedVariant.price ?? product.price : showsProPrice ? proPrice! : product.price;
   const isInStock = selectedVariant ? selectedVariant.inStock : product.inStock;
 
   const displayImages = useMemo(() => {
@@ -209,7 +212,7 @@ export default function ProductDetail({ product }: { product: Product }) {
                 </span>
                 {showsProPrice ? (
                   <span className="text-xl text-gray-600 line-through">
-                    Public {formatPrice(publicPrice)} TTC
+                    Public {formatPrice(referencePublicPrice)} TTC
                   </span>
                 ) : product.originalPrice && product.originalPrice > publicPrice ? (
                   <span className="text-xl text-gray-600 line-through">

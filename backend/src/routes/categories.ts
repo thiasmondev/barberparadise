@@ -7,11 +7,17 @@ export const categoriesRouter = Router();
 
 type CustomerToken = { id: string; email: string };
 
+type CategoryProductVariant = {
+  price?: number | null;
+  priceProEur?: number | null;
+};
+
 type CategoryProduct = {
   images?: string | null;
   tags?: string | null;
   price: number;
   priceProEur?: number | null;
+  variants?: CategoryProductVariant[];
 };
 
 async function isApprovedProRequest(req: Request): Promise<boolean> {
@@ -49,12 +55,32 @@ function serializeCategoryProduct<T extends CategoryProduct>(product: T, isAppro
     tags: unknown[];
     price: number;
     priceProEur?: number | null;
+    variants?: CategoryProductVariant[];
   };
   const hasPriceProEur = typeof parsed.priceProEur === "number" && parsed.priceProEur > 0;
   const pricePublic = parsed.price;
   const price = isApprovedPro && hasPriceProEur ? parsed.priceProEur! : pricePublic;
+  const variants = parsed.variants?.map((variant) => {
+    const variantPublicPrice = variant.price ?? pricePublic;
+    const variantHasPriceProEur = typeof variant.priceProEur === "number" && variant.priceProEur > 0;
+    const variantPrice = isApprovedPro
+      ? (variantHasPriceProEur ? variant.priceProEur! : (hasPriceProEur ? parsed.priceProEur! : variantPublicPrice))
+      : variantPublicPrice;
+    const serializedVariant = {
+      ...variant,
+      price: variantPrice,
+      pricePublic: variantPublicPrice,
+      hasPriceProEur: variantHasPriceProEur || (isApprovedPro && hasPriceProEur),
+    };
+    if (!isApprovedPro) {
+      const { priceProEur: _variantPriceProEur, ...publicVariant } = serializedVariant;
+      return publicVariant;
+    }
+    return serializedVariant;
+  });
   const serialized = {
     ...parsed,
+    ...(variants ? { variants } : {}),
     price,
     pricePublic,
     isPro: isApprovedPro,
@@ -88,6 +114,7 @@ categoriesRouter.get("/:slug/products", async (req: Request, res: Response): Pro
       prisma.product.findMany({
         where: { status: "active", OR: [{ category: slug }, { subcategory: slug }] },
         orderBy: { rating: "desc" },
+        include: { variants: { orderBy: { order: "asc" } } },
       }),
       isApprovedProRequest(req),
     ]);

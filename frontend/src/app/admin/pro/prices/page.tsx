@@ -22,8 +22,22 @@ import {
 } from "lucide-react";
 
 interface PriceDraft {
-  productId: string;
+  productId?: string;
+  variantId?: string;
   value: string;
+}
+
+interface PriceRow {
+  key: string;
+  productId?: string;
+  variantId?: string;
+  productName: string;
+  slug: string;
+  displayName: string;
+  isVariant: boolean;
+  publicPrice: number;
+  priceProEur: number | null;
+  status: string;
 }
 
 interface ImportResult {
@@ -42,6 +56,39 @@ const parseDraftPrice = (value: string): number | null => {
   const parsed = Number(trimmed.replace(",", "."));
   return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : NaN;
 };
+
+const buildPriceRows = (products: AdminProPriceProduct[]): PriceRow[] => products.flatMap((product): PriceRow[] => {
+  if (product.variants?.length) {
+    return product.variants.map((variant): PriceRow => ({
+      key: `variant:${variant.id}`,
+      variantId: variant.id,
+      productName: product.name,
+      slug: product.slug,
+      displayName: variant.name,
+      isVariant: true,
+      publicPrice: variant.price ?? product.price,
+      priceProEur: variant.priceProEur ?? null,
+      status: product.status,
+    }));
+  }
+
+  return [{
+    key: `product:${product.id}`,
+    productId: product.id,
+    productName: product.name,
+    slug: product.slug,
+    displayName: product.name,
+    isVariant: false,
+    publicPrice: product.price,
+    priceProEur: product.priceProEur ?? null,
+    status: product.status,
+  }];
+});
+
+const buildInitialDrafts = (products: AdminProPriceProduct[]) => Object.fromEntries(buildPriceRows(products).map((row) => [
+  row.key,
+  { productId: row.productId, variantId: row.variantId, value: row.priceProEur === null || row.priceProEur === undefined ? "" : String(row.priceProEur) },
+]));
 
 export default function AdminProPricesPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -65,13 +112,15 @@ export default function AdminProPricesPage() {
 
   const selectedBrand = selectedBrandIndex >= 0 ? brands[selectedBrandIndex] : null;
 
+  const priceRows = useMemo(() => buildPriceRows(products), [products]);
+
   const stats = useMemo(() => {
-    const configured = products.filter((product) => {
-      const parsed = parseDraftPrice(drafts[product.id]?.value ?? "");
+    const configured = priceRows.filter((row) => {
+      const parsed = parseDraftPrice(drafts[row.key]?.value ?? "");
       return parsed !== null && !Number.isNaN(parsed);
     }).length;
-    return { total: products.length, configured };
-  }, [drafts, products]);
+    return { total: priceRows.length, configured };
+  }, [drafts, priceRows]);
 
   useEffect(() => {
     const loadBrands = async () => {
@@ -102,10 +151,7 @@ export default function AdminProPricesPage() {
       try {
         const data = await getAdminProPricesByBrand(selectedBrandId);
         setProducts(data.products);
-        setDrafts(Object.fromEntries(data.products.map((product) => [
-          product.id,
-          { productId: product.id, value: product.priceProEur === null || product.priceProEur === undefined ? "" : String(product.priceProEur) },
-        ])));
+        setDrafts(buildInitialDrafts(data.products));
       } catch (err) {
         setProducts([]);
         setDrafts({});
@@ -117,14 +163,14 @@ export default function AdminProPricesPage() {
     loadProducts();
   }, [selectedBrandId]);
 
-  const updateDraft = (productId: string, value: string) => {
-    setDrafts((current) => ({ ...current, [productId]: { productId, value } }));
+  const updateDraft = (row: PriceRow, value: string) => {
+    setDrafts((current) => ({ ...current, [row.key]: { productId: row.productId, variantId: row.variantId, value } }));
   };
 
-  const getDiscount = (product: AdminProPriceProduct) => {
-    const parsed = parseDraftPrice(drafts[product.id]?.value ?? "");
-    if (parsed === null || Number.isNaN(parsed) || product.price <= 0) return null;
-    return Math.max(0, Math.round((1 - parsed / product.price) * 1000) / 10);
+  const getDiscount = (row: PriceRow) => {
+    const parsed = parseDraftPrice(drafts[row.key]?.value ?? "");
+    if (parsed === null || Number.isNaN(parsed) || row.publicPrice <= 0) return null;
+    return Math.max(0, Math.round((1 - parsed / row.publicPrice) * 1000) / 10);
   };
 
   const applyBulkDiscount = () => {
@@ -135,9 +181,9 @@ export default function AdminProPricesPage() {
     }
     setError(null);
     setSuccess(null);
-    setDrafts(Object.fromEntries(products.map((product) => {
-      const proPrice = Math.round(product.price * (1 - discount / 100) * 100) / 100;
-      return [product.id, { productId: product.id, value: proPrice.toFixed(2) }];
+    setDrafts(Object.fromEntries(priceRows.map((row) => {
+      const proPrice = Math.round(row.publicPrice * (1 - discount / 100) * 100) / 100;
+      return [row.key, { productId: row.productId, variantId: row.variantId, value: proPrice.toFixed(2) }];
     })));
   };
 
@@ -147,20 +193,18 @@ export default function AdminProPricesPage() {
     setError(null);
     setSuccess(null);
     try {
-      const prices = products.map((product) => {
-        const priceProEur = parseDraftPrice(drafts[product.id]?.value ?? "");
-        if (Number.isNaN(priceProEur)) throw new Error(`Prix invalide pour ${product.name}`);
-        if (priceProEur !== null && priceProEur >= product.price) throw new Error(`Le prix pro HT de ${product.name} doit être inférieur au prix public TTC.`);
-        return { productId: product.id, priceProEur };
+      const prices = priceRows.map((row) => {
+        const priceProEur = parseDraftPrice(drafts[row.key]?.value ?? "");
+        const label = row.isVariant ? `${row.productName} — ${row.displayName}` : row.productName;
+        if (Number.isNaN(priceProEur)) throw new Error(`Prix invalide pour ${label}`);
+        if (priceProEur !== null && priceProEur >= row.publicPrice) throw new Error(`Le prix pro HT de ${label} doit être inférieur au prix public TTC.`);
+        return { productId: row.productId, variantId: row.variantId, priceProEur };
       });
       const result = await saveAdminProPricesByBrand(selectedBrandId, prices);
       setSuccess(`${result.updated} prix sauvegardé${result.updated > 1 ? "s" : ""} pour ${selectedBrand.name}.`);
       const data = await getAdminProPricesByBrand(selectedBrandId);
       setProducts(data.products);
-      setDrafts(Object.fromEntries(data.products.map((product) => [
-        product.id,
-        { productId: product.id, value: product.priceProEur === null || product.priceProEur === undefined ? "" : String(product.priceProEur) },
-      ])));
+      setDrafts(buildInitialDrafts(data.products));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur de sauvegarde");
     } finally {
@@ -229,10 +273,7 @@ export default function AdminProPricesPage() {
       if (selectedBrandId) {
         const refreshed = await getAdminProPricesByBrand(selectedBrandId);
         setProducts(refreshed.products);
-        setDrafts(Object.fromEntries(refreshed.products.map((product) => [
-          product.id,
-          { productId: product.id, value: product.priceProEur === null || product.priceProEur === undefined ? "" : String(product.priceProEur) },
-        ])));
+        setDrafts(buildInitialDrafts(refreshed.products));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur import CSV");
@@ -330,7 +371,7 @@ export default function AdminProPricesPage() {
         <div className="flex flex-col gap-4 border-b border-gray-100 p-5 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <h2 className="font-heading text-xl font-bold text-dark-900">{selectedBrand?.name || "Aucune marque sélectionnée"}</h2>
-            <p className="mt-1 text-sm text-gray-500">{stats.configured}/{stats.total} produits configurés avec un prix pro HT.</p>
+            <p className="mt-1 text-sm text-gray-500">{stats.configured}/{stats.total} lignes tarifaires configurées avec un prix pro HT.</p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="flex items-center rounded-2xl border border-gray-200 bg-gray-50 p-1">
@@ -346,7 +387,7 @@ export default function AdminProPricesPage() {
               <button
                 type="button"
                 onClick={applyBulkDiscount}
-                disabled={products.length === 0 || isLoadingProducts}
+                disabled={priceRows.length === 0 || isLoadingProducts}
                 className="rounded-xl bg-primary px-4 py-2 text-sm font-bold text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Appliquer {bulkDiscount || "0"}% à tous
@@ -355,7 +396,7 @@ export default function AdminProPricesPage() {
             <button
               type="button"
               onClick={saveBrandPrices}
-              disabled={!selectedBrandId || products.length === 0 || isSaving || isLoadingProducts}
+              disabled={!selectedBrandId || priceRows.length === 0 || isSaving || isLoadingProducts}
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-dark-900 px-5 py-3 text-sm font-bold text-white transition hover:bg-dark-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -384,25 +425,35 @@ export default function AdminProPricesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {products.map((product) => {
-                  const draft = drafts[product.id]?.value ?? "";
+                {priceRows.map((row) => {
+                  const draft = drafts[row.key]?.value ?? "";
                   const parsed = parseDraftPrice(draft);
-                  const invalid = Number.isNaN(parsed) || (parsed !== null && parsed >= product.price);
-                  const discount = getDiscount(product);
+                  const invalid = Number.isNaN(parsed) || (parsed !== null && parsed >= row.publicPrice);
+                  const discount = getDiscount(row);
                   return (
-                    <tr key={product.id} className="hover:bg-gray-50/80">
+                    <tr key={row.key} className="hover:bg-gray-50/80">
                       <td className="px-5 py-4">
-                        <div className="font-semibold text-dark-900">{product.name}</div>
-                        <div className="mt-1 text-xs text-gray-500">{product.slug}</div>
+                        {row.isVariant ? (
+                          <div>
+                            <div className="font-semibold text-dark-900">{row.productName}</div>
+                            <div className="mt-1 pl-4 text-sm font-medium text-gray-700">↳ {row.displayName}</div>
+                            <div className="mt-1 text-xs text-gray-500">{row.slug}</div>
+                          </div>
+                        ) : (
+                          <div>
+                            <div className="font-semibold text-dark-900">{row.productName}</div>
+                            <div className="mt-1 text-xs text-gray-500">{row.slug}</div>
+                          </div>
+                        )}
                       </td>
-                      <td className="px-5 py-4 font-semibold text-dark-900">{formatPrice(product.price)}</td>
+                      <td className="px-5 py-4 font-semibold text-dark-900">{formatPrice(row.publicPrice)}</td>
                       <td className="px-5 py-4">
                         <input
                           type="number"
                           min="0"
                           step="0.01"
                           value={draft}
-                          onChange={(event) => updateDraft(product.id, event.target.value)}
+                          onChange={(event) => updateDraft(row, event.target.value)}
                           className={`w-36 rounded-xl border px-3 py-2 text-sm font-semibold outline-none transition focus:ring-4 ${
                             invalid ? "border-red-300 bg-red-50 text-red-900 focus:ring-red-100" : "border-gray-200 bg-white text-dark-900 focus:border-primary focus:ring-primary/10"
                           }`}
@@ -417,8 +468,8 @@ export default function AdminProPricesPage() {
                         )}
                       </td>
                       <td className="px-5 py-4">
-                        <span className={`rounded-full px-3 py-1 text-xs font-bold ${product.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>
-                          {product.status === "active" ? "ACTIF" : product.status.toUpperCase()}
+                        <span className={`rounded-full px-3 py-1 text-xs font-bold ${row.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>
+                          {row.status === "active" ? "ACTIF" : row.status.toUpperCase()}
                         </span>
                       </td>
                     </tr>
@@ -433,7 +484,7 @@ export default function AdminProPricesPage() {
       <section className="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-5 text-sm text-gray-600">
         <p className="font-semibold text-dark-900">Format CSV accepté</p>
         <p className="mt-1">
-          Utilisez l’export comme modèle. Les colonnes reconnues sont notamment <code>productId</code> et <code>prix_pro_ht</code>. Laissez le prix pro vide pour supprimer le tarif professionnel d’un produit.
+          Utilisez l’export comme modèle. Les colonnes reconnues sont notamment <code>id</code>, <code>variantId</code>, <code>productId</code> et <code>prix_pro_ht</code>. Une ligne de produit sans variante met à jour le prix pro du produit ; une ligne de variante met à jour le prix pro de la variante. Laissez le prix pro vide pour supprimer le tarif professionnel.
         </p>
       </section>
     </div>

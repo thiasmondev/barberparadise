@@ -8,11 +8,17 @@ export const productsRouter = Router();
 
 type CustomerToken = { id: string; email: string };
 
+type JsonProductVariant = {
+  price?: number | null;
+  priceProEur?: number | null;
+};
+
 type JsonProduct = {
   images?: string | null;
   features?: string | null;
   tags?: string | null;
   priceProEur?: number | null;
+  variants?: JsonProductVariant[];
 };
 
 async function isApprovedProRequest(req: Request): Promise<boolean> {
@@ -52,14 +58,34 @@ function serializeProduct<T extends JsonProduct & { price: number }>(product: T,
     tags: unknown[];
     price: number;
     priceProEur?: number | null;
+    variants?: JsonProductVariant[];
   };
 
   const hasPriceProEur = typeof parsed.priceProEur === "number" && parsed.priceProEur > 0;
   const pricePublic = parsed.price;
   const price = isApprovedPro && hasPriceProEur ? parsed.priceProEur! : pricePublic;
+  const variants = parsed.variants?.map((variant) => {
+    const variantPublicPrice = variant.price ?? pricePublic;
+    const variantHasPriceProEur = typeof variant.priceProEur === "number" && variant.priceProEur > 0;
+    const variantPrice = isApprovedPro
+      ? (variantHasPriceProEur ? variant.priceProEur! : (hasPriceProEur ? parsed.priceProEur! : variantPublicPrice))
+      : variantPublicPrice;
+    const serializedVariant = {
+      ...variant,
+      price: variantPrice,
+      pricePublic: variantPublicPrice,
+      hasPriceProEur: variantHasPriceProEur || (isApprovedPro && hasPriceProEur),
+    };
+    if (!isApprovedPro) {
+      const { priceProEur: _variantPriceProEur, ...publicVariant } = serializedVariant;
+      return publicVariant;
+    }
+    return serializedVariant;
+  });
 
   const serialized = {
     ...parsed,
+    ...(variants ? { variants } : {}),
     price,
     pricePublic,
     isPro: isApprovedPro,
@@ -147,7 +173,7 @@ productsRouter.get("/", async (req: Request, res: Response): Promise<void> => {
     else if (sort === "newest") orderBy = { createdAt: "desc" };
 
     const [products, total, isApprovedPro] = await Promise.all([
-      prisma.product.findMany({ where, orderBy, skip, take }),
+      prisma.product.findMany({ where, orderBy, skip, take, include: { variants: { orderBy: { order: "asc" } } } }),
       prisma.product.count({ where }),
       isApprovedProRequest(req),
     ]);
@@ -175,6 +201,7 @@ productsRouter.get("/featured", async (req: Request, res: Response): Promise<voi
         where: { status: "active", rating: { gte: 4.5 } },
         orderBy: { rating: "desc" },
         take: 8,
+        include: { variants: { orderBy: { order: "asc" } } },
       }),
       isApprovedProRequest(req),
     ]);
@@ -193,6 +220,7 @@ productsRouter.get("/promo", async (req: Request, res: Response): Promise<void> 
         where: { status: "active", isPromo: true },
         orderBy: { rating: "desc" },
         take: 12,
+        include: { variants: { orderBy: { order: "asc" } } },
       }),
       isApprovedProRequest(req),
     ]);
@@ -211,6 +239,7 @@ productsRouter.get("/nouveautes", async (req: Request, res: Response): Promise<v
         where: { status: "active", isNew: true },
         orderBy: { createdAt: "desc" },
         take: 24,
+        include: { variants: { orderBy: { order: "asc" } } },
       }),
       isApprovedProRequest(req),
     ]);

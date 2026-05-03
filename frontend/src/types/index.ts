@@ -73,6 +73,9 @@ export interface ProductVariant {
   colorHex: string;
   size: string;
   price: number | null;
+  priceProEur?: number | null;
+  pricePublic?: number;
+  hasPriceProEur?: boolean;
   stock: number;
   inStock: boolean;
   sku: string;

@@ -103,6 +103,7 @@ model ProductVariant {
   colorHex  String  @default("") // code hexa ex: #FF0000
   size      String  @default("") // ex: "S", "M", "L", "XL"
   price     Float?  // si null, utilise le prix du produit parent
+  priceProEur Float? // Prix pro HT — null = utilise le prix pro du produit parent
   stock     Int     @default(0)
   inStock   Boolean @default(true)
   sku       String  @default("")

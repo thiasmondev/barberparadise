@@ -257,27 +257,76 @@ adminRouter.get("/products/meta", requireAdmin, async (_req: Request, res: Respo
   }
 });
 
+type AdminProPriceUpdate = {
+  productId?: unknown;
+  variantId?: unknown;
+  priceProEur?: unknown;
+};
+
+type ProPriceProductRow = {
+  id: string;
+  name: string;
+  price: number;
+};
+
+type ProPriceVariantRow = {
+  id: string;
+  name: string;
+  price: number | null;
+  productId: string;
+  product: ProPriceProductRow;
+};
+
+function validateProPriceValue(label: string, priceProEur: number | null, publicPriceTtc: number): string | null {
+  if (Number.isNaN(priceProEur)) return `${label} : prix pro invalide`;
+  if (priceProEur !== null && priceProEur < 0) return `${label} : prix pro négatif`;
+  if (priceProEur !== null && priceProEur >= publicPriceTtc) return `${label} : le prix pro HT doit être inférieur au prix public TTC`;
+  return null;
+}
+
 // GET /api/admin/pro/prices/export — Export CSV de tous les prix professionnels
 adminRouter.get("/pro/prices/export", requireAdmin, async (_req: Request, res: Response): Promise<void> => {
   try {
     const products = await prisma.product.findMany({
-      select: { id: true, name: true, slug: true, brand: true, brandId: true, price: true, priceProEur: true, status: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        brand: true,
+        price: true,
+        priceProEur: true,
+        variants: {
+          select: { id: true, name: true, price: true, priceProEur: true, order: true },
+          orderBy: { order: "asc" },
+        },
+      },
       orderBy: [{ brand: "asc" }, { name: "asc" }],
     });
 
-    const header = ["productId", "nom", "slug", "marque", "brandId", "prix_public_ttc", "prix_pro_ht", "statut"];
+    const header = ["id", "slug", "nom", "variante", "prix_public_ttc", "prix_pro_ht"];
     const lines = [header.join(",")];
     for (const product of products) {
-      lines.push([
-        product.id,
-        product.name,
-        product.slug,
-        product.brand,
-        product.brandId ?? "",
-        product.price,
-        product.priceProEur ?? "",
-        product.status,
-      ].map(csvEscape).join(","));
+      if (product.variants.length > 0) {
+        for (const variant of product.variants) {
+          lines.push([
+            variant.id,
+            product.slug,
+            product.name,
+            variant.name,
+            variant.price ?? product.price,
+            variant.priceProEur ?? "",
+          ].map(csvEscape).join(","));
+        }
+      } else {
+        lines.push([
+          product.id,
+          product.slug,
+          product.name,
+          "",
+          product.price,
+          product.priceProEur ?? "",
+        ].map(csvEscape).join(","));
+      }
     }
 
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -306,42 +355,55 @@ adminRouter.post("/pro/prices/import", requireAdmin, csvUpload.single("csv"), as
       relax_quotes: true,
     });
 
-    const productIds = rows.map(row => row.productId || row.id || row.product_id).filter(Boolean);
-    const products = await prisma.product.findMany({
-      where: { id: { in: productIds } },
-      select: { id: true, name: true, price: true },
-    });
+    const rowIds = [...new Set(rows.map(row => row.id || row.productId || row.variantId || row.product_id || row.variant_id).filter(Boolean))];
+    const [products, variants] = await Promise.all([
+      prisma.product.findMany({
+        where: { id: { in: rowIds } },
+        select: { id: true, name: true, price: true },
+      }),
+      prisma.productVariant.findMany({
+        where: { id: { in: rowIds } },
+        select: { id: true, name: true, price: true, productId: true, product: { select: { id: true, name: true, price: true } } },
+      }),
+    ]);
     const productById = new Map(products.map(product => [product.id, product]));
+    const variantById = new Map(variants.map(variant => [variant.id, variant]));
     const errors: string[] = [];
-    const updates: { productId: string; priceProEur: number | null }[] = [];
+    const productUpdates: { productId: string; priceProEur: number | null }[] = [];
+    const variantUpdates: { variantId: string; priceProEur: number | null }[] = [];
 
     rows.forEach((row, index) => {
       const rowNumber = index + 2;
-      const productId = row.productId || row.id || row.product_id;
+      const id = row.id || row.productId || row.variantId || row.product_id || row.variant_id;
       const rawPrice = row.priceProEur ?? row.prix_pro_ht ?? row.price_pro_eur ?? row["Prix pro HT"] ?? "";
-      if (!productId) {
-        errors.push(`Ligne ${rowNumber} : productId manquant`);
-        return;
-      }
-      const product = productById.get(productId);
-      if (!product) {
-        errors.push(`Ligne ${rowNumber} : produit introuvable (${productId})`);
+      if (!id) {
+        errors.push(`Ligne ${rowNumber} : id manquant`);
         return;
       }
       const priceProEur = parseNullablePrice(rawPrice);
-      if (Number.isNaN(priceProEur)) {
-        errors.push(`Ligne ${rowNumber} : prix pro invalide pour ${product.name}`);
+      const variant = variantById.get(id);
+      const product = productById.get(id);
+      if (variant) {
+        const publicPrice = variant.price ?? variant.product.price;
+        const label = `${variant.product.name} — ${variant.name}`;
+        const error = validateProPriceValue(label, priceProEur, publicPrice);
+        if (error) {
+          errors.push(`Ligne ${rowNumber} : ${error}`);
+          return;
+        }
+        variantUpdates.push({ variantId: variant.id, priceProEur });
         return;
       }
-      if (priceProEur !== null && priceProEur < 0) {
-        errors.push(`Ligne ${rowNumber} : prix pro négatif pour ${product.name}`);
+      if (product) {
+        const error = validateProPriceValue(product.name, priceProEur, product.price);
+        if (error) {
+          errors.push(`Ligne ${rowNumber} : ${error}`);
+          return;
+        }
+        productUpdates.push({ productId: product.id, priceProEur });
         return;
       }
-      if (priceProEur !== null && priceProEur >= product.price) {
-        errors.push(`Ligne ${rowNumber} : le prix pro HT doit être inférieur au prix public TTC pour ${product.name}`);
-        return;
-      }
-      updates.push({ productId, priceProEur });
+      errors.push(`Ligne ${rowNumber} : produit ou variante introuvable (${id})`);
     });
 
     if (errors.length > 0) {
@@ -349,14 +411,18 @@ adminRouter.post("/pro/prices/import", requireAdmin, csvUpload.single("csv"), as
       return;
     }
 
-    await prisma.$transaction(
-      updates.map(update => prisma.product.update({
+    await prisma.$transaction([
+      ...productUpdates.map(update => prisma.product.update({
         where: { id: update.productId },
         data: { priceProEur: update.priceProEur },
-      }))
-    );
+      })),
+      ...variantUpdates.map(update => prisma.productVariant.update({
+        where: { id: update.variantId },
+        data: { priceProEur: update.priceProEur },
+      })),
+    ]);
 
-    res.json({ updated: updates.length, errors: [] });
+    res.json({ updated: productUpdates.length + variantUpdates.length, errors: [] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err instanceof Error ? err.message : "Erreur import prix professionnels" });
@@ -380,7 +446,20 @@ adminRouter.get("/pro/prices/:brandId", requireAdmin, async (req: Request, res: 
 
     const products = await prisma.product.findMany({
       where: { OR: [{ brandId }, { brand: brand.name }] },
-      select: { id: true, name: true, slug: true, brand: true, brandId: true, price: true, priceProEur: true, status: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        brand: true,
+        brandId: true,
+        price: true,
+        priceProEur: true,
+        status: true,
+        variants: {
+          select: { id: true, name: true, price: true, priceProEur: true, order: true },
+          orderBy: { order: "asc" },
+        },
+      },
       orderBy: { name: "asc" },
     });
 
@@ -395,7 +474,7 @@ adminRouter.get("/pro/prices/:brandId", requireAdmin, async (req: Request, res: 
 adminRouter.put("/pro/prices/brand/:brandId", requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const brandId = parseInt(req.params.brandId, 10);
-    const incoming = Array.isArray(req.body?.prices) ? req.body.prices : [];
+    const incoming: AdminProPriceUpdate[] = Array.isArray(req.body?.prices) ? req.body.prices : [];
     if (!Number.isFinite(brandId)) {
       res.status(400).json({ error: "Marque invalide" });
       return;
@@ -411,60 +490,76 @@ adminRouter.put("/pro/prices/brand/:brandId", requireAdmin, async (req: Request,
       return;
     }
 
-    const productIds = incoming.map((item: { productId?: unknown }) => String(item.productId || "")).filter(Boolean);
     const products = await prisma.product.findMany({
       where: { OR: [{ brandId }, { brand: brand.name }] },
       select: { id: true, name: true, price: true },
     });
     const productById = new Map(products.map(product => [product.id, product]));
+    const productIds = products.map(product => product.id);
+    const variantIds = incoming.map(item => String(item.variantId || "")).filter(Boolean);
+    const variants = await prisma.productVariant.findMany({
+      where: { id: { in: variantIds }, productId: { in: productIds } },
+      select: { id: true, name: true, price: true, productId: true, product: { select: { id: true, name: true, price: true } } },
+    });
+    const variantById = new Map(variants.map(variant => [variant.id, variant]));
     const errors: string[] = [];
-    const updates: { productId: string; priceProEur: number | null }[] = [];
+    const productUpdates: { productId: string; priceProEur: number | null }[] = [];
+    const variantUpdates: { variantId: string; priceProEur: number | null }[] = [];
 
-    incoming.forEach((item: { productId?: unknown; priceProEur?: unknown }, index: number) => {
+    incoming.forEach((item, index) => {
+      const variantId = String(item.variantId || "");
       const productId = String(item.productId || "");
-      const product = productById.get(productId);
-      if (!productId) {
-        errors.push(`Ligne ${index + 1} : productId manquant`);
+      const priceProEur = parseNullablePrice(item.priceProEur);
+      if (variantId) {
+        const variant = variantById.get(variantId) as ProPriceVariantRow | undefined;
+        if (!variant) {
+          errors.push(`Ligne ${index + 1} : variante hors marque ou introuvable (${variantId})`);
+          return;
+        }
+        const label = `${variant.product.name} — ${variant.name}`;
+        const error = validateProPriceValue(label, priceProEur, variant.price ?? variant.product.price);
+        if (error) {
+          errors.push(error);
+          return;
+        }
+        variantUpdates.push({ variantId, priceProEur });
         return;
       }
+
+      if (!productId) {
+        errors.push(`Ligne ${index + 1} : productId ou variantId manquant`);
+        return;
+      }
+      const product = productById.get(productId);
       if (!product) {
         errors.push(`Produit hors marque ou introuvable : ${productId}`);
         return;
       }
-      const priceProEur = parseNullablePrice(item.priceProEur);
-      if (Number.isNaN(priceProEur)) {
-        errors.push(`${product.name} : prix pro invalide`);
+      const error = validateProPriceValue(product.name, priceProEur, product.price);
+      if (error) {
+        errors.push(error);
         return;
       }
-      if (priceProEur !== null && priceProEur < 0) {
-        errors.push(`${product.name} : prix pro négatif`);
-        return;
-      }
-      if (priceProEur !== null && priceProEur >= product.price) {
-        errors.push(`${product.name} : le prix pro HT doit être inférieur au prix public TTC`);
-        return;
-      }
-      updates.push({ productId, priceProEur });
+      productUpdates.push({ productId, priceProEur });
     });
-
-    const unknownIds = productIds.filter((id: string) => !productById.has(id));
-    if (unknownIds.length > 0) {
-      errors.push(...unknownIds.map((id: string) => `Produit hors marque ou introuvable : ${id}`));
-    }
 
     if (errors.length > 0) {
       res.status(400).json({ updated: 0, errors: [...new Set(errors)] });
       return;
     }
 
-    await prisma.$transaction(
-      updates.map(update => prisma.product.update({
+    await prisma.$transaction([
+      ...productUpdates.map(update => prisma.product.update({
         where: { id: update.productId },
         data: { priceProEur: update.priceProEur },
-      }))
-    );
+      })),
+      ...variantUpdates.map(update => prisma.productVariant.update({
+        where: { id: update.variantId },
+        data: { priceProEur: update.priceProEur },
+      })),
+    ]);
 
-    res.json({ updated: updates.length, errors: [] });
+    res.json({ updated: productUpdates.length + variantUpdates.length, errors: [] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur sauvegarde prix professionnels" });

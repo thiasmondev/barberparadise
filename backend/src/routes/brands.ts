@@ -7,12 +7,18 @@ const prisma = new PrismaClient();
 
 type CustomerToken = { id: string; email: string };
 
+type BrandProductVariant = {
+  price?: number | null;
+  priceProEur?: number | null;
+};
+
 type BrandProduct = {
   images?: string | null;
   features?: string | null;
   tags?: string | null;
   price: number;
   priceProEur?: number | null;
+  variants?: BrandProductVariant[];
 };
 
 async function isApprovedProRequest(req: Request): Promise<boolean> {
@@ -35,8 +41,27 @@ function serializeBrandProduct<T extends BrandProduct>(product: T, isApprovedPro
   const hasPriceProEur = typeof product.priceProEur === "number" && product.priceProEur > 0;
   const pricePublic = product.price;
   const price = isApprovedPro && hasPriceProEur ? product.priceProEur! : pricePublic;
+  const variants = product.variants?.map((variant) => {
+    const variantPublicPrice = variant.price ?? pricePublic;
+    const variantHasPriceProEur = typeof variant.priceProEur === "number" && variant.priceProEur > 0;
+    const variantPrice = isApprovedPro
+      ? (variantHasPriceProEur ? variant.priceProEur! : (hasPriceProEur ? product.priceProEur! : variantPublicPrice))
+      : variantPublicPrice;
+    const serializedVariant = {
+      ...variant,
+      price: variantPrice,
+      pricePublic: variantPublicPrice,
+      hasPriceProEur: variantHasPriceProEur || (isApprovedPro && hasPriceProEur),
+    };
+    if (!isApprovedPro) {
+      const { priceProEur: _variantPriceProEur, ...publicVariant } = serializedVariant;
+      return publicVariant;
+    }
+    return serializedVariant;
+  });
   const serialized = {
     ...product,
+    ...(variants ? { variants } : {}),
     price,
     pricePublic,
     isPro: isApprovedPro,
@@ -139,6 +164,10 @@ router.get("/:slug", async (req: Request, res: Response) => {
           isPromo: true,
           category: true,
           subcategory: true,
+          variants: {
+            select: { id: true, name: true, type: true, color: true, colorHex: true, size: true, price: true, priceProEur: true, inStock: true, stock: true, sku: true, image: true, order: true },
+            orderBy: { order: "asc" },
+          },
         },
       }),
       prisma.product.count({ where }),
