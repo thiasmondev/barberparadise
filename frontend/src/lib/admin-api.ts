@@ -636,7 +636,7 @@ export async function bulkGenerateImageAlts(): Promise<{
 
 
 export interface AdminProAccount {
-  id: string; companyName: string; activity: string; phone: string; siret?: string | null; vatNumber?: string | null; status: "pending" | "approved" | "rejected" | string; rejectionReason?: string | null; approvedAt?: string | null; approvedBy?: string | null; createdAt: string; updatedAt: string;
+  id: string; companyName: string; activity: string; phone: string; siret?: string | null; vatNumber?: string | null; status: "pending" | "approved" | "rejected" | "suspended"; rejectionReason?: string | null; approvedAt?: string | null; approvedBy?: string | null; createdAt: string; updatedAt: string;
   customer: { id: string; email: string; firstName: string; lastName: string; phone?: string | null; createdAt?: string };
 }
 export function getAdminProAccounts(status?: string) { return adminFetch<{ accounts: AdminProAccount[] }>(`/api/pro/admin/accounts${status ? `?status=${encodeURIComponent(status)}` : ""}`); }

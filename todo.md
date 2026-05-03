@@ -174,3 +174,7 @@
 - [x] Afficher clairement les prix professionnels sur les cartes produit, le catalogue et la fiche produit : prix public barré, prix pro HT et badge `PRIX PRO` uniquement quand le backend expose un tarif pro.
 - [x] Ajouter le champ `Prix pro HT (€)` dans l’administration produit principale avec création, édition, tableau et envoi backend.
 - [x] Ajouter le champ `Prix pro HT (€)` dans l’éditeur admin SEO produit pour gérer le tarif B2B depuis le flux d’édition avancé.
+
+- [x] Corriger `/admin/pro/[id]` pour désactiver immédiatement les boutons Approuver, Refuser et Suspendre après clic avec états `isProcessing` et `actionDone`.
+- [x] Corriger `/admin/pro/[id]` pour masquer les boutons correspondant au statut courant et afficher clairement les badges `APPROUVÉ`, `REFUSÉ` et `SUSPENDU`.
+- [x] Rendre les routes backend `/api/admin/pro/:id/approve`, `/reject` et `/suspend` idempotentes afin d’éviter tout renvoi d’email si le statut demandé est déjà actif.

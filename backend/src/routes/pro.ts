@@ -164,12 +164,32 @@ proRouter.get("/admin/accounts/:id", requireAdmin, async (req: AuthRequest, res:
   }
 });
 
-async function updateProStatus(req: AuthRequest, res: Response, status: "approved" | "rejected" | "pending", rejectionReason?: string | null) {
+async function updateProStatus(req: AuthRequest, res: Response, status: "approved" | "rejected" | "suspended", rejectionReason?: string | null) {
+  const currentAccount = await prisma.proAccount.findUnique({
+    where: { id: req.params.id },
+    include: { customer: true },
+  });
+
+  if (!currentAccount) {
+    res.status(404).json({ error: "Compte professionnel non trouvé" });
+    return;
+  }
+
+  if (currentAccount.status === status) {
+    const labels: Record<typeof status, string> = {
+      approved: "approuvé",
+      rejected: "refusé",
+      suspended: "suspendu",
+    };
+    res.status(400).json({ error: `Compte déjà ${labels[status]}` });
+    return;
+  }
+
   const account = await prisma.proAccount.update({
     where: { id: req.params.id },
     data: {
       status,
-      rejectionReason: status === "rejected" ? rejectionReason || "Demande refusée" : null,
+      rejectionReason: status === "rejected" || status === "suspended" ? rejectionReason || (status === "rejected" ? "Demande refusée" : "Compte suspendu") : null,
       approvedAt: status === "approved" ? new Date() : null,
       approvedBy: status === "approved" ? req.user?.email || req.user?.id || null : null,
     },
@@ -190,7 +210,7 @@ async function updateProStatus(req: AuthRequest, res: Response, status: "approve
     await sendEmail({
       to: account.customer.email,
       subject: "Compte professionnel Barber Paradise suspendu",
-      html: `<p>Bonjour ${getCustomerName(account.customer, account.customer.email)},</p><p>Votre compte professionnel est temporairement suspendu et repasse en attente de révision.</p>${rejectionReason ? `<p>Motif : ${rejectionReason}</p>` : ""}`,
+      html: `<p>Bonjour ${getCustomerName(account.customer, account.customer.email)},</p><p>Votre compte professionnel est temporairement suspendu. Les tarifs professionnels sont désactivés jusqu’à nouvelle validation.</p>${account.rejectionReason ? `<p>Motif : ${account.rejectionReason}</p>` : ""}`,
     });
   }
 
@@ -217,10 +237,10 @@ proRouter.post("/admin/accounts/:id/reject", requireAdmin, async (req: AuthReque
   }
 });
 
-// POST /api/pro/admin/accounts/:id/suspend — suspension = retour en attente de révision
+// POST /api/pro/admin/accounts/:id/suspend
 proRouter.post("/admin/accounts/:id/suspend", requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    await updateProStatus(req, res, "pending", normalizeOptionalString(req.body.reason) || "Compte suspendu en attente de révision");
+    await updateProStatus(req, res, "suspended", normalizeOptionalString(req.body.reason) || "Compte suspendu");
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Erreur suspension compte professionnel" });
