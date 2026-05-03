@@ -633,3 +633,14 @@ export async function bulkGenerateImageAlts(): Promise<{
 }> {
   return adminFetch("/api/admin/seo/image-alts/bulk", { method: "POST" });
 }
+
+
+export interface AdminProAccount {
+  id: string; companyName: string; activity: string; phone: string; siret?: string | null; vatNumber?: string | null; status: "pending" | "approved" | "rejected" | string; rejectionReason?: string | null; approvedAt?: string | null; approvedBy?: string | null; createdAt: string; updatedAt: string;
+  customer: { id: string; email: string; firstName: string; lastName: string; phone?: string | null; createdAt?: string };
+}
+export function getAdminProAccounts(status?: string) { return adminFetch<{ accounts: AdminProAccount[] }>(`/api/pro/admin/accounts${status ? `?status=${encodeURIComponent(status)}` : ""}`); }
+export function getAdminProAccount(id: string) { return adminFetch<AdminProAccount>(`/api/pro/admin/accounts/${id}`); }
+export function approveAdminProAccount(id: string) { return adminFetch<{ account: AdminProAccount }>(`/api/pro/admin/accounts/${id}/approve`, { method: "POST" }); }
+export function rejectAdminProAccount(id: string, reason: string) { return adminFetch<{ account: AdminProAccount }>(`/api/pro/admin/accounts/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }); }
+export function suspendAdminProAccount(id: string, reason?: string) { return adminFetch<{ account: AdminProAccount }>(`/api/pro/admin/accounts/${id}/suspend`, { method: "POST", body: JSON.stringify({ reason }) }); }

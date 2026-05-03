@@ -45,6 +45,7 @@ interface ProductForm {
   subcategory: string;
   subsubcategory: string;
   price: string;
+  priceProEur: string;
   originalPrice: string;
   description: string;
   inStock: boolean;
@@ -58,6 +59,7 @@ const emptyForm: ProductForm = {
   subcategory: "",
   subsubcategory: "",
   price: "",
+  priceProEur: "",
   originalPrice: "",
   description: "",
   inStock: true,
@@ -143,7 +145,8 @@ export default function AdminProductsPage() {
       category: p.category,
       subcategory: p.subcategory,
       subsubcategory: (p as any).subsubcategory || "",
-      price: String(p.price),
+      price: String((p as any).pricePublic ?? p.price),
+      priceProEur: p.priceProEur != null ? String(p.priceProEur) : "",
       originalPrice: p.originalPrice ? String(p.originalPrice) : "",
       description: p.description,
       inStock: p.inStock,
@@ -277,7 +280,10 @@ export default function AdminProductsPage() {
                       </td>
                       <td className="px-4 py-3 text-gray-600 hidden sm:table-cell">{p.category}</td>
                       <td className="px-4 py-3 text-right font-medium text-dark-800 tabular-nums">
-                        {formatPrice(p.price)}
+                        <div>{formatPrice((p as any).pricePublic ?? p.price)}</div>
+                        {p.priceProEur != null && (
+                          <div className="mt-1 text-xs font-semibold text-amber-700">Pro HT {formatPrice(p.priceProEur)}</div>
+                        )}
                         {p.originalPrice && (
                           <div className="text-xs text-gray-400 line-through">{formatPrice(p.originalPrice)}</div>
                         )}
@@ -436,7 +442,7 @@ export default function AdminProductsPage() {
               )}
 
               {/* Prix */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-dark-700 mb-1">Prix *</label>
                   <input
@@ -447,6 +453,18 @@ export default function AdminProductsPage() {
                     className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary"
                     placeholder="0.00"
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-dark-700 mb-1">Prix pro HT (€)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={form.priceProEur}
+                    onChange={(e) => setForm({ ...form, priceProEur: e.target.value })}
+                    className="w-full px-3 py-2.5 border border-amber-200 rounded-lg text-sm focus:outline-none focus:border-amber-500"
+                    placeholder="Optionnel"
+                  />
+                  <p className="mt-1 text-[11px] text-gray-400">Visible uniquement pour les comptes pro approuvés.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-dark-700 mb-1">Prix barré</label>

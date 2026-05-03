@@ -5,6 +5,7 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
     ...options,
     headers: {
       "Content-Type": "application/json",
+      ...(typeof window !== "undefined" && localStorage.getItem("bp_customer_token") ? { Authorization: `Bearer ${localStorage.getItem("bp_customer_token")}` } : {}),
       ...options?.headers,
     },
   });

@@ -345,6 +345,10 @@ export default function CatalogueContent() {
                 const images = parseImages(product.images);
                 const img = images[0] || "https://images.unsplash.com/photo-1621605815971-fbc98d665033?w=800&q=80";
                 const isHighlight = index === 0;
+                const publicPrice = typeof product.pricePublic === "number" ? product.pricePublic : product.price;
+                const proPrice = typeof product.priceProEur === "number" ? product.priceProEur : null;
+                const showsProPrice = Boolean(product.isPro && proPrice !== null);
+                const displayedPrice = showsProPrice ? proPrice! : product.price;
                 return (
                   <Link
                     key={product.id}
@@ -358,11 +362,14 @@ export default function CatalogueContent() {
                         alt={product.name}
                         className="absolute inset-0 w-full h-full object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500"
                       />
-                      {product.originalPrice && product.originalPrice > product.price && (
-                        <div className="absolute top-4 left-4 z-20 bg-[#ff4a8d] px-3 py-1">
-                          <span className="text-[10px] font-black tracking-widest uppercase text-white">PROMO</span>
-                        </div>
-                      )}
+                      <div className="absolute top-4 left-4 z-20 flex flex-col gap-2">
+                        {showsProPrice && (
+                          <span className="bg-amber-400 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-black">PRIX PRO</span>
+                        )}
+                        {product.originalPrice && product.originalPrice > publicPrice && (
+                          <span className="bg-[#ff4a8d] px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white">PROMO</span>
+                        )}
+                      </div>
                     </div>
                     <div className={`p-4 flex flex-col justify-between flex-grow ${isHighlight ? "p-6" : ""}`}>
                       <div>
@@ -371,11 +378,19 @@ export default function CatalogueContent() {
                         </h3>
                         <p className="text-[10px] text-gray-500 uppercase tracking-widest">{product.brand}</p>
                       </div>
-                      <div className="flex justify-between items-center mt-4">
-                        <span className={`font-black ${isHighlight ? "text-xl" : "text-base"} text-white`}>
-                          {formatPrice(product.price)}
-                        </span>
-                        <ArrowRight size={14} className="text-gray-500 group-hover:text-[#ff4a8d] transition-colors" />
+                      <div className="flex justify-between items-end mt-4 gap-3">
+                        <div>
+                          {showsProPrice && (
+                            <span className="mb-1 inline-flex bg-amber-400/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-amber-300">Prix pro HT</span>
+                          )}
+                          <span className={`block font-black ${isHighlight ? "text-xl" : "text-base"} text-white`}>
+                            {formatPrice(displayedPrice)}{showsProPrice ? " HT" : ""}
+                          </span>
+                          {showsProPrice && (
+                            <span className="block text-[11px] text-gray-500 line-through">Public {formatPrice(publicPrice)} TTC</span>
+                          )}
+                        </div>
+                        <ArrowRight size={14} className="text-gray-500 group-hover:text-[#ff4a8d] transition-colors shrink-0" />
                       </div>
                     </div>
                   </Link>

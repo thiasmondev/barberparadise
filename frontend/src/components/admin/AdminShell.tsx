@@ -27,6 +27,7 @@ const NAV_ITEMS = [
   { href: "/admin/produits", label: "Produits", icon: Package },
   { href: "/admin/commandes", label: "Commandes", icon: ShoppingCart },
   { href: "/admin/clients", label: "Clients", icon: Users },
+  { href: "/admin/pro", label: "Comptes pro", icon: Users },
   { href: "/admin/categories", label: "Catégories", icon: FolderTree },
   { href: "/admin/brands", label: "Marques", icon: Tag },
   { href: "/admin/seo", label: "Agent SEO", icon: Search },

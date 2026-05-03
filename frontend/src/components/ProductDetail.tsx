@@ -24,14 +24,17 @@ export default function ProductDetail({ product }: { product: Product }) {
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [wishlistLoading, setWishlistLoading] = useState(false);
   const [wishlistMessage, setWishlistMessage] = useState("");
-  const discount = getDiscount(product.price, product.originalPrice);
+  const publicPrice = typeof product.pricePublic === "number" ? product.pricePublic : product.price;
+  const proPrice = typeof product.priceProEur === "number" ? product.priceProEur : null;
+  const showsProPrice = Boolean(product.isPro && proPrice !== null && !selectedVariant);
+  const discount = getDiscount(publicPrice, product.originalPrice);
 
   const variants = product.variants ?? [];
   const colorVariants = variants.filter((v) => v.type === "color");
   const sizeVariants = variants.filter((v) => v.type === "size");
   const otherVariants = variants.filter((v) => v.type === "other");
 
-  const displayPrice = selectedVariant?.price != null ? selectedVariant.price : product.price;
+  const displayPrice = selectedVariant?.price != null ? selectedVariant.price : showsProPrice ? proPrice! : product.price;
   const isInStock = selectedVariant ? selectedVariant.inStock : product.inStock;
 
   const displayImages = useMemo(() => {
@@ -193,19 +196,34 @@ export default function ProductDetail({ product }: { product: Product }) {
             </h1>
 
             {/* Prix */}
-            <div className="flex items-baseline gap-4 mb-8">
-              <span className="text-4xl font-black tracking-tighter">
-                {formatPrice(displayPrice)}
-              </span>
-              {product.originalPrice && product.originalPrice > product.price && (
-                <span className="text-xl text-gray-600 line-through">
-                  {formatPrice(product.originalPrice)}
-                </span>
+            <div className="mb-8">
+              {showsProPrice && (
+                <div className="mb-3 flex flex-wrap items-center gap-3">
+                  <span className="bg-amber-400 px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-black">PRIX PRO</span>
+                  <span className="text-xs font-bold uppercase tracking-widest text-amber-300">Tarif professionnel HT</span>
+                </div>
               )}
-              {discount && (
-                <span className="text-sm font-black text-[#ff4a8d] bg-[#ff4a8d]/10 px-3 py-1">
-                  -{discount}%
+              <div className="flex flex-wrap items-baseline gap-4">
+                <span className="text-4xl font-black tracking-tighter">
+                  {formatPrice(displayPrice)}{showsProPrice ? " HT" : ""}
                 </span>
+                {showsProPrice ? (
+                  <span className="text-xl text-gray-600 line-through">
+                    Public {formatPrice(publicPrice)} TTC
+                  </span>
+                ) : product.originalPrice && product.originalPrice > publicPrice ? (
+                  <span className="text-xl text-gray-600 line-through">
+                    {formatPrice(product.originalPrice)}
+                  </span>
+                ) : null}
+                {discount && !showsProPrice && (
+                  <span className="text-sm font-black text-[#ff4a8d] bg-[#ff4a8d]/10 px-3 py-1">
+                    -{discount}%
+                  </span>
+                )}
+              </div>
+              {showsProPrice && (
+                <p className="mt-3 text-xs uppercase tracking-widest text-gray-500">TVA calculée au checkout selon votre situation professionnelle.</p>
               )}
             </div>
 

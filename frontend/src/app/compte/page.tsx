@@ -14,12 +14,14 @@ import {
   getCustomerInvoices,
   getCustomerOrders,
   getCustomerWishlist,
+  getProStatus,
   removeCustomerWishlist,
   updateCustomerAddress,
   updateCustomerMe,
   type CustomerAddress,
   type CustomerAddressInput,
   type CustomerInvoice,
+  type ProAccount,
 } from "@/lib/customer-api";
 
 const tabs = [
@@ -99,6 +101,8 @@ function ComptePageContent() {
   const [invoices, setInvoices] = useState<CustomerInvoice[]>([]);
   const [addresses, setAddresses] = useState<CustomerAddress[]>([]);
   const [wishlist, setWishlist] = useState<Product[]>([]);
+  const [proAccount, setProAccount] = useState<ProAccount | null>(null);
+  const [isApprovedPro, setIsApprovedPro] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -121,17 +125,20 @@ function ComptePageContent() {
     async function loadAccountData() {
       setDataLoading(true);
       try {
-        const [ordersData, invoicesData, addressesData, wishlistData] = await Promise.all([
+        const [ordersData, invoicesData, addressesData, wishlistData, proStatus] = await Promise.all([
           getCustomerOrders(),
           getCustomerInvoices(),
           getCustomerAddresses(),
           getCustomerWishlist(),
+          getProStatus().catch(() => ({ proAccount: null, isApprovedPro: false })),
         ]);
         if (!cancelled) {
           setOrders(ordersData);
           setInvoices(invoicesData);
           setAddresses(addressesData);
           setWishlist(wishlistData);
+          setProAccount(proStatus.proAccount);
+          setIsApprovedPro(proStatus.isApprovedPro);
         }
       } catch (err) {
         if (!cancelled) setMessage(err instanceof Error ? err.message : "Impossible de charger les données du compte.");
@@ -202,7 +209,7 @@ function ComptePageContent() {
               <div className="flex items-center gap-3 py-20 text-white/55"><Loader2 className="animate-spin text-[#E91E8C]" /> Chargement...</div>
             ) : (
               <>
-                {activeTab === "infos" && <ProfilePanel customer={customer} setMessage={setMessage} />}
+                {activeTab === "infos" && <ProfilePanel customer={customer} proAccount={proAccount} isApprovedPro={isApprovedPro} setMessage={setMessage} />}
                 {activeTab === "commandes" && <OrdersPanel orders={orders} />}
                 {activeTab === "factures" && <InvoicesPanel invoices={invoices} />}
                 {activeTab === "adresses" && <AddressesPanel addresses={addresses} setAddresses={setAddresses} setMessage={setMessage} />}
@@ -216,7 +223,7 @@ function ComptePageContent() {
   );
 }
 
-function ProfilePanel({ customer, setMessage }: { customer: NonNullable<ReturnType<typeof useCustomerAuth>["customer"]>; setMessage: (message: string) => void }) {
+function ProfilePanel({ customer, proAccount, isApprovedPro, setMessage }: { customer: NonNullable<ReturnType<typeof useCustomerAuth>["customer"]>; proAccount: ProAccount | null; isApprovedPro: boolean; setMessage: (message: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ firstName: customer.firstName, lastName: customer.lastName, phone: customer.phone || "" });
   const [saving, setSaving] = useState(false);
@@ -261,6 +268,33 @@ function ProfilePanel({ customer, setMessage }: { customer: NonNullable<ReturnTy
           </div>
         </form>
       )}
+      <ProAccountNotice proAccount={proAccount} isApprovedPro={isApprovedPro} />
+    </div>
+  );
+}
+
+function ProAccountNotice({ proAccount, isApprovedPro }: { proAccount: ProAccount | null; isApprovedPro: boolean }) {
+  if (isApprovedPro) {
+    return (
+      <div className="mt-8 border border-emerald-500/40 bg-emerald-500/10 p-5">
+        <p className="text-sm font-black uppercase tracking-[0.18em] text-emerald-300">Compte professionnel actif</p>
+        <p className="mt-2 text-sm text-white/55">Les prix professionnels HT sont activés sur le catalogue lorsque des tarifs négociés existent.</p>
+      </div>
+    );
+  }
+  if (proAccount?.status === "pending") {
+    return (
+      <div className="mt-8 border border-yellow-500/50 bg-yellow-500/10 p-5">
+        <p className="text-sm font-black uppercase tracking-[0.18em] text-yellow-300">Demande pro en cours d’examen</p>
+        <p className="mt-2 text-sm text-white/55">Vous recevrez une réponse sous 24-48h.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-8 border border-white/10 bg-black/20 p-6">
+      <h3 className="font-black uppercase tracking-[0.12em] text-white">Vous êtes professionnel ?</h3>
+      <p className="mt-3 text-sm text-white/55">Accédez aux tarifs professionnels exclusifs — prix HT négociés pour les barbers et coiffeurs.</p>
+      <Link href="/pro/inscription" className="mt-5 inline-flex border border-white/15 px-5 py-3 text-[11px] font-black uppercase tracking-[0.18em] text-white/75 hover:border-[#E91E8C] hover:text-white">Demander un compte pro →</Link>
     </div>
   );
 }

@@ -41,6 +41,7 @@ export default function Footer() {
             <ul className="space-y-4">
               {[
                 { label: "NOUVEAUTÉS", href: "/nouveautes" },
+                { label: "PRO", href: "/pro" },
                 { label: "PRODUITS", href: "/catalogue" },
                 { label: "MATÉRIEL", href: "/catalogue?category=materiel" },
                 { label: "MARQUES", href: "/catalogue" },

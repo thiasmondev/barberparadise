@@ -8,6 +8,10 @@ export interface Product {
   subcategory: string;
   subsubcategory: string;
   price: number;
+  pricePublic?: number;
+  priceProEur?: number | null;
+  hasPriceProEur?: boolean;
+  isPro?: boolean;
   originalPrice: number | null;
   images: string | string[];
   description: string;

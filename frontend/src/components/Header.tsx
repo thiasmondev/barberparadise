@@ -9,6 +9,7 @@ import { isExactActiveHref } from "@/utils/navigation";
 import { getMegaMenuChildren, hasMegaMenuChildren } from "@/utils/megaMenu";
 import type { Brand } from "@/types";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
+import { getProStatus } from "@/lib/customer-api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
 
@@ -35,6 +36,7 @@ const NAV_MAIN: NavItem[] = [
   { label: "MATÉRIEL", href: "/catalogue?category=materiel", megaMenu: "materiel" },
   { label: "MARQUES", href: "/marques", megaMenu: "marques" },
   { label: "NOUVEAUTÉS", href: "/nouveautes" },
+  { label: "PRO", href: "/pro" },
 ];
 
 const NAV_BURGER = [
@@ -45,6 +47,7 @@ const NAV_BURGER = [
   { label: "BARBE", href: "/catalogue?category=barbe" },
   { label: "MARQUES", href: "/marques" },
   { label: "NOUVEAUTÉS", href: "/nouveautes" },
+  { label: "PRO", href: "/pro" },
   { label: "PROMOTIONS", href: "/catalogue?promo=true" },
 ];
 
@@ -400,6 +403,7 @@ function MegaMenuMarques({
 export default function Header() {
   const { itemCount } = useCart();
   const { customer, isAuthenticated, logout } = useCustomerAuth();
+  const [isApprovedPro, setIsApprovedPro] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -436,6 +440,18 @@ export default function Header() {
   }, [pathname]);
 
   // Charger catégories et marques
+  useEffect(() => {
+    let cancelled = false;
+    if (!isAuthenticated) {
+      setIsApprovedPro(false);
+    } else {
+      getProStatus()
+        .then((status) => { if (!cancelled) setIsApprovedPro(status.isApprovedPro); })
+        .catch(() => { if (!cancelled) setIsApprovedPro(false); });
+    }
+    return () => { cancelled = true; };
+  }, [isAuthenticated, customer?.id]);
+
   useEffect(() => {
     fetch(`${API_URL}/api/categories`)
       .then((r) => r.json())
@@ -475,6 +491,11 @@ export default function Header() {
           : "bg-transparent"
       }`}
     >
+      {isApprovedPro && (
+        <div className="w-full bg-[#ff4a8d] py-1 text-center">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white">✓ COMPTE PROFESSIONNEL ACTIF — PRIX HT AFFICHÉS</p>
+        </div>
+      )}
       <div className="max-w-[1440px] mx-auto px-6 md:px-10">
         <div className="flex items-center justify-between h-20">
 
@@ -700,6 +721,7 @@ export default function Header() {
                 <Link href="/compte" onClick={() => setMobileOpen(false)} className="block py-3 text-sm font-black uppercase tracking-[0.18em] text-white/70 hover:text-white">Mon compte</Link>
                 <Link href="/compte?tab=commandes" onClick={() => setMobileOpen(false)} className="block py-3 text-sm font-black uppercase tracking-[0.18em] text-white/70 hover:text-white">Mes commandes</Link>
                 <Link href="/compte?tab=wishlist" onClick={() => setMobileOpen(false)} className="block py-3 text-sm font-black uppercase tracking-[0.18em] text-white/70 hover:text-white">Ma wishlist</Link>
+                <Link href="/compte?tab=factures" onClick={() => setMobileOpen(false)} className="block py-3 text-sm font-black uppercase tracking-[0.18em] text-white/70 hover:text-white">Mes factures</Link>
                 <button type="button" onClick={handleCustomerLogout} className="py-3 text-left text-sm font-black uppercase tracking-[0.18em] text-red-300 hover:text-red-200">Se déconnecter</button>
               </div>
             )}

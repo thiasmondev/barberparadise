@@ -284,6 +284,21 @@ adminRouter.patch("/products/:id", requireAdmin, async (req: Request, res: Respo
       description, isActive, isNew, weightG, lengthCm, widthCm, heightCm, isFragile,
       isLiquid, isAerosol, requiresGlass, logisticNote,
     } = req.body;
+    const currentProduct = await prisma.product.findUnique({
+      where: { id: req.params.id },
+      select: { price: true },
+    });
+    if (!currentProduct) {
+      res.status(404).json({ error: "Produit introuvable" });
+      return;
+    }
+    const nextPublicPrice = price !== undefined ? parseFloat(price) : currentProduct.price;
+    const nextProPrice = toOptionalFloat(priceProEur);
+    if (nextProPrice !== undefined && nextProPrice !== null && nextProPrice >= nextPublicPrice) {
+      res.status(400).json({ error: "Le prix pro HT doit être inférieur au prix public TTC" });
+      return;
+    }
+
     const product = await prisma.product.update({
       where: { id: req.params.id },
       data: {
@@ -292,8 +307,8 @@ adminRouter.patch("/products/:id", requireAdmin, async (req: Request, res: Respo
         category: category || undefined,
         subcategory: subcategory || undefined,
         subsubcategory: subsubcategory !== undefined ? (subsubcategory || "") : undefined,
-        price: price !== undefined ? parseFloat(price) : undefined,
-        priceProEur: toOptionalFloat(priceProEur),
+        price: price !== undefined ? nextPublicPrice : undefined,
+        priceProEur: nextProPrice,
         originalPrice: originalPrice !== undefined ? toOptionalFloat(originalPrice) : undefined,
         inStock: inStock !== undefined ? Boolean(inStock) : undefined,
         description: description || undefined,
@@ -335,6 +350,13 @@ adminRouter.post("/products", requireAdmin, async (req: Request, res: Response):
       name, brand, category, subcategory, price, priceProEur, originalPrice, inStock, description, isActive,
       weightG, lengthCm, widthCm, heightCm, isFragile, isLiquid, isAerosol, requiresGlass, logisticNote,
     } = req.body;
+    const publicPrice = parseFloat(price);
+    const proPrice = toOptionalFloat(priceProEur) ?? null;
+    if (proPrice !== null && proPrice >= publicPrice) {
+      res.status(400).json({ error: "Le prix pro HT doit être inférieur au prix public TTC" });
+      return;
+    }
+
     const product = await prisma.product.create({
       data: {
         handle: name.toLowerCase().replace(/ +/g, "-"),
@@ -344,8 +366,8 @@ adminRouter.post("/products", requireAdmin, async (req: Request, res: Response):
         brand,
         category,
         subcategory,
-        price: parseFloat(price),
-        priceProEur: toOptionalFloat(priceProEur) ?? null,
+        price: publicPrice,
+        priceProEur: proPrice,
         originalPrice: originalPrice ? parseFloat(originalPrice) : null,
         inStock: inStock ? true : false,
         description,

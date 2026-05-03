@@ -11,7 +11,11 @@ export default function ProductCard({ product }: { product: Product }) {
   const { addItem } = useCart();
   const images = parseImages(product.images);
   const mainImage = images[0] || "/placeholder.jpg";
-  const discount = getDiscount(product.price, product.originalPrice);
+  const publicPrice = typeof product.pricePublic === "number" ? product.pricePublic : product.price;
+  const proPrice = typeof product.priceProEur === "number" ? product.priceProEur : null;
+  const showsProPrice = Boolean(product.isPro && proPrice !== null);
+  const displayedPrice = showsProPrice ? proPrice! : product.price;
+  const discount = getDiscount(publicPrice, product.originalPrice);
 
   return (
     <div className="group bg-white rounded-xl border border-gray-100 overflow-hidden hover:shadow-lg hover:border-primary-100 transition-all duration-300">
@@ -29,6 +33,11 @@ export default function ProductCard({ product }: { product: Product }) {
           {product.isNew && (
             <span className="bg-primary text-white text-[10px] font-bold px-2 py-0.5 rounded">
               NOUVEAU
+            </span>
+          )}
+          {showsProPrice && (
+            <span className="bg-amber-400 text-black text-[10px] font-black px-2 py-0.5 rounded">
+              PRIX PRO
             </span>
           )}
           {discount && (
@@ -62,14 +71,23 @@ export default function ProductCard({ product }: { product: Product }) {
         {/* Price + Add to cart */}
         <div className="flex items-end justify-between mt-3 gap-2">
           <div>
-            <span className="text-lg font-bold text-dark-800">
-              {formatPrice(product.price)}
+            {showsProPrice && (
+              <span className="mb-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-800">
+                Prix pro HT
+              </span>
+            )}
+            <span className="block text-lg font-bold text-dark-800">
+              {formatPrice(displayedPrice)}{showsProPrice ? " HT" : ""}
             </span>
-            {product.originalPrice && product.originalPrice > product.price && (
+            {showsProPrice ? (
+              <span className="block text-xs text-gray-400 line-through">
+                Public {formatPrice(publicPrice)} TTC
+              </span>
+            ) : product.originalPrice && product.originalPrice > publicPrice ? (
               <span className="block text-xs text-gray-400 line-through">
                 {formatPrice(product.originalPrice)}
               </span>
-            )}
+            ) : null}
           </div>
           <button
             onClick={() => addItem(product)}

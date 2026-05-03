@@ -174,3 +174,39 @@ export async function removeCustomerWishlist(productId: string): Promise<{ succe
     method: "DELETE",
   });
 }
+
+
+export interface ProAccount {
+  id: string;
+  customerId: string;
+  companyName: string;
+  siret?: string | null;
+  vatNumber?: string | null;
+  activity: string;
+  phone: string;
+  status: "pending" | "approved" | "rejected" | string;
+  rejectionReason?: string | null;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProRegisterInput {
+  companyName: string;
+  activity: string;
+  phone: string;
+  siret?: string | null;
+  vatNumber?: string | null;
+}
+
+export async function getProStatus(): Promise<{ proAccount: ProAccount | null; isApprovedPro: boolean }> {
+  return customerFetch<{ proAccount: ProAccount | null; isApprovedPro: boolean }>("/api/pro/me");
+}
+
+export async function registerProAccount(data: ProRegisterInput): Promise<{ proAccount: ProAccount }> {
+  return customerFetch<{ proAccount: ProAccount }>("/api/pro/register", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}

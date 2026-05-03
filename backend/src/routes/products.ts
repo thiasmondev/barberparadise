@@ -40,27 +40,38 @@ function parseJsonArray(value?: string | null): unknown[] {
   }
 }
 
-function serializeProduct<T extends JsonProduct>(product: T, isApprovedPro: boolean) {
+function serializeProduct<T extends JsonProduct & { price: number }>(product: T, isApprovedPro: boolean) {
   const parsed = {
     ...product,
     images: parseJsonArray(product.images),
     features: parseJsonArray(product.features),
     tags: parseJsonArray(product.tags),
-  } as Omit<T, "images" | "features" | "tags"> & {
+  } as unknown as Omit<T, "images" | "features" | "tags"> & {
     images: unknown[];
     features: unknown[];
     tags: unknown[];
+    price: number;
     priceProEur?: number | null;
-    proPrice?: number | null;
   };
 
-  if (isApprovedPro) {
-    parsed.proPrice = parsed.priceProEur ?? null;
-    return parsed;
+  const hasPriceProEur = typeof parsed.priceProEur === "number" && parsed.priceProEur > 0;
+  const pricePublic = parsed.price;
+  const price = isApprovedPro && hasPriceProEur ? parsed.priceProEur! : pricePublic;
+
+  const serialized = {
+    ...parsed,
+    price,
+    pricePublic,
+    isPro: isApprovedPro,
+    hasPriceProEur,
+  };
+
+  if (!isApprovedPro) {
+    const { priceProEur: _priceProEur, ...publicProduct } = serialized;
+    return publicProduct;
   }
 
-  const { priceProEur: _priceProEur, ...publicProduct } = parsed;
-  return publicProduct;
+  return serialized;
 }
 
 async function getAllChildSlugs(parentSlug: string): Promise<string[]> {

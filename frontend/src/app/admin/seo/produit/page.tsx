@@ -360,6 +360,7 @@ function SeoProductPageContent() {
   const [editIsAerosol, setEditIsAerosol] = useState(false);
   const [editRequiresGlass, setEditRequiresGlass] = useState(false);
   const [editLogisticNote, setEditLogisticNote] = useState("");
+  const [editPriceProEur, setEditPriceProEur] = useState("");
 
   // Autocomplétion (suggestions enrichies avec labels hiérarchiques)
   const [allCategories, setAllCategories] = useState<CategorySuggestion[]>([]);
@@ -473,6 +474,7 @@ function SeoProductPageContent() {
         setEditIsAerosol(Boolean(data.product.isAerosol));
         setEditRequiresGlass(Boolean(data.product.requiresGlass));
         setEditLogisticNote(data.product.logisticNote || "");
+        setEditPriceProEur(data.product.priceProEur != null ? String(data.product.priceProEur) : "");
         setEditTags(
           Array.isArray(data.product.tags)
             ? data.product.tags
@@ -570,6 +572,7 @@ function SeoProductPageContent() {
         isAerosol: editIsAerosol,
         requiresGlass: editRequiresGlass,
         logisticNote: editLogisticNote,
+        priceProEur: editPriceProEur.trim() === "" ? null : Number(editPriceProEur),
       });
       setApplied(true);
       const data = await analyzeSeoProduct(productId);
@@ -1111,6 +1114,25 @@ function SeoProductPageContent() {
           </div>
 
 
+
+          {/* Tarification professionnelle */}
+          <div className="bg-white rounded-xl shadow-sm border border-amber-100 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">B2B</span>
+              <span className="text-xs text-gray-400">Prix visible uniquement pour les comptes professionnels approuvés</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Prix public TTC actuel</label>
+                <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-800">{product ? formatPrice(product.price) : "—"}</div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Prix pro HT (€)</label>
+                <input type="number" min="0" step="0.01" value={editPriceProEur} onChange={(e) => { setEditPriceProEur(e.target.value); setApplied(false); }} placeholder="ex: 24.90" className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none" />
+              </div>
+              <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">Laissez vide pour ne pas proposer de tarif pro dédié sur ce produit.</div>
+            </div>
+          </div>
 
           {/* Données logistiques */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">

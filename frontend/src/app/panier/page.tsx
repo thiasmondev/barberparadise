@@ -5,6 +5,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { Trash2, Minus, Plus, ArrowLeft, ArrowRight, ShoppingBag, CreditCard, Landmark, WalletCards } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
+import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
+import { getProStatus } from "@/lib/customer-api";
 import { parseImages, formatPrice } from "@/lib/utils";
 
 type PaymentMethod = "card" | "pay_by_bank" | "paypal_4x";
@@ -22,6 +24,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backe
 
 export default function CartPage() {
   const { items, removeItem, updateQuantity, total, itemCount } = useCart();
+  const { isAuthenticated, customer } = useCustomerAuth();
+  const [isApprovedPro, setIsApprovedPro] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
   const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
   const [shippingLoading, setShippingLoading] = useState(false);
@@ -30,11 +34,30 @@ export default function CartPage() {
   const estimatedShippingOption = useMemo(() => shippingOptions[0], [shippingOptions]);
   const shipping = estimatedShippingOption?.price ?? 0;
   const grandTotal = total + shipping;
-  const paymentMethods: Array<{ id: PaymentMethod; label: string; icon: typeof CreditCard }> = [
+  const minimumProOrder = 200;
+  const proRemaining = Math.max(0, minimumProOrder - total);
+  const isProMinimumBlocked = isApprovedPro && total < minimumProOrder;
+  const paymentMethods = ([
     { id: "card", label: "CARTE BANCAIRE", icon: CreditCard },
     { id: "paypal_4x", label: "PAYPAL 4X SANS FRAIS", icon: WalletCards },
     { id: "pay_by_bank", label: "VIREMENT BANCAIRE", icon: Landmark },
-  ];
+  ] satisfies Array<{ id: PaymentMethod; label: string; icon: typeof CreditCard }>).filter((method) => !isApprovedPro || method.id === "pay_by_bank");
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!isAuthenticated) {
+      setIsApprovedPro(false);
+      return;
+    }
+    getProStatus()
+      .then((status) => { if (!cancelled) setIsApprovedPro(status.isApprovedPro); })
+      .catch(() => { if (!cancelled) setIsApprovedPro(false); });
+    return () => { cancelled = true; };
+  }, [isAuthenticated, customer?.id]);
+
+  useEffect(() => {
+    if (isApprovedPro && paymentMethod !== "pay_by_bank") setPaymentMethod("pay_by_bank");
+  }, [isApprovedPro, paymentMethod]);
 
   useEffect(() => {
     if (items.length === 0) return;
@@ -222,6 +245,14 @@ export default function CartPage() {
                 {shippingError && (
                   <p className="text-[10px] text-red-300 uppercase tracking-widest">{shippingError}</p>
                 )}
+                {isApprovedPro && (
+                  <div className={`border p-4 ${isProMinimumBlocked ? "border-[#ff4a8d] bg-[#ff4a8d]/10" : "border-emerald-500/30 bg-emerald-500/10"}`}>
+                    <p className={`text-sm font-black uppercase tracking-[0.14em] ${isProMinimumBlocked ? "text-[#ff4a8d]" : "text-emerald-300"}`}>Commande minimum pro : 200€ HT</p>
+                    <p className="mt-2 text-xs text-gray-400">
+                      {isProMinimumBlocked ? `Il vous manque ${formatPrice(proRemaining)} HT pour valider votre commande professionnelle.` : "Minimum de commande professionnel atteint. Prix affichés en HT."}
+                    </p>
+                  </div>
+                )}
                 {shipping > 0 && total < 49 && (
                   <p className="text-[10px] text-gray-600 uppercase tracking-widest">
                     Plus que {formatPrice(49 - total)} pour la livraison gratuite
@@ -256,16 +287,27 @@ export default function CartPage() {
                 </div>
               </div>
 
-              <Link
-                href="/commande"
-                onClick={() => {
-                  sessionStorage.setItem("barberparadise-payment-method", paymentMethod);
-                }}
-                className="w-full flex items-center justify-center gap-3 bg-[#ff4a8d] hover:bg-[#ff1f70] text-white py-5 text-xs font-black tracking-widest uppercase transition-colors"
-              >
-                VALIDER LA COMMANDE
-                <ArrowRight size={14} />
-              </Link>
+              {isProMinimumBlocked ? (
+                <button
+                  type="button"
+                  disabled
+                  className="w-full flex items-center justify-center gap-3 bg-[#ff4a8d]/50 text-white/70 py-5 text-xs font-black tracking-widest uppercase cursor-not-allowed"
+                >
+                  VALIDER LA COMMANDE
+                  <ArrowRight size={14} />
+                </button>
+              ) : (
+                <Link
+                  href="/commande"
+                  onClick={() => {
+                    sessionStorage.setItem("barberparadise-payment-method", paymentMethod);
+                  }}
+                  className="w-full flex items-center justify-center gap-3 bg-[#ff4a8d] hover:bg-[#ff1f70] text-white py-5 text-xs font-black tracking-widest uppercase transition-colors"
+                >
+                  VALIDER LA COMMANDE
+                  <ArrowRight size={14} />
+                </Link>
+              )}
 
               <div className="mt-6 space-y-3">
                 <div className="flex items-center gap-3 text-[10px] text-gray-600 uppercase tracking-widest">
