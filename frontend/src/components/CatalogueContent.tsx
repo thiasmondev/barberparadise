@@ -364,7 +364,7 @@ export default function CatalogueContent() {
                       />
                       <div className="absolute top-4 left-4 z-20 flex flex-col gap-2">
                         {showsProPrice && (
-                          <span className="bg-amber-400 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-black">PRIX PRO</span>
+                          <span className="bg-blue-600 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white">PRIX PRO</span>
                         )}
                         {product.originalPrice && product.originalPrice > publicPrice && (
                           <span className="bg-[#ff4a8d] px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white">PROMO</span>
@@ -381,7 +381,7 @@ export default function CatalogueContent() {
                       <div className="flex justify-between items-end mt-4 gap-3">
                         <div>
                           {showsProPrice && (
-                            <span className="mb-1 inline-flex bg-amber-400/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-amber-300">Prix pro HT</span>
+                            <span className="mb-1 inline-flex px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-blue-400">Prix pro HT</span>
                           )}
                           <span className={`block font-black ${isHighlight ? "text-xl" : "text-base"} text-white`}>
                             {formatPrice(displayedPrice)}{showsProPrice ? " HT" : ""}

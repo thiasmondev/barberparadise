@@ -203,6 +203,24 @@ productsRouter.get("/promo", async (req: Request, res: Response): Promise<void> 
   }
 });
 
+// GET /api/products/nouveautes — Nouveautés avec prix professionnel cohérent
+productsRouter.get("/nouveautes", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const [products, isApprovedPro] = await Promise.all([
+      prisma.product.findMany({
+        where: { status: "active", isNew: true },
+        orderBy: { createdAt: "desc" },
+        take: 24,
+      }),
+      isApprovedProRequest(req),
+    ]);
+    res.json(products.map((product) => serializeProduct(product, isApprovedPro)));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
 // GET /api/products/reviews/public — Avis approuvés pour la homepage
 productsRouter.get("/reviews/public", async (_req: Request, res: Response): Promise<void> => {
   try {

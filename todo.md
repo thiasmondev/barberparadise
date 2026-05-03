@@ -187,3 +187,9 @@
 - [x] Ajouter un import CSV pour mettre à jour les prix professionnels en masse depuis un fichier uploadé.
 - [x] Valider les builds backend/frontend et les tests ciblés avant push GitHub.
 - [x] Committer et pousser la gestion des prix professionnels par marque sur `main`.
+
+- [x] Remplacer dans tout le frontend les badges `PRIX PRO` jaunes par `bg-blue-600 text-white` et les labels `TARIF PROFESSIONNEL HT` jaunes par `text-blue-400`.
+- [x] Corriger `GET /api/brands/:slug` pour appliquer la logique de prix professionnel approuvé aux produits de marque.
+- [x] Vérifier et harmoniser la logique de prix pro sur `GET /api/products`, `GET /api/products/nouveautes` et toutes les routes backend retournant des listes de produits.
+- [x] Valider les builds frontend/backend et les tests ciblés après correction des badges et prix pro.
+- [x] Committer et pousser les corrections badges/prix pro sur `main`.

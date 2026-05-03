@@ -36,7 +36,7 @@ export default function ProductCard({ product }: { product: Product }) {
             </span>
           )}
           {showsProPrice && (
-            <span className="bg-amber-400 text-black text-[10px] font-black px-2 py-0.5 rounded">
+            <span className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded">
               PRIX PRO
             </span>
           )}
@@ -72,7 +72,7 @@ export default function ProductCard({ product }: { product: Product }) {
         <div className="flex items-end justify-between mt-3 gap-2">
           <div>
             {showsProPrice && (
-              <span className="mb-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-800">
+              <span className="mb-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-blue-400">
                 Prix pro HT
               </span>
             )}

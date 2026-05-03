@@ -1,8 +1,55 @@
 import { Router, Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
+import jwt from "jsonwebtoken";
 
 const router = Router();
 const prisma = new PrismaClient();
+
+type CustomerToken = { id: string; email: string };
+
+type BrandProduct = {
+  images?: string | null;
+  features?: string | null;
+  tags?: string | null;
+  price: number;
+  priceProEur?: number | null;
+};
+
+async function isApprovedProRequest(req: Request): Promise<boolean> {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token || !process.env.JWT_SECRET) return false;
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET) as CustomerToken;
+    const account = await prisma.proAccount.findUnique({
+      where: { customerId: decoded.id },
+      select: { status: true },
+    });
+    return account?.status === "approved";
+  } catch {
+    return false;
+  }
+}
+
+function serializeBrandProduct<T extends BrandProduct>(product: T, isApprovedPro: boolean) {
+  const hasPriceProEur = typeof product.priceProEur === "number" && product.priceProEur > 0;
+  const pricePublic = product.price;
+  const price = isApprovedPro && hasPriceProEur ? product.priceProEur! : pricePublic;
+  const serialized = {
+    ...product,
+    price,
+    pricePublic,
+    isPro: isApprovedPro,
+    hasPriceProEur,
+  };
+
+  if (!isApprovedPro) {
+    const { priceProEur: _priceProEur, ...publicProduct } = serialized;
+    return publicProduct;
+  }
+
+  return serialized;
+}
 
 // ─── GET /api/brands ──────────────────────────────────────────
 // Liste toutes les marques avec le nombre de produits actifs
@@ -70,7 +117,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
 
     const where = { brandId: brand.id, status: "active" };
 
-    const [products, total] = await Promise.all([
+    const [products, total, isApprovedPro] = await Promise.all([
       prisma.product.findMany({
         where,
         orderBy,
@@ -83,6 +130,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
           brand: true,
           price: true,
           originalPrice: true,
+          priceProEur: true,
           images: true,
           rating: true,
           reviewCount: true,
@@ -94,6 +142,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
         },
       }),
       prisma.product.count({ where }),
+      isApprovedProRequest(req),
     ]);
 
     res.json({
@@ -106,7 +155,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
         bannerImage: brand.bannerImage,
         website: brand.website,
       },
-      products,
+      products: products.map((product) => serializeBrandProduct(product, isApprovedPro)),
       pagination: {
         total,
         pages: Math.ceil(total / limit),

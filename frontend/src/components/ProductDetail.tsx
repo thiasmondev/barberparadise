@@ -199,8 +199,8 @@ export default function ProductDetail({ product }: { product: Product }) {
             <div className="mb-8">
               {showsProPrice && (
                 <div className="mb-3 flex flex-wrap items-center gap-3">
-                  <span className="bg-amber-400 px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-black">PRIX PRO</span>
-                  <span className="text-xs font-bold uppercase tracking-widest text-amber-300">Tarif professionnel HT</span>
+                  <span className="bg-blue-600 px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-white">PRIX PRO</span>
+                  <span className="text-xs font-bold uppercase tracking-widest text-blue-400">Tarif professionnel HT</span>
                 </div>
               )}
               <div className="flex flex-wrap items-baseline gap-4">

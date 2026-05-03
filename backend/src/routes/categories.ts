@@ -1,8 +1,73 @@
 import { Router, Request, Response } from "express";
+import jwt from "jsonwebtoken";
 import { prisma } from "../utils/prisma";
 import { requireAdmin } from "../middleware/auth";
 
 export const categoriesRouter = Router();
+
+type CustomerToken = { id: string; email: string };
+
+type CategoryProduct = {
+  images?: string | null;
+  tags?: string | null;
+  price: number;
+  priceProEur?: number | null;
+};
+
+async function isApprovedProRequest(req: Request): Promise<boolean> {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token || !process.env.JWT_SECRET) return false;
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET) as CustomerToken;
+    const account = await prisma.proAccount.findUnique({
+      where: { customerId: decoded.id },
+      select: { status: true },
+    });
+    return account?.status === "approved";
+  } catch {
+    return false;
+  }
+}
+
+function parseJsonArray(value?: string | null): unknown[] {
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function serializeCategoryProduct<T extends CategoryProduct>(product: T, isApprovedPro: boolean) {
+  const parsed = {
+    ...product,
+    images: parseJsonArray(product.images),
+    tags: parseJsonArray(product.tags),
+  } as Omit<T, "images" | "tags"> & {
+    images: unknown[];
+    tags: unknown[];
+    price: number;
+    priceProEur?: number | null;
+  };
+  const hasPriceProEur = typeof parsed.priceProEur === "number" && parsed.priceProEur > 0;
+  const pricePublic = parsed.price;
+  const price = isApprovedPro && hasPriceProEur ? parsed.priceProEur! : pricePublic;
+  const serialized = {
+    ...parsed,
+    price,
+    pricePublic,
+    isPro: isApprovedPro,
+    hasPriceProEur,
+  };
+
+  if (!isApprovedPro) {
+    const { priceProEur: _priceProEur, ...publicProduct } = serialized;
+    return publicProduct;
+  }
+
+  return serialized;
+}
 
 // GET /api/categories
 categoriesRouter.get("/", async (_req: Request, res: Response): Promise<void> => {
@@ -19,11 +84,14 @@ categoriesRouter.get("/", async (_req: Request, res: Response): Promise<void> =>
 categoriesRouter.get("/:slug/products", async (req: Request, res: Response): Promise<void> => {
   try {
     const { slug } = req.params;
-    const products = await prisma.product.findMany({
-      where: { status: "active", OR: [{ category: slug }, { subcategory: slug }] },
-      orderBy: { rating: "desc" },
-    });
-    res.json(products.map(p => ({ ...p, images: JSON.parse(p.images || "[]"), tags: JSON.parse(p.tags || "[]") })));
+    const [products, isApprovedPro] = await Promise.all([
+      prisma.product.findMany({
+        where: { status: "active", OR: [{ category: slug }, { subcategory: slug }] },
+        orderBy: { rating: "desc" },
+      }),
+      isApprovedProRequest(req),
+    ]);
+    res.json(products.map((product) => serializeCategoryProduct(product, isApprovedPro)));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur serveur" });
