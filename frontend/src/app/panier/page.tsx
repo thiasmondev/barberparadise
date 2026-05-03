@@ -35,6 +35,8 @@ export default function CartPage() {
   const shipping = estimatedShippingOption?.price ?? 0;
   const grandTotal = total + shipping;
   const minimumProOrder = 200;
+  const freeShippingThreshold = isApprovedPro ? 500 : 49;
+  const freeShippingRemaining = Math.max(0, freeShippingThreshold - total);
   const proRemaining = Math.max(0, minimumProOrder - total);
   const isProMinimumBlocked = isApprovedPro && total < minimumProOrder;
   const paymentMethods = ([
@@ -67,7 +69,7 @@ export default function CartPage() {
       setShippingLoading(true);
       setShippingError("");
       try {
-        const params = new URLSearchParams({ country: "FR", total: String(total) });
+        const params = new URLSearchParams({ country: "FR", total: String(total), isPro: String(isApprovedPro) });
         const res = await fetch(`${API_URL}/api/checkout/shipping-options?${params.toString()}`, {
           signal: controller.signal,
         });
@@ -86,7 +88,7 @@ export default function CartPage() {
 
     loadEstimatedShipping();
     return () => controller.abort();
-  }, [items.length, total]);
+  }, [items.length, total, isApprovedPro]);
 
   if (items.length === 0) {
     return (
@@ -253,9 +255,9 @@ export default function CartPage() {
                     </p>
                   </div>
                 )}
-                {shipping > 0 && total < 49 && (
+                {shipping > 0 && freeShippingRemaining > 0 && (
                   <p className="text-[10px] text-gray-600 uppercase tracking-widest">
-                    Plus que {formatPrice(49 - total)} pour la livraison gratuite
+                    Plus que {formatPrice(freeShippingRemaining)}{isApprovedPro ? " HT" : ""} pour la livraison gratuite
                   </p>
                 )}
                 <div className="border-t border-white/5 pt-4 flex justify-between items-center">

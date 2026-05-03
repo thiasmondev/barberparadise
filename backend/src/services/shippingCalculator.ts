@@ -8,6 +8,11 @@ export interface ShippingOption {
 }
 
 export const FREE_SHIPPING_THRESHOLD = 49;
+export const PRO_FREE_SHIPPING_THRESHOLD = 500;
+
+export function getFreeShippingThreshold(isPro: boolean = false): number {
+  return isPro ? PRO_FREE_SHIPPING_THRESHOLD : FREE_SHIPPING_THRESHOLD;
+}
 
 const EU_COUNTRIES = [
   "FR",
@@ -47,13 +52,15 @@ function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-export function calculateFreeShippingRemaining(orderTotal: number): number {
-  return roundMoney(Math.max(0, FREE_SHIPPING_THRESHOLD - orderTotal));
+export function calculateFreeShippingRemaining(orderTotal: number, isPro: boolean = false): number {
+  const freeThreshold = getFreeShippingThreshold(isPro);
+  return roundMoney(Math.max(0, freeThreshold - orderTotal));
 }
 
-export function calculateShippingOptions(country: string | undefined, orderTotal: number): ShippingOption[] {
+export function calculateShippingOptions(country: string | undefined, orderTotal: number, isPro: boolean = false): ShippingOption[] {
   const safeTotal = Number.isFinite(orderTotal) ? Math.max(0, orderTotal) : 0;
-  const isFree = safeTotal >= FREE_SHIPPING_THRESHOLD;
+  const freeThreshold = getFreeShippingThreshold(isPro);
+  const isFree = safeTotal >= freeThreshold;
   const c = (country || "FR").toUpperCase();
 
   if (c === "FR") {

@@ -407,7 +407,9 @@ export default function ProductDetail({ product }: { product: Product }) {
               <div className="flex items-center gap-4">
                 <Truck size={16} className="text-[#ff4a8d] shrink-0" />
                 <div>
-                  <p className="text-xs font-black tracking-widest uppercase">Livraison gratuite dès 49€</p>
+                  <p className="text-xs font-black tracking-widest uppercase">
+                    {product.isPro ? "Livraison gratuite dès 500€ HT" : "Livraison gratuite dès 49€"}
+                  </p>
                   <p className="text-[10px] text-gray-500 mt-0.5">Expédition sous 24-48h</p>
                 </div>
               </div>

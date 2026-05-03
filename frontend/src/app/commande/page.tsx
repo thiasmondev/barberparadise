@@ -6,7 +6,7 @@ import Image from "next/image";
 import { ArrowLeft, Lock, ChevronDown, ShoppingBag, CreditCard, Landmark, WalletCards, ReceiptText, AlertCircle, Smartphone } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
-import { getCustomerAddresses, type CustomerAddress } from "@/lib/customer-api";
+import { getCustomerAddresses, getProStatus, type CustomerAddress } from "@/lib/customer-api";
 import { parseImages, formatPrice } from "@/lib/utils";
 
 type Step = "contact" | "livraison" | "paiement";
@@ -101,6 +101,7 @@ export default function CheckoutPage() {
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [isB2B, setIsB2B] = useState(false);
+  const [isApprovedPro, setIsApprovedPro] = useState(false);
   const [vatNumber, setVatNumber] = useState("");
 
   const [form, setForm] = useState({
@@ -122,7 +123,8 @@ export default function CheckoutPage() {
   );
   const shipping = selectedShippingOption?.price ?? 0;
   const countryCode = useMemo(() => getCountryCode(form.pays), [form.pays]);
-  const vatRate = useMemo(() => getEstimatedVatRate(countryCode, isB2B, vatNumber), [countryCode, isB2B, vatNumber]);
+  const effectiveIsB2B = isB2B || isApprovedPro;
+  const vatRate = useMemo(() => getEstimatedVatRate(countryCode, effectiveIsB2B, vatNumber), [countryCode, effectiveIsB2B, vatNumber]);
   const subtotalHT = useMemo(() => Math.round((total / 1.2 + Number.EPSILON) * 100) / 100, [total]);
   const vatAmount = useMemo(() => Math.round((subtotalHT * (vatRate / 100) + Number.EPSILON) * 100) / 100, [subtotalHT, vatRate]);
   const grandTotal = subtotalHT + vatAmount + shipping;
@@ -188,6 +190,28 @@ export default function CheckoutPage() {
   }, [isAuthenticated]);
 
   useEffect(() => {
+    let cancelled = false;
+    if (!isAuthenticated) {
+      setIsApprovedPro(false);
+      return;
+    }
+    getProStatus()
+      .then((status) => {
+        if (!cancelled) setIsApprovedPro(status.isApprovedPro);
+      })
+      .catch(() => {
+        if (!cancelled) setIsApprovedPro(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, customer?.id]);
+
+  useEffect(() => {
+    if (isApprovedPro) setIsB2B(true);
+  }, [isApprovedPro]);
+
+  useEffect(() => {
     const storedMethod = sessionStorage.getItem("barberparadise-payment-method") as PaymentMethod | null;
     if (storedMethod && Object.keys(METHOD_CONFIG).includes(storedMethod)) setPaymentMethod(storedMethod);
   }, []);
@@ -198,7 +222,8 @@ export default function CheckoutPage() {
       setMethodsLoading(true);
       setPaymentError("");
       try {
-        const res = await fetch(`${API_URL}/api/checkout/available-methods?country=${countryCode}&isB2B=${isB2B}`, {
+        const params = new URLSearchParams({ country: countryCode, isB2B: String(effectiveIsB2B), isPro: String(isApprovedPro) });
+        const res = await fetch(`${API_URL}/api/checkout/available-methods?${params.toString()}`, {
           signal: controller.signal,
         });
         const data = (await res.json()) as { methods?: PaymentMethod[]; error?: string };
@@ -217,7 +242,7 @@ export default function CheckoutPage() {
     }
     loadMethods();
     return () => controller.abort();
-  }, [countryCode, isB2B]);
+  }, [countryCode, effectiveIsB2B, isApprovedPro]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -225,7 +250,7 @@ export default function CheckoutPage() {
       setShippingLoading(true);
       setShippingError("");
       try {
-        const params = new URLSearchParams({ country: countryCode, total: String(total) });
+        const params = new URLSearchParams({ country: countryCode, total: String(total), isPro: String(isApprovedPro) });
         const res = await fetch(`${API_URL}/api/checkout/shipping-options?${params.toString()}`, {
           signal: controller.signal,
         });
@@ -245,15 +270,15 @@ export default function CheckoutPage() {
     }
     loadShippingOptions();
     return () => controller.abort();
-  }, [countryCode, total]);
+  }, [countryCode, total, isApprovedPro]);
 
   const updateForm = (key: string, value: string | boolean) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
   useEffect(() => {
-    if (!isB2B || countryCode === "FR") setVatNumber("");
-  }, [countryCode, isB2B]);
+    if (!effectiveIsB2B || countryCode === "FR") setVatNumber("");
+  }, [countryCode, effectiveIsB2B]);
 
   const handleCheckout = async () => {
     setPaymentError("");
@@ -279,7 +304,7 @@ export default function CheckoutPage() {
           },
           paymentMethod,
           shippingOptionId: selectedShippingOption?.id,
-          isB2B,
+          isB2B: effectiveIsB2B,
           vatNumber: vatNumber.trim() || undefined,
         }),
       });
@@ -404,11 +429,11 @@ export default function CheckoutPage() {
                   <div><label className={labelClass}>Téléphone</label><input type="tel" value={form.telephone} onChange={(e) => updateForm("telephone", e.target.value)} placeholder="+33 6 12 34 56 78" className={inputClass} /></div>
                   <div className="border border-white/10 bg-[#1c1b1b] p-5">
                     <label className="flex items-start gap-3 cursor-pointer">
-                      <input type="checkbox" checked={isB2B} onChange={(e) => setIsB2B(e.target.checked)} className="mt-1 h-4 w-4 accent-[#ff4a8d]" />
+                      <input type="checkbox" checked={effectiveIsB2B} onChange={(e) => setIsB2B(e.target.checked)} disabled={isApprovedPro} className="mt-1 h-4 w-4 accent-[#ff4a8d] disabled:cursor-not-allowed" />
                       <span><span className="block text-xs font-black uppercase tracking-widest text-white">Commande professionnelle B2B</span><span className="mt-2 block text-[11px] leading-5 text-gray-500">Activez cette option pour une facturation entreprise et, hors France dans l’Union européenne, l’autoliquidation si votre numéro TVA est renseigné.</span></span>
                     </label>
                   </div>
-                  {isB2B && countryCode !== "FR" && EU_COUNTRIES.includes(countryCode) && (
+                  {effectiveIsB2B && countryCode !== "FR" && EU_COUNTRIES.includes(countryCode) && (
                     <div className="vat-number-field">
                       <label className={labelClass}>Numéro TVA intracommunautaire</label>
                       <input type="text" placeholder="FR12345678901" value={vatNumber} onChange={(e) => setVatNumber(e.target.value.toUpperCase())} className={inputClass} />

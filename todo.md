@@ -193,3 +193,11 @@
 - [x] Vérifier et harmoniser la logique de prix pro sur `GET /api/products`, `GET /api/products/nouveautes` et toutes les routes backend retournant des listes de produits.
 - [x] Valider les builds frontend/backend et les tests ciblés après correction des badges et prix pro.
 - [x] Committer et pousser les corrections badges/prix pro sur `main`.
+
+- [x] Modifier `src/services/shippingCalculator.ts` pour accepter `isPro` et appliquer un seuil de livraison gratuite à 500 € HT pour les pros contre 49 € pour les particuliers.
+- [x] Modifier `GET /api/checkout/shipping-options` pour lire `isPro`, retourner `freeShippingFrom` dynamique et `freeShippingRemaining` adapté.
+- [x] Propager `isPro` dans les appels frontend à `shipping-options` et `available-methods` depuis `/panier` et `/commande`.
+- [x] Rendre la mention de livraison gratuite dynamique sur les fiches produit : `500€ HT` pour les pros approuvés, `49€` pour les particuliers.
+- [x] Rechercher et corriger toutes les mentions frontend de `49€` liées à la livraison pour respecter le profil pro.
+- [x] Valider les builds backend/frontend et les tests ciblés après correction de la livraison pro.
+- [x] Committer et pousser les corrections de livraison gratuite pro sur `main`.

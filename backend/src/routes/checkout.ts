@@ -10,7 +10,7 @@ import {
   PaymentMethod,
   PaymentProvider,
 } from "../services/paymentRouter";
-import { calculateShippingOptions } from "../services/shippingCalculator";
+import { calculateFreeShippingRemaining, calculateShippingOptions, getFreeShippingThreshold } from "../services/shippingCalculator";
 import { getVatRate } from "../services/vatCalculator";
 
 export const checkoutRouter = Router();
@@ -215,17 +215,27 @@ async function createProviderCheckout(
 
 checkoutRouter.get("/available-methods", (req: Request, res: Response): void => {
   const country = normalizeCountry(typeof req.query.country === "string" ? req.query.country : "FR");
-  const isB2B = req.query.isB2B === "true";
+  const isPro = req.query.isPro === "true";
+  const isB2B = req.query.isB2B === "true" || isPro;
   const methods = getAvailableMethods(country, isB2B);
-  res.json({ methods, country, isB2B });
+  res.json({ methods, country, isB2B, isPro });
 });
 
 checkoutRouter.get("/shipping-options", (req: Request, res: Response): void => {
   const country = normalizeCountry(typeof req.query.country === "string" ? req.query.country : "FR");
   const totalParam = typeof req.query.total === "string" ? Number(req.query.total) : 0;
   const orderTotal = Number.isFinite(totalParam) ? totalParam : 0;
-  const options = calculateShippingOptions(country, orderTotal);
-  res.json({ options, country, orderTotal });
+  const isPro = req.query.isPro === "true";
+  const freeShippingFrom = getFreeShippingThreshold(isPro);
+  const options = calculateShippingOptions(country, orderTotal, isPro);
+  res.json({
+    options,
+    country,
+    orderTotal,
+    isPro,
+    freeShippingFrom,
+    freeShippingRemaining: calculateFreeShippingRemaining(orderTotal, isPro),
+  });
 });
 
 checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<void> => {
@@ -305,7 +315,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const shippingOptions = calculateShippingOptions(country, isB2B ? subtotalHT : subtotalTTC);
+    const shippingOptions = calculateShippingOptions(country, isB2B ? subtotalHT : subtotalTTC, isB2B);
     const selectedShippingOption = shippingOptions.find((option) => option.id === body.shippingOptionId) || shippingOptions[0];
     if (!selectedShippingOption) {
       res.status(400).json({ error: "Aucune option de livraison disponible pour ce pays" });

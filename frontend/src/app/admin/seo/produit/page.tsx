@@ -268,7 +268,9 @@ function ProductPreview({
             <div className="bg-gray-50 rounded-lg p-2 flex items-center gap-2">
               <Truck size={12} className="text-violet-600 shrink-0" />
               <div>
-                <p className="text-xs font-medium text-gray-700">Livraison gratuite dès 49€</p>
+                <p className="text-xs font-medium text-gray-700">
+                  {product.priceProEur ? "Livraison gratuite dès 500€ HT" : "Livraison gratuite dès 49€"}
+                </p>
                 <p className="text-xs text-gray-400">Expédition sous 24-48h</p>
               </div>
             </div>
