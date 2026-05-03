@@ -644,3 +644,44 @@ export function getAdminProAccount(id: string) { return adminFetch<AdminProAccou
 export function approveAdminProAccount(id: string) { return adminFetch<{ account: AdminProAccount }>(`/api/pro/admin/accounts/${id}/approve`, { method: "POST" }); }
 export function rejectAdminProAccount(id: string, reason: string) { return adminFetch<{ account: AdminProAccount }>(`/api/pro/admin/accounts/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }); }
 export function suspendAdminProAccount(id: string, reason?: string) { return adminFetch<{ account: AdminProAccount }>(`/api/pro/admin/accounts/${id}/suspend`, { method: "POST", body: JSON.stringify({ reason }) }); }
+
+
+// ─── Prix professionnels par marque ────────────────────────────
+
+export interface AdminProPriceProduct {
+  id: string;
+  name: string;
+  slug: string;
+  brand: string;
+  brandId: number | null;
+  price: number;
+  priceProEur: number | null;
+  status: string;
+}
+
+export interface AdminProPriceBrand {
+  id: number;
+  name: string;
+  slug: string;
+}
+
+export interface AdminProPricesResponse {
+  brand: AdminProPriceBrand;
+  products: AdminProPriceProduct[];
+}
+
+export interface AdminProPricesSaveResult {
+  updated: number;
+  errors: string[];
+}
+
+export function getAdminProPricesByBrand(brandId: number) {
+  return adminFetch<AdminProPricesResponse>(`/api/admin/pro/prices/${brandId}`);
+}
+
+export function saveAdminProPricesByBrand(brandId: number, prices: { productId: string; priceProEur: number | null }[]) {
+  return adminFetch<AdminProPricesSaveResult>(`/api/admin/pro/prices/brand/${brandId}`, {
+    method: "PUT",
+    body: JSON.stringify({ prices }),
+  });
+}

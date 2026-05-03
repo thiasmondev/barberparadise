@@ -4,6 +4,7 @@ import { prisma } from "../utils/prisma";
 import { getCustomerName, sendOrderShippedEmail } from "../services/emailService";
 import { requireAdmin, AuthRequest } from "../middleware/auth";
 import multer from "multer";
+import { parse } from "csv-parse/sync";
 import { v2 as cloudinary } from "cloudinary";
 
 // ─── Cloudinary Config ───────────────────────────────────────
@@ -20,6 +21,15 @@ const upload = multer({
   fileFilter: (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
     if (file.mimetype.startsWith("image/")) cb(null, true);
     else cb(new Error("Seules les images sont acceptées"));
+  },
+});
+
+const csvUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+    if (file.mimetype === "text/csv" || file.originalname.toLowerCase().endsWith(".csv")) cb(null, true);
+    else cb(new Error("Seuls les fichiers CSV sont acceptés"));
   },
 });
 
@@ -75,6 +85,20 @@ function buildPackagingData(body: Record<string, unknown>) {
     isReinforced: Boolean(body.isReinforced),
     isActive: body.isActive === undefined ? true : Boolean(body.isActive),
   };
+}
+
+function csvEscape(value: unknown): string {
+  const str = value === null || value === undefined ? "" : String(value);
+  if (/["\n\r,;]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
+  return str;
+}
+
+function parseNullablePrice(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const normalized = String(value).trim().replace(",", ".");
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : NaN;
 }
 
 // GET /api/admin/stats — Statistiques du tableau de bord
@@ -230,6 +254,220 @@ adminRouter.get("/products/meta", requireAdmin, async (_req: Request, res: Respo
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// GET /api/admin/pro/prices/export — Export CSV de tous les prix professionnels
+adminRouter.get("/pro/prices/export", requireAdmin, async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const products = await prisma.product.findMany({
+      select: { id: true, name: true, slug: true, brand: true, brandId: true, price: true, priceProEur: true, status: true },
+      orderBy: [{ brand: "asc" }, { name: "asc" }],
+    });
+
+    const header = ["productId", "nom", "slug", "marque", "brandId", "prix_public_ttc", "prix_pro_ht", "statut"];
+    const lines = [header.join(",")];
+    for (const product of products) {
+      lines.push([
+        product.id,
+        product.name,
+        product.slug,
+        product.brand,
+        product.brandId ?? "",
+        product.price,
+        product.priceProEur ?? "",
+        product.status,
+      ].map(csvEscape).join(","));
+    }
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", "attachment; filename=barberparadise-prix-pro.csv");
+    res.send(`\uFEFF${lines.join("\n")}`);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur export prix professionnels" });
+  }
+});
+
+// POST /api/admin/pro/prices/import — Import CSV des prix professionnels
+adminRouter.post("/pro/prices/import", requireAdmin, csvUpload.single("csv"), async (req: Request, res: Response): Promise<void> => {
+  const file = (req as Request & { file?: Express.Multer.File }).file;
+  if (!file) {
+    res.status(400).json({ error: "Aucun fichier CSV fourni" });
+    return;
+  }
+
+  try {
+    const rows: Record<string, string>[] = parse(file.buffer.toString("utf-8"), {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+      bom: true,
+      relax_quotes: true,
+    });
+
+    const productIds = rows.map(row => row.productId || row.id || row.product_id).filter(Boolean);
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, name: true, price: true },
+    });
+    const productById = new Map(products.map(product => [product.id, product]));
+    const errors: string[] = [];
+    const updates: { productId: string; priceProEur: number | null }[] = [];
+
+    rows.forEach((row, index) => {
+      const rowNumber = index + 2;
+      const productId = row.productId || row.id || row.product_id;
+      const rawPrice = row.priceProEur ?? row.prix_pro_ht ?? row.price_pro_eur ?? row["Prix pro HT"] ?? "";
+      if (!productId) {
+        errors.push(`Ligne ${rowNumber} : productId manquant`);
+        return;
+      }
+      const product = productById.get(productId);
+      if (!product) {
+        errors.push(`Ligne ${rowNumber} : produit introuvable (${productId})`);
+        return;
+      }
+      const priceProEur = parseNullablePrice(rawPrice);
+      if (Number.isNaN(priceProEur)) {
+        errors.push(`Ligne ${rowNumber} : prix pro invalide pour ${product.name}`);
+        return;
+      }
+      if (priceProEur !== null && priceProEur < 0) {
+        errors.push(`Ligne ${rowNumber} : prix pro négatif pour ${product.name}`);
+        return;
+      }
+      if (priceProEur !== null && priceProEur >= product.price) {
+        errors.push(`Ligne ${rowNumber} : le prix pro HT doit être inférieur au prix public TTC pour ${product.name}`);
+        return;
+      }
+      updates.push({ productId, priceProEur });
+    });
+
+    if (errors.length > 0) {
+      res.status(400).json({ updated: 0, errors });
+      return;
+    }
+
+    await prisma.$transaction(
+      updates.map(update => prisma.product.update({
+        where: { id: update.productId },
+        data: { priceProEur: update.priceProEur },
+      }))
+    );
+
+    res.json({ updated: updates.length, errors: [] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err instanceof Error ? err.message : "Erreur import prix professionnels" });
+  }
+});
+
+// GET /api/admin/pro/prices/:brandId — Produits d'une marque avec prix pro
+adminRouter.get("/pro/prices/:brandId", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const brandId = parseInt(req.params.brandId, 10);
+    if (!Number.isFinite(brandId)) {
+      res.status(400).json({ error: "Marque invalide" });
+      return;
+    }
+
+    const brand = await prisma.brand.findUnique({ select: { id: true, name: true, slug: true }, where: { id: brandId } });
+    if (!brand) {
+      res.status(404).json({ error: "Marque introuvable" });
+      return;
+    }
+
+    const products = await prisma.product.findMany({
+      where: { OR: [{ brandId }, { brand: brand.name }] },
+      select: { id: true, name: true, slug: true, brand: true, brandId: true, price: true, priceProEur: true, status: true },
+      orderBy: { name: "asc" },
+    });
+
+    res.json({ brand, products });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur chargement prix professionnels" });
+  }
+});
+
+// PUT /api/admin/pro/prices/brand/:brandId — Mise à jour groupée des prix pro d'une marque
+adminRouter.put("/pro/prices/brand/:brandId", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const brandId = parseInt(req.params.brandId, 10);
+    const incoming = Array.isArray(req.body?.prices) ? req.body.prices : [];
+    if (!Number.isFinite(brandId)) {
+      res.status(400).json({ error: "Marque invalide" });
+      return;
+    }
+    if (incoming.length === 0) {
+      res.status(400).json({ error: "Aucun prix à sauvegarder", updated: 0, errors: ["Aucun prix à sauvegarder"] });
+      return;
+    }
+
+    const brand = await prisma.brand.findUnique({ select: { id: true, name: true }, where: { id: brandId } });
+    if (!brand) {
+      res.status(404).json({ error: "Marque introuvable" });
+      return;
+    }
+
+    const productIds = incoming.map((item: { productId?: unknown }) => String(item.productId || "")).filter(Boolean);
+    const products = await prisma.product.findMany({
+      where: { OR: [{ brandId }, { brand: brand.name }] },
+      select: { id: true, name: true, price: true },
+    });
+    const productById = new Map(products.map(product => [product.id, product]));
+    const errors: string[] = [];
+    const updates: { productId: string; priceProEur: number | null }[] = [];
+
+    incoming.forEach((item: { productId?: unknown; priceProEur?: unknown }, index: number) => {
+      const productId = String(item.productId || "");
+      const product = productById.get(productId);
+      if (!productId) {
+        errors.push(`Ligne ${index + 1} : productId manquant`);
+        return;
+      }
+      if (!product) {
+        errors.push(`Produit hors marque ou introuvable : ${productId}`);
+        return;
+      }
+      const priceProEur = parseNullablePrice(item.priceProEur);
+      if (Number.isNaN(priceProEur)) {
+        errors.push(`${product.name} : prix pro invalide`);
+        return;
+      }
+      if (priceProEur !== null && priceProEur < 0) {
+        errors.push(`${product.name} : prix pro négatif`);
+        return;
+      }
+      if (priceProEur !== null && priceProEur >= product.price) {
+        errors.push(`${product.name} : le prix pro HT doit être inférieur au prix public TTC`);
+        return;
+      }
+      updates.push({ productId, priceProEur });
+    });
+
+    const unknownIds = productIds.filter((id: string) => !productById.has(id));
+    if (unknownIds.length > 0) {
+      errors.push(...unknownIds.map((id: string) => `Produit hors marque ou introuvable : ${id}`));
+    }
+
+    if (errors.length > 0) {
+      res.status(400).json({ updated: 0, errors: [...new Set(errors)] });
+      return;
+    }
+
+    await prisma.$transaction(
+      updates.map(update => prisma.product.update({
+        where: { id: update.productId },
+        data: { priceProEur: update.priceProEur },
+      }))
+    );
+
+    res.json({ updated: updates.length, errors: [] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur sauvegarde prix professionnels" });
   }
 });
 

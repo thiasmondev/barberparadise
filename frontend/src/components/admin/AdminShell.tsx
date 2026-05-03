@@ -20,6 +20,7 @@ import {
   MessageSquare,
   Tag,
   Boxes,
+  Euro,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { href: "/admin/commandes", label: "Commandes", icon: ShoppingCart },
   { href: "/admin/clients", label: "Clients", icon: Users },
   { href: "/admin/pro", label: "Comptes pro", icon: Users },
+  { href: "/admin/pro/prices", label: "Prix professionnels", icon: Euro },
   { href: "/admin/categories", label: "Catégories", icon: FolderTree },
   { href: "/admin/brands", label: "Marques", icon: Tag },
   { href: "/admin/seo", label: "Agent SEO", icon: Search },
@@ -61,10 +63,13 @@ export default function AdminShell({ children }: { children: ReactNode }) {
     return <AdminLoginPage />;
   }
 
-  const currentPage = NAV_ITEMS.find((item) => {
-    if (item.href === "/admin") return pathname === "/admin";
-    return pathname.startsWith(item.href);
-  });
+  const isNavItemActive = (href: string) => {
+    if (href === "/admin") return pathname === "/admin";
+    if (href === "/admin/pro") return pathname === "/admin/pro" || /^\/admin\/pro\/(?!prices(?:\/|$))/.test(pathname);
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
+
+  const currentPage = NAV_ITEMS.find((item) => isNavItemActive(item.href));
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -104,7 +109,7 @@ export default function AdminShell({ children }: { children: ReactNode }) {
         {/* Navigation */}
         <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
           {NAV_ITEMS.map((item) => {
-            const isActive = item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href);
+            const isActive = isNavItemActive(item.href);
             return (
               <Link
                 key={item.href}

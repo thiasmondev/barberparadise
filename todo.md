@@ -178,3 +178,12 @@
 - [x] Corriger `/admin/pro/[id]` pour désactiver immédiatement les boutons Approuver, Refuser et Suspendre après clic avec états `isProcessing` et `actionDone`.
 - [x] Corriger `/admin/pro/[id]` pour masquer les boutons correspondant au statut courant et afficher clairement les badges `APPROUVÉ`, `REFUSÉ` et `SUSPENDU`.
 - [x] Rendre les routes backend `/api/admin/pro/:id/approve`, `/reject` et `/suspend` idempotentes afin d’éviter tout renvoi d’email si le statut demandé est déjà actif.
+
+- [x] Ajouter une entrée de menu admin sous la section Pro vers `/admin/pro/prices` avec le libellé `Prix professionnels`.
+- [x] Créer la page `/admin/pro/prices` avec sélection de marque, liste des produits, saisie `Prix pro HT`, remise calculée, application d’un pourcentage global, sauvegarde par marque et navigation marque précédente/suivante.
+- [x] Créer la route backend `GET /api/admin/pro/prices/:brandId` retournant les produits de la marque avec prix public TTC et prix pro actuel.
+- [x] Créer la route backend `PUT /api/admin/pro/prices/brand/:brandId` avec mise à jour en transaction, validation `priceProEur < priceEur`, retour `{ updated, errors }`.
+- [x] Ajouter un export CSV de tous les produits avec prix public et prix pro actuel depuis l’administration prix professionnels.
+- [x] Ajouter un import CSV pour mettre à jour les prix professionnels en masse depuis un fichier uploadé.
+- [x] Valider les builds backend/frontend et les tests ciblés avant push GitHub.
+- [x] Committer et pousser la gestion des prix professionnels par marque sur `main`.
