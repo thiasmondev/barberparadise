@@ -211,4 +211,4 @@
 - [x] Adapter l’export CSV des prix pros pour produire une ligne par variante avec `id, slug, nom, variante, prix_public_ttc, prix_pro_ht`.
 - [x] Adapter l’import CSV des prix pros pour mettre à jour les prix produits ou variantes selon l’identifiant fourni.
 - [x] Valider la migration Prisma, les builds backend/frontend et les tests ciblés après ajout des prix pros variantes.
-- [ ] Committer et pousser la gestion des prix pros variantes sur `main`.
+- [x] Committer et pousser la gestion des prix pros variantes sur `main`.
