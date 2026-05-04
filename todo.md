@@ -254,3 +254,4 @@
 - [x] Committer et pousser l’Export Indy Finance sur `main`.
 - [x] Depuis l’agent SEO, afficher ou transmettre la disponibilité produit selon son statut `actif` ou `brouillon`.
 - [x] Depuis l’agent SEO produit, permettre de sélectionner la marque et sauvegarder la marque choisie avec la fiche produit.
+- [x] Relancer le push GitHub du commit local `6e286ec Add SEO product brand selector` après vérification de l’accès disponible.
