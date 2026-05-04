@@ -240,3 +240,7 @@
 - [x] Ajouter les tests de régression du MVP agent logistique.
 - [x] Valider les builds backend/frontend et les tests après ajout du MVP agent logistique.
 - [x] Committer et pousser le MVP agent logistique sur `main`.
+
+- [x] Corriger la création produit depuis un lien afin que les images extraites dans le brouillon soient conservées après validation.
+- [x] Ajouter une régression couvrant le flux brouillon produit avec images puis validation.
+- [x] Valider backend/frontend et pousser le correctif images brouillon produit sur `main`.

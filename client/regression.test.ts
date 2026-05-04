@@ -287,3 +287,18 @@ describe("Admin logistics agent MVP", () => {
     expect(shellSource).toContain("logisticsPendingCount");
   });
 });
+
+
+describe("SEO product URL draft image persistence", () => {
+  const repoRoot = resolve(__dirname, "..");
+
+  it("keeps candidate image URLs on the created draft when Cloudinary import is unavailable", () => {
+    const seoRouteSource = readFileSync(resolve(repoRoot, "backend/src/routes/seo.ts"), "utf8");
+
+    expect(seoRouteSource).toContain("fallbackImageUrls");
+    expect(seoRouteSource).toContain("storedImageUrls = importedImageUrls.length > 0 ? importedImageUrls.slice(0, 8) : fallbackImageUrls");
+    expect(seoRouteSource).toContain("images: JSON.stringify(storedImageUrls)");
+    expect(seoRouteSource).toContain('storage: importedImages.length > 0 ? "cloudinary" : "source_urls_pending_import"');
+    expect(seoRouteSource).not.toContain("images: JSON.stringify(importedImageUrls.slice(0, 8))");
+  });
+});

@@ -83,6 +83,9 @@ async function getUniqueProductSlug(base: string): Promise<string> {
 
 function productDraftToCreateData(draft: ProductDraftFromUrl, slug: string, importedImageUrls: string[] = []) {
   const price = typeof draft.price === "number" && Number.isFinite(draft.price) ? draft.price : 0;
+  const fallbackImageUrls = Array.from(new Set((draft.imageUrls || []).filter(isImportableImageUrl))).slice(0, 8);
+  const storedImageUrls = importedImageUrls.length > 0 ? importedImageUrls.slice(0, 8) : fallbackImageUrls;
+  const storedImageAlts = Array.isArray(draft.imageAlts) ? draft.imageAlts.slice(0, storedImageUrls.length || 8) : [];
   return {
     handle: slug,
     slug,
@@ -93,8 +96,8 @@ function productDraftToCreateData(draft: ProductDraftFromUrl, slug: string, impo
     subsubcategory: draft.subsubcategory?.trim() || "",
     price,
     originalPrice: typeof draft.originalPrice === "number" && Number.isFinite(draft.originalPrice) ? draft.originalPrice : null,
-    images: JSON.stringify(importedImageUrls.slice(0, 8)),
-    imageAlts: JSON.stringify(Array.isArray(draft.imageAlts) ? draft.imageAlts.slice(0, importedImageUrls.length || 8) : []),
+    images: JSON.stringify(storedImageUrls),
+    imageAlts: JSON.stringify(storedImageAlts),
     description: draft.seoDescription || draft.directAnswerIntro || draft.shortDescription,
     shortDescription: (draft.shortDescription || draft.directAnswerIntro || draft.name).slice(0, 180),
     features: JSON.stringify(Array.isArray(draft.features) ? draft.features.slice(0, 12) : []),
@@ -163,7 +166,7 @@ seoRouter.post("/product-url/create", async (req, res) => {
       imageImport: {
         imported: importedImages.length,
         candidates: Array.isArray(draft.imageUrls) ? draft.imageUrls.length : 0,
-        storage: importedImages.length > 0 ? "cloudinary" : "manual_review_required",
+        storage: importedImages.length > 0 ? "cloudinary" : "source_urls_pending_import",
       },
       product: {
         ...product,
