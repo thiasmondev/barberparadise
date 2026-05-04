@@ -253,3 +253,4 @@
 - [x] Ajouter les tests de régression Export Indy et valider les builds backend/frontend.
 - [x] Committer et pousser l’Export Indy Finance sur `main`.
 - [x] Depuis l’agent SEO, afficher ou transmettre la disponibilité produit selon son statut `actif` ou `brouillon`.
+- [x] Depuis l’agent SEO produit, permettre de sélectionner la marque et sauvegarder la marque choisie avec la fiche produit.

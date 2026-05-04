@@ -21,6 +21,8 @@ import {
   generateProductDraftFromUrl,
   createProductFromUrlDraft,
   getAdminProducts,
+  getAdminBrands,
+  type AdminBrand,
   type SeoOptimization,
   type GeoOptimization,
   type GeoEnrichedContent,
@@ -182,10 +184,10 @@ function TagsEditor({ tags, onChange }: { tags: string[]; onChange: (tags: strin
 
 //// ─── Product Preview (simule la fiche produit publique) ────────────────────
 function ProductPreview({
-  product, title, metaDescription, description, tags, category, subcategory, images: editImages, publicationStatus,
+  product, title, metaDescription, description, tags, category, subcategory, brand, images: editImages, publicationStatus,
 }: {
   product: Product; title: string; metaDescription: string;
-  description: string; tags: string[]; category: string; subcategory: string; images: string[]; publicationStatus: string;
+  description: string; tags: string[]; category: string; subcategory: string; brand: string; images: string[]; publicationStatus: string;
 }) {
   const images = editImages.length > 0 ? editImages : parseImages(product.images);
   const discount = getDiscount(product.price, product.originalPrice);
@@ -241,7 +243,7 @@ function ProductPreview({
           {/* Info */}
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs text-gray-400 uppercase tracking-wide">{product.brand}</p>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">{brand || product.brand}</p>
               <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${publication.badge}`}>
                 <span className={`h-1.5 w-1.5 rounded-full ${publication.dot}`} />
                 {publication.label}
@@ -368,6 +370,10 @@ function SeoProductPageContent() {
   const [editCategory, setEditCategory] = useState("");
   const [editSubcategory, setEditSubcategory] = useState("");
   const [editSubsubcategory, setEditSubsubcategory] = useState("");
+  const [editBrandId, setEditBrandId] = useState("");
+  const [editBrandName, setEditBrandName] = useState("");
+  const [brands, setBrands] = useState<AdminBrand[]>([]);
+  const [brandsLoading, setBrandsLoading] = useState(false);
   const [editImages, setEditImages] = useState<string[]>([]);
   const [editImageAlts, setEditImageAlts] = useState<string[]>([]);
   const [editWeightG, setEditWeightG] = useState("");
@@ -470,6 +476,14 @@ function SeoProductPageContent() {
   }, []);
 
   useEffect(() => {
+    setBrandsLoading(true);
+    getAdminBrands()
+      .then((items) => setBrands(items.slice().sort((a, b) => a.name.localeCompare(b.name, "fr"))))
+      .catch(console.error)
+      .finally(() => setBrandsLoading(false));
+  }, []);
+
+  useEffect(() => {
     if (!productId) return;
     setLoading(true);
     analyzeSeoProduct(productId)
@@ -483,6 +497,8 @@ function SeoProductPageContent() {
         setEditCategory(data.product.category || "");
         setEditSubcategory(data.product.subcategory || "");
         setEditSubsubcategory((data.product as any).subsubcategory || "");
+        setEditBrandId(data.product.brandId != null ? String(data.product.brandId) : "");
+        setEditBrandName(data.product.brand || "");
         setEditImages(parseImages(data.product.images));
         setEditImageAlts(JSON.parse((data.product as any).imageAlts || "[]"));
         setEditWeightG(data.product.weightG != null ? String(data.product.weightG) : "");
@@ -584,6 +600,8 @@ function SeoProductPageContent() {
         category: editCategory,
         subcategory: editSubcategory,
         subsubcategory: editSubsubcategory,
+        brandId: editBrandId ? Number(editBrandId) : null,
+        brand: editBrandName,
         weightG: editWeightG,
         lengthCm: editLengthCm,
         widthCm: editWidthCm,
@@ -1067,13 +1085,36 @@ function SeoProductPageContent() {
             </div>
           </div>
 
-          {/* Catégorie + Sous-catégorie */}
+          {/* Marque + Catégorie + Sous-catégorie */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">CATÉGORIE & SOUS-CATÉGORIE</span>
+              <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">MARQUE, CATÉGORIE & SOUS-CATÉGORIE</span>
               <span className="text-xs text-gray-400">Modifiables directement</span>
             </div>
             <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Marque</label>
+                <select
+                  value={editBrandId}
+                  onChange={(e) => {
+                    const nextBrandId = e.target.value;
+                    const nextBrand = brands.find((brand) => String(brand.id) === nextBrandId);
+                    setEditBrandId(nextBrandId);
+                    setEditBrandName(nextBrand?.name || "");
+                    setApplied(false);
+                  }}
+                  disabled={brandsLoading}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
+                >
+                  <option value="">{brandsLoading ? "Chargement des marques..." : "Sélectionner une marque"}</option>
+                  {brands.map((brand) => (
+                    <option key={brand.id} value={brand.id}>{brand.name}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-gray-400">
+                  La marque sélectionnée sera sauvegardée sur la fiche produit et reprise dans les données SEO/GEO.
+                </p>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Catégorie</label>
@@ -1222,7 +1263,7 @@ function SeoProductPageContent() {
                 onChange={(imgs) => { setEditImages(imgs); setApplied(false); }}
                 onAltsChange={(alts) => setEditImageAlts(alts)}
                 productName={product?.name}
-                productBrand={product?.brand}
+                productBrand={editBrandName || product?.brand}
                 productCategory={editCategory || product?.category}
               />
             </div>
@@ -2006,8 +2047,9 @@ function SeoProductPageContent() {
               tags={editTags}
               category={editCategory}
               subcategory={editSubcategory}
+              brand={editBrandName || product.brand}
               images={editImages}
-              publicationStatus={editStatus}
+              publicationStatus={editStatus || product.status}
             />
           </div>
         )}

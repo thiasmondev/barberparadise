@@ -4,6 +4,7 @@ export interface Product {
   name: string;
   slug: string;
   brand: string;
+  brandId?: number | null;
   category: string;
   subcategory: string;
   subsubcategory: string;

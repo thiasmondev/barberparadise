@@ -1799,6 +1799,7 @@ adminRouter.patch(
       const {
         name,
         brand,
+        brandId,
         category,
         subcategory,
         subsubcategory,
@@ -1834,6 +1835,16 @@ adminRouter.patch(
       const nextProPrice = toOptionalFloat(priceProEur);
       const nextStockCount = toNonNegativeInt(stockCount, "Stock");
       const nextStatus = toStockStatus(status);
+      const nextBrandId =
+        brandId === undefined
+          ? undefined
+          : brandId === null || brandId === ""
+          ? null
+          : Number(brandId);
+      if (nextBrandId !== undefined && nextBrandId !== null && !Number.isInteger(nextBrandId)) {
+        res.status(400).json({ error: "Marque invalide" });
+        return;
+      }
       if (
         nextProPrice !== undefined &&
         nextProPrice !== null &&
@@ -1850,6 +1861,7 @@ adminRouter.patch(
         data: {
           name: name || undefined,
           brand: brand || undefined,
+          brandId: nextBrandId,
           category: category || undefined,
           subcategory: subcategory || undefined,
           subsubcategory:
