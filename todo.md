@@ -212,3 +212,8 @@
 - [x] Adapter l’import CSV des prix pros pour mettre à jour les prix produits ou variantes selon l’identifiant fourni.
 - [x] Valider la migration Prisma, les builds backend/frontend et les tests ciblés après ajout des prix pros variantes.
 - [x] Committer et pousser la gestion des prix pros variantes sur `main`.
+
+- [x] Remplacer l’affichage de quantité dans le panier par un input numérique éditable entre les boutons `-` et `+`.
+- [x] Vérifier que la quantité saisie manuellement est bornée entre 1 et 999 et que le total se recalcule automatiquement.
+- [x] Valider le frontend après modification du panier.
+- [x] Committer et pousser la modification de quantité éditable du panier sur `main`.

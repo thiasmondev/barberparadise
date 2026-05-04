@@ -201,9 +201,26 @@ export default function CartPage() {
                       >
                         <Minus size={12} />
                       </button>
-                      <span className="w-8 text-center text-xs font-black">{item.quantity}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="999"
+                        value={item.quantity}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value);
+                          if (!isNaN(val) && val >= 1 && val <= 999) {
+                            updateQuantity(item.product.id, val);
+                          }
+                        }}
+                        onBlur={(e) => {
+                          if (!e.target.value || parseInt(e.target.value) < 1) {
+                            updateQuantity(item.product.id, 1);
+                          }
+                        }}
+                        className="w-16 text-center bg-bp-black border border-bp-border rounded text-white focus:border-bp-pink outline-none px-2 py-1"
+                      />
                       <button
-                        onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
+                        onClick={() => updateQuantity(item.product.id, Math.min(999, item.quantity + 1))}
                         className="px-3 py-2 text-gray-500 hover:text-white transition-colors"
                       >
                         <Plus size={12} />
