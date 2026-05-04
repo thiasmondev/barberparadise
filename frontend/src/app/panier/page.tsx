@@ -217,7 +217,7 @@ export default function CartPage() {
                             updateQuantity(item.product.id, 1);
                           }
                         }}
-                        className="w-16 text-center bg-bp-black border border-bp-border rounded text-white focus:border-bp-pink outline-none px-2 py-1"
+                        className="w-16 text-center bg-white border border-bp-border rounded text-black focus:border-bp-pink outline-none px-2 py-1"
                       />
                       <button
                         onClick={() => updateQuantity(item.product.id, Math.min(999, item.quantity + 1))}

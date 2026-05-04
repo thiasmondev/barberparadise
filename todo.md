@@ -217,3 +217,7 @@
 - [x] Vérifier que la quantité saisie manuellement est bornée entre 1 et 999 et que le total se recalcule automatiquement.
 - [x] Valider le frontend après modification du panier.
 - [x] Committer et pousser la modification de quantité éditable du panier sur `main`.
+
+- [x] Corriger le bug visuel du champ quantité du panier : texte noir lisible sur fond blanc au lieu de texte blanc sur fond blanc.
+- [x] Valider le frontend après correction du style du champ quantité.
+- [x] Committer et pousser la correction visuelle du champ quantité sur `main`.
