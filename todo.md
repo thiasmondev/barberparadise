@@ -280,3 +280,7 @@
 - [x] Aligner le menu burger mobile sur la navigation desktop avec Produits, Matériel, Marques, Nouveautés, Pro, compte/connexion et panier.
 - [x] Améliorer les filtres catalogue avec slider prix, marques à cases avec compteurs et recherche, disponibilité, nouveautés, effacement, badges actifs et drawer mobile.
 - [x] Lancer les tests/builds pertinents puis committer et pousser les corrections sur GitHub.
+
+- [x] Auditer exhaustivement le frontend pour `NEXT_PUBLIC_SITE_URL`, `barberparadise.vercel.app` et les URL Vercel codées en dur.
+- [x] Remplacer uniquement les URL `https://barberparadise.vercel.app` codées en dur par `process.env.NEXT_PUBLIC_SITE_URL` ou par le fallback `process.env.NEXT_PUBLIC_SITE_URL || 'https://www.barberparadise.fr'` lorsque nécessaire.
+- [x] Produire avant commit un rapport listant tous les fichiers modifiés et le changement effectué dans chacun.

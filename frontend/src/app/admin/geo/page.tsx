@@ -32,6 +32,7 @@ import {
   generateBuyingGuide,
   type GeoAuditResult,
 } from "@/lib/admin-api";
+import { SITE_URL } from "@/lib/site";
 
 export default function GeoToolsPage() {
   // llms.txt
@@ -316,7 +317,7 @@ export default function GeoToolsPage() {
           </button>
           {llmsContent && (
             <a
-              href="https://barberparadise.vercel.app/llms.txt"
+              href={`${SITE_URL}/llms.txt`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
@@ -363,10 +364,9 @@ export default function GeoToolsPage() {
               <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-emerald-700 text-xs flex items-center gap-2">
                 <Check size={13} />
                 Le fichier est accessible sur{" "}
-                <a href="https://barberparadise.vercel.app/llms.txt" target="_blank" rel="noopener noreferrer" className="underline font-medium">
-                  barberparadise.vercel.app/llms.txt
-                </a>
-              </div>
+     <a href={`${SITE_URL}/llms.txt`} target="_blank" rel="noopener noreferrer" className="underline font-medium">
+                  {SITE_URL.replace(/^https?:\/\//, "")}/llms.txt
+                </a>      </div>
             )}
           </div>
         )}
