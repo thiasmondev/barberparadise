@@ -221,3 +221,10 @@
 - [x] Corriger le bug visuel du champ quantité du panier : texte noir lisible sur fond blanc au lieu de texte blanc sur fond blanc.
 - [x] Valider le frontend après correction du style du champ quantité.
 - [x] Committer et pousser la correction visuelle du champ quantité sur `main`.
+
+- [x] Aligner côté backend les champs administrables prix, stock et statut produit avec le fonctionnement actuellement disponible dans l’agent SEO.
+- [x] Remplacer la partie admin Produits par une page Stock permettant de filtrer par marque et d’ajuster manuellement les stocks.
+- [x] Ajouter une action d’import de facture fournisseur PDF dans la page Stock pour extraire automatiquement les lignes et proposer l’ajustement des stocks.
+- [x] Créer ou adapter les endpoints admin nécessaires pour lister le stock par marque, mettre à jour les quantités, prix et statuts, puis appliquer les ajustements issus d’une facture fournisseur.
+- [x] Valider les builds backend/frontend et les tests ciblés après refonte de la gestion stock.
+- [x] Committer et pousser la refonte admin Stock sur `main`.

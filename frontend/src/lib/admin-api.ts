@@ -701,3 +701,127 @@ export function saveAdminProPricesByBrand(brandId: number, prices: AdminProPrice
     body: JSON.stringify({ prices }),
   });
 }
+
+// ─── Stock Management ─────────────────────────────────────────
+
+export interface StockBrandSummary {
+  brandId: number | null;
+  brand: string;
+  slug: string;
+  logo: string | null;
+  productCount: number;
+  activeCount: number;
+  inStockCount: number;
+  outOfStockCount: number;
+  totalStockCount: number;
+}
+
+export interface StockVariantRow {
+  id: string;
+  name: string;
+  price: number | null;
+  priceProEur: number | null;
+  stock: number;
+  inStock: boolean;
+  sku: string;
+  order: number;
+}
+
+export type StockProductRow = Omit<Product, "id" | "name" | "slug" | "brand" | "category" | "price" | "priceProEur" | "originalPrice" | "images" | "inStock" | "stockCount" | "status" | "variants"> & {
+  id: string;
+  name: string;
+  slug: string;
+  brand: string;
+  category: string;
+  price: number;
+  priceProEur?: number | null;
+  originalPrice: number | null;
+  images: string | string[];
+  inStock: boolean;
+  stockCount: number;
+  status: string;
+  brandId?: number | null;
+  variants?: StockVariantRow[];
+};
+
+export interface StockImportProposal {
+  lineText: string;
+  extractedName: string;
+  quantity: number;
+  confidence: number;
+  productId: string | null;
+  productName: string | null;
+  variantId: string | null;
+  variantName: string | null;
+  currentStock: number | null;
+  newStock: number | null;
+  reason: string;
+}
+
+export interface StockImportResult {
+  fileName: string;
+  extractionMode: "ia" | "heuristique" | string;
+  textPreview: string;
+  proposals: StockImportProposal[];
+  matchedCount: number;
+  total: number;
+}
+
+export function getStockBrands() {
+  return adminFetch<{ brands: StockBrandSummary[] }>("/api/admin/stock/brands");
+}
+
+export function getStockProducts(params?: { brand?: string; brandId?: number | null; search?: string; status?: string }) {
+  const sp = new URLSearchParams();
+  if (params) {
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") sp.set(key, String(value));
+    });
+  }
+  const q = sp.toString();
+  return adminFetch<{ products: StockProductRow[]; total: number }>(`/api/admin/stock/products${q ? `?${q}` : ""}`);
+}
+
+export function updateStockProduct(id: string, data: Partial<Pick<StockProductRow, "price" | "priceProEur" | "stockCount" | "inStock" | "status">>) {
+  return adminFetch<StockProductRow>(`/api/admin/stock/products/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateStockVariant(id: string, data: Partial<Pick<StockVariantRow, "stock" | "inStock" | "priceProEur">>) {
+  return adminFetch<StockVariantRow>(`/api/admin/stock/variants/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function importStockInvoicePdf(file: File) {
+  const token = getToken();
+  if (!token) throw new Error("Non authentifié");
+  const formData = new FormData();
+  formData.append("invoice", file);
+  const res = await fetch(`${API_URL}/api/admin/stock/import-pdf`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  if (res.status === 401) {
+    localStorage.removeItem("admin-token");
+    localStorage.removeItem("admin-user");
+    window.dispatchEvent(new CustomEvent("admin-session-expired"));
+    throw new Error("Session expirée");
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Erreur ${res.status}`);
+  }
+  return res.json() as Promise<StockImportResult>;
+}
+
+export function applyStockInvoiceAdjustments(adjustments: Array<{ productId?: string | null; variantId?: string | null; quantity: number }>, mode: "increment" | "set" = "increment") {
+  return adminFetch<{ updated: number; errors: string[] }>("/api/admin/stock/apply-pdf", {
+    method: "POST",
+    body: JSON.stringify({ adjustments, mode }),
+  });
+}

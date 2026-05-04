@@ -192,3 +192,43 @@ describe("Products category recursive filtering", () => {
     ]);
   });
 });
+
+
+describe("Admin stock workspace", () => {
+  const repoRoot = resolve(__dirname, "..");
+
+  it("replaces the visible Products navigation entry with Stock while keeping the product editor reachable", () => {
+    const shellSource = readFileSync(resolve(repoRoot, "frontend/src/components/admin/AdminShell.tsx"), "utf8");
+    const stockPageSource = readFileSync(resolve(repoRoot, "frontend/src/app/admin/stock/page.tsx"), "utf8");
+
+    expect(shellSource).toContain('{ href: "/admin/stock", label: "Stock"');
+    expect(shellSource).not.toContain('{ href: "/admin/produits", label: "Produits"');
+    expect(stockPageSource).toContain('href="/admin/produits"');
+    expect(stockPageSource).toContain("Gestion produits complète");
+  });
+
+  it("exposes stock frontend helpers for manual adjustments and supplier PDF import", () => {
+    const adminApiSource = readFileSync(resolve(repoRoot, "frontend/src/lib/admin-api.ts"), "utf8");
+
+    expect(adminApiSource).toContain("getStockBrands");
+    expect(adminApiSource).toContain("getStockProducts");
+    expect(adminApiSource).toContain("updateStockProduct");
+    expect(adminApiSource).toContain("updateStockVariant");
+    expect(adminApiSource).toContain("importStockInvoicePdf");
+    expect(adminApiSource).toContain("applyStockInvoiceAdjustments");
+    expect(adminApiSource).toContain('formData.append("invoice", file)');
+  });
+
+  it("keeps backend stock routes aligned with the manual stock and invoice workflows", () => {
+    const adminRouteSource = readFileSync(resolve(repoRoot, "backend/src/routes/admin.ts"), "utf8");
+
+    expect(adminRouteSource).toContain('adminRouter.get(\n  "/stock/brands"');
+    expect(adminRouteSource).toContain('adminRouter.get(\n  "/stock/products"');
+    expect(adminRouteSource).toContain('adminRouter.patch(\n  "/stock/products/:id"');
+    expect(adminRouteSource).toContain('adminRouter.patch(\n  "/stock/variants/:id"');
+    expect(adminRouteSource).toContain('adminRouter.post(\n  "/stock/import-pdf"');
+    expect(adminRouteSource).toContain('adminRouter.post(\n  "/stock/apply-pdf"');
+    expect(adminRouteSource).toContain("PDFParse");
+    expect(adminRouteSource).toContain("extractInvoiceCandidatesWithClaude");
+  });
+});

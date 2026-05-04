@@ -12,7 +12,7 @@ describe("suppression définitive des marques", () => {
   const homePage = readSource("frontend/src/app/page.tsx");
 
   it("expose une route de statistiques avant suppression avec les compteurs demandés", () => {
-    expect(adminRoutes).toContain('adminRouter.get("/brands/:id/stats"');
+    expect(adminRoutes).toContain('adminRouter.get(\n  "/brands/:id/stats"');
     expect(adminRoutes).toContain("select: { id: true, name: true, slug: true, logo: true }");
     expect(adminRoutes).toContain("productsCount: products.length");
     expect(adminRoutes).toContain("reviewsCount");
@@ -20,7 +20,7 @@ describe("suppression définitive des marques", () => {
   });
 
   it("refuse la suppression sans confirm=true puis supprime les dépendances avant la marque", () => {
-    expect(adminRoutes).toContain('adminRouter.delete("/brands/:id"');
+    expect(adminRoutes).toContain('adminRouter.delete(\n  "/brands/:id"');
     expect(adminRoutes).toContain('req.query.confirm !== "true"');
     expect(adminRoutes).toContain("res.status(400)");
     expect(adminRoutes).toContain("const result = await prisma.$transaction");
