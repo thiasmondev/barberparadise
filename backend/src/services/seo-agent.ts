@@ -22,6 +22,7 @@ export interface ProductData {
   tags: string;
   features: string;
   slug?: string;
+  status?: string;
   inStock?: boolean;
   variants?: { name: string; price?: number; inStock?: boolean }[];
 }
@@ -688,7 +689,9 @@ export async function optimizeProductGeo(product: ProductData): Promise<GeoOptim
   try { tags = JSON.parse(product.tags); } catch { tags = []; }
 
   const imageUrl = images[0] || "";
-  const availability = product.inStock !== false ? "https://schema.org/InStock" : "https://schema.org/OutOfStock";
+  const productStatus = product.status || "active";
+  const publicationAvailability = productStatus === "active" ? "Actif — publié" : "Brouillon — non publié";
+  const availability = productStatus === "active" && product.inStock !== false ? "https://schema.org/InStock" : "https://schema.org/OutOfStock";
   const productUrl = product.slug ? `https://barberparadise.fr/produit/${product.slug}` : "https://barberparadise.fr";
 
   const prompt = `Tu es un expert GEO (Generative Engine Optimization) pour le e-commerce. Tu dois générer les données structurées et le contenu optimisé pour que ce produit soit cité par ChatGPT, Claude, Perplexity et Google AI Overviews.
@@ -702,7 +705,9 @@ PRODUIT :
 - Tags : ${tags.join(", ")}
 - URL produit : ${productUrl}
 - Image principale : ${imageUrl}
+- Disponibilité de publication : ${publicationAvailability}
 - En stock : ${product.inStock !== false ? "Oui" : "Non"}
+- Availability Schema.org à utiliser : ${availability}
 
 Génère un JSON avec ces champs :
 
@@ -712,6 +717,7 @@ Génère un JSON avec ces champs :
    - brand (@type: "Brand", name)
    - image (array d'URLs)
    - offers (@type: "Offer", price, priceCurrency: "EUR", availability, url)
+   - availability doit être exactement "${availability}". Un produit brouillon ne doit jamais être marqué InStock tant qu’il n’est pas actif/public.
    - category
    - keywords (array des tags)
    - Si pertinent : weight, material, color

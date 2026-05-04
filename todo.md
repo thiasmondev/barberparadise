@@ -252,3 +252,4 @@
 - [x] Ajouter l’envoi mensuel du CSV Indy le 1er du mois avec détail PSP, rappel de clôture avant le 14 et suivi de l’analyse CFO Claude.
 - [x] Ajouter les tests de régression Export Indy et valider les builds backend/frontend.
 - [x] Committer et pousser l’Export Indy Finance sur `main`.
+- [x] Depuis l’agent SEO, afficher ou transmettre la disponibilité produit selon son statut `actif` ou `brouillon`.

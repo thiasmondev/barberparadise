@@ -74,6 +74,15 @@ const RichTextEditor = dynamic(
   { ssr: false, loading: () => <div className="h-48 bg-gray-50 rounded-xl animate-pulse" /> }
 );
 
+type PublicationStatus = "active" | "draft" | "archived" | "inactive" | string;
+
+function getPublicationStatusMeta(status: PublicationStatus | undefined) {
+  if (status === "active") return { label: "Actif", availability: "Disponible en ligne", badge: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" };
+  if (status === "draft") return { label: "Brouillon", availability: "Non disponible en ligne", badge: "bg-amber-50 text-amber-700 border-amber-200", dot: "bg-amber-500" };
+  if (status === "archived") return { label: "Archivé", availability: "Retiré du catalogue", badge: "bg-gray-100 text-gray-600 border-gray-200", dot: "bg-gray-400" };
+  return { label: "Inactif", availability: "Non disponible en ligne", badge: "bg-slate-100 text-slate-600 border-slate-200", dot: "bg-slate-400" };
+}
+
 // ─── Score Ring ──────────────────────────────────────────────────────────────
 function ScoreRing({ score, size = 80 }: { score: number; size?: number }) {
   const radius = (size - 8) / 2;
@@ -173,13 +182,14 @@ function TagsEditor({ tags, onChange }: { tags: string[]; onChange: (tags: strin
 
 //// ─── Product Preview (simule la fiche produit publique) ────────────────────
 function ProductPreview({
-  product, title, metaDescription, description, tags, category, subcategory, images: editImages,
+  product, title, metaDescription, description, tags, category, subcategory, images: editImages, publicationStatus,
 }: {
   product: Product; title: string; metaDescription: string;
-  description: string; tags: string[]; category: string; subcategory: string; images: string[];
+  description: string; tags: string[]; category: string; subcategory: string; images: string[]; publicationStatus: string;
 }) {
   const images = editImages.length > 0 ? editImages : parseImages(product.images);
   const discount = getDiscount(product.price, product.originalPrice);
+  const publication = getPublicationStatusMeta(publicationStatus);
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm text-sm">
@@ -230,8 +240,15 @@ function ProductPreview({
 
           {/* Info */}
           <div className="space-y-2">
-            <p className="text-xs text-gray-400 uppercase tracking-wide">{product.brand}</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-gray-400 uppercase tracking-wide">{product.brand}</p>
+              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${publication.badge}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${publication.dot}`} />
+                {publication.label}
+              </span>
+            </div>
             <h1 className="font-bold text-gray-900 leading-tight text-base">{title || product.name}</h1>
+            <p className="text-[11px] text-gray-500">Disponibilité SEO : {publication.availability}</p>
 
             {product.rating > 0 && (
               <div className="flex items-center gap-1">
@@ -363,6 +380,7 @@ function SeoProductPageContent() {
   const [editRequiresGlass, setEditRequiresGlass] = useState(false);
   const [editLogisticNote, setEditLogisticNote] = useState("");
   const [editPriceProEur, setEditPriceProEur] = useState("");
+  const [editStatus, setEditStatus] = useState("active");
 
   // Autocomplétion (suggestions enrichies avec labels hiérarchiques)
   const [allCategories, setAllCategories] = useState<CategorySuggestion[]>([]);
@@ -477,6 +495,7 @@ function SeoProductPageContent() {
         setEditRequiresGlass(Boolean(data.product.requiresGlass));
         setEditLogisticNote(data.product.logisticNote || "");
         setEditPriceProEur(data.product.priceProEur != null ? String(data.product.priceProEur) : "");
+        setEditStatus(data.product.status || "active");
         setEditTags(
           Array.isArray(data.product.tags)
             ? data.product.tags
@@ -575,6 +594,7 @@ function SeoProductPageContent() {
         requiresGlass: editRequiresGlass,
         logisticNote: editLogisticNote,
         priceProEur: editPriceProEur.trim() === "" ? null : Number(editPriceProEur),
+        status: editStatus,
       });
       setApplied(true);
       const data = await analyzeSeoProduct(productId);
@@ -948,7 +968,13 @@ function SeoProductPageContent() {
         </Link>
         <div className="flex-1 min-w-0">
           <h1 className="text-lg font-bold text-gray-900 truncate">{product?.name}</h1>
-          <p className="text-sm text-gray-500">{product?.brand} · {editCategory || product?.category}</p>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
+            <span>{product?.brand} · {editCategory || product?.category}</span>
+            <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${getPublicationStatusMeta(editStatus).badge}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${getPublicationStatusMeta(editStatus).dot}`} />
+              {getPublicationStatusMeta(editStatus).label}
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -1083,6 +1109,23 @@ function SeoProductPageContent() {
                   />
                 </div>
               )}
+              <div className="rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">Disponibilité de publication</p>
+                    <p className="text-xs text-gray-500">Indique si la fiche SEO correspond à un produit actif en ligne ou à un brouillon non publié.</p>
+                  </div>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => { setEditStatus(e.target.value); setApplied(false); }}
+                    className="rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm font-medium text-gray-800 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
+                  >
+                    <option value="active">Actif — disponible en ligne</option>
+                    <option value="draft">Brouillon — non disponible en ligne</option>
+                  </select>
+                </div>
+                <p className="mt-2 text-xs text-violet-700">Le JSON-LD GEO marquera un brouillon comme non disponible, même si le stock est positif.</p>
+              </div>
               <div className="flex items-center justify-between gap-4 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
                 <div>
                   <p className="text-sm font-semibold text-gray-900">Mettre en avant dans Nouveautés</p>
@@ -1964,6 +2007,7 @@ function SeoProductPageContent() {
               category={editCategory}
               subcategory={editSubcategory}
               images={editImages}
+              publicationStatus={editStatus}
             />
           </div>
         )}
