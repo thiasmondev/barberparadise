@@ -255,3 +255,21 @@
 - [x] Depuis l’agent SEO, afficher ou transmettre la disponibilité produit selon son statut `actif` ou `brouillon`.
 - [x] Depuis l’agent SEO produit, permettre de sélectionner la marque et sauvegarder la marque choisie avec la fiche produit.
 - [x] Relancer le push GitHub du commit local `6e286ec Add SEO product brand selector` après vérification de l’accès disponible.
+- [x] Créer l’Agent Marketing complet BarberParadise avec intégration Brevo pour l’email marketing.
+- [x] Ajouter les modèles Prisma marketing : BlogPost, MarketingBanner, Promotion, MarketingCalendar et EmailCampaign.
+- [x] Installer et configurer le SDK Brevo côté backend sans exposer la clé API côté frontend.
+- [x] Créer le service Brevo pour synchroniser les contacts, créer les campagnes et déclencher les envois.
+- [x] Ajouter les routes admin marketing pour générer, relire, publier et envoyer blogs, bannières, promotions et campagnes email.
+- [x] Créer l’interface admin de l’Agent Marketing avec validation humaine avant publication/envoi.
+- [x] Ajouter les tests de régression Agent Marketing et valider les builds backend/frontend.
+- [x] Committer et pousser l’Agent Marketing Brevo sur `main`.
+- [x] Documenter que `BREVO_API_KEY` doit être configurée dans les variables d’environnement Render du backend avant l’envoi réel des campagnes.
+- [x] Créer les modèles Prisma MarketingCampaign, PromoCode, EmailCampaign, BlogPost enrichi et MarketingSetting pour l’Agent Marketing.
+- [x] Ajouter la migration Prisma correspondante avec adaptation sécurisée du modèle BlogPost existant.
+- [x] Intégrer Brevo côté backend avec désactivation contrôlée si `BREVO_API_KEY` est absente sur Render.
+- [x] Ajouter les routes admin Marketing : dashboard, campagnes, génération IA, promotions, emails, blog, Brevo et paramètres.
+- [x] Connecter les promotions au panier et au checkout avec validation des codes promo actifs.
+- [x] Créer l’interface `/admin/marketing` avec dashboard, génération IA, promotions, email, blog et configuration Brevo.
+- [x] Ajouter les helpers frontend Marketing dans `frontend/src/lib/admin-api.ts`.
+- [x] Ajouter les tests backend de régression Marketing et valider les builds backend/frontend.
+- [x] Committer et pousser l’Agent Marketing compatible Render sur `main`.

@@ -231,7 +231,7 @@ seoRouter.get("/dashboard", async (_req, res) => {
 
     // Blog stats
     const blogCount = await prisma.blogPost.count();
-    const publishedBlogCount = await prisma.blogPost.count({ where: { published: true } });
+    const publishedBlogCount = await prisma.blogPost.count({ where: { status: "published" } });
 
     res.json({
       totalProducts: products.length,
@@ -479,7 +479,7 @@ seoRouter.post("/blog/generate", async (req, res) => {
 // ─── Save Generated Blog Article ────────────────────────────
 seoRouter.post("/blog/save", async (req, res) => {
   try {
-    const { title, slug, excerpt, content, category, readTime, published } = req.body;
+    const { title, slug, excerpt, content, category, published, metaTitle, metaDescription, tags } = req.body;
 
     if (!title || !slug || !content) {
       res.status(400).json({ error: "title, slug et content requis" });
@@ -499,11 +499,13 @@ seoRouter.post("/blog/save", async (req, res) => {
         slug,
         excerpt: excerpt || "",
         content,
-        image: "",
-        author: "Barber Paradise",
-        category: category || "guide",
-        readTime: readTime || 5,
-        published: published || false,
+        coverImage: null,
+        categorySlug: category || "guide",
+        tags: Array.isArray(tags) ? tags : [],
+        metaTitle: metaTitle || title,
+        metaDescription: metaDescription || excerpt || "",
+        status: published ? "published" : "draft",
+        publishedAt: published ? new Date() : null,
       },
     });
 
@@ -810,11 +812,12 @@ seoRouter.post("/deploy-llms-txt", async (req, res) => {
           slug: "__llms-txt__",
           excerpt: "Fichier llms.txt pour les LLM",
           content,
-          image: "",
-          author: "system",
-          category: "system",
-          readTime: 0,
-          published: false,
+          coverImage: null,
+          categorySlug: "system",
+          tags: ["llms", "system"],
+          metaTitle: "llms.txt",
+          metaDescription: "Fichier llms.txt pour les LLM",
+          status: "draft",
         },
       });
     }

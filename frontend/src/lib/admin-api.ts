@@ -1331,3 +1331,161 @@ export function sendIndyReportEmail(month: string) {
     body: JSON.stringify({ month }),
   });
 }
+
+// ─── Agent Marketing ──────────────────────────────────────────
+export interface MarketingDashboard {
+  brevo: { configured: boolean; status: string; message: string };
+  totals: {
+    campaigns: number;
+    activePromos: number;
+    publishedBlogPosts: number;
+    draftIdeas: number;
+    emailCampaigns: number;
+  };
+  recentCampaigns: MarketingCampaign[];
+  recentContent: MarketingContentDraft[];
+  recentPromos: PromoCode[];
+  recentEmails: EmailCampaign[];
+  revenue: {
+    last30Days: number;
+    discountLast30Days: number;
+    ordersWithPromoLast30Days: number;
+  };
+}
+
+export interface MarketingCampaign {
+  id: string;
+  name: string;
+  goal: string;
+  audience: string;
+  channel: string;
+  status: string;
+  brief?: string | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MarketingContentDraft {
+  id: string;
+  campaignId?: string | null;
+  type: string;
+  topic: string;
+  tone: string;
+  prompt?: string | null;
+  title: string;
+  body: string;
+  cta?: string | null;
+  hashtags?: string[];
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PromoCode {
+  id: string;
+  code: string;
+  label: string;
+  description?: string | null;
+  type: string;
+  value: number;
+  minAmount?: number | null;
+  maxUses?: number | null;
+  usedCount: number;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  active: boolean;
+  campaignId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmailCampaign {
+  id: string;
+  campaignId?: string | null;
+  name: string;
+  subject: string;
+  previewText?: string | null;
+  htmlContent: string;
+  textContent?: string | null;
+  senderName: string;
+  senderEmail: string;
+  listIds?: number[];
+  scheduledAt?: string | null;
+  brevoCampaignId?: number | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function getMarketingDashboard() {
+  return adminFetch<MarketingDashboard>("/api/admin/marketing/dashboard");
+}
+
+export function getMarketingCampaigns() {
+  return adminFetch<{ campaigns: MarketingCampaign[] }>("/api/admin/marketing/campaigns");
+}
+
+export function createMarketingCampaign(data: Record<string, unknown>) {
+  return adminFetch<{ campaign: MarketingCampaign }>("/api/admin/marketing/campaigns", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function generateMarketingContent(data: Record<string, unknown>) {
+  return adminFetch<{ draft: MarketingContentDraft; generated: Record<string, unknown> }>("/api/admin/marketing/generate", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function getMarketingContentDrafts(params?: { type?: string; status?: string }) {
+  const sp = new URLSearchParams();
+  if (params?.type) sp.set("type", params.type);
+  if (params?.status) sp.set("status", params.status);
+  const q = sp.toString();
+  return adminFetch<{ drafts: MarketingContentDraft[] }>(`/api/admin/marketing/content${q ? `?${q}` : ""}`);
+}
+
+export function publishMarketingBlogPost(id: string) {
+  return adminFetch<{ blogPost: unknown; draft: MarketingContentDraft }>(`/api/admin/marketing/content/${id}/publish-blog`, {
+    method: "POST",
+  });
+}
+
+export function getMarketingPromoCodes() {
+  return adminFetch<{ promoCodes: PromoCode[] }>("/api/admin/marketing/promos");
+}
+
+export function createMarketingPromoCode(data: Record<string, unknown>) {
+  return adminFetch<{ promoCode: PromoCode }>("/api/admin/marketing/promos", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function getMarketingEmailCampaigns() {
+  return adminFetch<{ emailCampaigns: EmailCampaign[] }>("/api/admin/marketing/emails");
+}
+
+export function createMarketingEmailCampaign(data: Record<string, unknown>) {
+  return adminFetch<{ emailCampaign: EmailCampaign }>("/api/admin/marketing/emails", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function sendMarketingEmailCampaign(id: string) {
+  return adminFetch<{ emailCampaign: EmailCampaign; brevo: unknown }>(`/api/admin/marketing/emails/${id}/send`, {
+    method: "POST",
+  });
+}
+
+export function syncMarketingBrevoContacts(listId?: number) {
+  return adminFetch<{ synced: number; failed: number; skipped: boolean; message?: string }>("/api/admin/marketing/brevo/sync-contacts", {
+    method: "POST",
+    body: JSON.stringify({ listId }),
+  });
+}

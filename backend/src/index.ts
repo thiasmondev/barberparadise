@@ -26,6 +26,7 @@ import { adminRouter } from "./routes/admin";
 import { authRouter } from "./routes/auth";
 import { blogRouter } from "./routes/blog";
 import { seoRouter } from "./routes/seo";
+import { adminMarketingRouter } from "./routes/admin-marketing";
 import importReviewsRouter from "./routes/import-reviews";
 import brandsRouter from "./routes/brands";
 import { checkoutRouter } from "./routes/checkout";
@@ -54,6 +55,7 @@ app.use("/api/admin", adminRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/blog", blogRouter);
 app.use("/api/admin/seo", seoRouter);
+app.use("/api/admin/marketing", adminMarketingRouter);
 app.use("/api/admin/import-reviews", importReviewsRouter);
 app.use("/api/brands", brandsRouter);
 app.use("/api/checkout", checkoutRouter);
@@ -79,6 +81,7 @@ app.get("/", (_req, res) => {
       auth: "/api/auth",
       blog: "/api/blog",
       admin: "/api/admin",
+      marketing: "/api/admin/marketing",
     },
   });
 });

@@ -10,11 +10,11 @@ blogRouter.get("/", async (req: Request, res: Response): Promise<void> => {
     const { page = "1", limit = "10", category } = req.query as Record<string, string>;
     const skip = (parseInt(page) - 1) * parseInt(limit);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: any = { published: true };
-    if (category) where.category = category;
+    const where: any = { status: "published" };
+    if (category) where.categorySlug = category;
 
     const [posts, total] = await Promise.all([
-      prisma.blogPost.findMany({ where, orderBy: { createdAt: "desc" }, skip, take: parseInt(limit) }),
+      prisma.blogPost.findMany({ where, orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }], skip, take: parseInt(limit) }),
       prisma.blogPost.count({ where }),
     ]);
     res.json({ posts, total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) });
@@ -28,7 +28,7 @@ blogRouter.get("/", async (req: Request, res: Response): Promise<void> => {
 blogRouter.get("/:slug", async (req: Request, res: Response): Promise<void> => {
   try {
     const post = await prisma.blogPost.findUnique({ where: { slug: req.params.slug } });
-    if (!post || !post.published) {
+    if (!post || post.status !== "published") {
       res.status(404).json({ error: "Article non trouvé" });
       return;
     }

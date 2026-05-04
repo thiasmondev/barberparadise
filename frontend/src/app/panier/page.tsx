@@ -30,6 +30,8 @@ export default function CartPage() {
   const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingError, setShippingError] = useState("");
+  const [promoCode, setPromoCode] = useState("");
+  const [promoSaved, setPromoSaved] = useState(false);
 
   const estimatedShippingOption = useMemo(() => shippingOptions[0], [shippingOptions]);
   const shipping = estimatedShippingOption?.price ?? 0;
@@ -60,6 +62,24 @@ export default function CartPage() {
   useEffect(() => {
     if (isApprovedPro && paymentMethod !== "pay_by_bank") setPaymentMethod("pay_by_bank");
   }, [isApprovedPro, paymentMethod]);
+
+  useEffect(() => {
+    const storedPromo = window.localStorage.getItem("barberparadise-promo-code") || "";
+    setPromoCode(storedPromo);
+    setPromoSaved(Boolean(storedPromo));
+  }, []);
+
+  const savePromoCode = () => {
+    const normalized = promoCode.trim().toUpperCase();
+    setPromoCode(normalized);
+    if (normalized) {
+      window.localStorage.setItem("barberparadise-promo-code", normalized);
+      setPromoSaved(true);
+    } else {
+      window.localStorage.removeItem("barberparadise-promo-code");
+      setPromoSaved(false);
+    }
+  };
 
   useEffect(() => {
     if (items.length === 0) return;
@@ -245,6 +265,23 @@ export default function CartPage() {
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total</span>
                   <span className="text-sm font-black">{formatPrice(total)}</span>
+                </div>
+                <div className="space-y-2 border border-white/10 bg-black/20 p-4">
+                  <label className="text-[10px] font-black tracking-[0.25em] uppercase text-gray-500">Code promo</label>
+                  <div className="flex gap-2">
+                    <input
+                      value={promoCode}
+                      onChange={(event) => { setPromoCode(event.target.value.toUpperCase()); setPromoSaved(false); }}
+                      placeholder="WELCOME10"
+                      className="min-w-0 flex-1 bg-white px-3 py-2 text-xs font-black uppercase tracking-widest text-black outline-none"
+                    />
+                    <button type="button" onClick={savePromoCode} className="bg-[#ff4a8d] px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-[#ff1f70]">
+                      OK
+                    </button>
+                  </div>
+                  <p className="text-[10px] uppercase tracking-widest text-gray-600">
+                    {promoSaved ? `Code ${promoCode} enregistré, il sera vérifié au paiement.` : "Le code sera appliqué et contrôlé à l’étape paiement."}
+                  </p>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-gray-400 uppercase tracking-widest">Livraison estimée</span>

@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
+    "@getbrevo/brevo": "^5.0.4",
     "@mollie/api-client": "^4.5.0",
     "@paypal/paypal-server-sdk": "^2.3.0",
     "@prisma/client": "^5.7.0",

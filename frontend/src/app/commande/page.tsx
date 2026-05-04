@@ -103,6 +103,7 @@ export default function CheckoutPage() {
   const [isB2B, setIsB2B] = useState(false);
   const [isApprovedPro, setIsApprovedPro] = useState(false);
   const [vatNumber, setVatNumber] = useState("");
+  const [promoCode, setPromoCode] = useState("");
 
   const [form, setForm] = useState({
     email: "",
@@ -214,6 +215,7 @@ export default function CheckoutPage() {
   useEffect(() => {
     const storedMethod = sessionStorage.getItem("barberparadise-payment-method") as PaymentMethod | null;
     if (storedMethod && Object.keys(METHOD_CONFIG).includes(storedMethod)) setPaymentMethod(storedMethod);
+    setPromoCode(window.localStorage.getItem("barberparadise-promo-code") || "");
   }, []);
 
   useEffect(() => {
@@ -306,6 +308,7 @@ export default function CheckoutPage() {
           shippingOptionId: selectedShippingOption?.id,
           isB2B: effectiveIsB2B,
           vatNumber: vatNumber.trim() || undefined,
+          promoCode: promoCode.trim() || undefined,
         }),
       });
 
@@ -490,6 +493,9 @@ export default function CheckoutPage() {
                 {paymentError && <div className="mt-5 border border-red-500/30 bg-red-500/10 p-4 flex gap-3 text-red-200"><AlertCircle size={16} className="mt-0.5 flex-shrink-0" /><p className="text-xs leading-relaxed">{paymentError}</p></div>}
               </div>
 
+              {promoCode && (
+                <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-emerald-300">Code promo {promoCode} transmis, réduction calculée après vérification serveur.</p>
+              )}
               <button onClick={handleCheckout} disabled={isSubmittingPayment || displayMethods.length === 0 || methodsLoading || shippingLoading || !selectedShippingOption} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-wait text-white py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 transition-colors"><Lock size={12} />{isSubmittingPayment ? "REDIRECTION EN COURS..." : `PAYER ${formatPrice(grandTotal)}`}</button>
               <button onClick={() => setStep("livraison")} className="w-full text-center text-xs text-gray-500 hover:text-white transition-colors uppercase tracking-widest font-black">← Retour à la livraison</button>
             </div>

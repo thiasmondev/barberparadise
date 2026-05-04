@@ -12,6 +12,7 @@ import {
 } from "../services/paymentRouter";
 import { calculateFreeShippingRemaining, calculateShippingOptions, getFreeShippingThreshold } from "../services/shippingCalculator";
 import { getVatRate } from "../services/vatCalculator";
+import { calculateDiscountAmount } from "../services/marketingAgentService";
 
 export const checkoutRouter = Router();
 
@@ -42,6 +43,7 @@ type CheckoutRequestBody = {
   shippingOptionId?: string;
   isB2B?: boolean;
   vatNumber?: string;
+  promoCode?: string;
 };
 
 const CURRENCY = "EUR";
@@ -57,6 +59,29 @@ function generateOrderNumber(): string {
 
 function money(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function normalizePromoCode(code: string): string {
+  return code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 32);
+}
+
+async function resolvePromoCode(code: string | undefined, baseAmount: number, shipping: number) {
+  const normalized = normalizePromoCode(code || "");
+  if (!normalized) return { promoCode: null, discountAmount: 0 };
+  const promoCode = await prisma.promoCode.findUnique({ where: { code: normalized } });
+  if (!promoCode || !promoCode.active) throw new Error("Code promo introuvable ou inactif");
+  const now = new Date();
+  if ((promoCode.startsAt && promoCode.startsAt > now) || (promoCode.endsAt && promoCode.endsAt < now)) {
+    throw new Error("Code promo hors période de validité");
+  }
+  if (promoCode.maxUses !== null && promoCode.usedCount >= promoCode.maxUses) {
+    throw new Error("Code promo épuisé");
+  }
+  if (promoCode.minAmount !== null && baseAmount < promoCode.minAmount) {
+    throw new Error(`Minimum d'achat requis : ${promoCode.minAmount} €`);
+  }
+  const discountAmount = calculateDiscountAmount({ subtotal: baseAmount, shipping, type: promoCode.type, value: promoCode.value });
+  return { promoCode, discountAmount: money(discountAmount) };
 }
 
 function getFrontendUrl(): string {
@@ -238,6 +263,21 @@ checkoutRouter.get("/shipping-options", (req: Request, res: Response): void => {
   });
 });
 
+checkoutRouter.post("/promo/validate", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const subtotal = Number(req.body?.subtotal || 0);
+    const shipping = Number(req.body?.shipping || 0);
+    const { promoCode, discountAmount } = await resolvePromoCode(req.body?.code, subtotal, shipping);
+    if (!promoCode) {
+      res.status(400).json({ error: "Code promo requis" });
+      return;
+    }
+    res.json({ promoCode, discountAmount });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Code promo invalide" });
+  }
+});
+
 checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<void> => {
   try {
     const body = req.body as CheckoutRequestBody;
@@ -322,10 +362,12 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       return;
     }
     const shipping = selectedShippingOption.price;
-    const totalHT = subtotalHT;
+    const promoResolution = await resolvePromoCode(body.promoCode, isB2B ? subtotalHT : subtotalTTC, shipping);
+    const discountAmount = promoResolution.discountAmount;
+    const totalHT = money(isB2B ? Math.max(0, subtotalHT - discountAmount) : subtotalHT);
     const vatRate = getVatRate(country, isB2B, vatNumber);
     const vatAmount = money(totalHT * (vatRate / 100));
-    const totalTTC = money(totalHT + vatAmount + shipping);
+    const totalTTC = money(Math.max(0, totalHT + vatAmount + shipping - (isB2B ? 0 : discountAmount)));
     const provider = getProvider(body.paymentMethod, country);
 
     const order = await prisma.order.create({
@@ -342,6 +384,8 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         shipping,
         total: totalTTC,
         totalHT,
+        promoCodeId: promoResolution.promoCode?.id || null,
+        discountAmount,
         vatRate,
         vatAmount,
         totalTTC,
@@ -363,6 +407,10 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         },
       },
     });
+
+    if (promoResolution.promoCode) {
+      await prisma.promoCode.update({ where: { id: promoResolution.promoCode.id }, data: { usedCount: { increment: 1 } } });
+    }
 
     const checkout = await createProviderCheckout(provider, {
       orderId: order.id,

@@ -23,6 +23,7 @@ import {
   Boxes,
   Euro,
   Truck,
+  Megaphone,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -36,6 +37,7 @@ const NAV_ITEMS = [
   { href: "/admin/categories", label: "Catégories", icon: FolderTree },
   { href: "/admin/brands", label: "Marques", icon: Tag },
   { href: "/admin/seo", label: "Agent SEO", icon: Search },
+  { href: "/admin/marketing", label: "Agent Marketing", icon: Megaphone },
   { href: "/admin/geo", label: "Outils GEO", icon: Globe },
   {
     href: "/admin/logistique/commandes",
