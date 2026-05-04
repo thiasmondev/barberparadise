@@ -13,44 +13,44 @@ datasource db {
 
 // ─── PRODUITS ────────────────────────────────────────────────
 model Product {
-  id              String   @id @default(cuid())
-  handle          String   @unique
-  name            String
-  slug            String   @unique
-  brand           String
-  brandId         Int?
-  category        String
-  subcategory     String
-  subsubcategory  String   @default("")
-  price           Float
-  priceProEur     Float?    // Prix pro HT — null = même prix que B2C
-  originalPrice   Float?
-  images          String   // JSON array
+  id               String   @id @default(cuid())
+  handle           String   @unique
+  name             String
+  slug             String   @unique
+  brand            String
+  brandId          Int?
+  category         String
+  subcategory      String
+  subsubcategory   String   @default("")
+  price            Float
+  priceProEur      Float? // Prix pro HT — null = même prix que B2C
+  originalPrice    Float?
+  images           String // JSON array
   imageAlts        String   @default("[]") // JSON array of alt texts matching images order
-  description     String
+  description      String
   shortDescription String
-  features        String   @default("[]") // JSON array
-  inStock         Boolean  @default(true)
-  stockCount      Int      @default(0)
-  weightG         Int?     // Poids en grammes
-  lengthCm        Float?   // Longueur cm
-  widthCm         Float?   // Largeur cm
-  heightCm        Float?   // Hauteur cm
-  isFragile       Boolean  @default(false)
-  isLiquid        Boolean  @default(false)
-  isAerosol       Boolean  @default(false)
-  requiresGlass   Boolean  @default(false)
-  logisticNote    String?  // Note spéciale ex: "ne pas coucher"
-  rating          Float    @default(0)
-  reviewCount     Int      @default(0)
-  isNew           Boolean  @default(false)
-  isPromo         Boolean  @default(false)
-  tags            String   @default("[]") // JSON array
-  status          String   @default("active") // active, draft, archived
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  features         String   @default("[]") // JSON array
+  inStock          Boolean  @default(true)
+  stockCount       Int      @default(0)
+  weightG          Int? // Poids en grammes
+  lengthCm         Float? // Longueur cm
+  widthCm          Float? // Largeur cm
+  heightCm         Float? // Hauteur cm
+  isFragile        Boolean  @default(false)
+  isLiquid         Boolean  @default(false)
+  isAerosol        Boolean  @default(false)
+  requiresGlass    Boolean  @default(false)
+  logisticNote     String? // Note spéciale ex: "ne pas coucher"
+  rating           Float    @default(0)
+  reviewCount      Int      @default(0)
+  isNew            Boolean  @default(false)
+  isPromo          Boolean  @default(false)
+  tags             String   @default("[]") // JSON array
+  status           String   @default("active") // active, draft, archived
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  brandRef   Brand?         @relation(fields: [brandId], references: [id])
+  brandRef   Brand?           @relation(fields: [brandId], references: [id])
   orderItems OrderItem[]
   reviews    Review[]
   variants   ProductVariant[]
@@ -65,50 +65,52 @@ model Product {
 // ─── EMBALLAGES LOGISTIQUES ───────────────────────────────────
 model Packaging {
   id                Int     @id @default(autoincrement())
-  name              String  // ex: "Carton S", "Enveloppe bulle", "Carton renforcé L"
-  type              String  // 'carton', 'enveloppe', 'tube'
+  name              String // ex: "Carton S", "Enveloppe bulle", "Carton renforcé L"
+  type              String // 'carton', 'enveloppe', 'tube'
   lengthCm          Float
   widthCm           Float
   heightCm          Float
-  internalVolumeCm3 Float   // volume utile calculé
-  maxWeightG        Int     // poids max supporté
-  selfWeightG       Int     // poids du carton vide
-  costEur           Float   // coût unitaire du carton
+  internalVolumeCm3 Float // volume utile calculé
+  maxWeightG        Int // poids max supporté
+  selfWeightG       Int // poids du carton vide
+  costEur           Float // coût unitaire du carton
   stock             Int     @default(0)
   isReinforced      Boolean @default(false)
   isActive          Boolean @default(true)
+
+  shipments Shipment[]
 }
 
 // ─── MARQUES ─────────────────────────────────────────────────
 model Brand {
-  id          Int       @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   name        String
-  slug        String    @unique
+  slug        String   @unique
   description String?
   logo        String?
   bannerImage String?
   website     String?
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime @default(now())
 
-  products    Product[]
+  products Product[]
 }
 
 // ─── VARIANTES PRODUIT ────────────────────────────────────────────
 model ProductVariant {
-  id        String  @id @default(cuid())
-  productId String
-  name      String  // ex: "Rouge", "L", "Rouge / L"
-  type      String  // "color" | "size" | "other"
-  color     String  @default("") // nom de la couleur
-  colorHex  String  @default("") // code hexa ex: #FF0000
-  size      String  @default("") // ex: "S", "M", "L", "XL"
-  price     Float?  // si null, utilise le prix du produit parent
+  id          String  @id @default(cuid())
+  productId   String
+  name        String // ex: "Rouge", "L", "Rouge / L"
+  type        String // "color" | "size" | "other"
+  color       String  @default("") // nom de la couleur
+  colorHex    String  @default("") // code hexa ex: #FF0000
+  size        String  @default("") // ex: "S", "M", "L", "XL"
+  price       Float? // si null, utilise le prix du produit parent
   priceProEur Float? // Prix pro HT — null = utilise le prix pro du produit parent
-  stock     Int     @default(0)
-  inStock   Boolean @default(true)
-  sku       String  @default("")
-  image     String  @default("") // image spécifique à la variante
-  order     Int     @default(0)
+  stock       Int     @default(0)
+  inStock     Boolean @default(true)
+  sku         String  @default("")
+  image       String  @default("") // image spécifique à la variante
+  order       Int     @default(0)
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
@@ -172,62 +174,80 @@ model Address {
 
 // ─── COMMANDES ───────────────────────────────────────────────
 model Order {
-  id         String      @id @default(cuid())
-  orderNumber String     @unique
-  customerId String?
-  email      String
-  status     String      @default("pending") // pending, pending_payment, paid, processing, shipped, delivered, cancelled
+  id                String   @id @default(cuid())
+  orderNumber       String   @unique
+  customerId        String?
+  email             String
+  status            String   @default("pending") // pending, pending_payment, paid, processing, shipped, delivered, cancelled
   paymentMethod     String?
   paymentProvider   String?
   providerPaymentId String?
-  subtotal   Float
-  shipping   Float       @default(0)
-  total      Float
-  totalHT    Float       @default(0)
-  vatRate    Float       @default(20)
-  vatAmount  Float       @default(0)
-  totalTTC   Float       @default(0)
-  currency   String      @default("EUR")
-  customerEmail String?
-  billingAddress Json?
-  isB2B      Boolean     @default(false)
-  vatNumber  String?
-  proInvoiceNumber String?
-  proInvoiceUrl    String?
-  notes      String?
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  subtotal          Float
+  shipping          Float    @default(0)
+  total             Float
+  totalHT           Float    @default(0)
+  vatRate           Float    @default(20)
+  vatAmount         Float    @default(0)
+  totalTTC          Float    @default(0)
+  currency          String   @default("EUR")
+  customerEmail     String?
+  billingAddress    Json?
+  isB2B             Boolean  @default(false)
+  vatNumber         String?
+  proInvoiceNumber  String?
+  proInvoiceUrl     String?
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  customer       Customer?   @relation(fields: [customerId], references: [id])
-  items          OrderItem[]
+  customer        Customer?        @relation(fields: [customerId], references: [id])
+  items           OrderItem[]
   shippingAddress ShippingAddress?
+  shipment        Shipment?
 
   @@index([status])
   @@index([customerId])
 }
 
 model OrderItem {
-  id        String  @id @default(cuid())
+  id        String @id @default(cuid())
   orderId   String
   productId String
   name      String
   price     Float
   quantity  Int
-  image     String  @default("")
+  image     String @default("")
 
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id])
 }
 
+model Shipment {
+  id             String     @id @default(cuid())
+  orderId        String     @unique
+  order          Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  carrier        String // 'colissimo', 'mondial_relay', 'colissimo_international'
+  trackingNumber String?
+  packagingId    Int?
+  packaging      Packaging? @relation(fields: [packagingId], references: [id])
+  totalWeightG   Int?
+  shippedAt      DateTime?
+  shippedBy      String? // email admin
+  createdAt      DateTime   @default(now())
+
+  @@index([carrier])
+  @@index([shippedAt])
+}
+
 model ShippingAddress {
-  id         String @id @default(cuid())
-  orderId    String @unique
+  id         String  @id @default(cuid())
+  orderId    String  @unique
   firstName  String
   lastName   String
   address    String
   city       String
   postalCode String
-  country    String @default("France")
+  country    String  @default("France")
   extension  String? @default("")
   phone      String? @default("")
 

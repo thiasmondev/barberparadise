@@ -129,6 +129,148 @@ function buildPackagingData(body: Record<string, unknown>) {
   };
 }
 
+type LogisticsCarrier =
+  | "colissimo"
+  | "mondial_relay"
+  | "colissimo_international";
+
+const LOGISTICS_CARRIERS: Record<LogisticsCarrier, string> = {
+  colissimo: "Colissimo domicile",
+  mondial_relay: "Mondial Relay point relais",
+  colissimo_international: "Colissimo international",
+};
+
+type LogisticsItemProduct = {
+  id: string;
+  name: string;
+  images: string;
+  weightG: number | null;
+  lengthCm: number | null;
+  widthCm: number | null;
+  heightCm: number | null;
+  isFragile: boolean;
+  isLiquid: boolean;
+  isAerosol: boolean;
+  logisticNote: string | null;
+};
+
+type LogisticsOrderItem = {
+  id: string;
+  name: string;
+  quantity: number;
+  image: string;
+  product?: LogisticsItemProduct | null;
+};
+
+type LogisticsPackaging = {
+  id: number;
+  name: string;
+  type: string;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
+  internalVolumeCm3: number;
+  maxWeightG: number;
+  selfWeightG: number;
+  costEur: number;
+  stock: number;
+  isReinforced: boolean;
+  isActive: boolean;
+};
+
+function safeJsonArray(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter(item => typeof item === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function getLogisticsItemImage(item: LogisticsOrderItem): string {
+  if (item.image) return item.image;
+  return safeJsonArray(item.product?.images || "")[0] || "";
+}
+
+function computeLogisticsMetrics(items: LogisticsOrderItem[]) {
+  let itemCount = 0;
+  let totalWeightG = 0;
+  let totalVolumeCm3 = 0;
+  let hasUnknownWeight = false;
+  let hasFragile = false;
+  let hasLiquid = false;
+  let hasAerosol = false;
+
+  for (const item of items) {
+    const quantity = Math.max(0, item.quantity || 0);
+    const product = item.product;
+    itemCount += quantity;
+
+    if (!product || product.weightG === null || product.weightG === undefined) {
+      hasUnknownWeight = true;
+    } else {
+      totalWeightG += product.weightG * quantity;
+    }
+
+    const lengthCm = product?.lengthCm ?? 10;
+    const widthCm = product?.widthCm ?? 10;
+    const heightCm = product?.heightCm ?? 5;
+    totalVolumeCm3 += lengthCm * widthCm * heightCm * quantity;
+    hasFragile = hasFragile || Boolean(product?.isFragile);
+    hasLiquid = hasLiquid || Boolean(product?.isLiquid);
+    hasAerosol = hasAerosol || Boolean(product?.isAerosol);
+  }
+
+  return {
+    itemCount,
+    totalWeightG,
+    estimatedWeightG: hasUnknownWeight ? null : totalWeightG,
+    totalVolumeCm3: Math.round(totalVolumeCm3 * 1.2),
+    hasUnknownWeight,
+    hasFragile,
+    hasLiquid,
+    hasAerosol,
+  };
+}
+
+function findRecommendedPackaging(
+  packagings: LogisticsPackaging[],
+  totalWeightG: number,
+  totalVolumeCm3: number
+) {
+  return (
+    packagings
+      .filter(
+        p =>
+          p.isActive &&
+          p.maxWeightG >= totalWeightG &&
+          p.internalVolumeCm3 >= totalVolumeCm3
+      )
+      .sort((a, b) => a.internalVolumeCm3 - b.internalVolumeCm3)[0] || null
+  );
+}
+
+function normalizeLogisticsItem(item: LogisticsOrderItem) {
+  const product = item.product;
+  return {
+    id: item.id,
+    name: item.name,
+    quantity: item.quantity,
+    image: getLogisticsItemImage(item),
+    productId: product?.id || null,
+    weightG: product?.weightG ?? null,
+    lengthCm: product?.lengthCm ?? null,
+    widthCm: product?.widthCm ?? null,
+    heightCm: product?.heightCm ?? null,
+    isFragile: Boolean(product?.isFragile),
+    isLiquid: Boolean(product?.isLiquid),
+    isAerosol: Boolean(product?.isAerosol),
+    logisticNote: product?.logisticNote ?? null,
+  };
+}
+
 type AdminStockStatus = "active" | "draft" | "archived" | "inactive";
 
 type StockCatalogProduct = {
@@ -838,14 +980,12 @@ adminRouter.post(
       });
     } catch (err) {
       console.error(err);
-      res
-        .status(500)
-        .json({
-          error:
-            err instanceof Error
-              ? err.message
-              : "Erreur import prix professionnels",
-        });
+      res.status(500).json({
+        error:
+          err instanceof Error
+            ? err.message
+            : "Erreur import prix professionnels",
+      });
     }
   }
 );
@@ -919,13 +1059,11 @@ adminRouter.put(
         return;
       }
       if (incoming.length === 0) {
-        res
-          .status(400)
-          .json({
-            error: "Aucun prix à sauvegarder",
-            updated: 0,
-            errors: ["Aucun prix à sauvegarder"],
-          });
+        res.status(400).json({
+          error: "Aucun prix à sauvegarder",
+          updated: 0,
+          errors: ["Aucun prix à sauvegarder"],
+        });
         return;
       }
 
@@ -1226,11 +1364,9 @@ adminRouter.patch(
         nextProPrice !== null &&
         nextProPrice >= nextPublicPrice
       ) {
-        res
-          .status(400)
-          .json({
-            error: "Le prix pro HT doit être inférieur au prix public TTC",
-          });
+        res.status(400).json({
+          error: "Le prix pro HT doit être inférieur au prix public TTC",
+        });
         return;
       }
       const updated = await prisma.product.update({
@@ -1253,12 +1389,9 @@ adminRouter.patch(
       res.json({ ...updated, images: JSON.parse(updated.images || "[]") });
     } catch (err) {
       console.error(err);
-      res
-        .status(400)
-        .json({
-          error:
-            err instanceof Error ? err.message : "Erreur mise à jour stock",
-        });
+      res.status(400).json({
+        error: err instanceof Error ? err.message : "Erreur mise à jour stock",
+      });
     }
   }
 );
@@ -1286,12 +1419,10 @@ adminRouter.patch(
         nextProPrice !== null &&
         nextProPrice >= publicPrice
       ) {
-        res
-          .status(400)
-          .json({
-            error:
-              "Le prix pro HT variante doit être inférieur au prix public TTC",
-          });
+        res.status(400).json({
+          error:
+            "Le prix pro HT variante doit être inférieur au prix public TTC",
+        });
         return;
       }
       const updated = await prisma.productVariant.update({
@@ -1311,12 +1442,10 @@ adminRouter.patch(
       res.json(updated);
     } catch (err) {
       console.error(err);
-      res
-        .status(400)
-        .json({
-          error:
-            err instanceof Error ? err.message : "Erreur mise à jour variante",
-        });
+      res.status(400).json({
+        error:
+          err instanceof Error ? err.message : "Erreur mise à jour variante",
+      });
     }
   }
 );
@@ -1338,12 +1467,10 @@ adminRouter.post(
       await parser.destroy();
       const text = parsedPdf.text.replace(/\u0000/g, " ").trim();
       if (!text) {
-        res
-          .status(400)
-          .json({
-            error:
-              "Le PDF ne contient pas de texte exploitable. Essayez un PDF non scanné.",
-          });
+        res.status(400).json({
+          error:
+            "Le PDF ne contient pas de texte exploitable. Essayez un PDF non scanné.",
+        });
         return;
       }
       const catalog: StockCatalogProduct[] = await prisma.product.findMany({
@@ -1398,12 +1525,9 @@ adminRouter.post(
       });
     } catch (err) {
       console.error(err);
-      res
-        .status(500)
-        .json({
-          error:
-            err instanceof Error ? err.message : "Erreur import facture PDF",
-        });
+      res.status(500).json({
+        error: err instanceof Error ? err.message : "Erreur import facture PDF",
+      });
     }
   }
 );
@@ -1479,12 +1603,10 @@ adminRouter.post(
       res.json({ updated, errors });
     } catch (err) {
       console.error(err);
-      res
-        .status(400)
-        .json({
-          error:
-            err instanceof Error ? err.message : "Erreur application stock PDF",
-        });
+      res.status(400).json({
+        error:
+          err instanceof Error ? err.message : "Erreur application stock PDF",
+      });
     }
   }
 );
@@ -1592,11 +1714,9 @@ adminRouter.patch(
         nextProPrice !== null &&
         nextProPrice >= nextPublicPrice
       ) {
-        res
-          .status(400)
-          .json({
-            error: "Le prix pro HT doit être inférieur au prix public TTC",
-          });
+        res.status(400).json({
+          error: "Le prix pro HT doit être inférieur au prix public TTC",
+        });
         return;
       }
 
@@ -1693,11 +1813,9 @@ adminRouter.post(
       const publicPrice = parseFloat(price);
       const proPrice = toOptionalFloat(priceProEur) ?? null;
       if (proPrice !== null && proPrice >= publicPrice) {
-        res
-          .status(400)
-          .json({
-            error: "Le prix pro HT doit être inférieur au prix public TTC",
-          });
+        res.status(400).json({
+          error: "Le prix pro HT doit être inférieur au prix public TTC",
+        });
         return;
       }
 
@@ -1778,12 +1896,9 @@ adminRouter.post(
       res.status(201).json(packaging);
     } catch (err) {
       console.error(err);
-      res
-        .status(400)
-        .json({
-          error:
-            err instanceof Error ? err.message : "Erreur création emballage",
-        });
+      res.status(400).json({
+        error: err instanceof Error ? err.message : "Erreur création emballage",
+      });
     }
   }
 );
@@ -1812,12 +1927,10 @@ adminRouter.patch(
       res.json(packaging);
     } catch (err) {
       console.error(err);
-      res
-        .status(400)
-        .json({
-          error:
-            err instanceof Error ? err.message : "Erreur mise à jour emballage",
-        });
+      res.status(400).json({
+        error:
+          err instanceof Error ? err.message : "Erreur mise à jour emballage",
+      });
     }
   }
 );
@@ -1835,6 +1948,292 @@ adminRouter.delete(
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Erreur suppression emballage" });
+    }
+  }
+);
+
+// GET /api/admin/logistics/orders — Commandes payées non encore expédiées
+adminRouter.get(
+  "/logistics/orders",
+  requireAdmin,
+  async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const orders = await prisma.order.findMany({
+        where: { status: "paid", shipment: null },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  images: true,
+                  weightG: true,
+                  lengthCm: true,
+                  widthCm: true,
+                  heightCm: true,
+                  isFragile: true,
+                  isLiquid: true,
+                  isAerosol: true,
+                  logisticNote: true,
+                },
+              },
+            },
+          },
+          customer: {
+            select: { firstName: true, lastName: true, email: true },
+          },
+          shippingAddress: true,
+        },
+        orderBy: { createdAt: "asc" },
+      });
+
+      const formatted = orders.map(order => {
+        const metrics = computeLogisticsMetrics(
+          order.items as LogisticsOrderItem[]
+        );
+        return {
+          id: order.id,
+          orderNumber: order.orderNumber,
+          createdAt: order.createdAt,
+          customerName: getCustomerName(order.customer, order.email),
+          customerEmail:
+            order.customer?.email || order.customerEmail || order.email,
+          total: order.total,
+          currency: order.currency,
+          itemCount: metrics.itemCount,
+          estimatedWeightG: metrics.estimatedWeightG,
+          hasUnknownWeight: metrics.hasUnknownWeight,
+        };
+      });
+
+      res.json({
+        orders: formatted,
+        total: formatted.length,
+        pendingCount: formatted.length,
+      });
+    } catch (err) {
+      console.error(err);
+      res
+        .status(500)
+        .json({ error: "Erreur chargement commandes logistiques" });
+    }
+  }
+);
+
+// GET /api/admin/logistics/orders/:orderId — Détail préparation d'expédition
+adminRouter.get(
+  "/logistics/orders/:orderId",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const [order, packagings] = await Promise.all([
+        prisma.order.findUnique({
+          where: { id: req.params.orderId },
+          include: {
+            items: {
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    name: true,
+                    images: true,
+                    weightG: true,
+                    lengthCm: true,
+                    widthCm: true,
+                    heightCm: true,
+                    isFragile: true,
+                    isLiquid: true,
+                    isAerosol: true,
+                    logisticNote: true,
+                  },
+                },
+              },
+            },
+            customer: true,
+            shippingAddress: true,
+            shipment: { include: { packaging: true } },
+          },
+        }),
+        prisma.packaging.findMany({
+          where: { isActive: true },
+          orderBy: [{ internalVolumeCm3: "asc" }, { name: "asc" }],
+        }),
+      ]);
+
+      if (!order) {
+        res.status(404).json({ error: "Commande non trouvée" });
+        return;
+      }
+
+      const metrics = computeLogisticsMetrics(
+        order.items as LogisticsOrderItem[]
+      );
+      const recommendedBox = findRecommendedPackaging(
+        packagings as LogisticsPackaging[],
+        metrics.totalWeightG,
+        metrics.totalVolumeCm3
+      );
+      const packageTotalWeightG =
+        metrics.totalWeightG + (recommendedBox?.selfWeightG || 0);
+
+      res.json({
+        order: {
+          id: order.id,
+          orderNumber: order.orderNumber,
+          createdAt: order.createdAt,
+          status: order.status,
+          email: order.email,
+          customerName: getCustomerName(order.customer, order.email),
+          total: order.total,
+          currency: order.currency,
+          isB2B: order.isB2B,
+          shippingAddress: order.shippingAddress,
+        },
+        items: (order.items as LogisticsOrderItem[]).map(
+          normalizeLogisticsItem
+        ),
+        packagings,
+        recommendation: {
+          totalWeightG: metrics.totalWeightG,
+          estimatedWeightG: metrics.estimatedWeightG,
+          totalVolumeCm3: metrics.totalVolumeCm3,
+          packageTotalWeightG,
+          hasUnknownWeight: metrics.hasUnknownWeight,
+          hasFragile: metrics.hasFragile,
+          hasLiquid: metrics.hasLiquid,
+          hasAerosol: metrics.hasAerosol,
+          recommendedBox,
+        },
+        shipment: order.shipment,
+      });
+    } catch (err) {
+      console.error(err);
+      res
+        .status(500)
+        .json({ error: "Erreur chargement préparation logistique" });
+    }
+  }
+);
+
+// POST /api/admin/logistics/orders/:orderId/ship — Marquer comme expédié
+adminRouter.post(
+  "/logistics/orders/:orderId/ship",
+  requireAdmin,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const carrier = String(req.body?.carrier || "") as LogisticsCarrier;
+      const trackingNumber =
+        String(req.body?.trackingNumber || "").trim() || null;
+      const packagingIdRaw = req.body?.packagingId;
+      const packagingId =
+        packagingIdRaw === undefined ||
+        packagingIdRaw === null ||
+        packagingIdRaw === ""
+          ? null
+          : parseInt(String(packagingIdRaw), 10);
+
+      if (!Object.keys(LOGISTICS_CARRIERS).includes(carrier)) {
+        res.status(400).json({ error: "Transporteur invalide" });
+        return;
+      }
+      if (packagingId !== null && !Number.isFinite(packagingId)) {
+        res.status(400).json({ error: "Carton sélectionné invalide" });
+        return;
+      }
+
+      const order = await prisma.order.findUnique({
+        where: { id: req.params.orderId },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  images: true,
+                  weightG: true,
+                  lengthCm: true,
+                  widthCm: true,
+                  heightCm: true,
+                  isFragile: true,
+                  isLiquid: true,
+                  isAerosol: true,
+                  logisticNote: true,
+                },
+              },
+            },
+          },
+          customer: true,
+        },
+      });
+
+      if (!order) {
+        res.status(404).json({ error: "Commande non trouvée" });
+        return;
+      }
+      if (!["paid", "processing"].includes(order.status)) {
+        res.status(400).json({
+          error:
+            "Seules les commandes payées ou en préparation peuvent être expédiées",
+        });
+        return;
+      }
+
+      const packaging = packagingId
+        ? await prisma.packaging.findUnique({ where: { id: packagingId } })
+        : null;
+      if (packagingId && !packaging) {
+        res.status(404).json({ error: "Carton sélectionné introuvable" });
+        return;
+      }
+
+      const metrics = computeLogisticsMetrics(
+        order.items as LogisticsOrderItem[]
+      );
+      const totalWeightG = metrics.totalWeightG + (packaging?.selfWeightG || 0);
+      const shippedAt = new Date();
+
+      const [shipment, updatedOrder] = await prisma.$transaction([
+        prisma.shipment.upsert({
+          where: { orderId: order.id },
+          create: {
+            orderId: order.id,
+            carrier,
+            trackingNumber,
+            packagingId,
+            totalWeightG,
+            shippedAt,
+            shippedBy: req.user?.email || null,
+          },
+          update: {
+            carrier,
+            trackingNumber,
+            packagingId,
+            totalWeightG,
+            shippedAt,
+            shippedBy: req.user?.email || null,
+          },
+          include: { packaging: true },
+        }),
+        prisma.order.update({
+          where: { id: order.id },
+          data: { status: "shipped" },
+        }),
+      ]);
+
+      await sendOrderShippedEmail({
+        to: order.email,
+        orderNumber: order.orderNumber,
+        customerName: getCustomerName(order.customer, order.email),
+        carrier: LOGISTICS_CARRIERS[carrier],
+        trackingNumber,
+      });
+
+      res.json({ success: true, order: updatedOrder, shipment });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur validation expédition" });
     }
   }
 );
@@ -2372,21 +2771,16 @@ adminRouter.post(
       const { currentPassword, newPassword } = req.body;
 
       if (!currentPassword || !newPassword) {
-        res
-          .status(400)
-          .json({
-            error: "Mot de passe actuel et nouveau mot de passe requis",
-          });
+        res.status(400).json({
+          error: "Mot de passe actuel et nouveau mot de passe requis",
+        });
         return;
       }
 
       if (newPassword.length < 8) {
-        res
-          .status(400)
-          .json({
-            error:
-              "Le nouveau mot de passe doit contenir au moins 8 caractères",
-          });
+        res.status(400).json({
+          error: "Le nouveau mot de passe doit contenir au moins 8 caractères",
+        });
         return;
       }
 
@@ -2528,12 +2922,10 @@ adminRouter.delete(
         return;
       }
       if (req.query.confirm !== "true") {
-        res
-          .status(400)
-          .json({
-            error:
-              "Confirmation obligatoire pour supprimer définitivement une marque",
-          });
+        res.status(400).json({
+          error:
+            "Confirmation obligatoire pour supprimer définitivement une marque",
+        });
         return;
       }
 

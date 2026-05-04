@@ -232,3 +232,58 @@ describe("Admin stock workspace", () => {
     expect(adminRouteSource).toContain("extractInvoiceCandidatesWithClaude");
   });
 });
+
+
+describe("Admin logistics agent MVP", () => {
+  const repoRoot = resolve(__dirname, "..");
+
+  it("adds a Shipment Prisma model and migration for expedition tracking", () => {
+    const schemaSource = readFileSync(resolve(repoRoot, "backend/prisma/schema.prisma"), "utf8");
+    const migrationSource = readFileSync(
+      resolve(repoRoot, "backend/prisma/migrations/20260507000000_add_shipment/migration.sql"),
+      "utf8",
+    );
+
+    expect(schemaSource).toContain("model Shipment");
+    expect(schemaSource).toContain("trackingNumber");
+    expect(schemaSource).toMatch(/order\s+Order\s+@relation/);
+    expect(migrationSource).toContain('CREATE TABLE "Shipment"');
+    expect(migrationSource).toContain('FOREIGN KEY ("orderId") REFERENCES "Order"("id")');
+  });
+
+  it("exposes logistics admin routes for pending orders, preparation detail and expedition confirmation", () => {
+    const adminRouteSource = readFileSync(resolve(repoRoot, "backend/src/routes/admin.ts"), "utf8");
+
+    expect(adminRouteSource).toContain('"/logistics/orders"');
+    expect(adminRouteSource).toContain('"/logistics/orders/:orderId"');
+    expect(adminRouteSource).toContain('"/logistics/orders/:orderId/ship"');
+    expect(adminRouteSource).toContain("findRecommendedPackaging");
+    expect(adminRouteSource).toContain("sendOrderShippedEmail");
+    expect(adminRouteSource).toContain('shipment: null');
+    expect(adminRouteSource).toContain('shipment: { include: { packaging: true } }');
+  });
+
+  it("adds the logistics frontend helpers and command preparation screens", () => {
+    const adminApiSource = readFileSync(resolve(repoRoot, "frontend/src/lib/admin-api.ts"), "utf8");
+    const listPageSource = readFileSync(resolve(repoRoot, "frontend/src/app/admin/logistique/commandes/page.tsx"), "utf8");
+    const detailPageSource = readFileSync(resolve(repoRoot, "frontend/src/app/admin/logistique/commandes/[id]/page.tsx"), "utf8");
+
+    expect(adminApiSource).toContain("getLogisticsOrders");
+    expect(adminApiSource).toContain("getLogisticsOrder");
+    expect(adminApiSource).toContain("shipLogisticsOrder");
+    expect(listPageSource).toContain("Commandes à expédier");
+    expect(listPageSource).toContain("/admin/logistique/commandes/${order.id}");
+    expect(detailPageSource).toContain("Panneau de préparation");
+    expect(detailPageSource).toContain("Marquer expédiée et envoyer l’email");
+  });
+
+  it("adds a logistics menu entry with a pending-orders badge", () => {
+    const shellSource = readFileSync(resolve(repoRoot, "frontend/src/components/admin/AdminShell.tsx"), "utf8");
+
+    expect(shellSource).toContain('href: "/admin/logistique/commandes"');
+    expect(shellSource).toContain('label: "Commandes à expédier"');
+    expect(shellSource).toContain('badgeKey: "logisticsPending"');
+    expect(shellSource).toContain("getLogisticsOrders");
+    expect(shellSource).toContain("logisticsPendingCount");
+  });
+});

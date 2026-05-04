@@ -4,6 +4,7 @@ import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import AdminLoginPage from "./AdminLoginPage";
+import { getLogisticsOrders } from "@/lib/admin-api";
 import {
   LayoutDashboard,
   Package,
@@ -21,6 +22,7 @@ import {
   Tag,
   Boxes,
   Euro,
+  Truck,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -34,7 +36,13 @@ const NAV_ITEMS = [
   { href: "/admin/brands", label: "Marques", icon: Tag },
   { href: "/admin/seo", label: "Agent SEO", icon: Search },
   { href: "/admin/geo", label: "Outils GEO", icon: Globe },
-  { href: "/admin/logistique/emballages", label: "Logistique", icon: Boxes },
+  {
+    href: "/admin/logistique/commandes",
+    label: "Commandes à expédier",
+    icon: Truck,
+    badgeKey: "logisticsPending",
+  },
+  { href: "/admin/logistique/emballages", label: "Emballages", icon: Boxes },
   { href: "/admin/import-reviews", label: "Import Avis", icon: MessageSquare },
   { href: "/admin/parametres", label: "Paramètres", icon: Settings },
 ];
@@ -43,6 +51,9 @@ export default function AdminShell({ children }: { children: ReactNode }) {
   const { admin, logout, isLoading } = useAdminAuth();
   const [pathname, setPathname] = useState("/admin");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [logisticsPendingCount, setLogisticsPendingCount] = useState<
+    number | null
+  >(null);
 
   useEffect(() => {
     const syncLocation = () => setPathname(window.location.pathname);
@@ -50,6 +61,13 @@ export default function AdminShell({ children }: { children: ReactNode }) {
     window.addEventListener("popstate", syncLocation);
     return () => window.removeEventListener("popstate", syncLocation);
   }, []);
+
+  useEffect(() => {
+    if (!admin) return;
+    getLogisticsOrders()
+      .then(data => setLogisticsPendingCount(data.pendingCount))
+      .catch(() => setLogisticsPendingCount(null));
+  }, [admin]);
 
   if (isLoading) {
     return (
@@ -65,11 +83,15 @@ export default function AdminShell({ children }: { children: ReactNode }) {
 
   const isNavItemActive = (href: string) => {
     if (href === "/admin") return pathname === "/admin";
-    if (href === "/admin/pro") return pathname === "/admin/pro" || /^\/admin\/pro\/(?!prices(?:\/|$))/.test(pathname);
+    if (href === "/admin/pro")
+      return (
+        pathname === "/admin/pro" ||
+        /^\/admin\/pro\/(?!prices(?:\/|$))/.test(pathname)
+      );
     return pathname === href || pathname.startsWith(`${href}/`);
   };
 
-  const currentPage = NAV_ITEMS.find((item) => isNavItemActive(item.href));
+  const currentPage = NAV_ITEMS.find(item => isNavItemActive(item.href));
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -89,13 +111,21 @@ export default function AdminShell({ children }: { children: ReactNode }) {
       >
         {/* Logo */}
         <div className="h-16 flex items-center px-5 border-b border-white/10">
-          <Link href="/admin" className="flex items-center gap-2.5" onClick={() => setSidebarOpen(false)}>
+          <Link
+            href="/admin"
+            className="flex items-center gap-2.5"
+            onClick={() => setSidebarOpen(false)}
+          >
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white font-bold text-sm">
               BP
             </div>
             <div>
-              <div className="font-heading font-bold text-sm leading-tight">Barber Paradise</div>
-              <div className="text-[10px] text-gray-400 uppercase tracking-wider">Admin Panel</div>
+              <div className="font-heading font-bold text-sm leading-tight">
+                Barber Paradise
+              </div>
+              <div className="text-[10px] text-gray-400 uppercase tracking-wider">
+                Admin Panel
+              </div>
             </div>
           </Link>
           <button
@@ -108,8 +138,12 @@ export default function AdminShell({ children }: { children: ReactNode }) {
 
         {/* Navigation */}
         <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.map(item => {
             const isActive = isNavItemActive(item.href);
+            const badgeValue =
+              item.badgeKey === "logisticsPending"
+                ? logisticsPendingCount
+                : null;
             return (
               <Link
                 key={item.href}
@@ -122,7 +156,12 @@ export default function AdminShell({ children }: { children: ReactNode }) {
                 }`}
               >
                 <item.icon size={18} />
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {badgeValue !== null && badgeValue > 0 && (
+                  <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[11px] font-bold text-cyan-200">
+                    {badgeValue}
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -135,8 +174,12 @@ export default function AdminShell({ children }: { children: ReactNode }) {
               {admin.name?.charAt(0).toUpperCase() || "A"}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-white truncate">{admin.name}</div>
-              <div className="text-xs text-gray-400 truncate">{admin.email}</div>
+              <div className="text-sm font-medium text-white truncate">
+                {admin.name}
+              </div>
+              <div className="text-xs text-gray-400 truncate">
+                {admin.email}
+              </div>
             </div>
             <button
               onClick={logout}
@@ -167,7 +210,9 @@ export default function AdminShell({ children }: { children: ReactNode }) {
             {currentPage && currentPage.href !== "/admin" && (
               <>
                 <ChevronRight size={14} />
-                <span className="text-dark-800 font-medium">{currentPage.label}</span>
+                <span className="text-dark-800 font-medium">
+                  {currentPage.label}
+                </span>
               </>
             )}
           </div>

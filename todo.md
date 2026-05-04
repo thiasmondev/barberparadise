@@ -228,3 +228,15 @@
 - [x] Créer ou adapter les endpoints admin nécessaires pour lister le stock par marque, mettre à jour les quantités, prix et statuts, puis appliquer les ajustements issus d’une facture fournisseur.
 - [x] Valider les builds backend/frontend et les tests ciblés après refonte de la gestion stock.
 - [x] Committer et pousser la refonte admin Stock sur `main`.
+
+- [x] Créer la page `/admin/logistique/commandes` listant les commandes payées non expédiées avec numéro, date, client, total, nombre d’articles, poids estimé et bouton Préparer.
+- [x] Créer la page `/admin/logistique/commandes/[orderId]` avec produits à emballer, recommandation carton, badges fragile/liquide/aérosol, checklist préparation, transporteur, suivi et action d’expédition.
+- [x] Ajouter le modèle Prisma `Shipment` avec lien unique vers `Order`, transporteur, tracking, packaging, poids total, date d’expédition, admin expéditeur et date de création.
+- [x] Générer la migration Prisma `add_shipment` et synchroniser le client Prisma.
+- [x] Créer les routes admin `GET /api/admin/logistics/orders`, `GET /api/admin/logistics/orders/:orderId` et `POST /api/admin/logistics/orders/:orderId/ship`.
+- [x] Brancher l’action d’expédition au statut `shipped`, à l’enregistrement du transporteur/suivi/carton et à l’email d’expédition client existant.
+- [x] Ajouter dans le menu admin sous Logistique un lien `Commandes à expédier` avec badge count des commandes en attente.
+- [x] Ajouter ou adapter les contrats frontend API nécessaires au panneau Préparer l’expédition.
+- [x] Ajouter les tests de régression du MVP agent logistique.
+- [x] Valider les builds backend/frontend et les tests après ajout du MVP agent logistique.
+- [x] Committer et pousser le MVP agent logistique sur `main`.
