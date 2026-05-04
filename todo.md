@@ -284,3 +284,8 @@
 - [x] Auditer exhaustivement le frontend pour `NEXT_PUBLIC_SITE_URL`, `barberparadise.vercel.app` et les URL Vercel codées en dur.
 - [x] Remplacer uniquement les URL `https://barberparadise.vercel.app` codées en dur par `process.env.NEXT_PUBLIC_SITE_URL` ou par le fallback `process.env.NEXT_PUBLIC_SITE_URL || 'https://www.barberparadise.fr'` lorsque nécessaire.
 - [x] Produire avant commit un rapport listant tous les fichiers modifiés et le changement effectué dans chacun.
+
+- [x] Corriger effectivement la fiche `/admin/seo/produit` pour afficher une action rouge de suppression produit avec confirmation irréversible.
+- [x] Corriger effectivement la fiche `/admin/seo/produit` pour permettre l’édition et la sauvegarde de `priceEur` via `PATCH /api/admin/products/:id`.
+- [x] Vérifier que `DELETE /api/admin/products/:id` supprime bien le produit depuis la fiche Agent SEO et redirige vers la liste produits admin existante.
+- [x] Valider le correctif Agent SEO produit par build frontend/backend et pousser sur GitHub.

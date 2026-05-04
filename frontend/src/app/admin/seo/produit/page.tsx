@@ -590,6 +590,46 @@ function SeoProductPageContent() {
     }
   };
 
+  const buildProductUpdatePayload = () => ({
+    category: editCategory,
+    subcategory: editSubcategory,
+    subsubcategory: editSubsubcategory,
+    brandId: editBrandId ? Number(editBrandId) : null,
+    brand: editBrandName,
+    weightG: editWeightG,
+    lengthCm: editLengthCm,
+    widthCm: editWidthCm,
+    heightCm: editHeightCm,
+    isFragile: editIsFragile,
+    isLiquid: editIsLiquid,
+    isAerosol: editIsAerosol,
+    requiresGlass: editRequiresGlass,
+    logisticNote: editLogisticNote,
+    price: editPriceEur.trim() === "" ? product?.price : Number(editPriceEur),
+    priceEur: editPriceEur.trim() === "" ? product?.price : Number(editPriceEur),
+    priceProEur: editPriceProEur.trim() === "" ? null : Number(editPriceProEur),
+    status: editStatus,
+  });
+
+  const handleSaveProductFields = async () => {
+    if (!productId || !product) return;
+    setApplying(true);
+    setError("");
+    try {
+      await updateProduct(productId, buildProductUpdatePayload());
+      setApplied(true);
+      const data = await analyzeSeoProduct(productId);
+      setProduct(data.product);
+      setScore(data.score);
+      setDetails(data.details);
+      setEditPriceEur(data.product.price != null ? String(data.product.price) : "");
+    } catch (err: any) {
+      setError(err.message || "Erreur lors de la sauvegarde du produit.");
+    } finally {
+      setApplying(false);
+    }
+  };
+
   const handleApply = async () => {
     if (!productId || !product) return;
     setApplying(true);
@@ -603,26 +643,7 @@ function SeoProductPageContent() {
         suggestedTags: editTags,
       });
       // Sauvegarder aussi les données produit modifiables hors SEO, dont la logistique.
-      await updateProduct(productId, {
-        category: editCategory,
-        subcategory: editSubcategory,
-        subsubcategory: editSubsubcategory,
-        brandId: editBrandId ? Number(editBrandId) : null,
-        brand: editBrandName,
-        weightG: editWeightG,
-        lengthCm: editLengthCm,
-        widthCm: editWidthCm,
-        heightCm: editHeightCm,
-        isFragile: editIsFragile,
-        isLiquid: editIsLiquid,
-        isAerosol: editIsAerosol,
-        requiresGlass: editRequiresGlass,
-        logisticNote: editLogisticNote,
-        price: editPriceEur.trim() === "" ? product.price : Number(editPriceEur),
-        priceEur: editPriceEur.trim() === "" ? product.price : Number(editPriceEur),
-        priceProEur: editPriceProEur.trim() === "" ? null : Number(editPriceProEur),
-        status: editStatus,
-      });
+      await updateProduct(productId, buildProductUpdatePayload());
       setApplied(true);
       const data = await analyzeSeoProduct(productId);
       setProduct(data.product);
@@ -1225,24 +1246,71 @@ function SeoProductPageContent() {
 
 
 
-          {/* Tarification professionnelle */}
+          {/* Tarification produit */}
           <div className="bg-white rounded-xl shadow-sm border border-amber-100 p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">B2B</span>
-              <span className="text-xs text-gray-400">Prix visible uniquement pour les comptes professionnels approuvés</span>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">PRIX</span>
+                <span className="text-xs text-gray-400">Prix public catalogue et tarif professionnel optionnel</span>
+              </div>
+              <span className="text-xs font-semibold text-gray-500">Prix actuel : {product ? formatPrice(product.price) : "—"}</span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Prix public TTC actuel</label>
-                <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-800">{product ? formatPrice(product.price) : "—"}</div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Prix public TTC (€)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editPriceEur}
+                  onChange={(e) => { setEditPriceEur(e.target.value); setApplied(false); }}
+                  placeholder="ex: 59.90"
+                  className="w-full border border-amber-300 bg-white rounded-lg px-3 py-2 text-sm font-semibold text-gray-900 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none"
+                />
+                <p className="mt-1 text-[11px] text-gray-500">Ce champ met à jour le prix public du produit via l&apos;API admin.</p>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Prix pro HT (€)</label>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Prix pro HT (€)</label>
                 <input type="number" min="0" step="0.01" value={editPriceProEur} onChange={(e) => { setEditPriceProEur(e.target.value); setApplied(false); }} placeholder="ex: 24.90" className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none" />
+                <p className="mt-1 text-[11px] text-gray-500">Laissez vide pour ne pas proposer de tarif pro dédié.</p>
               </div>
-              <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">Laissez vide pour ne pas proposer de tarif pro dédié sur ce produit.</div>
+              <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <p className="font-semibold">Sauvegarde directe</p>
+                <p className="mt-1">Utilisez le bouton ci-dessous pour enregistrer le prix sans lancer de génération IA.</p>
+                <button
+                  type="button"
+                  onClick={handleSaveProductFields}
+                  disabled={applying || !productId}
+                  className="mt-3 inline-flex items-center gap-2 rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white hover:bg-amber-700 disabled:opacity-60"
+                >
+                  {applying ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  Enregistrer le prix
+                </button>
+              </div>
             </div>
           </div>
+
+          {/* Zone danger produit */}
+          {productId && product && (
+            <div className="bg-white rounded-xl shadow-sm border border-red-200 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <span className="text-xs font-semibold text-red-700 bg-red-50 px-2 py-0.5 rounded">ZONE DANGER</span>
+                  <h3 className="mt-2 text-sm font-black text-gray-900">Supprimer ce produit</h3>
+                  <p className="mt-1 text-xs leading-5 text-gray-600">Supprime définitivement la fiche produit ainsi que ses variantes, avis et références associées. Une confirmation est demandée avant exécution.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmOpen(true)}
+                  disabled={deletingProduct}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-black text-white hover:bg-red-700 disabled:opacity-60"
+                >
+                  {deletingProduct ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                  Supprimer ce produit
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Données logistiques */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">

@@ -1915,6 +1915,9 @@ adminRouter.delete(
     try {
       await prisma.$transaction(async (tx) => {
         await tx.productVariant.deleteMany({ where: { productId: req.params.id } });
+        await tx.review.deleteMany({ where: { productId: req.params.id } });
+        await tx.wishlistItem.deleteMany({ where: { productId: req.params.id } });
+        await tx.orderItem.deleteMany({ where: { productId: req.params.id } });
         await tx.product.delete({ where: { id: req.params.id } });
       });
       res.json({ success: true });
