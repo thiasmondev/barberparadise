@@ -26,6 +26,7 @@ export async function getProducts(params?: {
   search?: string;
   sort?: "name_asc" | "price_asc" | "price_desc" | "rating_desc" | "newest" | "updated_desc" | string;
   isNew?: boolean;
+  inStock?: boolean;
   minPrice?: number;
   maxPrice?: number;
 }) {

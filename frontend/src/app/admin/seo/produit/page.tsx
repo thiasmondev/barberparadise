@@ -11,6 +11,7 @@ import {
   applySeoOptimization,
   getProductsMeta,
   updateProduct,
+  deleteProduct,
   optimizeProductGeo,
   applyGeoOptimization,
   enrichProductGeo,
@@ -68,6 +69,7 @@ import {
   Users,
   BookOpen,
   Zap,
+  Trash2,
 } from "lucide-react";
 
 // Chargement dynamique de l'éditeur WYSIWYG (client-side only)
@@ -100,6 +102,7 @@ function ScoreRing({ score, size = 80 }: { score: number; size?: number }) {
           strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" />
       </svg>
       <span className="absolute text-lg font-bold" style={{ color }}>{score}</span>
+
     </div>
   );
 }
@@ -411,6 +414,8 @@ function SeoProductPageContent() {
   const [applied, setApplied] = useState(false);
   const [isNewSaving, setIsNewSaving] = useState(false);
   const [isNewSaved, setIsNewSaved] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deletingProduct, setDeletingProduct] = useState(false);
   const [error, setError] = useState("");
   const [showPreview, setShowPreview] = useState(true);
   // Onglet actif : "seo" ou "geo"
@@ -453,6 +458,7 @@ function SeoProductPageContent() {
   const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
   const [productSearchError, setProductSearchError] = useState("");
+  const [editPriceEur, setEditPriceEur] = useState("");
 
   // Charger les métadonnées pour l'autocomplétion
   useEffect(() => {
@@ -510,6 +516,7 @@ function SeoProductPageContent() {
         setEditIsAerosol(Boolean(data.product.isAerosol));
         setEditRequiresGlass(Boolean(data.product.requiresGlass));
         setEditLogisticNote(data.product.logisticNote || "");
+        setEditPriceEur(data.product.price != null ? String(data.product.price) : "");
         setEditPriceProEur(data.product.priceProEur != null ? String(data.product.priceProEur) : "");
         setEditStatus(data.product.status || "active");
         setEditTags(
@@ -611,6 +618,8 @@ function SeoProductPageContent() {
         isAerosol: editIsAerosol,
         requiresGlass: editRequiresGlass,
         logisticNote: editLogisticNote,
+        price: editPriceEur.trim() === "" ? product.price : Number(editPriceEur),
+        priceEur: editPriceEur.trim() === "" ? product.price : Number(editPriceEur),
         priceProEur: editPriceProEur.trim() === "" ? null : Number(editPriceProEur),
         status: editStatus,
       });
@@ -634,6 +643,21 @@ function SeoProductPageContent() {
       setEditTags(optimization.suggestedTags);
     }
     setApplied(false);
+  };
+
+  const handleDeleteProduct = async () => {
+    if (!productId || deletingProduct) return;
+    setDeletingProduct(true);
+    setError("");
+    try {
+      await deleteProduct(productId);
+      setDeleteConfirmOpen(false);
+      router.push("/admin/produits");
+    } catch (err: any) {
+      setError(err.message || "Erreur lors de la suppression du produit.");
+    } finally {
+      setDeletingProduct(false);
+    }
   };
 
   const handleToggleIsNew = async () => {
@@ -2054,6 +2078,23 @@ function SeoProductPageContent() {
           </div>
         )}
       </div>
+
+
+      {deleteConfirmOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-black text-gray-900">Êtes-vous sûr ?</h3>
+            <p className="mt-2 text-sm leading-6 text-gray-600">Cette action est irréversible. Le produit, ses images associées et ses variantes seront supprimés en cascade.</p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" onClick={() => setDeleteConfirmOpen(false)} disabled={deletingProduct} className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-60">Annuler</button>
+              <button type="button" onClick={handleDeleteProduct} disabled={deletingProduct} className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-black text-white hover:bg-red-700 disabled:opacity-60">
+                {deletingProduct ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                Supprimer définitivement
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

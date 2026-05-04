@@ -273,3 +273,10 @@
 - [x] Ajouter les helpers frontend Marketing dans `frontend/src/lib/admin-api.ts`.
 - [x] Ajouter les tests backend de régression Marketing et valider les builds backend/frontend.
 - [x] Committer et pousser l’Agent Marketing compatible Render sur `main`.
+
+- [x] Mettre à jour les IDs des listes Brevo dans `src/services/brevoService.ts` avec `b2c: 5`, `b2b: 6`, `inactive: 7`.
+- [x] Corriger `/admin/seo/produit` pour permettre la modification de `priceEur` et ajouter la suppression produit avec confirmation irréversible.
+- [x] Vérifier et réparer la route `GET /api/products/search?q=terme`, l’appel frontend et l’affichage/redirection des résultats de recherche.
+- [x] Aligner le menu burger mobile sur la navigation desktop avec Produits, Matériel, Marques, Nouveautés, Pro, compte/connexion et panier.
+- [x] Améliorer les filtres catalogue avec slider prix, marques à cases avec compteurs et recherche, disponibilité, nouveautés, effacement, badges actifs et drawer mobile.
+- [x] Lancer les tests/builds pertinents puis committer et pousser les corrections sur GitHub.

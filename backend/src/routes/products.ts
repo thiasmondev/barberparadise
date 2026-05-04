@@ -138,13 +138,18 @@ productsRouter.get("/", async (req: Request, res: Response): Promise<void> => {
       const allSubcategorySlugs = await getAllChildSlugs(subcategory);
       where.OR = buildCategorySlugFilter(allSubcategorySlugs);
     }
-    if (brand) where.brand = { equals: brand, mode: "insensitive" };
+    if (brand) {
+      const brandValues = String(brand).split(",").map((item) => item.trim()).filter(Boolean);
+      if (brandValues.length === 1) where.brand = { equals: brandValues[0], mode: "insensitive" };
+      else if (brandValues.length > 1) where.OR = [...(where.OR || []), ...brandValues.map((name) => ({ brand: { equals: name, mode: "insensitive" } }))];
+    }
     if (search) {
       // Utiliser AND pour combiner avec un éventuel OR de catégorie
       const searchOr = [
         { name: { contains: search, mode: "insensitive" } },
         { description: { contains: search, mode: "insensitive" } },
         { brand: { contains: search, mode: "insensitive" } },
+        { slug: { contains: search, mode: "insensitive" } },
       ];
       if (where.OR) {
         // Combiner : catégorie AND search
@@ -265,6 +270,38 @@ productsRouter.get("/reviews/public", async (_req: Request, res: Response): Prom
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// GET /api/products/search?q=terme — Recherche rapide header/catalogue
+productsRouter.get("/search", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const q = String(req.query.q || "").trim();
+    if (q.length < 2) {
+      res.json([]);
+      return;
+    }
+    const [products, isApprovedPro] = await Promise.all([
+      prisma.product.findMany({
+        where: {
+          status: "active",
+          OR: [
+            { name: { contains: q, mode: "insensitive" } },
+            { brand: { contains: q, mode: "insensitive" } },
+            { description: { contains: q, mode: "insensitive" } },
+            { slug: { contains: q, mode: "insensitive" } },
+          ],
+        },
+        orderBy: { name: "asc" },
+        take: 8,
+        include: { variants: { orderBy: { order: "asc" } } },
+      }),
+      isApprovedProRequest(req),
+    ]);
+    res.json(products.map((product) => serializeProduct(product, isApprovedPro)));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur recherche produits" });
   }
 });
 

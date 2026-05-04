@@ -10,6 +10,12 @@ export type BrevoStatus = {
 
 const BREVO_BASE_URL = "https://api.brevo.com/v3";
 
+export const BREVO_LISTS = {
+  b2c: 5,
+  b2b: 6,
+  inactive: 7,
+} as const;
+
 function brevoHeaders() {
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) return null;

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState, useEffect, useRef } from "react";
+import { FormEvent, useState, useEffect, useRef } from "react";
 import { ShoppingBag, Search, Menu, X, User, ChevronRight, ChevronDown, LogOut, Heart, Package } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { isExactActiveHref } from "@/utils/navigation";
@@ -10,6 +10,8 @@ import { getMegaMenuChildren, hasMegaMenuChildren } from "@/utils/megaMenu";
 import type { Brand } from "@/types";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
 import { getProStatus } from "@/lib/customer-api";
+import { searchProducts } from "@/lib/api";
+import type { Product } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
 
@@ -37,18 +39,6 @@ const NAV_MAIN: NavItem[] = [
   { label: "MARQUES", href: "/marques", megaMenu: "marques" },
   { label: "NOUVEAUTÉS", href: "/nouveautes" },
   { label: "PRO", href: "/pro" },
-];
-
-const NAV_BURGER = [
-  { label: "PRODUITS", href: "/catalogue" },
-  { label: "MATÉRIEL", href: "/catalogue?category=materiel" },
-  { label: "TONDEUSES", href: "/catalogue?category=tondeuses" },
-  { label: "RASAGE", href: "/catalogue?category=rasage" },
-  { label: "BARBE", href: "/catalogue?category=barbe" },
-  { label: "MARQUES", href: "/marques" },
-  { label: "NOUVEAUTÉS", href: "/nouveautes" },
-  { label: "PRO", href: "/pro" },
-  { label: "PROMOTIONS", href: "/catalogue?promo=true" },
 ];
 
 // ─── Mega-menu PRODUITS ───────────────────────────────────────
@@ -412,6 +402,13 @@ export default function Header() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [pathname, setPathname] = useState("/");
   const [currentSearchParams, setCurrentSearchParams] = useState(() => new URLSearchParams());
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState<Product[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [mobileProduitsOpen, setMobileProduitsOpen] = useState(true);
+  const [mobileMaterielOpen, setMobileMaterielOpen] = useState(false);
+  const [mobileMarquesOpen, setMobileMarquesOpen] = useState(false);
   const isHome = pathname === "/";
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -477,6 +474,51 @@ export default function Header() {
     if (closeTimer.current) clearTimeout(closeTimer.current);
   };
 
+  useEffect(() => {
+    const query = searchTerm.trim();
+    if (!searchOpen || query.length < 2) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setSearchLoading(true);
+    const timer = setTimeout(() => {
+      searchProducts(query)
+        .then((results) => { if (!cancelled) setSearchResults(results); })
+        .catch(() => { if (!cancelled) setSearchResults([]); })
+        .finally(() => { if (!cancelled) setSearchLoading(false); });
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [searchOpen, searchTerm]);
+
+  const submitSearch = (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
+    const query = searchTerm.trim();
+    if (!query) return;
+    setSearchOpen(false);
+    setMobileOpen(false);
+    window.location.assign(`/catalogue?search=${encodeURIComponent(query)}`);
+  };
+
+  const renderMobileCategoryLinks = (parentSlug: string) => (
+    <div className="grid gap-1 py-2 pl-3">
+      {allCategories
+        .filter((cat) => cat.parentSlug === parentSlug)
+        .sort((a, b) => a.order - b.order)
+        .map((cat) => (
+          <Link
+            key={cat.slug}
+            href={`/catalogue?category=${cat.slug}`}
+            onClick={() => setMobileOpen(false)}
+            className="border-b border-white/5 py-2 text-[12px] font-bold uppercase tracking-[0.12em] text-white/55 hover:text-white"
+          >
+            {cat.name}
+          </Link>
+        ))}
+    </div>
+  );
+
   const handleCustomerLogout = () => {
     logout();
     setAccountOpen(false);
@@ -524,9 +566,32 @@ export default function Header() {
 
           {/* ─── DROITE : Icônes ─── */}
           <div className="flex items-center justify-end gap-5 w-1/4">
-            <button className="text-white hover:text-[#ff4a8d] transition-colors hidden sm:block">
-              <Search size={18} />
-            </button>
+            <div className="relative hidden sm:block">
+              <button type="button" onClick={() => setSearchOpen((open) => !open)} className="text-white hover:text-[#ff4a8d] transition-colors" aria-label="Rechercher">
+                <Search size={18} />
+              </button>
+              {searchOpen && (
+                <div className="absolute right-0 top-8 z-50 w-80 border border-white/10 bg-[#111] p-3 shadow-2xl shadow-black/50">
+                  <form onSubmit={submitSearch} className="flex gap-2">
+                    <input autoFocus value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Rechercher un produit, une marque..." className="min-w-0 flex-1 border border-white/10 bg-black px-3 py-2 text-sm text-white outline-none focus:border-[#ff4a8d]" />
+                    <button className="bg-[#ff4a8d] px-3 text-xs font-black uppercase tracking-widest text-white">OK</button>
+                  </form>
+                  <div className="mt-3 max-h-80 overflow-y-auto">
+                    {searchLoading && <p className="px-2 py-3 text-xs uppercase tracking-widest text-white/45">Recherche...</p>}
+                    {!searchLoading && searchTerm.trim().length >= 2 && searchResults.length === 0 && <p className="px-2 py-3 text-xs uppercase tracking-widest text-white/45">Aucun résultat</p>}
+                    {searchResults.map((product) => (
+                      <Link key={product.id} href={`/produit/${product.slug}`} onClick={() => setSearchOpen(false)} className="block border-b border-white/5 px-2 py-3 hover:bg-white/5">
+                        <span className="block text-sm font-bold text-white">{product.name}</span>
+                        <span className="block text-[11px] uppercase tracking-widest text-white/45">{product.brand}</span>
+                      </Link>
+                    ))}
+                    {searchTerm.trim().length >= 2 && (
+                      <button type="button" onClick={() => submitSearch()} className="mt-2 w-full border border-[#ff4a8d]/40 px-3 py-2 text-xs font-black uppercase tracking-widest text-[#ff4a8d] hover:bg-[#ff4a8d] hover:text-white">Voir tous les résultats</button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="relative hidden sm:block">
               {!isAuthenticated ? (
                 <Link href="/connexion" className="text-white hover:text-[#ff4a8d] transition-colors" aria-label="Connexion client">
@@ -642,90 +707,49 @@ export default function Header() {
             </button>
           </div>
 
-          <nav className="flex flex-col px-8 pt-10 gap-1">
-            {NAV_BURGER.map((item) => (
-              <Link
-                key={item.label}
-                href={item.href}
-                onClick={() => setMobileOpen(false)}
-                className="group flex items-center justify-between py-4 border-b border-white/5 hover:border-[#ff4a8d]/30 transition-colors"
-              >
-                <span className="text-2xl font-black tracking-tighter uppercase italic text-white group-hover:text-[#ff4a8d] transition-colors">
-                  {item.label}
-                </span>
-                <span className="text-[#ff4a8d] opacity-0 group-hover:opacity-100 transition-opacity text-xl font-black">→</span>
-              </Link>
-            ))}
+          <div className="px-8 pt-8">
+            <form onSubmit={submitSearch} className="flex gap-2 border border-white/10 bg-black p-2">
+              <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Rechercher" className="min-w-0 flex-1 bg-transparent px-2 text-sm text-white outline-none" />
+              <button className="text-[#ff4a8d]" aria-label="Rechercher"><Search size={18} /></button>
+            </form>
+          </div>
+
+          <nav className="flex flex-col px-8 pt-6 gap-1">
+            <div className="border-b border-white/5 py-2">
+              <button type="button" onClick={() => setMobileProduitsOpen((open) => !open)} className="flex w-full items-center justify-between py-3 text-left">
+                <span className="text-2xl font-black tracking-tighter uppercase italic text-white">PRODUITS</span>
+                <ChevronDown size={18} className={mobileProduitsOpen ? "rotate-180 text-[#ff4a8d]" : "text-[#ff4a8d]"} />
+              </button>
+              {mobileProduitsOpen && renderMobileCategoryLinks("produit")}
+            </div>
+            <div className="border-b border-white/5 py-2">
+              <button type="button" onClick={() => setMobileMaterielOpen((open) => !open)} className="flex w-full items-center justify-between py-3 text-left">
+                <span className="text-2xl font-black tracking-tighter uppercase italic text-white">MATÉRIEL</span>
+                <ChevronDown size={18} className={mobileMaterielOpen ? "rotate-180 text-[#ff4a8d]" : "text-[#ff4a8d]"} />
+              </button>
+              {mobileMaterielOpen && renderMobileCategoryLinks("materiel")}
+            </div>
+            <div className="border-b border-white/5 py-2">
+              <button type="button" onClick={() => setMobileMarquesOpen((open) => !open)} className="flex w-full items-center justify-between py-3 text-left">
+                <span className="text-2xl font-black tracking-tighter uppercase italic text-white">MARQUES</span>
+                <ChevronDown size={18} className={mobileMarquesOpen ? "rotate-180 text-[#ff4a8d]" : "text-[#ff4a8d]"} />
+              </button>
+              {mobileMarquesOpen && (
+                <div className="grid grid-cols-2 gap-2 py-2 pl-3">
+                  {brands.slice(0, 16).map((brand) => (
+                    <Link key={brand.id} href={`/marques/${brand.slug}`} onClick={() => setMobileOpen(false)} className="truncate border-b border-white/5 py-2 text-[12px] font-bold uppercase tracking-[0.12em] text-white/55 hover:text-white">{brand.name}</Link>
+                  ))}
+                  <Link href="/marques" onClick={() => setMobileOpen(false)} className="col-span-2 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#ff4a8d]">Voir toutes les marques →</Link>
+                </div>
+              )}
+            </div>
+            <Link href="/nouveautes" onClick={() => setMobileOpen(false)} className="group flex items-center justify-between py-4 border-b border-white/5 hover:border-[#ff4a8d]/30 transition-colors"><span className="text-2xl font-black tracking-tighter uppercase italic text-white group-hover:text-[#ff4a8d]">NOUVEAUTÉS</span><span className="text-[#ff4a8d]">→</span></Link>
+            <Link href="/pro" onClick={() => setMobileOpen(false)} className="group flex items-center justify-between py-4 border-b border-white/5 hover:border-[#ff4a8d]/30 transition-colors"><span className="text-2xl font-black tracking-tighter uppercase italic text-white group-hover:text-[#ff4a8d]">PRO</span><span className="text-[#ff4a8d]">→</span></Link>
+            <div className="my-4 h-px bg-white/10" />
+            <Link href={isAuthenticated ? "/compte" : "/connexion"} onClick={() => setMobileOpen(false)} className="group flex items-center justify-between py-4 border-b border-white/5 hover:border-[#ff4a8d]/30 transition-colors"><span className="text-xl font-black tracking-tighter uppercase italic text-white group-hover:text-[#ff4a8d]">{isAuthenticated ? "MON COMPTE" : "CONNEXION"}</span><User size={18} className="text-[#ff4a8d]" /></Link>
+            <Link href="/panier" onClick={() => setMobileOpen(false)} className="group flex items-center justify-between py-4 border-b border-white/5 hover:border-[#ff4a8d]/30 transition-colors"><span className="text-xl font-black tracking-tighter uppercase italic text-white group-hover:text-[#ff4a8d]">PANIER</span><ShoppingBag size={18} className="text-[#ff4a8d]" /></Link>
           </nav>
 
-          {/* Sous-catégories matériel */}
-          {allCategories.filter((c) => c.parentSlug === "materiel").length > 0 && (
-            <div className="px-8 pt-6 pb-4">
-              <p className="text-[10px] font-black tracking-[0.3em] uppercase text-[#ff4a8d] mb-4">
-                MATÉRIEL — CATÉGORIES
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                {allCategories
-                  .filter((c) => c.parentSlug === "materiel")
-                  .sort((a, b) => a.order - b.order)
-                  .map((cat) => (
-                    <Link
-                      key={cat.slug}
-                      href={`/catalogue?category=${cat.slug}`}
-                      onClick={() => setMobileOpen(false)}
-                      className="text-[11px] font-semibold tracking-[0.1em] uppercase text-white/50 hover:text-white py-2 border-b border-white/5 transition-colors"
-                    >
-                      {cat.name}
-                    </Link>
-                  ))}
-              </div>
-            </div>
-          )}
-
-          {/* Marques dans le burger */}
-          {brands.length > 0 && (
-            <div className="px-8 pt-6 pb-4">
-              <p className="text-[10px] font-black tracking-[0.3em] uppercase text-[#ff4a8d] mb-4">
-                MARQUES
-              </p>
-              <div className="grid grid-cols-3 gap-2">
-                {brands.slice(0, 9).map((brand) => (
-                  <Link
-                    key={brand.id}
-                    href={`/marques/${brand.slug}`}
-                    onClick={() => setMobileOpen(false)}
-                    className="text-[11px] font-semibold tracking-[0.1em] uppercase text-white/50 hover:text-white py-2 border-b border-white/5 transition-colors truncate"
-                  >
-                    {brand.name}
-                  </Link>
-                ))}
-              </div>
-              <Link
-                href="/marques"
-                onClick={() => setMobileOpen(false)}
-                className="mt-3 block text-[10px] font-black tracking-[0.2em] uppercase text-[#ff4a8d] hover:text-white transition-colors"
-              >
-                Voir toutes les marques →
-              </Link>
-            </div>
-          )}
-
-          <div className="px-8 pt-6 pb-4 border-t border-white/5">
-            <p className="text-[10px] font-black tracking-[0.3em] uppercase text-[#ff4a8d] mb-4">COMPTE CLIENT</p>
-            {!isAuthenticated ? (
-              <Link href="/connexion" onClick={() => setMobileOpen(false)} className="block py-3 text-sm font-black uppercase tracking-[0.18em] text-white/70 hover:text-white">
-                Se connecter
-              </Link>
-            ) : (
-              <div className="grid gap-1">
-                <Link href="/compte" onClick={() => setMobileOpen(false)} className="block py-3 text-sm font-black uppercase tracking-[0.18em] text-white/70 hover:text-white">Mon compte</Link>
-                <Link href="/compte?tab=commandes" onClick={() => setMobileOpen(false)} className="block py-3 text-sm font-black uppercase tracking-[0.18em] text-white/70 hover:text-white">Mes commandes</Link>
-                <Link href="/compte?tab=wishlist" onClick={() => setMobileOpen(false)} className="block py-3 text-sm font-black uppercase tracking-[0.18em] text-white/70 hover:text-white">Ma wishlist</Link>
-                <Link href="/compte?tab=factures" onClick={() => setMobileOpen(false)} className="block py-3 text-sm font-black uppercase tracking-[0.18em] text-white/70 hover:text-white">Mes factures</Link>
-                <button type="button" onClick={handleCustomerLogout} className="py-3 text-left text-sm font-black uppercase tracking-[0.18em] text-red-300 hover:text-red-200">Se déconnecter</button>
-              </div>
-            )}
-          </div>
 
           <div className="mt-auto px-8 py-8 border-t border-white/5 flex-shrink-0">
             <p className="text-[10px] font-black tracking-[0.3em] uppercase text-gray-600">

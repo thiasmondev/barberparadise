@@ -9,6 +9,7 @@ import {
   slugifyMarketing,
 } from "../services/marketingAgentService";
 import {
+  BREVO_LISTS,
   createBrevoEmailCampaign,
   getBrevoStatus,
   listBrevoLists,
@@ -353,7 +354,18 @@ adminMarketingRouter.post("/email-campaigns/:id/brevo", async (req: AuthRequest,
       res.status(404).json({ error: "Campagne email introuvable" });
       return;
     }
-    const listIds = req.body.listIds?.length ? req.body.listIds.map(Number) : emailCampaign.brevoListId ? [emailCampaign.brevoListId] : [];
+    const listIdsBySegment: Record<string, number[]> = {
+      all: [BREVO_LISTS.b2c, BREVO_LISTS.b2b],
+      b2c: [BREVO_LISTS.b2c],
+      b2b: [BREVO_LISTS.b2b],
+      inactive: [BREVO_LISTS.inactive],
+    };
+    const segmentKey = String(req.body.segment || emailCampaign.segment || "all");
+    const listIds = req.body.listIds?.length
+      ? req.body.listIds.map(Number)
+      : emailCampaign.brevoListId
+      ? [emailCampaign.brevoListId]
+      : listIdsBySegment[segmentKey] || listIdsBySegment.all;
     if (!listIds.length) {
       res.status(400).json({ error: "Au moins une liste Brevo est requise" });
       return;
@@ -456,10 +468,16 @@ adminMarketingRouter.get("/brevo/lists", async (_req: AuthRequest, res: Response
 
 adminMarketingRouter.post("/brevo/sync-customers", async (req: AuthRequest, res: Response) => {
   try {
-    const listIds = Array.isArray(req.body.listIds) ? req.body.listIds.map(Number).filter(Boolean) : [];
-    const customers = await prisma.customer.findMany({ take: Number(req.body.limit || 200), orderBy: { createdAt: "desc" } });
+    const requestedListIds = Array.isArray(req.body.listIds) ? req.body.listIds.map(Number).filter(Boolean) : [];
+    const customers = await prisma.customer.findMany({
+      take: Number(req.body.limit || 200),
+      orderBy: { createdAt: "desc" },
+      include: { proAccount: { select: { status: true } } },
+    });
     let synced = 0;
     for (const customer of customers) {
+      const defaultListId = customer.proAccount?.status === "approved" ? BREVO_LISTS.b2b : BREVO_LISTS.b2c;
+      const listIds = requestedListIds.length ? requestedListIds : [defaultListId];
       await upsertBrevoContact({ email: customer.email, firstName: customer.firstName, lastName: customer.lastName, listIds });
       synced += 1;
     }

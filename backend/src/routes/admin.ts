@@ -1804,6 +1804,7 @@ adminRouter.patch(
         subcategory,
         subsubcategory,
         price,
+        priceEur,
         priceProEur,
         originalPrice,
         inStock,
@@ -1830,8 +1831,9 @@ adminRouter.patch(
         res.status(404).json({ error: "Produit introuvable" });
         return;
       }
+      const rawPublicPrice = price !== undefined ? price : priceEur;
       const nextPublicPrice =
-        price !== undefined ? parseFloat(price) : currentProduct.price;
+        rawPublicPrice !== undefined ? parseFloat(rawPublicPrice) : currentProduct.price;
       const nextProPrice = toOptionalFloat(priceProEur);
       const nextStockCount = toNonNegativeInt(stockCount, "Stock");
       const nextStatus = toStockStatus(status);
@@ -1866,7 +1868,7 @@ adminRouter.patch(
           subcategory: subcategory || undefined,
           subsubcategory:
             subsubcategory !== undefined ? subsubcategory || "" : undefined,
-          price: price !== undefined ? nextPublicPrice : undefined,
+          price: rawPublicPrice !== undefined ? nextPublicPrice : undefined,
           priceProEur: nextProPrice,
           originalPrice:
             originalPrice !== undefined
@@ -1911,7 +1913,10 @@ adminRouter.delete(
   requireAdmin,
   async (req: Request, res: Response): Promise<void> => {
     try {
-      await prisma.product.delete({ where: { id: req.params.id } });
+      await prisma.$transaction(async (tx) => {
+        await tx.productVariant.deleteMany({ where: { productId: req.params.id } });
+        await tx.product.delete({ where: { id: req.params.id } });
+      });
       res.json({ success: true });
     } catch (err) {
       console.error(err);
