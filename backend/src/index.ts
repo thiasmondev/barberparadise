@@ -31,6 +31,7 @@ import brandsRouter from "./routes/brands";
 import { checkoutRouter } from "./routes/checkout";
 import { webhooksRouter } from "./routes/webhooks";
 import { proRouter } from "./routes/pro";
+import { cronRouter } from "./routes/cron";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -58,6 +59,7 @@ app.use("/api/brands", brandsRouter);
 app.use("/api/checkout", checkoutRouter);
 app.use("/api/webhooks", webhooksRouter);
 app.use("/api/pro", proRouter);
+app.use("/api/cron", cronRouter);
 
 // ─── Root & Health Check ─────────────────────────────────────
 app.get("/", (_req, res) => {
@@ -73,6 +75,7 @@ app.get("/", (_req, res) => {
       checkout: "/api/checkout/initiate",
       webhooks: "/api/webhooks/:provider",
       pro: "/api/pro",
+      cron: "/api/cron/indy-report",
       auth: "/api/auth",
       blog: "/api/blog",
       admin: "/api/admin",

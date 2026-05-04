@@ -1,0 +1,44 @@
+name: Envoi mensuel Indy
+
+on:
+  schedule:
+    # Le 1er de chaque mois à 08:00 UTC.
+    - cron: "0 8 1 * *"
+  workflow_dispatch:
+    inputs:
+      month:
+        description: "Mois à envoyer au format YYYY-MM. Vide = mois précédent."
+        required: false
+        type: string
+
+jobs:
+  send-indy-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Appeler le cron sécurisé Barber Paradise
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          MONTH: ${{ github.event.inputs.month }}
+        run: |
+          set -euo pipefail
+          if [ -z "${API_BASE_URL:-}" ]; then
+            echo "Le secret API_BASE_URL est requis, par exemple https://api.barberparadise.fr" >&2
+            exit 1
+          fi
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "Le secret CRON_SECRET est requis et doit correspondre à la variable backend CRON_SECRET." >&2
+            exit 1
+          fi
+
+          if [ -n "${MONTH:-}" ]; then
+            BODY="{\"month\":\"${MONTH}\"}"
+          else
+            BODY="{}"
+          fi
+
+          curl --fail --show-error --silent \
+            --request POST "${API_BASE_URL%/}/api/cron/indy-report" \
+            --header "Content-Type: application/json" \
+            --header "Authorization: Bearer ${CRON_SECRET}" \
+            --data "${BODY}"

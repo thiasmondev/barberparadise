@@ -1240,3 +1240,94 @@ export function shipLogisticsOrder(
     body: JSON.stringify(data),
   });
 }
+
+// ─── Finance / Export Indy ─────────────────────────────────────
+
+export type IndyPspName = "Mollie" | "PayPal" | "Checkout.com";
+
+export interface IndyReport {
+  month: string;
+  period: { start: string; end: string };
+  ventesParPSP: Array<{
+    psp: IndyPspName;
+    ventesRealisees: number;
+    commissionsPrelevees: number;
+    variationTotale: number;
+  }>;
+  ventesParPaysEtTVA: Array<{
+    paysLivraison: string;
+    tauxTVA: number;
+    totalHT: number;
+    montantTVA: number;
+    totalTTC: number;
+    nbCommandes: number;
+  }>;
+  remboursements: Array<{
+    type: "remboursement" | "annulation";
+    montantTTC: number;
+    psp: IndyPspName;
+    date: string;
+  }>;
+  csvRows: Array<{
+    type: "Marchandise";
+    pays_expedition: "France";
+    pays_livraison: string;
+    tva_pct: number;
+    total_ttc: number;
+    moyen_paiement: IndyPspName;
+  }>;
+  summary: {
+    caHTTotal: number;
+    tvaCollecteeTotal: number;
+    caTTCTotal: number;
+    nbCommandesTotal: number;
+  };
+}
+
+export function getIndyReport(month: string) {
+  return adminFetch<IndyReport>(`/api/admin/finance/indy-report?month=${encodeURIComponent(month)}`);
+}
+
+export async function downloadIndyCsv(month: string): Promise<Blob> {
+  const token = getToken();
+  if (!token) throw new Error("Non authentifié");
+
+  const res = await fetch(
+    `${API_URL}/api/admin/finance/indy-report/csv?month=${encodeURIComponent(month)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  if (res.status === 401) {
+    localStorage.removeItem("admin-token");
+    localStorage.removeItem("admin-user");
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("admin-session-expired"));
+    }
+    throw new Error("Session expirée");
+  }
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error((data as { error?: string }).error || `Erreur ${res.status}`);
+  }
+
+  return res.blob();
+}
+
+export function sendIndyReportEmail(month: string) {
+  return adminFetch<{
+    sent: boolean;
+    skipped: boolean;
+    id?: string;
+    month: string;
+    to: string;
+    cfoAnalysis: string;
+  }>("/api/admin/finance/indy-report/send-email", {
+    method: "POST",
+    body: JSON.stringify({ month }),
+  });
+}

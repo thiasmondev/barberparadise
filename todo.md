@@ -244,3 +244,11 @@
 - [x] Corriger la création produit depuis un lien afin que les images extraites dans le brouillon soient conservées après validation.
 - [x] Ajouter une régression couvrant le flux brouillon produit avec images puis validation.
 - [x] Valider backend/frontend et pousser le correctif images brouillon produit sur `main`.
+
+- [x] Créer la route `GET /api/admin/finance/indy-report?month=YYYY-MM` calculant le bilan mensuel Indy depuis les commandes payées du mois.
+- [x] Regrouper les ventes en ligne par moyen de paiement, pays de livraison et taux TVA avec type Marchandise, pays d’expédition France et taux TVA 20 % ou 0 % selon le cas.
+- [x] Produire un CSV Indy au format exact `type,pays_expedition,pays_livraison,tva_pct,total_ttc,moyen_paiement`.
+- [x] Ajouter dans `/admin/finance` une section `Export Indy` avec résumé CA HT, TVA collectée, CA TTC, détail PSP, détail pays/TVA et bouton de téléchargement CSV.
+- [x] Ajouter l’envoi mensuel du CSV Indy le 1er du mois avec détail PSP, rappel de clôture avant le 14 et suivi de l’analyse CFO Claude.
+- [x] Ajouter les tests de régression Export Indy et valider les builds backend/frontend.
+- [x] Committer et pousser l’Export Indy Finance sur `main`.

@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "../utils/prisma";
 import {
   getCustomerName,
+  sendEmail,
   sendOrderShippedEmail,
 } from "../services/emailService";
 import { requireAdmin, AuthRequest } from "../middleware/auth";
@@ -11,6 +12,13 @@ import { parse } from "csv-parse/sync";
 import { v2 as cloudinary } from "cloudinary";
 import { PDFParse } from "pdf-parse";
 import Anthropic from "@anthropic-ai/sdk";
+import {
+  buildIndyCsv,
+  buildIndyEmailHtml,
+  buildIndyReport,
+  IndyReport,
+  previousMonthKey,
+} from "../services/indyReportService";
 
 // ─── Cloudinary Config ───────────────────────────────────────
 cloudinary.config({
@@ -529,6 +537,123 @@ function parseNullablePrice(value: unknown): number | null {
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : NaN;
 }
+
+async function generateIndyCfoAnalysis(report: IndyReport): Promise<string> {
+  if (!anthropicForStock) {
+    return "Analyse CFO indisponible : clé ANTHROPIC_API_KEY absente. Vérifier le CA TTC, la TVA collectée, les ventes par PSP et la répartition OSS avant clôture Indy.";
+  }
+
+  try {
+    const message = await anthropicForStock.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 900,
+      messages: [
+        {
+          role: "user",
+          content: `Tu es CFO e-commerce pour Barber Paradise. Analyse ce bilan mensuel Indy en français, en 5 points opérationnels maximum : cohérence CA/TVA, concentration PSP, répartition OSS pays/TVA, remboursements/annulations, points à vérifier avant clôture Indy. Ne produis pas de tableau. Données JSON : ${JSON.stringify(report).slice(0, 20000)}`,
+        },
+      ],
+    });
+    const textBlock = message.content.find(block => block.type === "text");
+    return textBlock && textBlock.type === "text" ? textBlock.text.trim() : "Analyse CFO indisponible.";
+  } catch (error) {
+    console.error("[indy-report] Analyse CFO Claude impossible", error);
+    return "Analyse CFO indisponible : génération Claude en échec. Vérifier manuellement le CA, la TVA, les PSP et les remboursements avant clôture Indy.";
+  }
+}
+
+function getIndyEmailRecipient(req: AuthRequest): string {
+  const body = req.body as { to?: unknown } | undefined;
+  if (typeof body?.to === "string" && body.to.trim()) return body.to.trim();
+  if (process.env.FINANCE_EMAIL) return process.env.FINANCE_EMAIL;
+  if (process.env.ADMIN_EMAIL) return process.env.ADMIN_EMAIL;
+  return "contact@barberparadise.fr";
+}
+
+// GET /api/admin/finance/indy-report?month=YYYY-MM — Bilan mensuel commerçant Indy
+adminRouter.get(
+  "/finance/indy-report",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const report = await buildIndyReport(req.query.month);
+      res.json(report);
+    } catch (error) {
+      console.error("[indy-report] Rapport impossible", error);
+      res.status(400).json({ error: error instanceof Error ? error.message : "Rapport Indy impossible" });
+    }
+  }
+);
+
+// GET /api/admin/finance/indy-report/csv?month=YYYY-MM — CSV compatible Indy
+adminRouter.get(
+  "/finance/indy-report/csv",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const report = await buildIndyReport(req.query.month);
+      const csv = buildIndyCsv(report);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename=\"barberparadise-indy-${report.month}.csv\"`);
+      res.send(csv);
+    } catch (error) {
+      console.error("[indy-report] CSV impossible", error);
+      res.status(400).json({ error: error instanceof Error ? error.message : "CSV Indy impossible" });
+    }
+  }
+);
+
+// POST /api/admin/finance/indy-report/send-email — Envoi manuel ou mensuel du CSV Indy
+adminRouter.post(
+  "/finance/indy-report/send-email",
+  requireAdmin,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const body = req.body as { month?: unknown; monthly?: unknown } | undefined;
+      const month = body?.month || (body?.monthly === true ? previousMonthKey() : undefined);
+      const report = await buildIndyReport(month);
+      const cfoAnalysis = await generateIndyCfoAnalysis(report);
+      const csv = buildIndyCsv(report);
+      const to = getIndyEmailRecipient(req);
+      const emailResult = await sendEmail({
+        to,
+        subject: `Bilan mensuel Indy Barber Paradise — ${report.month}`,
+        html: buildIndyEmailHtml(report, cfoAnalysis),
+        attachments: [
+          {
+            filename: `barberparadise-indy-${report.month}.csv`,
+            content: Buffer.from(csv, "utf8").toString("base64"),
+          },
+        ],
+      });
+
+      res.json({ sent: emailResult.sent, skipped: emailResult.skipped || false, id: emailResult.id, month: report.month, to, cfoAnalysis });
+    } catch (error) {
+      console.error("[indy-report] Email impossible", error);
+      res.status(400).json({ error: error instanceof Error ? error.message : "Email Indy impossible" });
+    }
+  }
+);
+
+// POST /api/admin/finance/indy-report/send-monthly — Déclenchement prévu le 1er du mois pour le mois précédent
+adminRouter.post(
+  "/finance/indy-report/send-monthly",
+  requireAdmin,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    req.body = { ...(req.body || {}), monthly: true };
+    const report = await buildIndyReport(previousMonthKey());
+    const cfoAnalysis = await generateIndyCfoAnalysis(report);
+    const csv = buildIndyCsv(report);
+    const to = getIndyEmailRecipient(req);
+    const emailResult = await sendEmail({
+      to,
+      subject: `Bilan mensuel Indy Barber Paradise — ${report.month}`,
+      html: buildIndyEmailHtml(report, cfoAnalysis),
+      attachments: [{ filename: `barberparadise-indy-${report.month}.csv`, content: Buffer.from(csv, "utf8").toString("base64") }],
+    });
+    res.json({ sent: emailResult.sent, skipped: emailResult.skipped || false, id: emailResult.id, month: report.month, to, cfoAnalysis });
+  }
+);
 
 // GET /api/admin/stats — Statistiques du tableau de bord
 adminRouter.get(
