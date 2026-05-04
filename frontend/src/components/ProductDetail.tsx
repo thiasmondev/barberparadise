@@ -111,11 +111,11 @@ export default function ProductDetail({ product }: { product: Product }) {
   };
 
   return (
-    <div className="bg-[#131313] text-[#e5e2e1] min-h-screen">
-      <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-10">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[#131313] text-[#e5e2e1]">
+      <div className="mx-auto w-full max-w-[1440px] px-4 py-8 md:px-8 md:py-10">
 
         {/* Breadcrumb */}
-        <nav className="flex items-center gap-3 text-[10px] font-black tracking-[0.3em] uppercase text-gray-500 mb-10">
+        <nav className="flex max-w-full min-w-0 items-center gap-2 overflow-hidden text-[10px] font-black uppercase tracking-[0.22em] text-gray-500 mb-8 md:gap-3 md:tracking-[0.3em] md:mb-10">
           <Link href="/" className="hover:text-white transition-colors">Accueil</Link>
           <span className="text-gray-700">—</span>
           <Link href="/catalogue" className="hover:text-white transition-colors">Catalogue</Link>
@@ -127,18 +127,18 @@ export default function ProductDetail({ product }: { product: Product }) {
           <span className="text-[#ff4a8d] truncate">{product.name}</span>
         </nav>
 
-        <div className="grid lg:grid-cols-2 gap-12 lg:gap-20">
+        <div className="grid w-full max-w-full min-w-0 gap-8 lg:grid-cols-2 lg:gap-20">
 
           {/* ─── GALERIE ─── */}
-          <div>
+          <div className="min-w-0 w-full max-w-full">
             {/* Image principale */}
-            <div className="relative aspect-square bg-[#1c1b1b] overflow-hidden mb-4">
+            <div className="relative mb-4 aspect-square w-full max-w-full overflow-hidden bg-[#1c1b1b]">
               {displayImages[selectedImage] ? (
                 <Image
                   src={displayImages[selectedImage]}
                   alt={product.name}
                   fill
-                  className="object-contain p-8 opacity-90 hover:opacity-100 transition-opacity duration-300"
+                  className="max-w-full object-contain p-4 opacity-90 transition-opacity duration-300 hover:opacity-100 sm:p-8"
                   sizes="(max-width: 1024px) 100vw, 50vw"
                   priority
                 />
@@ -164,12 +164,12 @@ export default function ProductDetail({ product }: { product: Product }) {
 
             {/* Miniatures */}
             {displayImages.length > 1 && (
-              <div className="flex gap-3 overflow-x-auto pb-2">
+              <div className="flex max-w-full gap-3 overflow-x-auto pb-2">
                 {displayImages.map((img, i) => (
                   <button
                     key={i}
                     onClick={() => setSelectedImage(i)}
-                    className={`w-20 h-20 bg-[#1c1b1b] overflow-hidden shrink-0 border-2 transition-colors ${
+                    className={`h-20 w-20 max-w-full shrink-0 overflow-hidden border-2 bg-[#1c1b1b] transition-colors ${
                       i === selectedImage ? "border-[#ff4a8d]" : "border-transparent hover:border-white/20"
                     }`}
                   >
@@ -178,7 +178,7 @@ export default function ProductDetail({ product }: { product: Product }) {
                       alt={`${product.name} - ${i + 1}`}
                       width={80}
                       height={80}
-                      className="object-contain p-1 w-full h-full opacity-80 hover:opacity-100 transition-opacity"
+                      className="h-auto max-w-full object-contain p-1 opacity-80 transition-opacity hover:opacity-100"
                     />
                   </button>
                 ))}
@@ -187,27 +187,27 @@ export default function ProductDetail({ product }: { product: Product }) {
           </div>
 
           {/* ─── INFOS PRODUIT ─── */}
-          <div className="flex flex-col">
+          <div className="flex min-w-0 max-w-full flex-col">
             {/* Marque */}
             <p className="text-[10px] font-black tracking-[0.4em] text-[#ff4a8d] uppercase mb-4">
               {product.brand}
             </p>
 
             {/* Nom */}
-            <h1 className="text-3xl md:text-4xl font-black tracking-tighter italic uppercase leading-none mb-6">
+            <h1 className="mb-6 break-words text-3xl font-black uppercase italic leading-none tracking-tighter md:text-4xl">
               {product.name}
             </h1>
 
             {/* Prix */}
-            <div className="mb-8">
+            <div className="mb-8 max-w-full min-w-0">
               {showsProPrice && (
                 <div className="mb-3 flex flex-wrap items-center gap-3">
                   <span className="bg-blue-600 px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-white">PRIX PRO</span>
                   <span className="text-xs font-bold uppercase tracking-widest text-blue-400">Tarif professionnel HT</span>
                 </div>
               )}
-              <div className="flex flex-wrap items-baseline gap-4">
-                <span className="text-4xl font-black tracking-tighter">
+              <div className="flex max-w-full flex-wrap items-baseline gap-3 sm:gap-4">
+                <span className="break-words text-3xl font-black tracking-tighter sm:text-4xl">
                   {formatPrice(displayPrice)}{showsProPrice ? " HT" : ""}
                 </span>
                 {showsProPrice ? (
@@ -277,13 +277,13 @@ export default function ProductDetail({ product }: { product: Product }) {
                 <div className="flex items-center gap-3 mb-3">
                   <span className="text-[10px] font-black tracking-[0.3em] text-gray-500 uppercase">TAILLE</span>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex max-w-full flex-wrap gap-2">
                   {sizeVariants.map((v) => (
                     <button
                       key={v.id}
                       onClick={() => handleSelectVariant(v)}
                       disabled={!v.inStock}
-                      className={`px-4 py-2 text-xs font-black tracking-widest uppercase border transition-all ${
+                      className={`max-w-full break-words border px-3 py-2 text-xs font-black uppercase tracking-widest transition-all sm:px-4 ${
                         selectedVariant?.id === v.id
                           ? "border-[#ff4a8d] bg-[#ff4a8d] text-white"
                           : "border-white/10 text-gray-400 hover:border-white/40 hover:text-white"
@@ -302,13 +302,13 @@ export default function ProductDetail({ product }: { product: Product }) {
                 <div className="flex items-center gap-3 mb-3">
                   <span className="text-[10px] font-black tracking-[0.3em] text-gray-500 uppercase">OPTIONS</span>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex max-w-full flex-wrap gap-2">
                   {otherVariants.map((v) => (
                     <button
                       key={v.id}
                       onClick={() => handleSelectVariant(v)}
                       disabled={!v.inStock}
-                      className={`px-4 py-2 text-xs font-black tracking-widest uppercase border transition-all ${
+                      className={`max-w-full break-words border px-3 py-2 text-xs font-black uppercase tracking-widest transition-all sm:px-4 ${
                         selectedVariant?.id === v.id
                           ? "border-[#ff4a8d] bg-[#ff4a8d] text-white"
                           : "border-white/10 text-gray-400 hover:border-white/40 hover:text-white"
@@ -350,8 +350,8 @@ export default function ProductDetail({ product }: { product: Product }) {
             )}
 
             {/* Quantité + CTA */}
-            <div className="flex items-stretch gap-4 mb-8">
-              <div className="flex items-center border border-white/10">
+            <div className="mb-8 flex max-w-full flex-col items-stretch gap-3 sm:flex-row sm:gap-4">
+              <div className="flex w-full items-center justify-center border border-white/10 sm:w-auto">
                 <button
                   onClick={() => setQuantity(Math.max(1, quantity - 1))}
                   className="px-4 py-4 text-gray-400 hover:text-white transition-colors"
@@ -369,7 +369,7 @@ export default function ProductDetail({ product }: { product: Product }) {
               <button
                 onClick={handleAddToCart}
                 disabled={!isInStock || (variants.length > 0 && !selectedVariant)}
-                className={`flex-1 flex items-center justify-center gap-3 py-4 text-xs font-black tracking-widest uppercase transition-all ${
+                className={`flex min-w-0 flex-1 items-center justify-center gap-2 px-3 py-4 text-center text-xs font-black uppercase tracking-widest transition-all sm:gap-3 ${
                   added
                     ? "bg-green-500 text-white"
                     : "bg-[#ff4a8d] hover:bg-[#ff1f70] text-white"
@@ -409,7 +409,7 @@ export default function ProductDetail({ product }: { product: Product }) {
             <div className="border border-white/5 p-5 space-y-4">
               <div className="flex items-center gap-4">
                 <Truck size={16} className="text-[#ff4a8d] shrink-0" />
-                <div>
+                <div className="min-w-0 w-full max-w-full">
                   <p className="text-xs font-black tracking-widest uppercase">
                     {product.isPro ? "Livraison gratuite dès 500€ HT" : "Livraison gratuite dès 49€"}
                   </p>
@@ -418,14 +418,14 @@ export default function ProductDetail({ product }: { product: Product }) {
               </div>
               <div className="flex items-center gap-4">
                 <Shield size={16} className="text-[#ff4a8d] shrink-0" />
-                <div>
+                <div className="min-w-0 w-full max-w-full">
                   <p className="text-xs font-black tracking-widest uppercase">Paiement sécurisé</p>
                   <p className="text-[10px] text-gray-500 mt-0.5">Transactions chiffrées SSL</p>
                 </div>
               </div>
               <div className="flex items-center gap-4">
                 <RotateCcw size={16} className="text-[#ff4a8d] shrink-0" />
-                <div>
+                <div className="min-w-0 w-full max-w-full">
                   <p className="text-xs font-black tracking-widest uppercase">Retours 14 jours</p>
                   <p className="text-[10px] text-gray-500 mt-0.5">Satisfait ou remboursé</p>
                 </div>
@@ -444,7 +444,7 @@ export default function ProductDetail({ product }: { product: Product }) {
                 </button>
                 {descOpen && (
                   <div
-                    className="prose prose-sm prose-invert max-w-none text-gray-400 pb-6 text-sm leading-relaxed"
+                    className="product-rich-content prose prose-sm prose-invert max-w-none overflow-x-auto break-words pb-6 text-sm leading-relaxed text-gray-400"
                     dangerouslySetInnerHTML={{ __html: product.description }}
                   />
                 )}

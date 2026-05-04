@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { FormEvent, useState, useEffect, useRef } from "react";
+import { FormEvent, ReactNode, useState, useEffect, useRef } from "react";
 import { ShoppingBag, Search, Menu, X, User, ChevronRight, ChevronDown, LogOut, Heart, Package } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { isExactActiveHref } from "@/utils/navigation";
@@ -409,6 +409,7 @@ export default function Header() {
   const [mobileProduitsOpen, setMobileProduitsOpen] = useState(true);
   const [mobileMaterielOpen, setMobileMaterielOpen] = useState(false);
   const [mobileMarquesOpen, setMobileMarquesOpen] = useState(false);
+  const [mobileOpenCategories, setMobileOpenCategories] = useState<Set<string>>(() => new Set());
   const isHome = pathname === "/";
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -434,6 +435,7 @@ export default function Header() {
     setMobileOpen(false);
     setOpenMenu(null);
     setAccountOpen(false);
+    setMobileOpenCategories(new Set());
   }, [pathname]);
 
   // Charger catégories et marques
@@ -501,23 +503,61 @@ export default function Header() {
     window.location.assign(`/catalogue?search=${encodeURIComponent(query)}`);
   };
 
-  const renderMobileCategoryLinks = (parentSlug: string) => (
-    <div className="grid gap-1 py-2 pl-3">
-      {allCategories
-        .filter((cat) => cat.parentSlug === parentSlug)
-        .sort((a, b) => a.order - b.order)
-        .map((cat) => (
-          <Link
-            key={cat.slug}
-            href={`/catalogue?category=${cat.slug}`}
-            onClick={() => setMobileOpen(false)}
-            className="border-b border-white/5 py-2 text-[12px] font-bold uppercase tracking-[0.12em] text-white/55 hover:text-white"
-          >
-            {cat.name}
-          </Link>
-        ))}
-    </div>
-  );
+  const toggleMobileCategory = (slug: string) => {
+    setMobileOpenCategories((current) => {
+      const next = new Set(current);
+      if (next.has(slug)) {
+        next.delete(slug);
+      } else {
+        next.add(slug);
+      }
+      return next;
+    });
+  };
+
+  const renderMobileCategoryLinks = (parentSlug: string, depth = 0): ReactNode => {
+    const children = allCategories
+      .filter((cat) => cat.parentSlug === parentSlug)
+      .sort((a, b) => a.order - b.order);
+
+    if (children.length === 0) return null;
+
+    return (
+      <div className={depth === 0 ? "grid gap-1 py-2 pl-3" : "grid gap-1 border-l border-white/10 py-1 pl-4"}>
+        {children.map((cat) => {
+          const hasChildren = hasMegaMenuChildren(allCategories, cat.slug);
+          const isOpen = mobileOpenCategories.has(cat.slug);
+
+          return (
+            <div key={cat.slug} className="min-w-0 border-b border-white/5 last:border-b-0">
+              {hasChildren ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => toggleMobileCategory(cat.slug)}
+                    className="flex w-full min-w-0 items-center justify-between gap-3 py-2 text-left text-[12px] font-bold uppercase tracking-[0.12em] text-white/65 transition-colors hover:text-white"
+                    aria-expanded={isOpen}
+                  >
+                    <span className="min-w-0 truncate">{cat.name}</span>
+                    <ChevronRight size={14} className={`shrink-0 text-[#ff4a8d] transition-transform ${isOpen ? "rotate-90" : ""}`} />
+                  </button>
+                  {isOpen && renderMobileCategoryLinks(cat.slug, depth + 1)}
+                </>
+              ) : (
+                <Link
+                  href={`/catalogue?category=${cat.slug}`}
+                  onClick={() => setMobileOpen(false)}
+                  className="block min-w-0 truncate py-2 text-[12px] font-bold uppercase tracking-[0.12em] text-white/55 hover:text-white"
+                >
+                  {cat.name}
+                </Link>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   const handleCustomerLogout = () => {
     logout();
@@ -527,7 +567,7 @@ export default function Header() {
 
   return (
     <header
-      className={`sticky top-0 z-50 transition-all duration-300 ${
+      className={`fixed left-0 right-0 top-0 z-[90] md:sticky md:left-auto md:right-auto transition-all duration-300 ${
         scrolled || !isHome
           ? "bg-[#131313]/95 backdrop-blur-md border-b border-white/5"
           : "bg-transparent"
@@ -690,7 +730,7 @@ export default function Header() {
 
       {/* ─── MENU BURGER OVERLAY ─── */}
       {mobileOpen && (
-        <div className="fixed inset-0 top-0 bg-[#0e0e0e] z-40 flex flex-col overflow-y-auto">
+        <div className="fixed inset-0 top-0 bg-[#0e0e0e] z-[100] flex flex-col overflow-y-auto">
           <div className="flex items-center justify-between px-8 h-20 border-b border-white/5 flex-shrink-0">
             <Image
               src="/logo-barberparadise.png"

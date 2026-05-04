@@ -289,3 +289,10 @@
 - [x] Corriger effectivement la fiche `/admin/seo/produit` pour permettre l’édition et la sauvegarde de `priceEur` via `PATCH /api/admin/products/:id`.
 - [x] Vérifier que `DELETE /api/admin/products/:id` supprime bien le produit depuis la fiche Agent SEO et redirige vers la liste produits admin existante.
 - [x] Valider le correctif Agent SEO produit par build frontend/backend et pousser sur GitHub.
+
+- [x] Corriger le menu burger mobile pour rendre toutes les sous-catégories avec enfants dépliables en accordion multi-niveaux, avec chevron visible et plusieurs sections ouvertes simultanément.
+- [x] Corriger le header mobile pour que le bouton burger reste toujours accessible en haut du viewport pendant le scroll, sans régression desktop.
+- [x] Corriger la page produit mobile pour empêcher tout dépassement horizontal à 390px, notamment images produit, galerie, miniatures, tableau de variantes et section prix.
+- [x] Vérifier la présence du meta viewport mobile dans le frontend Next.js.
+- [x] Produire avant commit un rapport complet des fichiers modifiés et des changements responsive effectués.
+- [x] Valider le build frontend puis committer et pousser les corrections responsive iPhone sur `main`.

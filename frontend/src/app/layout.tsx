@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import ClientLayout from "@/components/ClientLayout";
 import { SITE_URL } from "@/lib/site";
@@ -6,6 +6,11 @@ import { SITE_URL } from "@/lib/site";
 const siteTitle = "Barber Paradise — Matériel & Cosmétiques Barber Professionnels";
 const siteDescription =
   "Barber Paradise, la référence du matériel barber professionnel. Tondeuses, ciseaux, cosmétiques barber — Livraison rapide en France et en Europe.";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

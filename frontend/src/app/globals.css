@@ -37,3 +37,26 @@
     @apply text-gray-500 text-sm sm:text-base max-w-2xl;
   }
 }
+
+/* Contraintes mobiles pour les contenus riches des fiches produit. */
+.product-rich-content img,
+.product-rich-content video,
+.product-rich-content iframe,
+.product-rich-content table {
+  max-width: 100%;
+}
+
+.product-rich-content img,
+.product-rich-content video {
+  height: auto;
+}
+
+.product-rich-content table {
+  display: block;
+  overflow-x: auto;
+  width: 100%;
+}
+
+.product-rich-content * {
+  overflow-wrap: anywhere;
+}
