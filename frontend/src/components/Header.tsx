@@ -567,7 +567,7 @@ export default function Header() {
 
   return (
     <header
-      className={`fixed left-0 right-0 top-0 z-[90] md:sticky md:left-auto md:right-auto transition-all duration-300 ${
+      className={`fixed left-0 right-0 top-0 z-[110] overflow-visible md:sticky md:left-auto md:right-auto transition-all duration-300 ${
         scrolled || !isHome
           ? "bg-[#131313]/95 backdrop-blur-md border-b border-white/5"
           : "bg-transparent"
@@ -578,13 +578,13 @@ export default function Header() {
           <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white">✓ COMPTE PROFESSIONNEL ACTIF — PRIX HT AFFICHÉS</p>
         </div>
       )}
-      <div className="max-w-[1440px] mx-auto px-6 md:px-10">
-        <div className="flex items-center justify-between h-20">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 md:px-10">
+        <div className="flex h-20 min-h-20 items-center justify-between overflow-visible">
 
           {/* ─── GAUCHE : Burger ─── */}
-          <div className="flex items-center w-1/4">
+          <div className="flex min-w-0 flex-1 items-center">
             <button
-              className="p-2 -ml-2 text-white hover:opacity-70 transition-opacity"
+              className="flex h-10 w-10 shrink-0 items-center justify-center p-2 -ml-2 text-white hover:opacity-70 transition-opacity"
               onClick={() => setMobileOpen(!mobileOpen)}
               aria-label="Menu"
             >
@@ -593,25 +593,25 @@ export default function Header() {
           </div>
 
           {/* ─── CENTRE : Logo ─── */}
-          <Link href="/" className="flex items-center justify-center w-1/2">
+          <Link href="/" className="flex shrink-0 items-center justify-center px-2">
             <Image
               src="/logo-barberparadise.png"
               alt="Barber Paradise"
               width={140}
               height={60}
-              className="object-contain h-12 w-auto"
+              className="h-10 w-auto object-contain sm:h-12"
               priority
             />
           </Link>
 
           {/* ─── DROITE : Icônes ─── */}
-          <div className="flex items-center justify-end gap-5 w-1/4">
-            <div className="relative hidden sm:block">
-              <button type="button" onClick={() => setSearchOpen((open) => !open)} className="text-white hover:text-[#ff4a8d] transition-colors" aria-label="Rechercher">
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-2 overflow-visible sm:gap-5">
+            <div className="relative flex shrink-0 items-center">
+              <button type="button" onClick={() => setSearchOpen((open) => !open)} className="flex h-10 w-10 items-center justify-center text-white hover:text-[#ff4a8d] transition-colors" aria-label="Rechercher">
                 <Search size={18} />
               </button>
               {searchOpen && (
-                <div className="absolute right-0 top-8 z-50 w-80 border border-white/10 bg-[#111] p-3 shadow-2xl shadow-black/50">
+                <div className="absolute right-0 top-11 z-[130] w-[calc(100vw-2rem)] max-w-80 border border-white/10 bg-[#111] p-3 shadow-2xl shadow-black/50">
                   <form onSubmit={submitSearch} className="flex gap-2">
                     <input autoFocus value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Rechercher un produit, une marque..." className="min-w-0 flex-1 border border-white/10 bg-black px-3 py-2 text-sm text-white outline-none focus:border-[#ff4a8d]" />
                     <button className="bg-[#ff4a8d] px-3 text-xs font-black uppercase tracking-widest text-white">OK</button>
@@ -632,9 +632,9 @@ export default function Header() {
                 </div>
               )}
             </div>
-            <div className="relative hidden sm:block">
+            <div className="relative flex shrink-0 items-center">
               {!isAuthenticated ? (
-                <Link href="/connexion" className="text-white hover:text-[#ff4a8d] transition-colors" aria-label="Connexion client">
+                <Link href="/connexion" className="flex h-10 w-10 items-center justify-center text-white hover:text-[#ff4a8d] transition-colors" aria-label="Connexion client">
                   <User size={18} />
                 </Link>
               ) : (
@@ -642,15 +642,15 @@ export default function Header() {
                   <button
                     type="button"
                     onClick={() => setAccountOpen((open) => !open)}
-                    className="flex items-center gap-1 text-white hover:text-[#ff4a8d] transition-colors"
+                    className="flex h-10 w-10 items-center justify-center text-white hover:text-[#ff4a8d] transition-colors sm:w-auto sm:gap-1"
                     aria-label="Menu compte client"
                     aria-expanded={accountOpen}
                   >
                     <User size={18} />
-                    <ChevronDown size={12} className={accountOpen ? "rotate-180 transition-transform" : "transition-transform"} />
+                    <ChevronDown size={12} className={accountOpen ? "hidden rotate-180 transition-transform sm:block" : "hidden transition-transform sm:block"} />
                   </button>
                   {accountOpen && (
-                    <div className="absolute right-0 top-8 z-50 w-64 border border-white/10 bg-[#111] p-2 shadow-2xl shadow-black/40">
+                    <div className="absolute right-0 top-11 z-[130] w-[calc(100vw-2rem)] max-w-64 border border-white/10 bg-[#111] p-2 shadow-2xl shadow-black/40">
                       <div className="border-b border-white/10 px-4 py-3">
                         <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#ff4a8d]">Compte client</p>
                         <p className="mt-1 truncate text-sm font-semibold text-white">{customer?.firstName} {customer?.lastName}</p>
@@ -673,7 +673,7 @@ export default function Header() {
                 </>
               )}
             </div>
-            <Link href="/panier" className="relative group">
+            <Link href="/panier" className="relative flex h-10 w-10 shrink-0 items-center justify-center group">
               <ShoppingBag size={20} className="text-white group-hover:text-[#ff4a8d] transition-colors" />
               {itemCount > 0 && (
                 <span className="absolute -top-2 -right-2 w-4 h-4 bg-[#ff4a8d] text-white text-[9px] font-black flex items-center justify-center">
@@ -730,7 +730,7 @@ export default function Header() {
 
       {/* ─── MENU BURGER OVERLAY ─── */}
       {mobileOpen && (
-        <div className="fixed inset-0 top-0 bg-[#0e0e0e] z-[100] flex flex-col overflow-y-auto">
+        <div className="fixed inset-0 top-0 bg-[#0e0e0e] z-[140] flex flex-col overflow-y-auto">
           <div className="flex items-center justify-between px-8 h-20 border-b border-white/5 flex-shrink-0">
             <Image
               src="/logo-barberparadise.png"

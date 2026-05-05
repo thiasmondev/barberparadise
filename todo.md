@@ -296,3 +296,9 @@
 - [x] Vérifier la présence du meta viewport mobile dans le frontend Next.js.
 - [x] Produire avant commit un rapport complet des fichiers modifiés et des changements responsive effectués.
 - [x] Valider le build frontend puis committer et pousser les corrections responsive iPhone sur `main`.
+
+- [x] Corriger la régression critique du header mobile iPhone : restaurer le bouton burger, l’icône recherche et l’icône espace client visibles et fonctionnels.
+- [x] Conserver le header mobile fixe en haut du viewport au scroll avec z-index suffisant, sans overflow ou hauteur qui coupe les icônes.
+- [x] Vérifier que la correction ne réintroduit pas de régression desktop sur le header et le mega menu.
+- [x] Produire avant commit un rapport complet des fichiers modifiés pour la correction du header mobile.
+- [x] Valider le build frontend puis committer et pousser la correction de régression header mobile sur `main`.
