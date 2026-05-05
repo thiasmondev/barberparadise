@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { usePathname, useSearchParams } from "next/navigation";
 import { FormEvent, ReactNode, useState, useEffect, useRef } from "react";
 import { ShoppingBag, Search, Menu, X, User, ChevronRight, ChevronDown, LogOut, Heart, Package } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
@@ -400,8 +401,10 @@ export default function Header() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [allCategories, setAllCategories] = useState<ApiCategory[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
-  const [pathname, setPathname] = useState("/");
-  const [currentSearchParams, setCurrentSearchParams] = useState(() => new URLSearchParams());
+  const appPathname = usePathname();
+  const appSearchParams = useSearchParams();
+  const pathname = appPathname || "/";
+  const currentSearchParams = new URLSearchParams(appSearchParams?.toString() || "");
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<Product[]>([]);
@@ -418,17 +421,6 @@ export default function Header() {
     const handleScroll = () => setScrolled(window.scrollY > 50);
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
-  useEffect(() => {
-    const syncLocation = () => {
-      setPathname(window.location.pathname);
-      setCurrentSearchParams(new URLSearchParams(window.location.search));
-    };
-
-    syncLocation();
-    window.addEventListener("popstate", syncLocation);
-    return () => window.removeEventListener("popstate", syncLocation);
   }, []);
 
   useEffect(() => {

@@ -302,3 +302,8 @@
 - [x] Vérifier que la correction ne réintroduit pas de régression desktop sur le header et le mega menu.
 - [x] Produire avant commit un rapport complet des fichiers modifiés pour la correction du header mobile.
 - [x] Valider le build frontend puis committer et pousser la correction de régression header mobile sur `main`.
+
+- [x] Corriger le bug de header mobile incomplet sur certaines pages en fermant automatiquement le menu burger lors de chaque changement de route Next.js.
+- [x] Vérifier que l’état fermé du header mobile affiche simultanément burger, loupe et icône compte sur `/marques` et les autres pages.
+- [x] Produire avant commit un rapport complet des fichiers modifiés pour la correction du reset du menu mobile.
+- [x] Valider le build frontend puis committer et pousser la correction du reset header mobile sur `main`.
