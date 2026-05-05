@@ -307,3 +307,10 @@
 - [x] Vérifier que l’état fermé du header mobile affiche simultanément burger, loupe et icône compte sur `/marques` et les autres pages.
 - [x] Produire avant commit un rapport complet des fichiers modifiés pour la correction du reset du menu mobile.
 - [x] Valider le build frontend puis committer et pousser la correction du reset header mobile sur `main`.
+
+## Refonte drawer mobile burger — 2026-05-05
+
+- [x] Transformer le menu burger mobile en drawer vertical latéral fixe 80-85% avec overlay sombre.
+- [x] Conserver les accordions multi-niveaux via chevrons sans casser le mega menu desktop trois colonnes.
+- [x] Bloquer le scroll arrière et le débordement horizontal du body quand le drawer est ouvert.
+- [x] Produire le rapport pré-commit des fichiers modifiés, valider le build frontend et `git diff --check`, puis pousser sur `main`.

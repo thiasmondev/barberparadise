@@ -430,6 +430,21 @@ export default function Header() {
     setMobileOpenCategories(new Set());
   }, [pathname]);
 
+  useEffect(() => {
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousBodyOverflowX = document.body.style.overflowX;
+
+    if (mobileOpen) {
+      document.body.style.overflow = "hidden";
+      document.body.style.overflowX = "hidden";
+    }
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.body.style.overflowX = previousBodyOverflowX;
+    };
+  }, [mobileOpen]);
+
   // Charger catégories et marques
   useEffect(() => {
     let cancelled = false;
@@ -522,28 +537,27 @@ export default function Header() {
 
           return (
             <div key={cat.slug} className="min-w-0 border-b border-white/5 last:border-b-0">
-              {hasChildren ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => toggleMobileCategory(cat.slug)}
-                    className="flex w-full min-w-0 items-center justify-between gap-3 py-2 text-left text-[12px] font-bold uppercase tracking-[0.12em] text-white/65 transition-colors hover:text-white"
-                    aria-expanded={isOpen}
-                  >
-                    <span className="min-w-0 truncate">{cat.name}</span>
-                    <ChevronRight size={14} className={`shrink-0 text-[#ff4a8d] transition-transform ${isOpen ? "rotate-90" : ""}`} />
-                  </button>
-                  {isOpen && renderMobileCategoryLinks(cat.slug, depth + 1)}
-                </>
-              ) : (
+              <div className="flex min-w-0 items-center gap-2">
                 <Link
                   href={`/catalogue?category=${cat.slug}`}
                   onClick={() => setMobileOpen(false)}
-                  className="block min-w-0 truncate py-2 text-[12px] font-bold uppercase tracking-[0.12em] text-white/55 hover:text-white"
+                  className={`block min-w-0 flex-1 truncate py-2 text-[12px] font-bold uppercase tracking-[0.12em] transition-colors hover:text-white ${hasChildren ? "text-white/70" : "text-white/55"}`}
                 >
                   {cat.name}
                 </Link>
-              )}
+                {hasChildren && (
+                  <button
+                    type="button"
+                    onClick={() => toggleMobileCategory(cat.slug)}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center text-[#ff4a8d] transition-colors hover:text-white"
+                    aria-label={`Ouvrir les sous-catégories ${cat.name}`}
+                    aria-expanded={isOpen}
+                  >
+                    <ChevronRight size={15} className={`transition-transform ${isOpen ? "rotate-90" : ""}`} />
+                  </button>
+                )}
+              </div>
+              {hasChildren && isOpen && renderMobileCategoryLinks(cat.slug, depth + 1)}
             </div>
           );
         })}
@@ -720,76 +734,128 @@ export default function Header() {
         </nav>
       </div>
 
-      {/* ─── MENU BURGER OVERLAY ─── */}
-      {mobileOpen && (
-        <div className="fixed inset-0 top-0 bg-[#0e0e0e] z-[140] flex flex-col overflow-y-auto">
-          <div className="flex items-center justify-between px-8 h-20 border-b border-white/5 flex-shrink-0">
+      {/* ─── DRAWER BURGER MOBILE ─── */}
+      <div
+        className={`fixed inset-0 z-[140] md:hidden transition-opacity duration-300 ${
+          mobileOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+        }`}
+        aria-hidden={!mobileOpen}
+      >
+        <button
+          type="button"
+          aria-label="Fermer le menu mobile"
+          onClick={() => setMobileOpen(false)}
+          className="absolute inset-0 bg-black/50"
+        />
+
+        <aside
+          role="dialog"
+          aria-modal="true"
+          aria-label="Menu mobile Barber Paradise"
+          className={`fixed left-0 top-0 flex h-screen w-[84vw] min-w-[280px] max-w-[360px] flex-col overflow-hidden bg-[#0e0e0e] shadow-2xl ring-1 ring-white/10 transition-transform duration-300 ease-out ${
+            mobileOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
+          <div className="flex h-20 shrink-0 items-center justify-between border-b border-white/5 px-5">
             <Image
               src="/logo-barberparadise.png"
               alt="Barber Paradise"
               width={120}
               height={50}
-              className="object-contain h-10 w-auto"
+              className="h-10 w-auto object-contain"
             />
             <button
+              type="button"
               onClick={() => setMobileOpen(false)}
-              className="p-2 text-white hover:text-[#ff4a8d] transition-colors"
+              aria-label="Fermer le menu mobile"
+              className="flex h-10 w-10 shrink-0 items-center justify-center text-white transition-colors hover:text-[#ff4a8d]"
             >
               <X size={24} />
             </button>
           </div>
 
-          <div className="px-8 pt-8">
-            <form onSubmit={submitSearch} className="flex gap-2 border border-white/10 bg-black p-2">
-              <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Rechercher" className="min-w-0 flex-1 bg-transparent px-2 text-sm text-white outline-none" />
-              <button className="text-[#ff4a8d]" aria-label="Rechercher"><Search size={18} /></button>
-            </form>
-          </div>
-
-          <nav className="flex flex-col px-8 pt-6 gap-1">
+          <nav className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-5">
             <div className="border-b border-white/5 py-2">
-              <button type="button" onClick={() => setMobileProduitsOpen((open) => !open)} className="flex w-full items-center justify-between py-3 text-left">
-                <span className="text-2xl font-black tracking-tighter uppercase italic text-white">PRODUITS</span>
-                <ChevronDown size={18} className={mobileProduitsOpen ? "rotate-180 text-[#ff4a8d]" : "text-[#ff4a8d]"} />
-              </button>
+              <div className="flex items-center gap-2">
+                <Link href="/catalogue?category=produit" onClick={() => setMobileOpen(false)} className="min-w-0 flex-1 py-3 text-2xl font-black uppercase italic tracking-tighter text-white transition-colors hover:text-[#ff4a8d]">
+                  PRODUITS
+                </Link>
+                <button type="button" onClick={() => setMobileProduitsOpen((open) => !open)} className="flex h-10 w-10 shrink-0 items-center justify-center text-[#ff4a8d] transition-colors hover:text-white" aria-label="Ouvrir les sous-catégories produits" aria-expanded={mobileProduitsOpen}>
+                  <ChevronRight size={18} className={`transition-transform ${mobileProduitsOpen ? "rotate-90" : ""}`} />
+                </button>
+              </div>
               {mobileProduitsOpen && renderMobileCategoryLinks("produit")}
             </div>
+
             <div className="border-b border-white/5 py-2">
-              <button type="button" onClick={() => setMobileMaterielOpen((open) => !open)} className="flex w-full items-center justify-between py-3 text-left">
-                <span className="text-2xl font-black tracking-tighter uppercase italic text-white">MATÉRIEL</span>
-                <ChevronDown size={18} className={mobileMaterielOpen ? "rotate-180 text-[#ff4a8d]" : "text-[#ff4a8d]"} />
-              </button>
+              <div className="flex items-center gap-2">
+                <Link href="/catalogue?category=materiel" onClick={() => setMobileOpen(false)} className="min-w-0 flex-1 py-3 text-2xl font-black uppercase italic tracking-tighter text-white transition-colors hover:text-[#ff4a8d]">
+                  MATÉRIEL
+                </Link>
+                <button type="button" onClick={() => setMobileMaterielOpen((open) => !open)} className="flex h-10 w-10 shrink-0 items-center justify-center text-[#ff4a8d] transition-colors hover:text-white" aria-label="Ouvrir les sous-catégories matériel" aria-expanded={mobileMaterielOpen}>
+                  <ChevronRight size={18} className={`transition-transform ${mobileMaterielOpen ? "rotate-90" : ""}`} />
+                </button>
+              </div>
               {mobileMaterielOpen && renderMobileCategoryLinks("materiel")}
             </div>
+
             <div className="border-b border-white/5 py-2">
-              <button type="button" onClick={() => setMobileMarquesOpen((open) => !open)} className="flex w-full items-center justify-between py-3 text-left">
-                <span className="text-2xl font-black tracking-tighter uppercase italic text-white">MARQUES</span>
-                <ChevronDown size={18} className={mobileMarquesOpen ? "rotate-180 text-[#ff4a8d]" : "text-[#ff4a8d]"} />
-              </button>
+              <div className="flex items-center gap-2">
+                <Link href="/marques" onClick={() => setMobileOpen(false)} className="min-w-0 flex-1 py-3 text-2xl font-black uppercase italic tracking-tighter text-white transition-colors hover:text-[#ff4a8d]">
+                  MARQUES
+                </Link>
+                <button type="button" onClick={() => setMobileMarquesOpen((open) => !open)} className="flex h-10 w-10 shrink-0 items-center justify-center text-[#ff4a8d] transition-colors hover:text-white" aria-label="Ouvrir les marques" aria-expanded={mobileMarquesOpen}>
+                  <ChevronRight size={18} className={`transition-transform ${mobileMarquesOpen ? "rotate-90" : ""}`} />
+                </button>
+              </div>
               {mobileMarquesOpen && (
-                <div className="grid grid-cols-2 gap-2 py-2 pl-3">
+                <div className="grid grid-cols-1 gap-1 py-2 pl-3">
                   {brands.slice(0, 16).map((brand) => (
-                    <Link key={brand.id} href={`/marques/${brand.slug}`} onClick={() => setMobileOpen(false)} className="truncate border-b border-white/5 py-2 text-[12px] font-bold uppercase tracking-[0.12em] text-white/55 hover:text-white">{brand.name}</Link>
+                    <Link key={brand.id} href={`/marques/${brand.slug}`} onClick={() => setMobileOpen(false)} className="truncate border-b border-white/5 py-2 text-[12px] font-bold uppercase tracking-[0.12em] text-white/55 transition-colors hover:text-white">{brand.name}</Link>
                   ))}
-                  <Link href="/marques" onClick={() => setMobileOpen(false)} className="col-span-2 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#ff4a8d]">Voir toutes les marques →</Link>
+                  <Link href="/marques" onClick={() => setMobileOpen(false)} className="py-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#ff4a8d] transition-colors hover:text-white">Voir toutes les marques →</Link>
                 </div>
               )}
             </div>
-            <Link href="/nouveautes" onClick={() => setMobileOpen(false)} className="group flex items-center justify-between py-4 border-b border-white/5 hover:border-[#ff4a8d]/30 transition-colors"><span className="text-2xl font-black tracking-tighter uppercase italic text-white group-hover:text-[#ff4a8d]">NOUVEAUTÉS</span><span className="text-[#ff4a8d]">→</span></Link>
-            <Link href="/pro" onClick={() => setMobileOpen(false)} className="group flex items-center justify-between py-4 border-b border-white/5 hover:border-[#ff4a8d]/30 transition-colors"><span className="text-2xl font-black tracking-tighter uppercase italic text-white group-hover:text-[#ff4a8d]">PRO</span><span className="text-[#ff4a8d]">→</span></Link>
-            <div className="my-4 h-px bg-white/10" />
-            <Link href={isAuthenticated ? "/compte" : "/connexion"} onClick={() => setMobileOpen(false)} className="group flex items-center justify-between py-4 border-b border-white/5 hover:border-[#ff4a8d]/30 transition-colors"><span className="text-xl font-black tracking-tighter uppercase italic text-white group-hover:text-[#ff4a8d]">{isAuthenticated ? "MON COMPTE" : "CONNEXION"}</span><User size={18} className="text-[#ff4a8d]" /></Link>
-            <Link href="/panier" onClick={() => setMobileOpen(false)} className="group flex items-center justify-between py-4 border-b border-white/5 hover:border-[#ff4a8d]/30 transition-colors"><span className="text-xl font-black tracking-tighter uppercase italic text-white group-hover:text-[#ff4a8d]">PANIER</span><ShoppingBag size={18} className="text-[#ff4a8d]" /></Link>
+
+            <Link href="/nouveautes" onClick={() => setMobileOpen(false)} className="group flex items-center justify-between border-b border-white/5 py-4 transition-colors hover:border-[#ff4a8d]/30"><span className="text-2xl font-black uppercase italic tracking-tighter text-white group-hover:text-[#ff4a8d]">NOUVEAUTÉS</span><span className="text-[#ff4a8d]">→</span></Link>
+            <Link href="/pro" onClick={() => setMobileOpen(false)} className="group flex items-center justify-between border-b border-white/5 py-4 transition-colors hover:border-[#ff4a8d]/30"><span className="text-2xl font-black uppercase italic tracking-tighter text-white group-hover:text-[#ff4a8d]">PRO</span><span className="text-[#ff4a8d]">→</span></Link>
           </nav>
 
+          <div className="shrink-0 border-t border-white/5 px-5 py-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setSearchOpen((open) => !open)}
+                aria-label="Recherche"
+                className="flex h-11 flex-1 items-center justify-center gap-2 border border-white/10 text-[11px] font-black uppercase tracking-[0.16em] text-white/70 transition-colors hover:border-[#ff4a8d] hover:text-white"
+              >
+                <Search size={18} /> Recherche
+              </button>
+              <Link
+                href={isAuthenticated ? "/compte" : "/connexion"}
+                onClick={() => setMobileOpen(false)}
+                aria-label="Compte client"
+                className="flex h-11 flex-1 items-center justify-center gap-2 border border-white/10 text-[11px] font-black uppercase tracking-[0.16em] text-white/70 transition-colors hover:border-[#ff4a8d] hover:text-white"
+              >
+                <User size={18} /> Compte
+              </Link>
+            </div>
 
-          <div className="mt-auto px-8 py-8 border-t border-white/5 flex-shrink-0">
-            <p className="text-[10px] font-black tracking-[0.3em] uppercase text-gray-600">
+            {searchOpen && (
+              <form onSubmit={submitSearch} className="mb-4 flex gap-2 border border-white/10 bg-black p-2">
+                <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Rechercher" className="min-w-0 flex-1 bg-transparent px-2 text-sm text-white outline-none" />
+                <button className="text-[#ff4a8d]" aria-label="Rechercher"><Search size={18} /></button>
+              </form>
+            )}
+
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-600">
               BARBER PARADISE — MATÉRIEL PROFESSIONNEL
             </p>
           </div>
-        </div>
-      )}
+        </aside>
+      </div>
+
     </header>
   );
 }
