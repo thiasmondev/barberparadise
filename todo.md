@@ -320,3 +320,9 @@
 - [x] Rendre le drawer burger disponible sur desktop sans supprimer le mega menu horizontal.
 - [x] Utiliser le même drawer partagé mobile et desktop avec largeur responsive mobile `85vw` et desktop `30vw`.
 - [x] Conserver overlay sombre, fermeture par croix, clic catégorie ou clic overlay, accordions multi-niveaux et animation `translateX`.
+
+## Correction panneau filtres mobile catalogue — 2026-05-05
+- [x] Positionner le panneau filtres mobile sous le header fixe via hauteur de header mesurée dynamiquement.
+- [x] Rendre le contenu interne du panneau scrollable avec padding bas suffisant sur iPhone 390px.
+- [x] Préserver le comportement desktop des filtres catalogue.
+- [x] Valider avec test visuel 390px, build frontend et git diff --check.
