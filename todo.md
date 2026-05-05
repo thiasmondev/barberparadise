@@ -314,3 +314,9 @@
 - [x] Conserver les accordions multi-niveaux via chevrons sans casser le mega menu desktop trois colonnes.
 - [x] Bloquer le scroll arrière et le débordement horizontal du body quand le drawer est ouvert.
 - [x] Produire le rapport pré-commit des fichiers modifiés, valider le build frontend et `git diff --check`, puis pousser sur `main`.
+
+## Correction burger desktop drawer partagé — 2026-05-05
+
+- [x] Rendre le drawer burger disponible sur desktop sans supprimer le mega menu horizontal.
+- [x] Utiliser le même drawer partagé mobile et desktop avec largeur responsive mobile `85vw` et desktop `30vw`.
+- [x] Conserver overlay sombre, fermeture par croix, clic catégorie ou clic overlay, accordions multi-niveaux et animation `translateX`.

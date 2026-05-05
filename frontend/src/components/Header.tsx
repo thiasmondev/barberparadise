@@ -734,16 +734,16 @@ export default function Header() {
         </nav>
       </div>
 
-      {/* ─── DRAWER BURGER MOBILE ─── */}
+      {/* ─── DRAWER BURGER PARTAGÉ MOBILE / DESKTOP ─── */}
       <div
-        className={`fixed inset-0 z-[140] md:hidden transition-opacity duration-300 ${
+        className={`fixed inset-0 z-[140] transition-opacity duration-300 ${
           mobileOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
         }`}
         aria-hidden={!mobileOpen}
       >
         <button
           type="button"
-          aria-label="Fermer le menu mobile"
+          aria-label="Fermer le menu"
           onClick={() => setMobileOpen(false)}
           className="absolute inset-0 bg-black/50"
         />
@@ -751,8 +751,8 @@ export default function Header() {
         <aside
           role="dialog"
           aria-modal="true"
-          aria-label="Menu mobile Barber Paradise"
-          className={`fixed left-0 top-0 flex h-screen w-[84vw] min-w-[280px] max-w-[360px] flex-col overflow-hidden bg-[#0e0e0e] shadow-2xl ring-1 ring-white/10 transition-transform duration-300 ease-out ${
+          aria-label="Menu Barber Paradise"
+          className={`fixed left-0 top-0 z-[150] flex h-screen w-[85vw] min-w-[280px] max-w-[360px] flex-col overflow-hidden bg-[#0e0e0e] shadow-2xl ring-1 ring-white/10 transition-transform duration-300 ease-out md:w-[30vw] md:min-w-0 md:max-w-none ${
             mobileOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
@@ -767,7 +767,7 @@ export default function Header() {
             <button
               type="button"
               onClick={() => setMobileOpen(false)}
-              aria-label="Fermer le menu mobile"
+              aria-label="Fermer le menu"
               className="flex h-10 w-10 shrink-0 items-center justify-center text-white transition-colors hover:text-[#ff4a8d]"
             >
               <X size={24} />
