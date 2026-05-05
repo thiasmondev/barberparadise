@@ -409,7 +409,7 @@ export default function Header() {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [mobileProduitsOpen, setMobileProduitsOpen] = useState(true);
+  const [mobileProduitsOpen, setMobileProduitsOpen] = useState(false);
   const [mobileMaterielOpen, setMobileMaterielOpen] = useState(false);
   const [mobileMarquesOpen, setMobileMarquesOpen] = useState(false);
   const [mobileOpenCategories, setMobileOpenCategories] = useState<Set<string>>(() => new Set());
@@ -427,8 +427,20 @@ export default function Header() {
     setMobileOpen(false);
     setOpenMenu(null);
     setAccountOpen(false);
+    setMobileProduitsOpen(false);
+    setMobileMaterielOpen(false);
+    setMobileMarquesOpen(false);
     setMobileOpenCategories(new Set());
   }, [pathname]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    setMobileProduitsOpen(false);
+    setMobileMaterielOpen(false);
+    setMobileMarquesOpen(false);
+    setMobileOpenCategories(new Set());
+  }, [mobileOpen]);
 
   useEffect(() => {
     const previousBodyOverflow = document.body.style.overflow;

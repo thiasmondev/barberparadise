@@ -326,3 +326,8 @@
 - [x] Rendre le contenu interne du panneau scrollable avec padding bas suffisant sur iPhone 390px.
 - [x] Préserver le comportement desktop des filtres catalogue.
 - [x] Valider avec test visuel 390px, build frontend et git diff --check.
+
+## Correction drawer burger — accordions fermés par défaut
+- [x] Mettre `Produit`, `Matériel`, `Marques` et les sous-catégories niveau 3 à l’état fermé par défaut.
+- [x] Réinitialiser tous les accordions à chaque ouverture du drawer mobile/desktop.
+- [x] Vérifier qu’aucune logique liée à la route active ne force l’ouverture d’une catégorie au montage.
