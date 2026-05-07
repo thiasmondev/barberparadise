@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { ShoppingCart, Heart } from "lucide-react";
 import { Product } from "@/types";
-import { parseImages, formatPrice, getDiscount } from "@/lib/utils";
+import { parseImages, formatPrice } from "@/lib/utils";
 import { useCart } from "@/contexts/CartContext";
 
 export default function ProductCard({ product }: { product: Product }) {
@@ -15,7 +15,6 @@ export default function ProductCard({ product }: { product: Product }) {
   const proPrice = typeof product.priceProEur === "number" ? product.priceProEur : null;
   const showsProPrice = Boolean(product.isPro && proPrice !== null);
   const displayedPrice = showsProPrice ? proPrice! : product.price;
-  const discount = getDiscount(publicPrice, product.originalPrice);
 
   return (
     <div className="group bg-white rounded-xl border border-gray-100 overflow-hidden hover:shadow-lg hover:border-primary-100 transition-all duration-300">
@@ -31,18 +30,18 @@ export default function ProductCard({ product }: { product: Product }) {
         {/* Badges */}
         <div className="absolute top-2 left-2 flex flex-col gap-1">
           {product.isNew && (
-            <span className="bg-primary text-white text-[10px] font-bold px-2 py-0.5 rounded">
+            <span className="bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wide px-2 py-0.5 rounded">
               NOUVEAU
             </span>
           )}
-          {showsProPrice && (
-            <span className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded">
-              PRIX PRO
+          {product.originalPrice && product.originalPrice > publicPrice && (
+            <span className="bg-[#ff4a8d] text-white text-[10px] font-black uppercase tracking-wide px-2 py-0.5 rounded">
+              PROMO
             </span>
           )}
-          {discount && (
-            <span className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded">
-              -{discount}%
+          {showsProPrice && (
+            <span className="bg-primary text-white text-[10px] font-black uppercase tracking-wide px-2 py-0.5 rounded">
+              PRIX PRO
             </span>
           )}
         </div>

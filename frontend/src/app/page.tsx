@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { ArrowRight, Star, ChevronLeft, ChevronRight } from "lucide-react";
+import ProductCard from "@/components/ProductCard";
 import { getBrands, getProducts } from "@/lib/api";
 import type { Brand, Product } from "@/types";
 
@@ -82,8 +83,6 @@ export default function HomePage() {
     return () => clearInterval(timer);
   }, []);
 
-  const formatPrice = (price: number) =>
-    new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(price);
 
   // Pagination avis (3 par page)
   const reviewsPerPage = 3;
@@ -184,43 +183,9 @@ export default function HomePage() {
                 <div key={i} className="bg-[#1c1b1b] aspect-[4/5] animate-pulse" />
               ))
             ) : featured.length > 0 ? (
-              featured.map((product) => {
-                const img = Array.isArray(product.images)
-                  ? product.images[0]
-                  : (typeof product.images === "string"
-                    ? (JSON.parse(product.images || "[]")[0] || "")
-                    : "");
-                return (
-                  <Link
-                    key={product.id}
-                    href={`/produit/${product.slug}`}
-                    className="group relative bg-[#1c1b1b] overflow-hidden aspect-[4/5] flex flex-col"
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent z-10 opacity-80 group-hover:opacity-100 transition-opacity" />
-                    <img
-                      src={img || "https://images.unsplash.com/photo-1621605815971-fbc98d665033?w=800&q=80"}
-                      alt={product.name}
-                      className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-all duration-700"
-                    />
-                    <div className="relative z-20 mt-auto p-4 md:p-6">
-                      <h3 className="text-sm md:text-base font-black tracking-tight leading-tight mb-1 group-hover:text-[#ffb1c4] transition-colors line-clamp-2">
-                        {product.name}
-                      </h3>
-                      <p className="text-[10px] text-gray-400 uppercase tracking-widest mb-3">
-                        {product.brand}
-                      </p>
-                      <div className="flex justify-between items-center">
-                        <span className="bg-white/10 backdrop-blur-md px-3 py-1 text-[11px] font-bold">
-                          {formatPrice(product.price)}
-                        </span>
-                        <span className="text-[#ff4a8d] opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-2 group-hover:translate-x-0">
-                          <ArrowRight size={14} />
-                        </span>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })
+              featured.map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))
             ) : (
               <div className="col-span-full text-center py-20 border border-white/5">
                 <p className="text-gray-500 uppercase tracking-widest text-xs">Aucun produit trouvé.</p>

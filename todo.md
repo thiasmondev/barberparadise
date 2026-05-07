@@ -331,3 +331,10 @@
 - [x] Mettre `Produit`, `Matériel`, `Marques` et les sous-catégories niveau 3 à l’état fermé par défaut.
 - [x] Réinitialiser tous les accordions à chaque ouverture du drawer mobile/desktop.
 - [x] Vérifier qu’aucune logique liée à la route active ne force l’ouverture d’une catégorie au montage.
+
+## Uniformisation esthétique des cartes produits — 2026-05-07
+
+- [x] Harmoniser `ProductCard` avec le style de référence : fond blanc, coins arrondis, image contain, badges NOUVEAU/PROMO/PRIX PRO, marque bleue, prix et bouton panier bleu.
+- [x] Remplacer les cartes produits inline de la section homepage `THE PARADISE` par le composant global `ProductCard`.
+- [x] Remplacer les cartes produits inline du catalogue par le composant global `ProductCard`, en conservant filtres et pagination.
+- [x] Produire le rapport pré-commit, valider le build frontend et `git diff --check`, puis pousser sur `main`.
