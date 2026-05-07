@@ -112,3 +112,21 @@ export async function createBrevoEmailCampaign(args: {
 export async function sendBrevoCampaignNow(campaignId: number) {
   return brevoRequest(`/emailCampaigns/${campaignId}/sendNow`, { method: "POST" });
 }
+
+export async function subscribeToNewsletter(email: string) {
+  // Subscribe to B2C newsletter list (ID: 5)
+  return upsertBrevoContact({
+    email,
+    listIds: [BREVO_LISTS.b2c],
+  });
+}
+
+export const brevoService = {
+  isEnabled: () => Boolean(process.env.BREVO_API_KEY),
+  subscribeToNewsletter,
+  upsertBrevoContact,
+  createBrevoEmailCampaign,
+  sendBrevoCampaignNow,
+  listBrevoLists,
+  getBrevoStatus,
+};

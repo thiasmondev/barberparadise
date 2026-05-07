@@ -33,6 +33,7 @@ import { checkoutRouter } from "./routes/checkout";
 import { webhooksRouter } from "./routes/webhooks";
 import { proRouter } from "./routes/pro";
 import { cronRouter } from "./routes/cron";
+import newsletterRouter from "./routes/newsletter";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -62,6 +63,7 @@ app.use("/api/checkout", checkoutRouter);
 app.use("/api/webhooks", webhooksRouter);
 app.use("/api/pro", proRouter);
 app.use("/api/cron", cronRouter);
+app.use("/api/newsletter", newsletterRouter);
 
 // ─── Root & Health Check ─────────────────────────────────────
 app.get("/", (_req, res) => {

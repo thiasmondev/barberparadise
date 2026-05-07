@@ -2,8 +2,41 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Mail, Phone, MapPin, Instagram, Facebook, Twitter } from "lucide-react";
+import { useState } from "react";
 
 export default function Footer() {
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const handleSubscribe = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+
+    setLoading(true);
+    setMessage("");
+
+    try {
+      const res = await fetch("/api/newsletter/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+
+      if (res.ok) {
+        setMessage("Merci! Vérifiez votre email.");
+        setEmail("");
+      } else {
+        const data = await res.json();
+        setMessage(data.error || "Une erreur est survenue.");
+      }
+    } catch (error) {
+      setMessage("Erreur de connexion.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <footer className="bg-[#0e0e0e] text-[#e5e2e1] border-t border-white/5">
       <div className="max-w-[1440px] mx-auto px-8 py-20">
@@ -87,17 +120,29 @@ export default function Footer() {
           <div>
             <h3 className="text-[10px] font-black tracking-[0.3em] text-white uppercase mb-8">S'ABONNER</h3>
             <p className="text-[10px] text-gray-500 tracking-widest uppercase mb-6">
-              REJOIGNEZ L'ARSENAL POUR DES OFFRES EXCLUSIVES.
+              LET'S GO TO PARADISE POUR DES OFFRES EXCLUSIVES.
             </p>
-            <form className="flex flex-col gap-4" onSubmit={(e) => e.preventDefault()}>
+            <form className="flex flex-col gap-4" onSubmit={handleSubscribe}>
               <input
                 type="email"
                 placeholder="VOTRE EMAIL"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="bg-transparent border-b border-white/10 py-3 text-[10px] tracking-widest uppercase focus:border-[#ff4a8d] outline-none transition-colors"
+                required
               />
-              <button type="submit" className="bg-white text-black text-[10px] font-black tracking-[0.2em] py-4 uppercase hover:bg-[#ff4a8d] hover:text-white transition-all">
-                S'ABONNER
+              <button
+                type="submit"
+                disabled={loading}
+                className="bg-white text-black text-[10px] font-black tracking-[0.2em] py-4 uppercase hover:bg-[#ff4a8d] hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? "ENVOI..." : "S'ABONNER"}
               </button>
+              {message && (
+                <p className="text-[9px] text-[#ffb1c4] tracking-widest uppercase">
+                  {message}
+                </p>
+              )}
             </form>
           </div>
         </div>

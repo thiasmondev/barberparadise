@@ -344,3 +344,11 @@
 - [x] Remplacer les noms de marques par leurs logos dans le bandeau défilant de la page d'accueil (`frontend/src/app/page.tsx`).
 - [x] Prévoir un fallback au nom de la marque si le logo n'est pas disponible.
 - [x] Produire le rapport pré-commit, valider le build frontend et `git diff --check`, puis pousser sur `main`.
+
+## Modification du footer et activation de la newsletter — 2026-05-07
+
+- [x] Remplacer le texte "REJOIGNEZ L'ARSENAL POUR DES OFFRES EXCLUSIVES." par "LET'S GO TO PARADISE POUR DES OFFRES EXCLUSIVES." dans le footer.
+- [x] Activer le bouton d'abonnement à la newsletter en implémentant la logique frontend et en créant une route backend `/api/newsletter/subscribe`.
+- [x] Ajouter le modèle `NewsletterSubscriber` au schéma Prisma.
+- [x] Intégrer la route `newsletter` dans le fichier `index.ts` du backend.
+- [x] Produire le rapport pré-commit, valider le build frontend et `git diff --check`, puis pousser sur `main`.
