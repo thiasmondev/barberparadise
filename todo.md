@@ -338,3 +338,9 @@
 - [x] Remplacer les cartes produits inline de la section homepage `THE PARADISE` par le composant global `ProductCard`.
 - [x] Remplacer les cartes produits inline du catalogue par le composant global `ProductCard`, en conservant filtres et pagination.
 - [x] Produire le rapport pré-commit, valider le build frontend et `git diff --check`, puis pousser sur `main`.
+
+## Remplacement des noms de marques par des logos dans le bandeau défilant — 2026-05-07
+
+- [x] Remplacer les noms de marques par leurs logos dans le bandeau défilant de la page d'accueil (`frontend/src/app/page.tsx`).
+- [x] Prévoir un fallback au nom de la marque si le logo n'est pas disponible.
+- [x] Produire le rapport pré-commit, valider le build frontend et `git diff --check`, puis pousser sur `main`.

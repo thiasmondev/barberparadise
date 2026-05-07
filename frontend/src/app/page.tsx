@@ -273,9 +273,19 @@ export default function HomePage() {
               <Link
                 key={brand.id}
                 href={`/marques/${brand.slug}`}
-                className="text-2xl md:text-3xl font-black tracking-tighter text-white/20 hover:text-white/70 transition-colors uppercase italic"
+                className="flex items-center justify-center h-16 opacity-40 hover:opacity-100 transition-opacity"
               >
-                {brand.name}
+                {brand.logo ? (
+                  <Image
+                    src={brand.logo}
+                    alt={brand.name}
+                    width={120}
+                    height={60}
+                    className="object-contain max-h-16 max-w-[120px]"
+                  />
+                ) : (
+                  <span className="text-sm font-black text-white/40 uppercase">{brand.name}</span>
+                )}
               </Link>
             ))}
           </div>
@@ -284,9 +294,19 @@ export default function HomePage() {
               <Link
                 key={`duplicate-${brand.id}`}
                 href={`/marques/${brand.slug}`}
-                className="text-2xl md:text-3xl font-black tracking-tighter text-white/20 hover:text-white/70 transition-colors uppercase italic"
+                className="flex items-center justify-center h-16 opacity-40 hover:opacity-100 transition-opacity"
               >
-                {brand.name}
+                {brand.logo ? (
+                  <Image
+                    src={brand.logo}
+                    alt={brand.name}
+                    width={120}
+                    height={60}
+                    className="object-contain max-h-16 max-w-[120px]"
+                  />
+                ) : (
+                  <span className="text-sm font-black text-white/40 uppercase">{brand.name}</span>
+                )}
               </Link>
             ))}
           </div>
