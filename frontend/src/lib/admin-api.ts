@@ -1182,9 +1182,17 @@ export interface ShipmentRecord {
   id: string;
   orderId: string;
   carrier: "colissimo" | "mondial_relay" | "colissimo_international" | string;
+  carrierShipmentId: string | null;
   trackingNumber: string | null;
+  trackingUrl: string | null;
   packagingId: number | null;
   totalWeightG: number | null;
+  labelFormat: string | null;
+  labelSource: string | null;
+  labelStatus: string | null;
+  labelGeneratedAt: string | null;
+  lastTrackingStatus: string | null;
+  lastTrackingSyncAt: string | null;
   shippedAt: string | null;
   shippedBy: string | null;
   createdAt: string;
@@ -1223,6 +1231,28 @@ export function getLogisticsOrder(orderId: string) {
   );
 }
 
+export function generateLogisticsLabel(
+  orderId: string,
+  data: {
+    carrier: ShipmentRecord["carrier"];
+    trackingNumber?: string;
+    packagingId?: number | null;
+  }
+) {
+  return adminFetch<{
+    success: boolean;
+    shipment: ShipmentRecord;
+    label?: {
+      downloadUrl: string;
+      source: string;
+      notice: string | null;
+    };
+  }>(`/api/admin/logistics/orders/${orderId}/label`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
 export function shipLogisticsOrder(
   orderId: string,
   data: {
@@ -1235,9 +1265,27 @@ export function shipLogisticsOrder(
     success: boolean;
     order: Order;
     shipment: ShipmentRecord;
+    label?: {
+      downloadUrl: string;
+      source: string;
+      notice: string | null;
+    };
   }>(`/api/admin/logistics/orders/${orderId}/ship`, {
     method: "POST",
     body: JSON.stringify(data),
+  });
+}
+
+export function getLogisticsLabelUrl(orderId: string) {
+  return `${API_URL}/api/admin/logistics/orders/${orderId}/label`;
+}
+
+export function syncLogisticsTracking(orderId: string) {
+  return adminFetch<{
+    success: boolean;
+    shipment: ShipmentRecord;
+  }>(`/api/admin/logistics/orders/${orderId}/tracking/sync`, {
+    method: "POST",
   });
 }
 

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../utils/prisma";
 import {
   getCustomerName,
@@ -19,6 +20,12 @@ import {
   IndyReport,
   previousMonthKey,
 } from "../services/indyReportService";
+import {
+  createShipmentLabel,
+  fetchShipmentTracking,
+  LOGISTICS_CARRIERS,
+  LogisticsCarrier,
+} from "../services/logisticsCarrierService";
 
 // ─── Cloudinary Config ───────────────────────────────────────
 cloudinary.config({
@@ -76,6 +83,11 @@ const pdfUpload = multer({
 });
 
 export const adminRouter = Router();
+
+function asPrismaJson(value: unknown): Prisma.InputJsonValue | undefined {
+  if (value === null || value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
 
 type NumericInput = string | number | null | undefined;
 
@@ -137,16 +149,7 @@ function buildPackagingData(body: Record<string, unknown>) {
   };
 }
 
-type LogisticsCarrier =
-  | "colissimo"
-  | "mondial_relay"
-  | "colissimo_international";
 
-const LOGISTICS_CARRIERS: Record<LogisticsCarrier, string> = {
-  colissimo: "Colissimo domicile",
-  mondial_relay: "Mondial Relay point relais",
-  colissimo_international: "Colissimo international",
-};
 
 type LogisticsItemProduct = {
   id: string;
@@ -2261,6 +2264,161 @@ adminRouter.get(
   }
 );
 
+// POST /api/admin/logistics/orders/:orderId/label — Générer ou régénérer une étiquette avant expédition
+adminRouter.post(
+  "/logistics/orders/:orderId/label",
+  requireAdmin,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const carrier = String(req.body?.carrier || "") as LogisticsCarrier;
+      const trackingNumber =
+        String(req.body?.trackingNumber || "").trim() || null;
+      const packagingIdRaw = req.body?.packagingId;
+      const packagingId =
+        packagingIdRaw === undefined ||
+        packagingIdRaw === null ||
+        packagingIdRaw === ""
+          ? null
+          : parseInt(String(packagingIdRaw), 10);
+
+      if (!Object.keys(LOGISTICS_CARRIERS).includes(carrier)) {
+        res.status(400).json({ error: "Transporteur invalide" });
+        return;
+      }
+      if (packagingId !== null && !Number.isFinite(packagingId)) {
+        res.status(400).json({ error: "Carton sélectionné invalide" });
+        return;
+      }
+
+      const order = await prisma.order.findUnique({
+        where: { id: req.params.orderId },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  images: true,
+                  weightG: true,
+                  lengthCm: true,
+                  widthCm: true,
+                  heightCm: true,
+                  isFragile: true,
+                  isLiquid: true,
+                  isAerosol: true,
+                  logisticNote: true,
+                },
+              },
+            },
+          },
+          customer: true,
+          shippingAddress: true,
+        },
+      });
+
+      if (!order) {
+        res.status(404).json({ error: "Commande non trouvée" });
+        return;
+      }
+      if (!["paid", "processing", "shipped"].includes(order.status)) {
+        res.status(400).json({
+          error:
+            "Seules les commandes payées, en préparation ou déjà expédiées peuvent recevoir une étiquette",
+        });
+        return;
+      }
+      if (!order.shippingAddress) {
+        res.status(400).json({
+          error: "Adresse d’expédition obligatoire pour générer l’étiquette",
+        });
+        return;
+      }
+
+      const packaging = packagingId
+        ? await prisma.packaging.findUnique({ where: { id: packagingId } })
+        : null;
+      if (packagingId && !packaging) {
+        res.status(404).json({ error: "Carton sélectionné introuvable" });
+        return;
+      }
+
+      const metrics = computeLogisticsMetrics(
+        order.items as LogisticsOrderItem[]
+      );
+      const totalWeightG = metrics.totalWeightG + (packaging?.selfWeightG || 0);
+      const labelResult = await createShipmentLabel({
+        carrier,
+        orderNumber: order.orderNumber,
+        customerEmail: order.email,
+        recipient: order.shippingAddress,
+        totalWeightG,
+        packageDimensions: packaging
+          ? {
+              lengthCm: packaging.lengthCm,
+              widthCm: packaging.widthCm,
+              heightCm: packaging.heightCm,
+            }
+          : null,
+        existingTrackingNumber: trackingNumber,
+      });
+
+      const shipment = await prisma.shipment.upsert({
+        where: { orderId: order.id },
+        create: {
+          orderId: order.id,
+          carrier,
+          carrierShipmentId: labelResult.carrierShipmentId,
+          trackingNumber: labelResult.trackingNumber,
+          trackingUrl: labelResult.trackingUrl,
+          packagingId,
+          totalWeightG,
+          labelPdfBase64: labelResult.labelPdfBase64,
+          labelFormat: labelResult.labelFormat,
+          labelSource: labelResult.labelSource,
+          labelStatus: labelResult.labelStatus,
+          labelGeneratedAt: labelResult.labelGeneratedAt,
+          carrierRawResponse: asPrismaJson(labelResult.rawResponse),
+          lastTrackingStatus: "Étiquette générée",
+          lastTrackingSyncAt: new Date(),
+          shippedBy: req.user?.email || null,
+        },
+        update: {
+          carrier,
+          carrierShipmentId: labelResult.carrierShipmentId,
+          trackingNumber: labelResult.trackingNumber,
+          trackingUrl: labelResult.trackingUrl,
+          packagingId,
+          totalWeightG,
+          labelPdfBase64: labelResult.labelPdfBase64,
+          labelFormat: labelResult.labelFormat,
+          labelSource: labelResult.labelSource,
+          labelStatus: labelResult.labelStatus,
+          labelGeneratedAt: labelResult.labelGeneratedAt,
+          carrierRawResponse: asPrismaJson(labelResult.rawResponse),
+          lastTrackingStatus: "Étiquette générée",
+          lastTrackingSyncAt: new Date(),
+          shippedBy: req.user?.email || null,
+        },
+        include: { packaging: true },
+      });
+
+      res.json({
+        success: true,
+        shipment,
+        label: {
+          downloadUrl: `/api/admin/logistics/orders/${order.id}/label`,
+          source: labelResult.labelSource,
+          notice: labelResult.notice,
+        },
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur génération étiquette" });
+    }
+  }
+);
+
 // POST /api/admin/logistics/orders/:orderId/ship — Marquer comme expédié
 adminRouter.post(
   "/logistics/orders/:orderId/ship",
@@ -2310,6 +2468,7 @@ adminRouter.post(
             },
           },
           customer: true,
+          shippingAddress: true,
         },
       });
 
@@ -2333,29 +2492,69 @@ adminRouter.post(
         return;
       }
 
+      if (!order.shippingAddress) {
+        res.status(400).json({
+          error: "Adresse d’expédition obligatoire pour générer l’étiquette",
+        });
+        return;
+      }
       const metrics = computeLogisticsMetrics(
         order.items as LogisticsOrderItem[]
       );
       const totalWeightG = metrics.totalWeightG + (packaging?.selfWeightG || 0);
+      const labelResult = await createShipmentLabel({
+        carrier,
+        orderNumber: order.orderNumber,
+        customerEmail: order.email,
+        recipient: order.shippingAddress,
+        totalWeightG,
+        packageDimensions: packaging
+          ? {
+              lengthCm: packaging.lengthCm,
+              widthCm: packaging.widthCm,
+              heightCm: packaging.heightCm,
+            }
+          : null,
+        existingTrackingNumber: trackingNumber,
+      });
       const shippedAt = new Date();
-
       const [shipment, updatedOrder] = await prisma.$transaction([
         prisma.shipment.upsert({
           where: { orderId: order.id },
           create: {
             orderId: order.id,
             carrier,
-            trackingNumber,
+            carrierShipmentId: labelResult.carrierShipmentId,
+            trackingNumber: labelResult.trackingNumber,
+            trackingUrl: labelResult.trackingUrl,
             packagingId,
             totalWeightG,
+            labelPdfBase64: labelResult.labelPdfBase64,
+            labelFormat: labelResult.labelFormat,
+            labelSource: labelResult.labelSource,
+            labelStatus: labelResult.labelStatus,
+            labelGeneratedAt: labelResult.labelGeneratedAt,
+            carrierRawResponse: asPrismaJson(labelResult.rawResponse),
+            lastTrackingStatus: "Expédition créée",
+            lastTrackingSyncAt: new Date(),
             shippedAt,
             shippedBy: req.user?.email || null,
           },
           update: {
             carrier,
-            trackingNumber,
+            carrierShipmentId: labelResult.carrierShipmentId,
+            trackingNumber: labelResult.trackingNumber,
+            trackingUrl: labelResult.trackingUrl,
             packagingId,
             totalWeightG,
+            labelPdfBase64: labelResult.labelPdfBase64,
+            labelFormat: labelResult.labelFormat,
+            labelSource: labelResult.labelSource,
+            labelStatus: labelResult.labelStatus,
+            labelGeneratedAt: labelResult.labelGeneratedAt,
+            carrierRawResponse: asPrismaJson(labelResult.rawResponse),
+            lastTrackingStatus: "Expédition créée",
+            lastTrackingSyncAt: new Date(),
             shippedAt,
             shippedBy: req.user?.email || null,
           },
@@ -2372,13 +2571,95 @@ adminRouter.post(
         orderNumber: order.orderNumber,
         customerName: getCustomerName(order.customer, order.email),
         carrier: LOGISTICS_CARRIERS[carrier],
-        trackingNumber,
+        trackingNumber: labelResult.trackingNumber,
       });
-
-      res.json({ success: true, order: updatedOrder, shipment });
+      res.json({
+        success: true,
+        order: updatedOrder,
+        shipment,
+        label: {
+          downloadUrl: `/api/admin/logistics/orders/${order.id}/label`,
+          source: labelResult.labelSource,
+          notice: labelResult.notice,
+        },
+      });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Erreur validation expédition" });
+    }
+  }
+);
+
+// GET /api/admin/logistics/orders/:orderId/label — Télécharger l’étiquette PDF
+adminRouter.get(
+  "/logistics/orders/:orderId/label",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const shipment = await prisma.shipment.findUnique({
+        where: { orderId: req.params.orderId },
+        include: { order: true },
+      });
+
+      if (!shipment || !shipment.labelPdfBase64) {
+        res.status(404).json({ error: "Étiquette non générée" });
+        return;
+      }
+
+      const pdfBuffer = Buffer.from(shipment.labelPdfBase64, "base64");
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=etiquette-${shipment.order.orderNumber}.pdf`
+      );
+      res.send(pdfBuffer);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur téléchargement étiquette" });
+    }
+  }
+);
+
+// POST /api/admin/logistics/orders/:orderId/tracking/sync — Synchroniser le suivi
+adminRouter.post(
+  "/logistics/orders/:orderId/tracking/sync",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const shipment = await prisma.shipment.findUnique({
+        where: { orderId: req.params.orderId },
+        include: { packaging: true },
+      });
+
+      if (!shipment) {
+        res.status(404).json({ error: "Expédition non trouvée" });
+        return;
+      }
+
+      if (!Object.keys(LOGISTICS_CARRIERS).includes(shipment.carrier)) {
+        res.status(400).json({ error: "Transporteur invalide" });
+        return;
+      }
+
+      const tracking = await fetchShipmentTracking(
+        shipment.carrier as LogisticsCarrier,
+        shipment.trackingNumber
+      );
+      const updatedShipment = await prisma.shipment.update({
+        where: { orderId: req.params.orderId },
+        data: {
+          trackingUrl: tracking.trackingUrl,
+          lastTrackingStatus: tracking.trackingStatus,
+          lastTrackingSyncAt: new Date(),
+          carrierRawResponse: asPrismaJson(tracking.rawResponse || shipment.carrierRawResponse),
+        },
+        include: { packaging: true },
+      });
+
+      res.json({ success: true, shipment: updatedShipment });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur synchronisation suivi" });
     }
   }
 );

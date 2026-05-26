@@ -227,19 +227,30 @@ model OrderItem {
 }
 
 model Shipment {
-  id             String     @id @default(cuid())
-  orderId        String     @unique
-  order          Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  carrier        String // 'colissimo', 'mondial_relay', 'colissimo_international'
-  trackingNumber String?
-  packagingId    Int?
-  packaging      Packaging? @relation(fields: [packagingId], references: [id])
-  totalWeightG   Int?
-  shippedAt      DateTime?
-  shippedBy      String? // email admin
-  createdAt      DateTime   @default(now())
+  id                 String     @id @default(cuid())
+  orderId            String     @unique
+  order              Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  carrier            String // 'colissimo', 'mondial_relay', 'colissimo_international'
+  carrierShipmentId  String?
+  trackingNumber     String?
+  trackingUrl        String?
+  packagingId        Int?
+  packaging          Packaging? @relation(fields: [packagingId], references: [id])
+  totalWeightG       Int?
+  labelPdfBase64     String?
+  labelFormat        String?
+  labelSource        String?
+  labelStatus        String?
+  labelGeneratedAt   DateTime?
+  carrierRawResponse Json?
+  lastTrackingStatus String?
+  lastTrackingSyncAt DateTime?
+  shippedAt          DateTime?
+  shippedBy          String? // email admin
+  createdAt          DateTime   @default(now())
 
   @@index([carrier])
+  @@index([labelStatus])
   @@index([shippedAt])
 }
 

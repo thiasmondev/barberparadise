@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
-import { brevoService } from "../services/brevoService";
-import { prisma } from "../db";
+import { brevoService } from "../services/brevoMarketingService";
+import { prisma } from "../utils/prisma";
 
 const router = Router();
 

@@ -352,3 +352,11 @@
 - [x] Ajouter le modèle `NewsletterSubscriber` au schéma Prisma.
 - [x] Intégrer la route `newsletter` dans le fichier `index.ts` du backend.
 - [x] Produire le rapport pré-commit, valider le build frontend et `git diff --check`, puis pousser sur `main`.
+
+## Finalisation agent logistique — étiquettes et suivi transporteur
+
+- Date : 2026-05-26.
+- Demande : finaliser la partie agent logistique afin de pouvoir envoyer les colis, avec génération d’étiquettes et intégration transporteurs.
+- Réalisation : ajout d’un service transporteur dédié, génération d’étiquettes PDF imprimables, stockage des métadonnées d’étiquette et de suivi dans Shipment, routes admin pour générer, télécharger et synchroniser le suivi, et mise à jour de l’interface logistique admin.
+- Validation : build backend réussi, build frontend réussi, `git diff --check` réussi.
+- Point de configuration : en l’absence d’identifiants Colissimo/Mondial Relay dans l’environnement, le système génère une étiquette interne imprimable de secours. Les adaptateurs officiels sont isolés dans le service transporteur pour activation dès ajout des identifiants.

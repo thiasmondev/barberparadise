@@ -6,16 +6,23 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   CheckCircle2,
+  Download,
+  ExternalLink,
   Loader2,
   Mail,
   MapPin,
   Package,
+  RefreshCw,
   ShieldAlert,
   Truck,
 } from "lucide-react";
 import {
+  generateLogisticsLabel,
+  getAdminToken,
+  getLogisticsLabelUrl,
   getLogisticsOrder,
   shipLogisticsOrder,
+  syncLogisticsTracking,
   type LogisticsPreparationDetail,
 } from "@/lib/admin-api";
 
@@ -50,7 +57,10 @@ export default function AdminLogisticsPreparationPage() {
   const [detail, setDetail] = useState<LogisticsPreparationDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [generatingLabel, setGeneratingLabel] = useState(false);
+  const [syncingTracking, setSyncingTracking] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [checked, setChecked] = useState({
     products: false,
     packing: false,
@@ -99,9 +109,83 @@ export default function AdminLogisticsPreparationPage() {
   const totalWeight =
     (detail?.recommendation.totalWeightG || 0) +
     (selectedPackaging?.selfWeightG || 0);
+  const hasGeneratedLabel = Boolean(detail?.shipment?.labelStatus);
+
+  const downloadLabel = async () => {
+    if (!detail) return;
+    const token = getAdminToken();
+    if (!token) {
+      setError("Session admin introuvable");
+      return;
+    }
+    setError("");
+    try {
+      const response = await fetch(getLogisticsLabelUrl(detail.order.id), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Erreur téléchargement étiquette");
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `etiquette-${detail.order.orderNumber}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setChecked(current => ({ ...current, label: true }));
+    } catch (err: any) {
+      setError(err.message || "Erreur téléchargement étiquette");
+    }
+  };
+
+  const handleGenerateLabel = async () => {
+    if (!detail) return;
+    setGeneratingLabel(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await generateLogisticsLabel(detail.order.id, {
+        carrier,
+        trackingNumber: trackingNumber.trim(),
+        packagingId: packagingId ? Number(packagingId) : null,
+      });
+      setDetail({ ...detail, shipment: result.shipment });
+      setTrackingNumber(result.shipment.trackingNumber || "");
+      setChecked(current => ({ ...current, label: true }));
+      if (result.label?.notice) setNotice(result.label.notice);
+      await downloadLabel();
+    } catch (err: any) {
+      setError(err.message || "Erreur lors de la génération de l’étiquette");
+    } finally {
+      setGeneratingLabel(false);
+    }
+  };
+
+  const handleSyncTracking = async () => {
+    if (!detail?.shipment) return;
+    setSyncingTracking(true);
+    setError("");
+    try {
+      const result = await syncLogisticsTracking(detail.order.id);
+      setDetail({ ...detail, shipment: result.shipment });
+    } catch (err: any) {
+      setError(err.message || "Erreur lors de la synchronisation du suivi");
+    } finally {
+      setSyncingTracking(false);
+    }
+  };
 
   const handleShip = async () => {
     if (!detail || !checklistReady) return;
+    if (
+      !hasGeneratedLabel &&
+      !confirm("Aucune étiquette n’a encore été générée. Continuer quand même ?")
+    )
+      return;
     if (
       !confirm(
         `Marquer la commande ${detail.order.orderNumber} comme expédiée ?`
@@ -183,6 +267,11 @@ export default function AdminLogisticsPreparationPage() {
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
+        </div>
+      )}
+      {notice && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {notice}
         </div>
       )}
 
@@ -325,6 +414,81 @@ export default function AdminLogisticsPreparationPage() {
                   cm³.
                 </div>
               )}
+              <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600">
+                Poids colis estimé : <strong>{formatWeight(totalWeight)}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+            <h2 className="mb-4 flex items-center gap-2 font-bold text-gray-900">
+              <Download size={18} className="text-cyan-600" /> Étiquette et suivi
+            </h2>
+            {detail.shipment?.labelStatus ? (
+              <div className="mb-4 space-y-2 rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-xs text-emerald-800">
+                <div>
+                  <strong>Étiquette :</strong> {detail.shipment.labelStatus} · source {" "}
+                  {detail.shipment.labelSource || "interne"}
+                </div>
+                {detail.shipment.trackingNumber && (
+                  <div>
+                    <strong>Suivi :</strong> {detail.shipment.trackingNumber}
+                  </div>
+                )}
+                {detail.shipment.lastTrackingStatus && (
+                  <div>
+                    <strong>Statut transporteur :</strong>{" "}
+                    {detail.shipment.lastTrackingStatus}
+                  </div>
+                )}
+                {detail.shipment.trackingUrl && (
+                  <a
+                    href={detail.shipment.trackingUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 font-semibold text-emerald-900 underline"
+                  >
+                    Ouvrir le suivi transporteur <ExternalLink size={13} />
+                  </a>
+                )}
+              </div>
+            ) : (
+              <p className="mb-4 text-sm text-gray-500">
+                Générez l’étiquette PDF avant de coller le bordereau sur le colis.
+              </p>
+            )}
+            <div className="grid gap-2">
+              <button
+                onClick={handleGenerateLabel}
+                disabled={generatingLabel || saving}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-3 text-sm font-bold text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {generatingLabel ? (
+                  <Loader2 className="animate-spin" size={17} />
+                ) : (
+                  <Download size={17} />
+                )}
+                Générer / télécharger l’étiquette PDF
+              </button>
+              <button
+                onClick={downloadLabel}
+                disabled={!hasGeneratedLabel || generatingLabel}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Download size={17} /> Télécharger l’étiquette existante
+              </button>
+              <button
+                onClick={handleSyncTracking}
+                disabled={!detail.shipment?.trackingNumber || syncingTracking}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-100 bg-cyan-50 px-4 py-3 text-sm font-bold text-cyan-800 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {syncingTracking ? (
+                  <Loader2 className="animate-spin" size={17} />
+                ) : (
+                  <RefreshCw size={17} />
+                )}
+                Synchroniser le suivi
+              </button>
             </div>
           </section>
 
