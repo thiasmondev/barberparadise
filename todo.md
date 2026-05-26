@@ -353,10 +353,11 @@
 - [x] Intégrer la route `newsletter` dans le fichier `index.ts` du backend.
 - [x] Produire le rapport pré-commit, valider le build frontend et `git diff --check`, puis pousser sur `main`.
 
-## Finalisation agent logistique — étiquettes et suivi transporteur
+## Correction agent logistique — devis, assurances et étiquettes officielles transporteurs
 
 - Date : 2026-05-26.
-- Demande : finaliser la partie agent logistique afin de pouvoir envoyer les colis, avec génération d’étiquettes et intégration transporteurs.
-- Réalisation : ajout d’un service transporteur dédié, génération d’étiquettes PDF imprimables, stockage des métadonnées d’étiquette et de suivi dans Shipment, routes admin pour générer, télécharger et synchroniser le suivi, et mise à jour de l’interface logistique admin.
+- Demande : remplacer le flux interne incorrect par un vrai flux logistique basé sur Colissimo/Mondial Relay.
+- Réalisation : suppression du principe d’étiquette interne de secours, ajout d’un flux devis transporteur avec grille tarifaire contractuelle configurable, assurance sélectionnée, achat d’étiquette officielle via API Colissimo SLS ou Mondial Relay SOAP, stockage du prix, de l’offre, du niveau d’assurance, du point relais et des réponses transporteurs dans `Shipment`.
+- Interface : l’admin logistique calcule les devis, compare les offres, impose le point relais pour Mondial Relay, achète l’étiquette officielle avant expédition, puis autorise le marquage expédié uniquement si une étiquette transporteur officielle existe.
+- Configuration : ajout des variables `.env.example` pour les identifiants Colissimo/Mondial Relay, l’adresse expéditeur et les grilles tarifaires contractuelles.
 - Validation : build backend réussi, build frontend réussi, `git diff --check` réussi.
-- Point de configuration : en l’absence d’identifiants Colissimo/Mondial Relay dans l’environnement, le système génère une étiquette interne imprimable de secours. Les adaptateurs officiels sont isolés dans le service transporteur pour activation dès ajout des identifiants.

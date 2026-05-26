@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import crypto from "crypto";
 
 export type LogisticsCarrier =
   | "colissimo"
@@ -11,7 +11,7 @@ export const LOGISTICS_CARRIERS: Record<LogisticsCarrier, string> = {
   colissimo_international: "Colissimo international",
 };
 
-export type LabelSource = "carrier_api" | "internal_fallback";
+export type LabelSource = "carrier_api";
 
 export type ShipmentAddress = {
   firstName: string;
@@ -24,29 +24,64 @@ export type ShipmentAddress = {
   phone?: string | null;
 };
 
-export type ShipmentLabelInput = {
-  carrier: LogisticsCarrier;
+export type ShipmentDimensions = {
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
+};
+
+export type ShipmentQuoteInput = {
   orderNumber: string;
   customerEmail: string;
   recipient: ShipmentAddress;
   totalWeightG: number;
-  packageDimensions?: {
-    lengthCm: number;
-    widthCm: number;
-    heightCm: number;
-  } | null;
-  existingTrackingNumber?: string | null;
+  orderValueCents: number;
+  packageDimensions?: ShipmentDimensions | null;
+};
+
+export type ShipmentLabelInput = ShipmentQuoteInput & {
+  carrier: LogisticsCarrier;
+  offerId: string;
+  insuranceValueCents: number;
+  packagingId?: number | null;
+  relayPointId?: string | null;
+};
+
+export type ShipmentRateQuote = {
+  id: string;
+  carrier: LogisticsCarrier;
+  carrierLabel: string;
+  serviceCode: string;
+  serviceLabel: string;
+  deliveryMode: "home" | "relay";
+  amountCents: number;
+  currency: "EUR";
+  insuranceValueCents: number;
+  insuranceLabel: string;
+  estimatedDeliveryDays: string;
+  requiresRelayPoint: boolean;
+  purchasable: boolean;
+  configurationError: string | null;
+  source: "contract_tariff_grid";
 };
 
 export type ShipmentLabelResult = {
   trackingNumber: string;
   carrierShipmentId: string | null;
   trackingUrl: string | null;
-  labelPdfBase64: string;
+  labelPdfBase64: string | null;
+  labelUrl: string | null;
   labelFormat: "PDF";
   labelSource: LabelSource;
   labelGeneratedAt: Date;
-  labelStatus: "generated" | "fallback_generated";
+  labelStatus: "carrier_label_created";
+  offerId: string;
+  serviceCode: string;
+  deliveryMode: "home" | "relay";
+  relayPointId: string | null;
+  priceCents: number;
+  currency: "EUR";
+  insuranceValueCents: number;
   rawResponse: Record<string, unknown> | null;
   notice: string | null;
 };
@@ -57,19 +92,80 @@ export type TrackingResult = {
   rawResponse: Record<string, unknown> | null;
 };
 
-function normalizeCountry(country: string) {
-  return country?.trim() || "France";
+type TariffStep = {
+  maxWeightG: number;
+  amountCents: number;
+};
+
+const DEFAULT_TARIFFS: Record<LogisticsCarrier, TariffStep[]> = {
+  colissimo: [
+    { maxWeightG: 250, amountCents: 499 },
+    { maxWeightG: 500, amountCents: 699 },
+    { maxWeightG: 750, amountCents: 799 },
+    { maxWeightG: 1000, amountCents: 899 },
+    { maxWeightG: 2000, amountCents: 999 },
+    { maxWeightG: 5000, amountCents: 1499 },
+    { maxWeightG: 10000, amountCents: 2199 },
+    { maxWeightG: 30000, amountCents: 3299 },
+  ],
+  mondial_relay: [
+    { maxWeightG: 500, amountCents: 459 },
+    { maxWeightG: 1000, amountCents: 549 },
+    { maxWeightG: 2000, amountCents: 669 },
+    { maxWeightG: 3000, amountCents: 789 },
+    { maxWeightG: 5000, amountCents: 999 },
+    { maxWeightG: 7000, amountCents: 1299 },
+    { maxWeightG: 10000, amountCents: 1599 },
+    { maxWeightG: 30000, amountCents: 2499 },
+  ],
+  colissimo_international: [
+    { maxWeightG: 500, amountCents: 1399 },
+    { maxWeightG: 1000, amountCents: 1899 },
+    { maxWeightG: 2000, amountCents: 2499 },
+    { maxWeightG: 5000, amountCents: 3999 },
+    { maxWeightG: 10000, amountCents: 5999 },
+    { maxWeightG: 30000, amountCents: 10999 },
+  ],
+};
+
+const COLISSIMO_INSURANCE_LEVELS = [0, 15000, 30000, 50000, 100000, 200000, 500000];
+const MONDIAL_RELAY_INSURANCE_LEVELS = [0, 2500, 5000, 12500, 25000, 50000];
+
+function xmlEscape(value: string | number | null | undefined) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
-function buildFallbackTrackingNumber(carrier: LogisticsCarrier, orderNumber: string) {
-  const prefix: Record<LogisticsCarrier, string> = {
-    colissimo: "BPCL",
-    mondial_relay: "BPMR",
-    colissimo_international: "BPCI",
-  };
-  const compactOrder = orderNumber.replace(/[^A-Z0-9]/gi, "").slice(-10).toUpperCase();
-  const suffix = Date.now().toString(36).toUpperCase().slice(-5);
-  return `${prefix[carrier]}${compactOrder}${suffix}`;
+function getXmlValue(xml: string, tag: string) {
+  const match = xml.match(new RegExp(`<(?:\\w+:)?${tag}[^>]*>([\\s\\S]*?)</(?:\\w+:)?${tag}>`, "i"));
+  return match?.[1]?.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim() || null;
+}
+
+function getEnvJson<T>(key: string, fallback: T): T {
+  const raw = process.env[key];
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeCountryCode(country: string | undefined | null) {
+  const value = (country || "FR").trim().toUpperCase();
+  if (["FR", "FRA", "FRANCE"].includes(value)) return "FR";
+  if (["BE", "BEL", "BELGIQUE", "BELGIUM"].includes(value)) return "BE";
+  if (["ES", "ESP", "ESPAGNE", "SPAIN"].includes(value)) return "ES";
+  if (["DE", "DEU", "ALLEMAGNE", "GERMANY"].includes(value)) return "DE";
+  return value.slice(0, 2);
+}
+
+function isFrance(country: string | undefined | null) {
+  return normalizeCountryCode(country) === "FR";
 }
 
 function buildTrackingUrl(carrier: LogisticsCarrier, trackingNumber: string) {
@@ -87,112 +183,323 @@ function hasCarrierCredentials(carrier: LogisticsCarrier) {
   return Boolean(process.env.COLISSIMO_CONTRACT_NUMBER && process.env.COLISSIMO_PASSWORD);
 }
 
-function carrierCredentialNotice(carrier: LogisticsCarrier) {
+function carrierConfigurationError(carrier: LogisticsCarrier) {
+  if (hasCarrierCredentials(carrier)) return null;
   if (carrier === "mondial_relay") {
-    return "Les identifiants MONDIAL_RELAY_ENSEIGNE et MONDIAL_RELAY_PRIVATE_KEY ne sont pas configurés : une étiquette interne imprimable a été générée en attendant l’activation du webservice officiel.";
+    return "MONDIAL_RELAY_ENSEIGNE et MONDIAL_RELAY_PRIVATE_KEY doivent être configurés pour acheter l’étiquette officielle Mondial Relay.";
   }
-  return "Les identifiants COLISSIMO_CONTRACT_NUMBER et COLISSIMO_PASSWORD ne sont pas configurés : une étiquette interne imprimable a été générée en attendant l’activation du webservice officiel.";
+  return "COLISSIMO_CONTRACT_NUMBER et COLISSIMO_PASSWORD doivent être configurés pour acheter l’étiquette officielle Colissimo.";
 }
 
-function drawBarcodeLikePattern(page: any, x: number, y: number, width: number, height: number, seed: string) {
-  let cursor = x;
-  const max = x + width;
-  const bytes = Array.from(seed).map(char => char.charCodeAt(0));
-  let i = 0;
-  while (cursor < max) {
-    const code = bytes[i % bytes.length] || 31;
-    const barWidth = 1 + (code % 4);
-    const gap = 1 + ((code >> 2) % 3);
-    page.drawRectangle({
-      x: cursor,
-      y,
-      width: Math.min(barWidth, max - cursor),
-      height,
-      color: rgb(0.05, 0.05, 0.05),
-    });
-    cursor += barWidth + gap;
-    i += 1;
-  }
+function tariffFor(carrier: LogisticsCarrier) {
+  const envKey = `LOGISTICS_${carrier.toUpperCase()}_TARIFFS_JSON`;
+  return getEnvJson<TariffStep[]>(envKey, DEFAULT_TARIFFS[carrier]);
 }
 
-async function buildInternalLabelPdf(input: ShipmentLabelInput, trackingNumber: string) {
-  const pdfDoc = await PDFDocument.create();
-  const page = pdfDoc.addPage([420, 595]);
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const carrierLabel = LOGISTICS_CARRIERS[input.carrier];
-  const recipientName = `${input.recipient.firstName} ${input.recipient.lastName}`.trim();
-  const country = normalizeCountry(input.recipient.country);
-
-  page.drawRectangle({ x: 24, y: 24, width: 372, height: 547, borderColor: rgb(0.08, 0.08, 0.08), borderWidth: 1.5 });
-  page.drawRectangle({ x: 24, y: 516, width: 372, height: 55, color: rgb(0.05, 0.05, 0.05) });
-  page.drawText("BARBER PARADISE", { x: 40, y: 550, size: 15, font: bold, color: rgb(1, 1, 1) });
-  page.drawText(carrierLabel.toUpperCase(), { x: 40, y: 530, size: 11, font: bold, color: rgb(1, 1, 1) });
-  page.drawText("ETIQUETTE D’EXPEDITION", { x: 236, y: 550, size: 9, font: bold, color: rgb(1, 1, 1) });
-  page.drawText(input.orderNumber, { x: 236, y: 532, size: 10, font: bold, color: rgb(1, 1, 1) });
-
-  page.drawText("DESTINATAIRE", { x: 40, y: 482, size: 10, font: bold, color: rgb(0.1, 0.1, 0.1) });
-  page.drawText(recipientName || input.customerEmail, { x: 40, y: 456, size: 17, font: bold, color: rgb(0, 0, 0) });
-  page.drawText(input.recipient.address, { x: 40, y: 433, size: 12, font, color: rgb(0, 0, 0) });
-  if (input.recipient.extension) {
-    page.drawText(input.recipient.extension, { x: 40, y: 415, size: 11, font, color: rgb(0.1, 0.1, 0.1) });
-  }
-  page.drawText(`${input.recipient.postalCode} ${input.recipient.city}`.toUpperCase(), { x: 40, y: 392, size: 15, font: bold, color: rgb(0, 0, 0) });
-  page.drawText(country.toUpperCase(), { x: 40, y: 370, size: 12, font: bold, color: rgb(0, 0, 0) });
-  if (input.recipient.phone) {
-    page.drawText(`Tel. ${input.recipient.phone}`, { x: 40, y: 350, size: 10, font, color: rgb(0.15, 0.15, 0.15) });
-  }
-
-  page.drawRectangle({ x: 40, y: 247, width: 340, height: 82, borderColor: rgb(0, 0, 0), borderWidth: 1 });
-  drawBarcodeLikePattern(page, 55, 268, 310, 42, trackingNumber);
-  page.drawText(trackingNumber, { x: 93, y: 253, size: 15, font: bold, color: rgb(0, 0, 0) });
-
-  page.drawText("POIDS", { x: 40, y: 212, size: 9, font: bold, color: rgb(0.25, 0.25, 0.25) });
-  page.drawText(`${(input.totalWeightG / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 3 })} kg`, { x: 40, y: 194, size: 14, font: bold, color: rgb(0, 0, 0) });
-  page.drawText("FORMAT", { x: 150, y: 212, size: 9, font: bold, color: rgb(0.25, 0.25, 0.25) });
-  const dimensions = input.packageDimensions
-    ? `${input.packageDimensions.lengthCm}×${input.packageDimensions.widthCm}×${input.packageDimensions.heightCm} cm`
-    : "Non renseigné";
-  page.drawText(dimensions, { x: 150, y: 194, size: 12, font: bold, color: rgb(0, 0, 0) });
-  page.drawText("DATE", { x: 285, y: 212, size: 9, font: bold, color: rgb(0.25, 0.25, 0.25) });
-  page.drawText(new Date().toLocaleDateString("fr-FR"), { x: 285, y: 194, size: 12, font: bold, color: rgb(0, 0, 0) });
-
-  page.drawRectangle({ x: 40, y: 94, width: 340, height: 55, color: rgb(0.96, 0.96, 0.96) });
-  page.drawText("Document interne généré par Barber Paradise.", { x: 52, y: 128, size: 9, font: bold, color: rgb(0.2, 0.2, 0.2) });
-  page.drawText("Activez les identifiants transporteur pour obtenir l’étiquette officielle d’affranchissement.", { x: 52, y: 112, size: 8, font, color: rgb(0.25, 0.25, 0.25) });
-
-  const bytes = await pdfDoc.save();
-  return Buffer.from(bytes).toString("base64");
+function calculateBaseAmount(carrier: LogisticsCarrier, totalWeightG: number) {
+  const tariff = tariffFor(carrier).sort((a, b) => a.maxWeightG - b.maxWeightG);
+  const step = tariff.find(item => totalWeightG <= item.maxWeightG) || tariff[tariff.length - 1];
+  return step.amountCents;
 }
 
-async function createCarrierApiLabel(input: ShipmentLabelInput): Promise<ShipmentLabelResult | null> {
-  if (!hasCarrierCredentials(input.carrier)) return null;
-
-  // Les webservices Colissimo et Mondial Relay nécessitent des contrats actifs.
-  // Cette couche reste volontairement isolée : dès que les identifiants sont renseignés,
-  // l’adaptateur officiel peut retourner le PDF transporteur sans modifier l’interface admin.
-  return null;
+function insuranceLevel(carrier: LogisticsCarrier, orderValueCents: number, requestedInsuranceCents?: number) {
+  const levels = carrier === "mondial_relay" ? MONDIAL_RELAY_INSURANCE_LEVELS : COLISSIMO_INSURANCE_LEVELS;
+  const target = Math.max(orderValueCents, requestedInsuranceCents || 0, 0);
+  return levels.find(level => level >= target) ?? levels[levels.length - 1];
 }
 
-export async function createShipmentLabel(input: ShipmentLabelInput): Promise<ShipmentLabelResult> {
-  const officialLabel = await createCarrierApiLabel(input);
-  if (officialLabel) return officialLabel;
+function insuranceSurcharge(carrier: LogisticsCarrier, insuranceValueCents: number) {
+  if (insuranceValueCents <= 0) return 0;
+  if (carrier === "mondial_relay") return Math.ceil(insuranceValueCents * 0.01);
+  return Math.ceil(insuranceValueCents * 0.008);
+}
 
-  const trackingNumber =
-    input.existingTrackingNumber?.trim() || buildFallbackTrackingNumber(input.carrier, input.orderNumber);
-  const labelPdfBase64 = await buildInternalLabelPdf(input, trackingNumber);
+function buildOfferId(carrier: LogisticsCarrier, serviceCode: string, insuranceValueCents: number) {
+  return `${carrier}:${serviceCode}:ins_${insuranceValueCents}`;
+}
+
+function parseOfferId(offerId: string) {
+  const [carrier, serviceCode, insuranceToken] = offerId.split(":");
+  const insuranceValueCents = Number((insuranceToken || "").replace("ins_", ""));
+  if (!carrier || !serviceCode || Number.isNaN(insuranceValueCents)) {
+    throw new Error("Offre transporteur invalide.");
+  }
+  return { carrier: carrier as LogisticsCarrier, serviceCode, insuranceValueCents };
+}
+
+export function buildShipmentQuotes(input: ShipmentQuoteInput): ShipmentRateQuote[] {
+  const countryCode = normalizeCountryCode(input.recipient.country);
+  const domestic = countryCode === "FR";
+  const carriers: LogisticsCarrier[] = domestic
+    ? ["colissimo", "mondial_relay"]
+    : ["colissimo_international"];
+
+  return carriers.map(carrier => {
+    const insuranceValueCents = insuranceLevel(carrier, input.orderValueCents);
+    const serviceCode = carrier === "mondial_relay" ? "24R" : carrier === "colissimo" ? "DOM" : "COLI_INTER";
+    const amountCents = calculateBaseAmount(carrier, input.totalWeightG) + insuranceSurcharge(carrier, insuranceValueCents);
+    const requiresRelayPoint = carrier === "mondial_relay";
+    return {
+      id: buildOfferId(carrier, serviceCode, insuranceValueCents),
+      carrier,
+      carrierLabel: LOGISTICS_CARRIERS[carrier],
+      serviceCode,
+      serviceLabel: carrier === "mondial_relay" ? "Point Relais / Locker" : domestic ? "Domicile France" : `International ${countryCode}`,
+      deliveryMode: carrier === "mondial_relay" ? "relay" : "home",
+      amountCents,
+      currency: "EUR",
+      insuranceValueCents,
+      insuranceLabel: insuranceValueCents > 0 ? `Assurance jusqu’à ${(insuranceValueCents / 100).toLocaleString("fr-FR")} €` : "Assurance standard transporteur",
+      estimatedDeliveryDays: carrier === "mondial_relay" ? "3 à 5 jours ouvrés" : domestic ? "2 jours ouvrés indicatifs" : "3 à 8 jours ouvrés indicatifs",
+      requiresRelayPoint,
+      purchasable: hasCarrierCredentials(carrier),
+      configurationError: carrierConfigurationError(carrier),
+      source: "contract_tariff_grid",
+    } satisfies ShipmentRateQuote;
+  });
+}
+
+async function postSoap(url: string, action: string, body: string) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "text/xml; charset=utf-8",
+      SOAPAction: action,
+    },
+    body,
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`Erreur API transporteur ${response.status}: ${text.slice(0, 400)}`);
+  }
+  return text;
+}
+
+async function downloadPdfAsBase64(url: string) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Impossible de télécharger l’étiquette officielle (${response.status}).`);
+  }
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer).toString("base64");
+}
+
+async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRateQuote): Promise<ShipmentLabelResult> {
+  const contractNumber = process.env.COLISSIMO_CONTRACT_NUMBER;
+  const password = process.env.COLISSIMO_PASSWORD;
+  if (!contractNumber || !password) {
+    throw new Error(carrierConfigurationError(input.carrier) || "Configuration Colissimo absente.");
+  }
+
+  const now = new Date();
+  const depositDate = now.toISOString().slice(0, 10);
+  const productCode = input.carrier === "colissimo_international" ? "COLI" : "DOM";
+  const countryCode = normalizeCountryCode(input.recipient.country);
+  const insuranceValue = input.insuranceValueCents || quote.insuranceValueCents;
+
+  const envelope = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sls="http://sls.ws.coliposte.fr">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <sls:generateLabel>
+      <generateLabelRequest>
+        <contractNumber>${xmlEscape(contractNumber)}</contractNumber>
+        <password>${xmlEscape(password)}</password>
+        <outputFormat>
+          <x>0</x><y>0</y><outputPrintingType>PDF_10x15_300dpi</outputPrintingType>
+        </outputFormat>
+        <letter>
+          <service>
+            <productCode>${xmlEscape(productCode)}</productCode>
+            <depositDate>${xmlEscape(depositDate)}</depositDate>
+            <transportationAmount>${quote.amountCents}</transportationAmount>
+            <totalAmount>${quote.amountCents}</totalAmount>
+          </service>
+          <parcel>
+            <weight>${Math.max(input.totalWeightG / 1000, 0.01).toFixed(3)}</weight>
+            <insuranceValue>${insuranceValue}</insuranceValue>
+            <nonMachinable>false</nonMachinable>
+          </parcel>
+          <sender>
+            <senderParcelRef>${xmlEscape(input.orderNumber)}</senderParcelRef>
+            <address>
+              <companyName>${xmlEscape(process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise")}</companyName>
+              <line2>${xmlEscape(process.env.LOGISTICS_SENDER_ADDRESS || "Adresse expéditeur à configurer")}</line2>
+              <countryCode>FR</countryCode>
+              <zipCode>${xmlEscape(process.env.LOGISTICS_SENDER_POSTAL_CODE || "00000")}</zipCode>
+              <city>${xmlEscape(process.env.LOGISTICS_SENDER_CITY || "Ville")}</city>
+              <email>${xmlEscape(process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr")}</email>
+            </address>
+          </sender>
+          <addressee>
+            <addresseeParcelRef>${xmlEscape(input.orderNumber)}</addresseeParcelRef>
+            <codeBarForReference>false</codeBarForReference>
+            <serviceInfo>${xmlEscape(input.customerEmail)}</serviceInfo>
+            <address>
+              <lastName>${xmlEscape(input.recipient.lastName || input.recipient.firstName)}</lastName>
+              <firstName>${xmlEscape(input.recipient.firstName)}</firstName>
+              <line2>${xmlEscape(input.recipient.address)}</line2>
+              <line3>${xmlEscape(input.recipient.extension || "")}</line3>
+              <countryCode>${xmlEscape(countryCode)}</countryCode>
+              <zipCode>${xmlEscape(input.recipient.postalCode)}</zipCode>
+              <city>${xmlEscape(input.recipient.city)}</city>
+              <phoneNumber>${xmlEscape(input.recipient.phone || "")}</phoneNumber>
+              <email>${xmlEscape(input.customerEmail)}</email>
+            </address>
+          </addressee>
+        </letter>
+      </generateLabelRequest>
+    </sls:generateLabel>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+  const endpoint = process.env.COLISSIMO_SLS_ENDPOINT || "https://ws.colissimo.fr/sls-ws/SlsServiceWS/2.0";
+  const xml = await postSoap(endpoint, "generateLabel", envelope);
+  const trackingNumber = getXmlValue(xml, "parcelNumber") || getXmlValue(xml, "parcelNumberPartner");
+  const pdfUrl = getXmlValue(xml, "pdfUrl");
+  const labelBase64 = getXmlValue(xml, "label") || (pdfUrl ? await downloadPdfAsBase64(pdfUrl) : null);
+
+  if (!trackingNumber) {
+    throw new Error(`Colissimo n’a pas retourné de numéro de colis. Réponse: ${xml.slice(0, 600)}`);
+  }
+  if (!labelBase64 && !pdfUrl) {
+    throw new Error("Colissimo a créé l’expédition mais n’a pas retourné d’étiquette PDF exploitable.");
+  }
+
   return {
     trackingNumber,
-    carrierShipmentId: null,
+    carrierShipmentId: trackingNumber,
     trackingUrl: buildTrackingUrl(input.carrier, trackingNumber),
-    labelPdfBase64,
+    labelPdfBase64: labelBase64,
+    labelUrl: pdfUrl,
     labelFormat: "PDF",
-    labelSource: "internal_fallback",
+    labelSource: "carrier_api",
     labelGeneratedAt: new Date(),
-    labelStatus: "fallback_generated",
-    rawResponse: null,
-    notice: carrierCredentialNotice(input.carrier),
+    labelStatus: "carrier_label_created",
+    offerId: quote.id,
+    serviceCode: quote.serviceCode,
+    deliveryMode: quote.deliveryMode,
+    relayPointId: input.relayPointId || null,
+    priceCents: quote.amountCents,
+    currency: quote.currency,
+    insuranceValueCents: insuranceValue,
+    rawResponse: { carrier: "colissimo", offer: quote, responseXml: xml.slice(0, 4000) },
+    notice: null,
   };
+}
+
+function mondialRelaySecurity(values: Array<string | number | null | undefined>) {
+  const privateKey = process.env.MONDIAL_RELAY_PRIVATE_KEY || "";
+  return crypto.createHash("md5").update(values.map(value => String(value ?? "")).join("") + privateKey).digest("hex").toUpperCase();
+}
+
+async function createMondialRelayLabel(input: ShipmentLabelInput, quote: ShipmentRateQuote): Promise<ShipmentLabelResult> {
+  const enseigne = process.env.MONDIAL_RELAY_ENSEIGNE;
+  if (!enseigne || !process.env.MONDIAL_RELAY_PRIVATE_KEY) {
+    throw new Error(carrierConfigurationError("mondial_relay") || "Configuration Mondial Relay absente.");
+  }
+  if (!input.relayPointId) {
+    throw new Error("Un point relais est obligatoire pour acheter une étiquette Mondial Relay.");
+  }
+
+  const countryCode = normalizeCountryCode(input.recipient.country);
+  const poids = Math.max(input.totalWeightG, 1).toString();
+  const assurance = input.insuranceValueCents > 0 ? "1" : "0";
+  const expValeur = Math.round(input.insuranceValueCents / 100).toString();
+  const modeCol = process.env.MONDIAL_RELAY_MODE_COL || "CCC";
+  const modeLiv = process.env.MONDIAL_RELAY_MODE_LIV || "24R";
+  const values = [
+    enseigne, modeCol, modeLiv, "", "", poids, "", "", "1", expValeur, "EUR", assurance,
+    process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise", "", process.env.LOGISTICS_SENDER_ADDRESS || "",
+    process.env.LOGISTICS_SENDER_ADDRESS_2 || "", process.env.LOGISTICS_SENDER_POSTAL_CODE || "", process.env.LOGISTICS_SENDER_CITY || "", "FR",
+    process.env.LOGISTICS_SENDER_PHONE || "", process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr",
+    `${input.recipient.firstName} ${input.recipient.lastName}`.trim(), "", input.recipient.address, input.recipient.extension || "",
+    input.recipient.postalCode, input.recipient.city, countryCode, input.recipient.phone || "", input.customerEmail,
+    "", input.relayPointId, "FR", "", "FR", input.orderNumber,
+  ];
+  const security = mondialRelaySecurity(values);
+
+  const envelope = `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <WSI2_CreationExpedition xmlns="http://www.mondialrelay.fr/webservice/">
+      <Enseigne>${xmlEscape(enseigne)}</Enseigne><ModeCol>${xmlEscape(modeCol)}</ModeCol><ModeLiv>${xmlEscape(modeLiv)}</ModeLiv>
+      <NDossier>${xmlEscape(input.orderNumber)}</NDossier><NClient>${xmlEscape(input.customerEmail)}</NClient><Expe_Langage>FR</Expe_Langage>
+      <Expe_Ad1>${xmlEscape(process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise")}</Expe_Ad1><Expe_Ad2></Expe_Ad2><Expe_Ad3>${xmlEscape(process.env.LOGISTICS_SENDER_ADDRESS || "")}</Expe_Ad3><Expe_Ad4>${xmlEscape(process.env.LOGISTICS_SENDER_ADDRESS_2 || "")}</Expe_Ad4>
+      <Expe_Ville>${xmlEscape(process.env.LOGISTICS_SENDER_CITY || "")}</Expe_Ville><Expe_CP>${xmlEscape(process.env.LOGISTICS_SENDER_POSTAL_CODE || "")}</Expe_CP><Expe_Pays>FR</Expe_Pays><Expe_Tel1>${xmlEscape(process.env.LOGISTICS_SENDER_PHONE || "")}</Expe_Tel1><Expe_Mail>${xmlEscape(process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr")}</Expe_Mail>
+      <Dest_Langage>FR</Dest_Langage><Dest_Ad1>${xmlEscape(`${input.recipient.firstName} ${input.recipient.lastName}`.trim())}</Dest_Ad1><Dest_Ad2></Dest_Ad2><Dest_Ad3>${xmlEscape(input.recipient.address)}</Dest_Ad3><Dest_Ad4>${xmlEscape(input.recipient.extension || "")}</Dest_Ad4>
+      <Dest_Ville>${xmlEscape(input.recipient.city)}</Dest_Ville><Dest_CP>${xmlEscape(input.recipient.postalCode)}</Dest_CP><Dest_Pays>${xmlEscape(countryCode)}</Dest_Pays><Dest_Tel1>${xmlEscape(input.recipient.phone || "")}</Dest_Tel1><Dest_Mail>${xmlEscape(input.customerEmail)}</Dest_Mail>
+      <Poids>${xmlEscape(poids)}</Poids><Longueur>${xmlEscape(input.packageDimensions?.lengthCm || "")}</Longueur><Taille></Taille><NbColis>1</NbColis>
+      <CRT_Valeur>0</CRT_Valeur><CRT_Devise>EUR</CRT_Devise><Exp_Valeur>${xmlEscape(expValeur)}</Exp_Valeur><Exp_Devise>EUR</Exp_Devise><COL_Rel_Pays>FR</COL_Rel_Pays><LIV_Rel_Pays>FR</LIV_Rel_Pays><LIV_Rel>${xmlEscape(input.relayPointId)}</LIV_Rel><Assurance>${xmlEscape(assurance)}</Assurance><Instructions></Instructions><Security>${security}</Security>
+    </WSI2_CreationExpedition>
+  </soap:Body>
+</soap:Envelope>`;
+
+  const xml = await postSoap("https://api.mondialrelay.com/Web_Services.asmx", "http://www.mondialrelay.fr/webservice/WSI2_CreationExpedition", envelope);
+  const status = getXmlValue(xml, "STAT");
+  if (status && status !== "0") {
+    throw new Error(`Mondial Relay a refusé la création d’expédition (STAT ${status}).`);
+  }
+  const expeditionNum = getXmlValue(xml, "ExpeditionNum");
+  const labelUrlDirect = getXmlValue(xml, "URL_Etiquette");
+  if (!expeditionNum) {
+    throw new Error(`Mondial Relay n’a pas retourné de numéro d’expédition. Réponse: ${xml.slice(0, 600)}`);
+  }
+
+  let labelUrl = labelUrlDirect;
+  if (!labelUrl) {
+    const getLabelValues = [enseigne, expeditionNum, "FR"];
+    const getLabelSecurity = mondialRelaySecurity(getLabelValues);
+    const getLabelEnvelope = `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><WSI3_GetEtiquettes xmlns="http://www.mondialrelay.fr/webservice/"><Enseigne>${xmlEscape(enseigne)}</Enseigne><Expeditions>${xmlEscape(expeditionNum)}</Expeditions><Langue>FR</Langue><Security>${getLabelSecurity}</Security></WSI3_GetEtiquettes></soap:Body></soap:Envelope>`;
+    const labelXml = await postSoap("https://api.mondialrelay.com/Web_Services.asmx", "http://www.mondialrelay.fr/webservice/WSI3_GetEtiquettes", getLabelEnvelope);
+    labelUrl = getXmlValue(labelXml, "URL_PDF_10x15");
+  }
+  if (!labelUrl) {
+    throw new Error("Mondial Relay a créé l’expédition mais n’a pas retourné d’URL d’étiquette PDF.");
+  }
+
+  return {
+    trackingNumber: expeditionNum,
+    carrierShipmentId: expeditionNum,
+    trackingUrl: buildTrackingUrl("mondial_relay", expeditionNum),
+    labelPdfBase64: await downloadPdfAsBase64(labelUrl),
+    labelUrl,
+    labelFormat: "PDF",
+    labelSource: "carrier_api",
+    labelGeneratedAt: new Date(),
+    labelStatus: "carrier_label_created",
+    offerId: quote.id,
+    serviceCode: quote.serviceCode,
+    deliveryMode: quote.deliveryMode,
+    relayPointId: input.relayPointId || null,
+    priceCents: quote.amountCents,
+    currency: quote.currency,
+    insuranceValueCents: input.insuranceValueCents,
+    rawResponse: { carrier: "mondial_relay", offer: quote, expeditionXml: xml.slice(0, 4000), labelUrl },
+    notice: null,
+  };
+}
+
+export async function createOfficialShipmentLabel(input: ShipmentLabelInput): Promise<ShipmentLabelResult> {
+  const { carrier, serviceCode, insuranceValueCents } = parseOfferId(input.offerId);
+  if (carrier !== input.carrier) {
+    throw new Error("L’offre sélectionnée ne correspond pas au transporteur demandé.");
+  }
+
+  const quote = buildShipmentQuotes(input).find(item => item.id === input.offerId);
+  if (!quote) {
+    throw new Error("Offre transporteur introuvable ou incompatible avec cette commande.");
+  }
+  if (!quote.purchasable) {
+    throw new Error(quote.configurationError || "Identifiants transporteur manquants.");
+  }
+
+  const normalizedInput = { ...input, insuranceValueCents: input.insuranceValueCents || insuranceValueCents };
+  if (serviceCode === "24R" || carrier === "mondial_relay") {
+    return createMondialRelayLabel(normalizedInput, quote);
+  }
+  return createColissimoLabel(normalizedInput, quote);
 }
 
 export async function fetchShipmentTracking(carrier: LogisticsCarrier, trackingNumber: string | null | undefined): Promise<TrackingResult> {
@@ -201,8 +508,8 @@ export async function fetchShipmentTracking(carrier: LogisticsCarrier, trackingN
   }
 
   return {
-    trackingStatus: "Suivi prêt — consultez le lien transporteur",
+    trackingStatus: "Suivi prêt — consultez le lien officiel du transporteur",
     trackingUrl: buildTrackingUrl(carrier, trackingNumber),
-    rawResponse: null,
+    rawResponse: { carrier, trackingNumber },
   };
 }

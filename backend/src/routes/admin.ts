@@ -21,7 +21,8 @@ import {
   previousMonthKey,
 } from "../services/indyReportService";
 import {
-  createShipmentLabel,
+  buildShipmentQuotes,
+  createOfficialShipmentLabel,
   fetchShipmentTracking,
   LOGISTICS_CARRIERS,
   LogisticsCarrier,
@@ -2264,27 +2265,18 @@ adminRouter.get(
   }
 );
 
-// POST /api/admin/logistics/orders/:orderId/label — Générer ou régénérer une étiquette avant expédition
-adminRouter.post(
-  "/logistics/orders/:orderId/label",
+// GET /api/admin/logistics/orders/:orderId/quotes — Calculer les offres transporteur avant achat
+adminRouter.get(
+  "/logistics/orders/:orderId/quotes",
   requireAdmin,
-  async (req: AuthRequest, res: Response): Promise<void> => {
+  async (req: Request, res: Response): Promise<void> => {
     try {
-      const carrier = String(req.body?.carrier || "") as LogisticsCarrier;
-      const trackingNumber =
-        String(req.body?.trackingNumber || "").trim() || null;
-      const packagingIdRaw = req.body?.packagingId;
+      const packagingIdRaw = req.query?.packagingId;
       const packagingId =
-        packagingIdRaw === undefined ||
-        packagingIdRaw === null ||
-        packagingIdRaw === ""
+        packagingIdRaw === undefined || packagingIdRaw === null || packagingIdRaw === ""
           ? null
           : parseInt(String(packagingIdRaw), 10);
 
-      if (!Object.keys(LOGISTICS_CARRIERS).includes(carrier)) {
-        res.status(400).json({ error: "Transporteur invalide" });
-        return;
-      }
       if (packagingId !== null && !Number.isFinite(packagingId)) {
         res.status(400).json({ error: "Carton sélectionné invalide" });
         return;
@@ -2293,25 +2285,7 @@ adminRouter.post(
       const order = await prisma.order.findUnique({
         where: { id: req.params.orderId },
         include: {
-          items: {
-            include: {
-              product: {
-                select: {
-                  id: true,
-                  name: true,
-                  images: true,
-                  weightG: true,
-                  lengthCm: true,
-                  widthCm: true,
-                  heightCm: true,
-                  isFragile: true,
-                  isLiquid: true,
-                  isAerosol: true,
-                  logisticNote: true,
-                },
-              },
-            },
-          },
+          items: { include: { product: true } },
           customer: true,
           shippingAddress: true,
         },
@@ -2321,17 +2295,8 @@ adminRouter.post(
         res.status(404).json({ error: "Commande non trouvée" });
         return;
       }
-      if (!["paid", "processing", "shipped"].includes(order.status)) {
-        res.status(400).json({
-          error:
-            "Seules les commandes payées, en préparation ou déjà expédiées peuvent recevoir une étiquette",
-        });
-        return;
-      }
       if (!order.shippingAddress) {
-        res.status(400).json({
-          error: "Adresse d’expédition obligatoire pour générer l’étiquette",
-        });
+        res.status(400).json({ error: "Adresse d’expédition obligatoire pour calculer les offres" });
         return;
       }
 
@@ -2343,16 +2308,14 @@ adminRouter.post(
         return;
       }
 
-      const metrics = computeLogisticsMetrics(
-        order.items as LogisticsOrderItem[]
-      );
+      const metrics = computeLogisticsMetrics(order.items as LogisticsOrderItem[]);
       const totalWeightG = metrics.totalWeightG + (packaging?.selfWeightG || 0);
-      const labelResult = await createShipmentLabel({
-        carrier,
+      const quotes = buildShipmentQuotes({
         orderNumber: order.orderNumber,
         customerEmail: order.email,
         recipient: order.shippingAddress,
         totalWeightG,
+        orderValueCents: Math.round(Number(order.total || 0) * 100),
         packageDimensions: packaging
           ? {
               lengthCm: packaging.lengthCm,
@@ -2360,7 +2323,95 @@ adminRouter.post(
               heightCm: packaging.heightCm,
             }
           : null,
-        existingTrackingNumber: trackingNumber,
+      });
+
+      res.json({ quotes, totalWeightG, packaging });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur calcul offres transporteur" });
+    }
+  }
+);
+
+// POST /api/admin/logistics/orders/:orderId/label — Acheter une étiquette officielle transporteur
+adminRouter.post(
+  "/logistics/orders/:orderId/label",
+  requireAdmin,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const carrier = String(req.body?.carrier || "") as LogisticsCarrier;
+      const offerId = String(req.body?.offerId || "").trim();
+      const relayPointId = String(req.body?.relayPointId || "").trim() || null;
+      const insuranceValueCents = Math.max(parseInt(String(req.body?.insuranceValueCents || "0"), 10) || 0, 0);
+      const packagingIdRaw = req.body?.packagingId;
+      const packagingId =
+        packagingIdRaw === undefined || packagingIdRaw === null || packagingIdRaw === ""
+          ? null
+          : parseInt(String(packagingIdRaw), 10);
+
+      if (!Object.keys(LOGISTICS_CARRIERS).includes(carrier)) {
+        res.status(400).json({ error: "Transporteur invalide" });
+        return;
+      }
+      if (!offerId) {
+        res.status(400).json({ error: "Offre transporteur obligatoire" });
+        return;
+      }
+      if (packagingId !== null && !Number.isFinite(packagingId)) {
+        res.status(400).json({ error: "Carton sélectionné invalide" });
+        return;
+      }
+
+      const order = await prisma.order.findUnique({
+        where: { id: req.params.orderId },
+        include: {
+          items: { include: { product: true } },
+          customer: true,
+          shippingAddress: true,
+        },
+      });
+
+      if (!order) {
+        res.status(404).json({ error: "Commande non trouvée" });
+        return;
+      }
+      if (!["paid", "processing", "shipped"].includes(order.status)) {
+        res.status(400).json({ error: "Commande non éligible à l’achat d’étiquette" });
+        return;
+      }
+      if (!order.shippingAddress) {
+        res.status(400).json({ error: "Adresse d’expédition obligatoire pour acheter l’étiquette" });
+        return;
+      }
+
+      const packaging = packagingId
+        ? await prisma.packaging.findUnique({ where: { id: packagingId } })
+        : null;
+      if (packagingId && !packaging) {
+        res.status(404).json({ error: "Carton sélectionné introuvable" });
+        return;
+      }
+
+      const metrics = computeLogisticsMetrics(order.items as LogisticsOrderItem[]);
+      const totalWeightG = metrics.totalWeightG + (packaging?.selfWeightG || 0);
+      const labelResult = await createOfficialShipmentLabel({
+        carrier,
+        offerId,
+        insuranceValueCents,
+        packagingId,
+        relayPointId,
+        orderNumber: order.orderNumber,
+        customerEmail: order.email,
+        recipient: order.shippingAddress,
+        totalWeightG,
+        orderValueCents: Math.round(Number(order.total || 0) * 100),
+        packageDimensions: packaging
+          ? {
+              lengthCm: packaging.lengthCm,
+              widthCm: packaging.widthCm,
+              heightCm: packaging.heightCm,
+            }
+          : null,
       });
 
       const shipment = await prisma.shipment.upsert({
@@ -2373,13 +2424,20 @@ adminRouter.post(
           trackingUrl: labelResult.trackingUrl,
           packagingId,
           totalWeightG,
+          offerId: labelResult.offerId,
+          serviceCode: labelResult.serviceCode,
+          deliveryMode: labelResult.deliveryMode,
+          relayPointId: labelResult.relayPointId,
+          labelPriceCents: labelResult.priceCents,
+          labelCurrency: labelResult.currency,
+          insuranceValueCents: labelResult.insuranceValueCents,
           labelPdfBase64: labelResult.labelPdfBase64,
           labelFormat: labelResult.labelFormat,
           labelSource: labelResult.labelSource,
           labelStatus: labelResult.labelStatus,
           labelGeneratedAt: labelResult.labelGeneratedAt,
           carrierRawResponse: asPrismaJson(labelResult.rawResponse),
-          lastTrackingStatus: "Étiquette générée",
+          lastTrackingStatus: "Étiquette officielle achetée",
           lastTrackingSyncAt: new Date(),
           shippedBy: req.user?.email || null,
         },
@@ -2390,13 +2448,20 @@ adminRouter.post(
           trackingUrl: labelResult.trackingUrl,
           packagingId,
           totalWeightG,
+          offerId: labelResult.offerId,
+          serviceCode: labelResult.serviceCode,
+          deliveryMode: labelResult.deliveryMode,
+          relayPointId: labelResult.relayPointId,
+          labelPriceCents: labelResult.priceCents,
+          labelCurrency: labelResult.currency,
+          insuranceValueCents: labelResult.insuranceValueCents,
           labelPdfBase64: labelResult.labelPdfBase64,
           labelFormat: labelResult.labelFormat,
           labelSource: labelResult.labelSource,
           labelStatus: labelResult.labelStatus,
           labelGeneratedAt: labelResult.labelGeneratedAt,
           carrierRawResponse: asPrismaJson(labelResult.rawResponse),
-          lastTrackingStatus: "Étiquette générée",
+          lastTrackingStatus: "Étiquette officielle achetée",
           lastTrackingSyncAt: new Date(),
           shippedBy: req.user?.email || null,
         },
@@ -2409,12 +2474,13 @@ adminRouter.post(
         label: {
           downloadUrl: `/api/admin/logistics/orders/${order.id}/label`,
           source: labelResult.labelSource,
-          notice: labelResult.notice,
+          priceCents: labelResult.priceCents,
+          insuranceValueCents: labelResult.insuranceValueCents,
         },
       });
     } catch (err) {
       console.error(err);
-      res.status(500).json({ error: "Erreur génération étiquette" });
+      res.status(500).json({ error: err instanceof Error ? err.message : "Erreur achat étiquette transporteur" });
     }
   }
 );
@@ -2469,6 +2535,7 @@ adminRouter.post(
           },
           customer: true,
           shippingAddress: true,
+          shipment: true,
         },
       });
 
@@ -2502,21 +2569,38 @@ adminRouter.post(
         order.items as LogisticsOrderItem[]
       );
       const totalWeightG = metrics.totalWeightG + (packaging?.selfWeightG || 0);
-      const labelResult = await createShipmentLabel({
-        carrier,
-        orderNumber: order.orderNumber,
-        customerEmail: order.email,
-        recipient: order.shippingAddress,
-        totalWeightG,
-        packageDimensions: packaging
-          ? {
-              lengthCm: packaging.lengthCm,
-              widthCm: packaging.widthCm,
-              heightCm: packaging.heightCm,
-            }
-          : null,
-        existingTrackingNumber: trackingNumber,
-      });
+      if (!order.shipment || order.shipment.labelSource !== "carrier_api" || !order.shipment.trackingNumber) {
+        res.status(400).json({
+          error:
+            "Achetez d’abord une étiquette officielle Colissimo ou Mondial Relay avant de marquer la commande comme expédiée.",
+        });
+        return;
+      }
+      if (order.shipment.carrier !== carrier) {
+        res.status(400).json({
+          error: "Le transporteur choisi ne correspond pas à l’étiquette officielle déjà achetée.",
+        });
+        return;
+      }
+      const labelResult = {
+        carrierShipmentId: order.shipment.carrierShipmentId,
+        trackingNumber: order.shipment.trackingNumber,
+        trackingUrl: order.shipment.trackingUrl,
+        labelPdfBase64: order.shipment.labelPdfBase64,
+        labelFormat: order.shipment.labelFormat || "PDF",
+        labelSource: order.shipment.labelSource,
+        labelStatus: order.shipment.labelStatus || "carrier_label_created",
+        labelGeneratedAt: order.shipment.labelGeneratedAt || new Date(),
+        offerId: order.shipment.offerId,
+        serviceCode: order.shipment.serviceCode,
+        deliveryMode: order.shipment.deliveryMode,
+        relayPointId: order.shipment.relayPointId,
+        priceCents: order.shipment.labelPriceCents,
+        currency: order.shipment.labelCurrency || "EUR",
+        insuranceValueCents: order.shipment.insuranceValueCents,
+        rawResponse: order.shipment.carrierRawResponse as Record<string, unknown> | null,
+        notice: null,
+      };
       const shippedAt = new Date();
       const [shipment, updatedOrder] = await prisma.$transaction([
         prisma.shipment.upsert({
@@ -2529,6 +2613,13 @@ adminRouter.post(
             trackingUrl: labelResult.trackingUrl,
             packagingId,
             totalWeightG,
+            offerId: labelResult.offerId,
+            serviceCode: labelResult.serviceCode,
+            deliveryMode: labelResult.deliveryMode,
+            relayPointId: labelResult.relayPointId,
+            labelPriceCents: labelResult.priceCents,
+            labelCurrency: labelResult.currency,
+            insuranceValueCents: labelResult.insuranceValueCents,
             labelPdfBase64: labelResult.labelPdfBase64,
             labelFormat: labelResult.labelFormat,
             labelSource: labelResult.labelSource,
@@ -2547,6 +2638,13 @@ adminRouter.post(
             trackingUrl: labelResult.trackingUrl,
             packagingId,
             totalWeightG,
+            offerId: labelResult.offerId,
+            serviceCode: labelResult.serviceCode,
+            deliveryMode: labelResult.deliveryMode,
+            relayPointId: labelResult.relayPointId,
+            labelPriceCents: labelResult.priceCents,
+            labelCurrency: labelResult.currency,
+            insuranceValueCents: labelResult.insuranceValueCents,
             labelPdfBase64: labelResult.labelPdfBase64,
             labelFormat: labelResult.labelFormat,
             labelSource: labelResult.labelSource,

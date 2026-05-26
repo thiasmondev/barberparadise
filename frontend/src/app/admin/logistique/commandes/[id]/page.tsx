@@ -17,12 +17,14 @@ import {
   Truck,
 } from "lucide-react";
 import {
-  generateLogisticsLabel,
   getAdminToken,
+  getLogisticsCarrierQuotes,
   getLogisticsLabelUrl,
   getLogisticsOrder,
+  purchaseLogisticsLabel,
   shipLogisticsOrder,
   syncLogisticsTracking,
+  type LogisticsCarrierQuote,
   type LogisticsPreparationDetail,
 } from "@/lib/admin-api";
 
@@ -41,6 +43,13 @@ function formatWeight(value: number | null | undefined) {
   return `${value.toLocaleString("fr-FR")} g`;
 }
 
+function formatPrice(cents: number) {
+  return (cents / 100).toLocaleString("fr-FR", {
+    style: "currency",
+    currency: "EUR",
+  });
+}
+
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("fr-FR", {
     day: "2-digit",
@@ -57,7 +66,8 @@ export default function AdminLogisticsPreparationPage() {
   const [detail, setDetail] = useState<LogisticsPreparationDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [generatingLabel, setGeneratingLabel] = useState(false);
+  const [loadingQuotes, setLoadingQuotes] = useState(false);
+  const [purchasingLabel, setPurchasingLabel] = useState(false);
   const [syncingTracking, setSyncingTracking] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -67,8 +77,10 @@ export default function AdminLogisticsPreparationPage() {
     label: false,
   });
   const [carrier, setCarrier] = useState<CarrierValue>("colissimo");
-  const [trackingNumber, setTrackingNumber] = useState("");
   const [packagingId, setPackagingId] = useState<string>("");
+  const [quotes, setQuotes] = useState<LogisticsCarrierQuote[]>([]);
+  const [selectedOfferId, setSelectedOfferId] = useState("");
+  const [relayPointId, setRelayPointId] = useState("");
 
   const loadDetail = async () => {
     if (!params?.id) return;
@@ -84,8 +96,6 @@ export default function AdminLogisticsPreparationPage() {
       );
       if (data.shipment?.carrier)
         setCarrier(data.shipment.carrier as CarrierValue);
-      if (data.shipment?.trackingNumber)
-        setTrackingNumber(data.shipment.trackingNumber);
       if (data.shipment?.packagingId)
         setPackagingId(String(data.shipment.packagingId));
     } catch (err: any) {
@@ -109,7 +119,34 @@ export default function AdminLogisticsPreparationPage() {
   const totalWeight =
     (detail?.recommendation.totalWeightG || 0) +
     (selectedPackaging?.selfWeightG || 0);
-  const hasGeneratedLabel = Boolean(detail?.shipment?.labelStatus);
+  const hasGeneratedLabel = detail?.shipment?.labelSource === "carrier_api" && Boolean(detail?.shipment?.trackingNumber);
+  const selectedQuote = quotes.find(quote => quote.id === selectedOfferId) || null;
+
+  const loadQuotes = async () => {
+    if (!detail) return;
+    setLoadingQuotes(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await getLogisticsCarrierQuotes(
+        detail.order.id,
+        packagingId ? Number(packagingId) : null
+      );
+      setQuotes(result.quotes);
+      const firstPurchasable = result.quotes.find(quote => quote.purchasable) || result.quotes[0];
+      if (firstPurchasable) {
+        setSelectedOfferId(firstPurchasable.id);
+        setCarrier(firstPurchasable.carrier as CarrierValue);
+      }
+      if (!result.quotes.some(quote => quote.purchasable)) {
+        setNotice("Les devis sont visibles, mais les identifiants Colissimo/Mondial Relay doivent être configurés pour acheter l’étiquette officielle.");
+      }
+    } catch (err: any) {
+      setError(err.message || "Erreur lors du calcul des devis transporteurs");
+    } finally {
+      setLoadingQuotes(false);
+    }
+  };
 
   const downloadLabel = async () => {
     if (!detail) return;
@@ -142,26 +179,34 @@ export default function AdminLogisticsPreparationPage() {
     }
   };
 
-  const handleGenerateLabel = async () => {
-    if (!detail) return;
-    setGeneratingLabel(true);
+  const handlePurchaseLabel = async () => {
+    if (!detail || !selectedQuote) return;
+    if (selectedQuote.requiresRelayPoint && !relayPointId.trim()) {
+      setError("Un identifiant de Point Relais est obligatoire pour acheter une étiquette Mondial Relay.");
+      return;
+    }
+    setPurchasingLabel(true);
     setError("");
     setNotice("");
     try {
-      const result = await generateLogisticsLabel(detail.order.id, {
-        carrier,
-        trackingNumber: trackingNumber.trim(),
+      const result = await purchaseLogisticsLabel(detail.order.id, {
+        carrier: selectedQuote.carrier,
+        offerId: selectedQuote.id,
+        insuranceValueCents: selectedQuote.insuranceValueCents,
+        relayPointId: relayPointId.trim() || null,
         packagingId: packagingId ? Number(packagingId) : null,
       });
       setDetail({ ...detail, shipment: result.shipment });
-      setTrackingNumber(result.shipment.trackingNumber || "");
+      setCarrier(result.shipment.carrier as CarrierValue);
       setChecked(current => ({ ...current, label: true }));
-      if (result.label?.notice) setNotice(result.label.notice);
+      setNotice(
+        `Étiquette officielle achetée : ${formatPrice(result.label?.priceCents || selectedQuote.amountCents)}, assurance ${formatPrice(result.label?.insuranceValueCents || selectedQuote.insuranceValueCents)}.`
+      );
       await downloadLabel();
     } catch (err: any) {
-      setError(err.message || "Erreur lors de la génération de l’étiquette");
+      setError(err.message || "Erreur lors de l’achat de l’étiquette officielle");
     } finally {
-      setGeneratingLabel(false);
+      setPurchasingLabel(false);
     }
   };
 
@@ -181,11 +226,10 @@ export default function AdminLogisticsPreparationPage() {
 
   const handleShip = async () => {
     if (!detail || !checklistReady) return;
-    if (
-      !hasGeneratedLabel &&
-      !confirm("Aucune étiquette n’a encore été générée. Continuer quand même ?")
-    )
+    if (!hasGeneratedLabel) {
+      setError("Achetez d’abord une étiquette officielle Colissimo ou Mondial Relay avant de marquer la commande comme expédiée.");
       return;
+    }
     if (
       !confirm(
         `Marquer la commande ${detail.order.orderNumber} comme expédiée ?`
@@ -197,7 +241,6 @@ export default function AdminLogisticsPreparationPage() {
     try {
       await shipLogisticsOrder(detail.order.id, {
         carrier,
-        trackingNumber: trackingNumber.trim(),
         packagingId: packagingId ? Number(packagingId) : null,
       });
       router.push("/admin/logistique/commandes");
@@ -357,136 +400,139 @@ export default function AdminLogisticsPreparationPage() {
         <aside className="space-y-6">
           <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
             <h2 className="mb-4 flex items-center gap-2 font-bold text-gray-900">
-              <Truck size={18} className="text-cyan-600" /> Expédition
+              <Truck size={18} className="text-cyan-600" /> Devis transporteur
             </h2>
             <div className="space-y-4">
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-gray-500">
-                  Transporteur
-                </span>
-                <select
-                  value={carrier}
-                  onChange={e => setCarrier(e.target.value as CarrierValue)}
-                  className="input"
-                >
-                  {CARRIERS.map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-gray-500">
-                  Numéro de suivi
-                </span>
-                <input
-                  value={trackingNumber}
-                  onChange={e => setTrackingNumber(e.target.value)}
-                  placeholder="ex: 6A12345678901"
-                  className="input"
-                />
-              </label>
               <label className="block">
                 <span className="mb-1 block text-xs font-medium text-gray-500">
                   Carton / emballage
                 </span>
                 <select
                   value={packagingId}
-                  onChange={e => setPackagingId(e.target.value)}
+                  onChange={e => {
+                    setPackagingId(e.target.value);
+                    setQuotes([]);
+                    setSelectedOfferId("");
+                  }}
                   className="input"
                 >
                   <option value="">Aucun emballage sélectionné</option>
                   {detail.packagings.map(box => (
                     <option key={box.id} value={box.id}>
-                      {box.name} — {formatWeight(box.maxWeightG)} max · stock{" "}
-                      {box.stock}
+                      {box.name} — {formatWeight(box.maxWeightG)} max · stock {box.stock}
                     </option>
                   ))}
                 </select>
               </label>
               {detail.recommendation.recommendedBox && (
                 <div className="rounded-xl border border-cyan-100 bg-cyan-50 p-3 text-xs text-cyan-800">
-                  <strong>Carton recommandé :</strong>{" "}
-                  {detail.recommendation.recommendedBox.name}, selon le volume
-                  estimé de{" "}
-                  {detail.recommendation.totalVolumeCm3.toLocaleString("fr-FR")}{" "}
-                  cm³.
+                  <strong>Carton recommandé :</strong> {detail.recommendation.recommendedBox.name}, selon le volume estimé de {detail.recommendation.totalVolumeCm3.toLocaleString("fr-FR")} cm³.
                 </div>
               )}
               <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600">
                 Poids colis estimé : <strong>{formatWeight(totalWeight)}</strong>
               </div>
+              <button
+                onClick={loadQuotes}
+                disabled={loadingQuotes || saving}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-100 bg-cyan-50 px-4 py-3 text-sm font-bold text-cyan-800 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {loadingQuotes ? <Loader2 className="animate-spin" size={17} /> : <RefreshCw size={17} />}
+                Calculer les prix Colissimo / Mondial Relay
+              </button>
+              {quotes.length > 0 && (
+                <div className="space-y-2">
+                  {quotes.map(quote => (
+                    <label key={quote.id} className={`block cursor-pointer rounded-xl border p-3 text-sm ${selectedOfferId === quote.id ? "border-cyan-400 bg-cyan-50" : "border-gray-100 bg-white"}`}>
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="radio"
+                          checked={selectedOfferId === quote.id}
+                          onChange={() => {
+                            setSelectedOfferId(quote.id);
+                            setCarrier(quote.carrier as CarrierValue);
+                          }}
+                          className="mt-1"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between gap-3 font-bold text-gray-900">
+                            <span>{quote.carrierLabel}</span>
+                            <span>{formatPrice(quote.amountCents)}</span>
+                          </div>
+                          <div className="mt-1 text-xs text-gray-500">
+                            {quote.serviceLabel} · {quote.estimatedDeliveryDays} · {quote.insuranceLabel}
+                          </div>
+                          {quote.configurationError && (
+                            <div className="mt-2 rounded-lg bg-amber-50 px-2 py-1 text-xs text-amber-800">
+                              {quote.configurationError}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+              {selectedQuote?.requiresRelayPoint && (
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-gray-500">
+                    Identifiant Point Relais Mondial Relay
+                  </span>
+                  <input
+                    value={relayPointId}
+                    onChange={e => setRelayPointId(e.target.value)}
+                    placeholder="ex: 123456"
+                    className="input"
+                  />
+                </label>
+              )}
             </div>
           </section>
 
           <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
             <h2 className="mb-4 flex items-center gap-2 font-bold text-gray-900">
-              <Download size={18} className="text-cyan-600" /> Étiquette et suivi
+              <Download size={18} className="text-cyan-600" /> Achat étiquette officielle
             </h2>
             {detail.shipment?.labelStatus ? (
               <div className="mb-4 space-y-2 rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-xs text-emerald-800">
                 <div>
-                  <strong>Étiquette :</strong> {detail.shipment.labelStatus} · source {" "}
-                  {detail.shipment.labelSource || "interne"}
+                  <strong>Étiquette officielle :</strong> {detail.shipment.labelStatus} · {detail.shipment.labelSource}
                 </div>
-                {detail.shipment.trackingNumber && (
-                  <div>
-                    <strong>Suivi :</strong> {detail.shipment.trackingNumber}
-                  </div>
-                )}
-                {detail.shipment.lastTrackingStatus && (
-                  <div>
-                    <strong>Statut transporteur :</strong>{" "}
-                    {detail.shipment.lastTrackingStatus}
-                  </div>
-                )}
+                {detail.shipment.trackingNumber && <div><strong>Suivi :</strong> {detail.shipment.trackingNumber}</div>}
+                {detail.shipment.lastTrackingStatus && <div><strong>Statut transporteur :</strong> {detail.shipment.lastTrackingStatus}</div>}
                 {detail.shipment.trackingUrl && (
-                  <a
-                    href={detail.shipment.trackingUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 font-semibold text-emerald-900 underline"
-                  >
+                  <a href={detail.shipment.trackingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-semibold text-emerald-900 underline">
                     Ouvrir le suivi transporteur <ExternalLink size={13} />
                   </a>
                 )}
               </div>
             ) : (
               <p className="mb-4 text-sm text-gray-500">
-                Générez l’étiquette PDF avant de coller le bordereau sur le colis.
+                Calculez les offres, choisissez Colissimo ou Mondial Relay avec assurance, puis achetez l’étiquette officielle via l’API transporteur.
               </p>
             )}
             <div className="grid gap-2">
               <button
-                onClick={handleGenerateLabel}
-                disabled={generatingLabel || saving}
+                onClick={handlePurchaseLabel}
+                disabled={!selectedQuote || !selectedQuote.purchasable || purchasingLabel || saving || hasGeneratedLabel}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-3 text-sm font-bold text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {generatingLabel ? (
-                  <Loader2 className="animate-spin" size={17} />
-                ) : (
-                  <Download size={17} />
-                )}
-                Générer / télécharger l’étiquette PDF
+                {purchasingLabel ? <Loader2 className="animate-spin" size={17} /> : <Download size={17} />}
+                Acheter l’étiquette officielle
               </button>
               <button
                 onClick={downloadLabel}
-                disabled={!hasGeneratedLabel || generatingLabel}
+                disabled={!hasGeneratedLabel || purchasingLabel}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Download size={17} /> Télécharger l’étiquette existante
+                <Download size={17} /> Télécharger l’étiquette achetée
               </button>
               <button
                 onClick={handleSyncTracking}
                 disabled={!detail.shipment?.trackingNumber || syncingTracking}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-100 bg-cyan-50 px-4 py-3 text-sm font-bold text-cyan-800 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {syncingTracking ? (
-                  <Loader2 className="animate-spin" size={17} />
-                ) : (
-                  <RefreshCw size={17} />
-                )}
+                {syncingTracking ? <Loader2 className="animate-spin" size={17} /> : <RefreshCw size={17} />}
                 Synchroniser le suivi
               </button>
             </div>

@@ -237,6 +237,13 @@ model Shipment {
   packagingId        Int?
   packaging          Packaging? @relation(fields: [packagingId], references: [id])
   totalWeightG       Int?
+  offerId            String?
+  serviceCode        String?
+  deliveryMode       String?
+  relayPointId       String?
+  labelPriceCents    Int?
+  labelCurrency      String?    @default("EUR")
+  insuranceValueCents Int?
   labelPdfBase64     String?
   labelFormat        String?
   labelSource        String?
@@ -251,6 +258,7 @@ model Shipment {
 
   @@index([carrier])
   @@index([labelStatus])
+  @@index([offerId])
   @@index([shippedAt])
 }
 

@@ -1187,6 +1187,13 @@ export interface ShipmentRecord {
   trackingUrl: string | null;
   packagingId: number | null;
   totalWeightG: number | null;
+  offerId: string | null;
+  serviceCode: string | null;
+  deliveryMode: "home" | "relay" | string | null;
+  relayPointId: string | null;
+  labelPriceCents: number | null;
+  labelCurrency: string | null;
+  insuranceValueCents: number | null;
   labelFormat: string | null;
   labelSource: string | null;
   labelStatus: string | null;
@@ -1217,6 +1224,24 @@ export interface LogisticsPreparationDetail {
   shipment: ShipmentRecord | null;
 }
 
+export interface LogisticsCarrierQuote {
+  id: string;
+  carrier: ShipmentRecord["carrier"];
+  carrierLabel: string;
+  serviceCode: string;
+  serviceLabel: string;
+  deliveryMode: "home" | "relay";
+  amountCents: number;
+  currency: "EUR";
+  insuranceValueCents: number;
+  insuranceLabel: string;
+  estimatedDeliveryDays: string;
+  requiresRelayPoint: boolean;
+  purchasable: boolean;
+  configurationError: string | null;
+  source: "contract_tariff_grid";
+}
+
 export function getLogisticsOrders() {
   return adminFetch<{
     orders: LogisticsOrderListItem[];
@@ -1231,11 +1256,25 @@ export function getLogisticsOrder(orderId: string) {
   );
 }
 
-export function generateLogisticsLabel(
+export function getLogisticsCarrierQuotes(
+  orderId: string,
+  packagingId?: number | null
+) {
+  const query = packagingId ? `?packagingId=${packagingId}` : "";
+  return adminFetch<{
+    quotes: LogisticsCarrierQuote[];
+    totalWeightG: number;
+    packaging: Packaging | null;
+  }>(`/api/admin/logistics/orders/${orderId}/quotes${query}`);
+}
+
+export function purchaseLogisticsLabel(
   orderId: string,
   data: {
     carrier: ShipmentRecord["carrier"];
-    trackingNumber?: string;
+    offerId: string;
+    insuranceValueCents?: number;
+    relayPointId?: string | null;
     packagingId?: number | null;
   }
 ) {
@@ -1245,7 +1284,9 @@ export function generateLogisticsLabel(
     label?: {
       downloadUrl: string;
       source: string;
-      notice: string | null;
+      priceCents: number;
+      currency?: string;
+      insuranceValueCents: number;
     };
   }>(`/api/admin/logistics/orders/${orderId}/label`, {
     method: "POST",
@@ -1257,7 +1298,6 @@ export function shipLogisticsOrder(
   orderId: string,
   data: {
     carrier: ShipmentRecord["carrier"];
-    trackingNumber?: string;
     packagingId?: number | null;
   }
 ) {
@@ -1268,7 +1308,8 @@ export function shipLogisticsOrder(
     label?: {
       downloadUrl: string;
       source: string;
-      notice: string | null;
+      priceCents?: number;
+      insuranceValueCents?: number;
     };
   }>(`/api/admin/logistics/orders/${orderId}/ship`, {
     method: "POST",
