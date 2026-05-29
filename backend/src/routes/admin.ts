@@ -2806,6 +2806,88 @@ adminRouter.get(
   }
 );
 
+
+// GET /api/admin/orders/shipment-labels — Étiquettes générées
+adminRouter.get(
+  "/orders/shipment-labels",
+  requireAdmin,
+  async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const shipments = await prisma.shipment.findMany({
+        where: {
+          labelPdfBase64: { not: null },
+        },
+        include: {
+          order: { select: { id: true, orderNumber: true } },
+        },
+        orderBy: [{ labelGeneratedAt: "desc" }, { createdAt: "desc" }],
+      });
+
+      res.json({
+        labels: shipments.map((shipment) => ({
+          id: shipment.id,
+          orderId: shipment.orderId,
+          orderNumber: shipment.order.orderNumber,
+          carrier: shipment.carrier,
+          trackingNumber: shipment.trackingNumber,
+          labelStatus: shipment.shippedAt ? "shipped" : shipment.labelStatus || "generated",
+          labelGeneratedAt: shipment.labelGeneratedAt,
+          shippedAt: shipment.shippedAt,
+          downloadUrl: `/api/admin/logistics/orders/${shipment.orderId}/label`,
+        })),
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur serveur" });
+    }
+  }
+);
+
+// GET /api/admin/orders/abandoned-carts — Paniers non convertis depuis plus d'une heure
+adminRouter.get(
+  "/orders/abandoned-carts",
+  requireAdmin,
+  async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const abandonedBefore = new Date(Date.now() - 60 * 60 * 1000);
+      const carts = await prisma.abandonedCartSession.findMany({
+        where: {
+          itemCount: { gt: 0 },
+          convertedAt: null,
+          lastSeenAt: { lte: abandonedBefore },
+        },
+        orderBy: { lastSeenAt: "desc" },
+        take: 100,
+      });
+
+      res.json({
+        carts: carts.map((cart) => {
+          const items = Array.isArray(cart.items) ? cart.items : [];
+          return {
+            id: cart.id,
+            email: cart.email || "Email non renseigné",
+            itemCount: cart.itemCount,
+            total: cart.total,
+            abandonedAt: cart.lastSeenAt,
+            products: items
+              .map((item) => {
+                if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+                const product = item as { name?: unknown; quantity?: unknown };
+                if (typeof product.name !== "string") return null;
+                const quantity = typeof product.quantity === "number" ? product.quantity : 1;
+                return `${product.name} × ${quantity}`;
+              })
+              .filter(Boolean),
+          };
+        }),
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur serveur" });
+    }
+  }
+);
+
 // GET /api/admin/orders/:id — Détail d'une commande
 adminRouter.get(
   "/orders/:id",

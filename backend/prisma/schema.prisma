@@ -63,6 +63,23 @@ model Product {
 }
 
 // ─── EMBALLAGES LOGISTIQUES ───────────────────────────────────
+
+model AbandonedCartSession {
+  id               String    @id
+  email            String?
+  items            Json
+  itemCount        Int       @default(0)
+  total            Float     @default(0)
+  convertedOrderId String?
+  convertedAt      DateTime?
+  lastSeenAt       DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([lastSeenAt])
+  @@index([convertedAt])
+}
+
 model Packaging {
   id                Int     @id @default(autoincrement())
   name              String // ex: "Carton S", "Enveloppe bulle", "Carton renforcé L"

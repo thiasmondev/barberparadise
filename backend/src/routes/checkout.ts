@@ -44,6 +44,7 @@ type CheckoutRequestBody = {
   isB2B?: boolean;
   vatNumber?: string;
   promoCode?: string;
+  cartSessionId?: string;
 };
 
 const CURRENCY = "EUR";
@@ -278,6 +279,79 @@ checkoutRouter.post("/promo/validate", async (req: Request, res: Response): Prom
   }
 });
 
+
+checkoutRouter.post("/cart-session", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const body = req.body as {
+      sessionId?: string;
+      email?: string;
+      cartItems?: CheckoutCartItem[];
+    };
+
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim().slice(0, 80) : "";
+    if (!sessionId) {
+      res.status(400).json({ error: "Session panier requise" });
+      return;
+    }
+
+    const normalizedItems = Array.isArray(body.cartItems)
+      ? body.cartItems
+          .map((item) => ({
+            productId: item.productId || item.id,
+            quantity: Number.isInteger(item.quantity) && item.quantity > 0 ? item.quantity : 0,
+          }))
+          .filter((item) => item.productId && item.quantity > 0)
+      : [];
+
+    const products = normalizedItems.length
+      ? await prisma.product.findMany({
+          where: { id: { in: normalizedItems.map((item) => item.productId as string) } },
+          select: { id: true, name: true, price: true },
+        })
+      : [];
+    const productById = new Map(products.map((product) => [product.id, product]));
+    const items = normalizedItems
+      .map((item) => {
+        const product = productById.get(item.productId as string);
+        if (!product) return null;
+        return {
+          productId: product.id,
+          name: product.name,
+          price: product.price,
+          quantity: item.quantity,
+        };
+      })
+      .filter(Boolean) as Array<{ productId: string; name: string; price: number; quantity: number }>;
+
+    const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
+    const total = money(items.reduce((sum, item) => sum + item.price * item.quantity, 0));
+    const email = typeof body.email === "string" && body.email.includes("@") ? body.email.trim().toLowerCase() : null;
+
+    await prisma.abandonedCartSession.upsert({
+      where: { id: sessionId },
+      update: {
+        email: email || undefined,
+        items,
+        itemCount,
+        total,
+        lastSeenAt: new Date(),
+      },
+      create: {
+        id: sessionId,
+        email,
+        items,
+        itemCount,
+        total,
+      },
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Erreur suivi panier abandonné", err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
 checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<void> => {
   try {
     const body = req.body as CheckoutRequestBody;
@@ -407,6 +481,13 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         },
       },
     });
+
+    if (body.cartSessionId) {
+      await prisma.abandonedCartSession.updateMany({
+        where: { id: body.cartSessionId },
+        data: { convertedOrderId: order.id, convertedAt: new Date(), itemCount: 0 },
+      });
+    }
 
     if (promoResolution.promoCode) {
       await prisma.promoCode.update({ where: { id: promoResolution.promoCode.id }, data: { usedCount: { increment: 1 } } });

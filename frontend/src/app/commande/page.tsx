@@ -86,7 +86,7 @@ function supportsApplePay(): boolean {
 }
 
 export default function CheckoutPage() {
-  const { items, total } = useCart();
+  const { items, total, cartSessionId } = useCart();
   const { customer, isAuthenticated, isLoading: customerLoading } = useCustomerAuth();
   const [step, setStep] = useState<Step>("contact");
   const [guestCheckout, setGuestCheckout] = useState(false);
@@ -219,6 +219,29 @@ export default function CheckoutPage() {
   }, []);
 
   useEffect(() => {
+    if (!cartSessionId || !form.email.includes("@") || items.length === 0) return;
+    const controller = new AbortController();
+
+    fetch(`${API_URL}/api/checkout/cart-session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: cartSessionId,
+        email: form.email,
+        cartItems: items.map((item) => ({
+          productId: item.product.id,
+          quantity: item.quantity,
+        })),
+      }),
+      signal: controller.signal,
+    }).catch(() => {
+      // Le suivi des paniers abandonnés reste non bloquant pour le tunnel de commande.
+    });
+
+    return () => controller.abort();
+  }, [cartSessionId, form.email, items]);
+
+  useEffect(() => {
     const controller = new AbortController();
     async function loadMethods() {
       setMethodsLoading(true);
@@ -294,6 +317,7 @@ export default function CheckoutPage() {
           cartItems: items.map((item) => ({ productId: item.product.id, quantity: item.quantity })),
           customerEmail: form.email,
           customerId: isAuthenticated && customer ? customer.id : undefined,
+          cartSessionId,
           shippingAddress: {
             firstName: form.prenom,
             lastName: form.nom,

@@ -367,3 +367,5 @@
 - [x] Corriger l’intégration Colissimo pour utiliser `COLISSIMO_API_KEY` dans le bloc credential apiKey et documenter la variable dans `.env.example`.
 
 - [x] Corriger l’erreur SOAP Colissimo SLS `Invalid content XML` en supprimant le bloc `credential`, en envoyant `COLISSIMO_API_KEY` via `fields/CUSER_KEY` et en réordonnançant les champs XML stricts du WSDL.
+
+- [x] Refaire la navigation admin de la section Commandes avec quatre onglets URL : commandes, brouillons, étiquettes d’expédition et paniers abandonnés, avec endpoints backend et suivi des sessions panier non converties.

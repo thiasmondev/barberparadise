@@ -2,6 +2,7 @@
 export const dynamic = "force-dynamic";
 import { useEffect, useState, useCallback } from "react";
 import { getAdminOrders, updateOrderStatus } from "@/lib/admin-api";
+import AdminOrdersTabs from "@/components/admin/AdminOrdersTabs";
 import type { Order } from "@/types";
 import Link from "next/link";
 import {
@@ -88,6 +89,7 @@ export default function AdminOrdersPage() {
           ))}
         </select>
       </div>
+      <AdminOrdersTabs />
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

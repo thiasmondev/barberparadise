@@ -261,6 +261,39 @@ export function updateOrderStatus(id: string, status: string) {
   });
 }
 
+export interface AdminShipmentLabelItem {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  carrier: string;
+  trackingNumber: string | null;
+  labelStatus: string | null;
+  labelGeneratedAt: string | null;
+  shippedAt: string | null;
+  downloadUrl: string;
+}
+
+export function getAdminShipmentLabels() {
+  return adminFetch<{ labels: AdminShipmentLabelItem[] }>(
+    "/api/admin/orders/shipment-labels"
+  );
+}
+
+export interface AdminAbandonedCartItem {
+  id: string;
+  email: string;
+  itemCount: number;
+  total: number;
+  abandonedAt: string;
+  products: string[];
+}
+
+export function getAdminAbandonedCarts() {
+  return adminFetch<{ carts: AdminAbandonedCartItem[] }>(
+    "/api/admin/orders/abandoned-carts"
+  );
+}
+
 // ─── Customers ───────────────────────────────────────────────
 
 export function getAdminCustomers(params?: {

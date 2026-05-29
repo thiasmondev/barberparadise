@@ -5,6 +5,7 @@ import { Product, CartItem } from "@/types";
 
 interface CartContextType {
   items: CartItem[];
+  cartSessionId: string;
   addItem: (product: Product, quantity?: number) => void;
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
@@ -13,12 +14,23 @@ interface CartContextType {
   total: number;
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
+const CART_SESSION_KEY = "barberparadise-cart-session";
+
+function createCartSessionId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `cart-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
+  const [cartSessionId, setCartSessionId] = useState("");
 
-  // Charger le panier depuis localStorage
+  // Charger le panier et la session de suivi depuis localStorage
   useEffect(() => {
     const saved = localStorage.getItem("barberparadise-cart");
     if (saved) {
@@ -28,12 +40,40 @@ export function CartProvider({ children }: { children: ReactNode }) {
         // ignore
       }
     }
+
+    const existingSessionId = localStorage.getItem(CART_SESSION_KEY);
+    const sessionId = existingSessionId || createCartSessionId();
+    localStorage.setItem(CART_SESSION_KEY, sessionId);
+    setCartSessionId(sessionId);
   }, []);
 
   // Sauvegarder le panier dans localStorage
   useEffect(() => {
     localStorage.setItem("barberparadise-cart", JSON.stringify(items));
   }, [items]);
+
+  // Synchroniser le panier avec le backend pour l’onglet admin Paniers abandonnés.
+  useEffect(() => {
+    if (!cartSessionId) return;
+    const controller = new AbortController();
+
+    fetch(`${API_URL}/api/checkout/cart-session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: cartSessionId,
+        cartItems: items.map((item) => ({
+          productId: item.product.id,
+          quantity: item.quantity,
+        })),
+      }),
+      signal: controller.signal,
+    }).catch(() => {
+      // Le suivi des paniers abandonnés ne doit jamais bloquer l’expérience d’achat.
+    });
+
+    return () => controller.abort();
+  }, [cartSessionId, items]);
 
   const addItem = (product: Product, quantity = 1) => {
     setItems((prev) => {
@@ -65,7 +105,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  const clearCart = () => setItems([]);
+  const clearCart = () => {
+    setItems([]);
+    const nextSessionId = createCartSessionId();
+    localStorage.setItem(CART_SESSION_KEY, nextSessionId);
+    setCartSessionId(nextSessionId);
+  };
 
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const total = items.reduce(
@@ -75,7 +120,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   return (
     <CartContext.Provider
-      value={{ items, addItem, removeItem, updateQuantity, clearCart, itemCount, total }}
+      value={{ items, cartSessionId, addItem, removeItem, updateQuantity, clearCart, itemCount, total }}
     >
       {children}
     </CartContext.Provider>
