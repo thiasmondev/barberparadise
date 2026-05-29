@@ -369,3 +369,5 @@
 - [x] Corriger l’erreur SOAP Colissimo SLS `Invalid content XML` en supprimant le bloc `credential`, en envoyant `COLISSIMO_API_KEY` via `fields/CUSER_KEY` et en réordonnançant les champs XML stricts du WSDL.
 
 - [x] Refaire la navigation admin de la section Commandes avec quatre onglets URL : commandes, brouillons, étiquettes d’expédition et paniers abandonnés, avec endpoints backend et suivi des sessions panier non converties.
+
+- [x] Refaire l’interface admin Commandes en style Shopify : KPI, tableau enrichi, détail deux colonnes, timeline et panneau latéral de création d’étiquette d’expédition.

@@ -234,6 +234,7 @@ export function getAdminOrders(params?: {
   page?: number;
   limit?: number;
   status?: string;
+  search?: string;
 }) {
   const sp = new URLSearchParams();
   if (params) {
@@ -247,6 +248,12 @@ export function getAdminOrders(params?: {
     total: number;
     page: number;
     pages: number;
+    summary?: {
+      ordersToday: number;
+      itemsOrdered: number;
+      processedOrders: number;
+      deliveredOrders: number;
+    };
   }>(`/api/admin/orders${q ? `?${q}` : ""}`);
 }
 

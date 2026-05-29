@@ -178,9 +178,27 @@ export interface Order {
     firstName: string;
     lastName: string;
     email: string;
+    phone?: string | null;
+    _count?: { orders: number };
   } | null;
   items: OrderItem[];
   shippingAddress?: ShippingAddress | null;
+  shipment?: {
+    id: string;
+    carrier: string;
+    trackingNumber?: string | null;
+    trackingUrl?: string | null;
+    packagingId?: number | null;
+    totalWeightG?: number | null;
+    deliveryMode?: string | null;
+    relayPointId?: string | null;
+    labelStatus?: string | null;
+    labelGeneratedAt?: string | null;
+    shippedAt?: string | null;
+    labelPriceCents?: number | null;
+    labelCurrency?: string | null;
+    serviceCode?: string | null;
+  } | null;
 }
 
 export interface OrderItem {

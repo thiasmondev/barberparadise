@@ -2772,32 +2772,61 @@ adminRouter.get(
         page = "1",
         limit = "20",
         status,
+        search,
       } = req.query as Record<string, string>;
-      const skip = (parseInt(page) - 1) * parseInt(limit);
+      const pageNumber = Math.max(1, parseInt(page) || 1);
+      const pageSize = Math.max(1, Math.min(100, parseInt(limit) || 20));
+      const skip = (pageNumber - 1) * pageSize;
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const where: any = {};
       if (status) where.status = status;
-      const [orders, total] = await Promise.all([
+      if (search?.trim()) {
+        const term = search.trim();
+        where.OR = [
+          { orderNumber: { contains: term, mode: "insensitive" } },
+          { email: { contains: term, mode: "insensitive" } },
+          { customerEmail: { contains: term, mode: "insensitive" } },
+          { customer: { firstName: { contains: term, mode: "insensitive" } } },
+          { customer: { lastName: { contains: term, mode: "insensitive" } } },
+        ];
+      }
+      const [orders, total, todayOrders, todayItems, processedOrders, deliveredOrders] = await Promise.all([
         prisma.order.findMany({
           where,
           include: {
             items: true,
             shippingAddress: true,
+            shipment: true,
             customer: {
               select: { firstName: true, lastName: true, email: true },
             },
           },
           orderBy: { createdAt: "desc" },
           skip,
-          take: parseInt(limit),
+          take: pageSize,
         }),
         prisma.order.count({ where }),
+        prisma.order.count({ where: { createdAt: { gte: startOfToday } } }),
+        prisma.orderItem.aggregate({
+          where: { order: { createdAt: { gte: startOfToday } } },
+          _sum: { quantity: true },
+        }),
+        prisma.order.count({ where: { status: { in: ["processing", "shipped", "delivered"] } } }),
+        prisma.order.count({ where: { status: "delivered" } }),
       ]);
       res.json({
         orders,
         total,
-        page: parseInt(page),
-        pages: Math.ceil(total / parseInt(limit)),
+        page: pageNumber,
+        pages: Math.ceil(total / pageSize),
+        summary: {
+          ordersToday: todayOrders,
+          itemsOrdered: todayItems._sum.quantity || 0,
+          processedOrders,
+          deliveredOrders,
+        },
       });
     } catch (err) {
       console.error(err);
@@ -2896,7 +2925,14 @@ adminRouter.get(
     try {
       const order = await prisma.order.findUnique({
         where: { id: req.params.id },
-        include: { items: true, shippingAddress: true, customer: true },
+        include: {
+          items: true,
+          shippingAddress: true,
+          shipment: true,
+          customer: {
+            include: { _count: { select: { orders: true } } },
+          },
+        },
       });
       if (!order) {
         res.status(404).json({ error: "Commande non trouvée" });
