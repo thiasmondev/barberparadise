@@ -180,7 +180,7 @@ function hasCarrierCredentials(carrier: LogisticsCarrier) {
   if (carrier === "mondial_relay") {
     return Boolean(process.env.MONDIAL_RELAY_ENSEIGNE && process.env.MONDIAL_RELAY_PRIVATE_KEY);
   }
-  return Boolean(process.env.COLISSIMO_CONTRACT_NUMBER && process.env.COLISSIMO_PASSWORD);
+  return Boolean(process.env.COLISSIMO_API_KEY);
 }
 
 function carrierConfigurationError(carrier: LogisticsCarrier) {
@@ -188,7 +188,7 @@ function carrierConfigurationError(carrier: LogisticsCarrier) {
   if (carrier === "mondial_relay") {
     return "MONDIAL_RELAY_ENSEIGNE et MONDIAL_RELAY_PRIVATE_KEY doivent être configurés pour acheter l’étiquette officielle Mondial Relay.";
   }
-  return "COLISSIMO_CONTRACT_NUMBER et COLISSIMO_PASSWORD doivent être configurés pour acheter l’étiquette officielle Colissimo.";
+  return "COLISSIMO_API_KEY doit être configurée pour acheter l’étiquette officielle Colissimo.";
 }
 
 function tariffFor(carrier: LogisticsCarrier) {
@@ -285,9 +285,8 @@ async function downloadPdfAsBase64(url: string) {
 }
 
 async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRateQuote): Promise<ShipmentLabelResult> {
-  const contractNumber = process.env.COLISSIMO_CONTRACT_NUMBER;
-  const password = process.env.COLISSIMO_PASSWORD;
-  if (!contractNumber || !password) {
+  const apiKey = process.env.COLISSIMO_API_KEY;
+  if (!apiKey) {
     throw new Error(carrierConfigurationError(input.carrier) || "Configuration Colissimo absente.");
   }
 
@@ -303,8 +302,9 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
   <soapenv:Body>
     <sls:generateLabel>
       <generateLabelRequest>
-        <contractNumber>${xmlEscape(contractNumber)}</contractNumber>
-        <password>${xmlEscape(password)}</password>
+        <credential>
+          <apiKey>${xmlEscape(apiKey)}</apiKey>
+        </credential>
         <outputFormat>
           <x>0</x><y>0</y><outputPrintingType>PDF_10x15_300dpi</outputPrintingType>
         </outputFormat>

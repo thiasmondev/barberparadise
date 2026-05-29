@@ -363,3 +363,5 @@
 - Validation : build backend réussi, build frontend réussi, `git diff --check` réussi.
 
 - [x] Refaire la galerie d’images de la page produit avec image carrée sur fond blanc, navigation overlay mobile/desktop, miniatures roses et lightbox native React sans librairie externe.
+
+- [x] Corriger l’intégration Colissimo pour utiliser `COLISSIMO_API_KEY` dans le bloc credential apiKey et documenter la variable dans `.env.example`.
