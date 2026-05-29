@@ -365,3 +365,5 @@
 - [x] Refaire la galerie d’images de la page produit avec image carrée sur fond blanc, navigation overlay mobile/desktop, miniatures roses et lightbox native React sans librairie externe.
 
 - [x] Corriger l’intégration Colissimo pour utiliser `COLISSIMO_API_KEY` dans le bloc credential apiKey et documenter la variable dans `.env.example`.
+
+- [x] Corriger l’erreur SOAP Colissimo SLS `Invalid content XML` en supprimant le bloc `credential`, en envoyant `COLISSIMO_API_KEY` via `fields/CUSER_KEY` et en réordonnançant les champs XML stricts du WSDL.

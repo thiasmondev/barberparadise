@@ -302,11 +302,10 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
   <soapenv:Body>
     <sls:generateLabel>
       <generateLabelRequest>
-        <credential>
-          <apiKey>${xmlEscape(apiKey)}</apiKey>
-        </credential>
         <outputFormat>
-          <x>0</x><y>0</y><outputPrintingType>PDF_10x15_300dpi</outputPrintingType>
+          <x>0</x>
+          <y>0</y>
+          <outputPrintingType>PDF_10x15_300dpi</outputPrintingType>
         </outputFormat>
         <letter>
           <service>
@@ -316,8 +315,8 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
             <totalAmount>${quote.amountCents}</totalAmount>
           </service>
           <parcel>
-            <weight>${Math.max(input.totalWeightG / 1000, 0.01).toFixed(3)}</weight>
             <insuranceValue>${insuranceValue}</insuranceValue>
+            <weight>${Math.max(input.totalWeightG / 1000, 0.01).toFixed(3)}</weight>
             <nonMachinable>false</nonMachinable>
           </parcel>
           <sender>
@@ -326,8 +325,8 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
               <companyName>${xmlEscape(process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise")}</companyName>
               <line2>${xmlEscape(process.env.LOGISTICS_SENDER_ADDRESS || "Adresse expéditeur à configurer")}</line2>
               <countryCode>FR</countryCode>
-              <zipCode>${xmlEscape(process.env.LOGISTICS_SENDER_POSTAL_CODE || "00000")}</zipCode>
               <city>${xmlEscape(process.env.LOGISTICS_SENDER_CITY || "Ville")}</city>
+              <zipCode>${xmlEscape(process.env.LOGISTICS_SENDER_POSTAL_CODE || "00000")}</zipCode>
               <email>${xmlEscape(process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr")}</email>
             </address>
           </sender>
@@ -341,13 +340,19 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
               <line2>${xmlEscape(input.recipient.address)}</line2>
               <line3>${xmlEscape(input.recipient.extension || "")}</line3>
               <countryCode>${xmlEscape(countryCode)}</countryCode>
-              <zipCode>${xmlEscape(input.recipient.postalCode)}</zipCode>
               <city>${xmlEscape(input.recipient.city)}</city>
+              <zipCode>${xmlEscape(input.recipient.postalCode)}</zipCode>
               <phoneNumber>${xmlEscape(input.recipient.phone || "")}</phoneNumber>
               <email>${xmlEscape(input.customerEmail)}</email>
             </address>
           </addressee>
         </letter>
+        <fields>
+          <field>
+            <key>CUSER_KEY</key>
+            <value>${xmlEscape(apiKey)}</value>
+          </field>
+        </fields>
       </generateLabelRequest>
     </sls:generateLabel>
   </soapenv:Body>
