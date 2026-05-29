@@ -361,3 +361,5 @@
 - Interface : l’admin logistique calcule les devis, compare les offres, impose le point relais pour Mondial Relay, achète l’étiquette officielle avant expédition, puis autorise le marquage expédié uniquement si une étiquette transporteur officielle existe.
 - Configuration : ajout des variables `.env.example` pour les identifiants Colissimo/Mondial Relay, l’adresse expéditeur et les grilles tarifaires contractuelles.
 - Validation : build backend réussi, build frontend réussi, `git diff --check` réussi.
+
+- [x] Refaire la galerie d’images de la page produit avec image carrée sur fond blanc, navigation overlay mobile/desktop, miniatures roses et lightbox native React sans librairie externe.

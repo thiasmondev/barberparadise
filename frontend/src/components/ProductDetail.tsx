@@ -24,6 +24,7 @@ export default function ProductDetail({ product }: { product: Product }) {
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [wishlistLoading, setWishlistLoading] = useState(false);
   const [wishlistMessage, setWishlistMessage] = useState("");
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const publicPrice = typeof product.pricePublic === "number" ? product.pricePublic : product.price;
   const proPrice = typeof product.priceProEur === "number" ? product.priceProEur : null;
   const selectedVariantPublicPrice = typeof selectedVariant?.pricePublic === "number" ? selectedVariant.pricePublic : selectedVariant?.price ?? publicPrice;
@@ -46,6 +47,43 @@ export default function ProductDetail({ product }: { product: Product }) {
     }
     return images;
   }, [selectedVariant, images]);
+
+  const hasMultipleImages = displayImages.length > 1;
+
+  const goToPreviousImage = () => {
+    if (!hasMultipleImages) return;
+    setSelectedImage((current) => (current - 1 + displayImages.length) % displayImages.length);
+  };
+
+  const goToNextImage = () => {
+    if (!hasMultipleImages) return;
+    setSelectedImage((current) => (current + 1) % displayImages.length);
+  };
+
+  useEffect(() => {
+    if (selectedImage >= displayImages.length) {
+      setSelectedImage(0);
+    }
+  }, [displayImages.length, selectedImage]);
+
+  useEffect(() => {
+    if (!isLightboxOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsLightboxOpen(false);
+      }
+    };
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isLightboxOpen]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -132,30 +170,59 @@ export default function ProductDetail({ product }: { product: Product }) {
           {/* ─── GALERIE ─── */}
           <div className="min-w-0 w-full max-w-full">
             {/* Image principale */}
-            <div className="relative mb-4 aspect-square w-full max-w-full overflow-hidden bg-[#1c1b1b]">
+            <div className="group relative mb-4 aspect-square w-full max-w-full overflow-hidden rounded-2xl bg-white">
               {displayImages[selectedImage] ? (
-                <Image
-                  src={displayImages[selectedImage]}
-                  alt={product.name}
-                  fill
-                  className="max-w-full object-contain p-4 opacity-90 transition-opacity duration-300 hover:opacity-100 sm:p-8"
-                  sizes="(max-width: 1024px) 100vw, 50vw"
-                  priority
-                />
+                <button
+                  type="button"
+                  onClick={() => setIsLightboxOpen(true)}
+                  className="relative block h-full w-full max-w-full cursor-zoom-in overflow-hidden"
+                  aria-label="Agrandir l'image produit"
+                >
+                  <Image
+                    src={displayImages[selectedImage]}
+                    alt={product.name}
+                    fill
+                    className="max-h-full max-w-full object-contain p-4 transition-transform duration-300 ease-out sm:p-8"
+                    sizes="(max-width: 1024px) 100vw, 50vw"
+                    priority
+                  />
+                </button>
               ) : (
-                <div className="flex items-center justify-center h-full text-gray-600 text-xs tracking-widest uppercase">
+                <div className="flex h-full items-center justify-center text-xs uppercase tracking-widest text-gray-500">
                   Aucune image
                 </div>
               )}
+
+              {hasMultipleImages && (
+                <>
+                  <button
+                    type="button"
+                    onClick={goToPreviousImage}
+                    className="absolute left-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/70 text-xl font-black text-white shadow-lg backdrop-blur transition-all duration-300 hover:bg-[#ff4a8d] md:opacity-0 md:group-hover:opacity-100"
+                    aria-label="Image précédente"
+                  >
+                    ←
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goToNextImage}
+                    className="absolute right-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/70 text-xl font-black text-white shadow-lg backdrop-blur transition-all duration-300 hover:bg-[#ff4a8d] md:opacity-0 md:group-hover:opacity-100"
+                    aria-label="Image suivante"
+                  >
+                    →
+                  </button>
+                </>
+              )}
+
               {/* Badges */}
-              <div className="absolute top-4 left-4 flex flex-col gap-2">
+              <div className="absolute left-4 top-4 flex flex-col gap-2">
                 {product.isNew && (
-                  <span className="bg-white text-black text-[10px] font-black tracking-widest px-3 py-1 uppercase">
+                  <span className="bg-white px-3 py-1 text-[10px] font-black uppercase tracking-widest text-black shadow-sm">
                     NOUVEAU
                   </span>
                 )}
                 {discount && (
-                  <span className="bg-[#ff4a8d] text-white text-[10px] font-black tracking-widest px-3 py-1 uppercase">
+                  <span className="bg-[#ff4a8d] px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white shadow-sm">
                     -{discount}%
                   </span>
                 )}
@@ -163,25 +230,88 @@ export default function ProductDetail({ product }: { product: Product }) {
             </div>
 
             {/* Miniatures */}
-            {displayImages.length > 1 && (
+            {hasMultipleImages && (
               <div className="flex max-w-full gap-3 overflow-x-auto pb-2">
                 {displayImages.map((img, i) => (
                   <button
-                    key={i}
+                    key={`${img}-${i}`}
+                    type="button"
                     onClick={() => setSelectedImage(i)}
-                    className={`h-20 w-20 max-w-full shrink-0 overflow-hidden border-2 bg-[#1c1b1b] transition-colors ${
-                      i === selectedImage ? "border-[#ff4a8d]" : "border-transparent hover:border-white/20"
+                    className={`relative aspect-square h-20 w-20 shrink-0 overflow-hidden rounded-xl border-2 bg-white transition-all duration-200 ${
+                      i === selectedImage ? "border-[#ff4a8d] shadow-[0_0_0_3px_rgba(255,74,141,0.18)]" : "border-transparent hover:border-[#ff4a8d]/50"
                     }`}
+                    aria-label={`Afficher l'image produit ${i + 1}`}
+                    aria-current={i === selectedImage ? "true" : undefined}
                   >
                     <Image
                       src={img}
                       alt={`${product.name} - ${i + 1}`}
-                      width={80}
-                      height={80}
-                      className="h-auto max-w-full object-contain p-1 opacity-80 transition-opacity hover:opacity-100"
+                      fill
+                      className="object-contain p-2"
+                      sizes="80px"
                     />
                   </button>
                 ))}
+              </div>
+            )}
+
+            {isLightboxOpen && displayImages[selectedImage] && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+                onClick={() => setIsLightboxOpen(false)}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Galerie produit agrandie"
+              >
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setIsLightboxOpen(false);
+                  }}
+                  className="absolute right-4 top-4 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-white text-2xl font-black text-black transition-colors hover:bg-[#ff4a8d] hover:text-white"
+                  aria-label="Fermer la galerie"
+                >
+                  ×
+                </button>
+
+                {hasMultipleImages && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        goToPreviousImage();
+                      }}
+                      className="absolute left-4 top-1/2 z-20 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-3xl font-black text-white backdrop-blur transition-colors hover:bg-[#ff4a8d]"
+                      aria-label="Image précédente"
+                    >
+                      ←
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        goToNextImage();
+                      }}
+                      className="absolute right-4 top-1/2 z-20 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-3xl font-black text-white backdrop-blur transition-colors hover:bg-[#ff4a8d]"
+                      aria-label="Image suivante"
+                    >
+                      →
+                    </button>
+                  </>
+                )}
+
+                <div className="relative h-full max-h-[90vh] w-full max-w-6xl" onClick={(event) => event.stopPropagation()}>
+                  <Image
+                    src={displayImages[selectedImage]}
+                    alt={product.name}
+                    fill
+                    className="object-contain"
+                    sizes="100vw"
+                    priority
+                  />
+                </div>
               </div>
             )}
           </div>
