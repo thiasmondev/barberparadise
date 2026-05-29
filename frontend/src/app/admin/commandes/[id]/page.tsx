@@ -4,15 +4,20 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
+  AlertCircle,
   ArrowLeft,
   CalendarClock,
   CheckCircle2,
   Download,
+  ExternalLink,
+  FileText,
   Loader2,
   Mail,
   MapPin,
   Package,
   Phone,
+  Scale,
+  ShieldCheck,
   StickyNote,
   Truck,
   User,
@@ -28,6 +33,7 @@ import {
   updateOrderStatus,
   type LogisticsCarrierQuote,
   type LogisticsPreparationDetail,
+  type LogisticsPreparationItem,
   type ShipmentRecord,
 } from "@/lib/admin-api";
 import type { Order, Packaging, ShippingAddress } from "@/types";
@@ -80,6 +86,24 @@ function carrierLabel(carrier?: string | null) {
   return carrier || "Non défini";
 }
 
+function gramsToKgInput(value?: number | null) {
+  if (!value || value <= 0) return "";
+  return (value / 1000).toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function parseKgToGrams(value?: string) {
+  const normalized = (value || "").replace(",", ".").trim();
+  const parsed = Number.parseFloat(normalized);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.round(parsed * 1000);
+}
+
+function formatWeight(value?: number | null) {
+  if (!value || value <= 0) return "—";
+  if (value >= 1000) return `${(value / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 3 })} kg`;
+  return `${value.toLocaleString("fr-FR")} g`;
+}
+
 function renderAddress(address?: ShippingAddress | null) {
   if (!address) return <p className="text-sm text-gray-500">Adresse non renseignée.</p>;
   return (
@@ -120,6 +144,7 @@ export default function OrderDetailPage() {
   const [updating, setUpdating] = useState(false);
   const [notes, setNotes] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [labelStep, setLabelStep] = useState<"form" | "confirmation">("form");
   const [logistics, setLogistics] = useState<LogisticsPreparationDetail | null>(null);
   const [quotes, setQuotes] = useState<LogisticsCarrierQuote[]>([]);
   const [shipment, setShipment] = useState<ShipmentRecord | null>(null);
@@ -128,6 +153,14 @@ export default function OrderDetailPage() {
   const [labelUrl, setLabelUrl] = useState("");
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [drawerError, setDrawerError] = useState("");
+  const [itemWeightsKg, setItemWeightsKg] = useState<Record<string, string>>({});
+  const [saveProductWeights, setSaveProductWeights] = useState<Record<string, boolean>>({});
+  const [totalWeightOverrideKg, setTotalWeightOverrideKg] = useState("");
+  const [shipDate, setShipDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [sendEmailToCustomer, setSendEmailToCustomer] = useState(true);
+  const [labelPrintFormat, setLabelPrintFormat] = useState("100x150");
+  const [packingSlipFormat, setPackingSlipFormat] = useState("a4");
+  const [includePackingSlip, setIncludePackingSlip] = useState(true);
 
   const loadOrder = async () => {
     if (!id) return;
@@ -151,15 +184,31 @@ export default function OrderDetailPage() {
     return { taxes };
   }, [order]);
 
+  const initializeWeights = (items: LogisticsPreparationItem[]) => {
+    const nextWeights: Record<string, string> = {};
+    const nextSaveFlags: Record<string, boolean> = {};
+    items.forEach((item) => {
+      nextWeights[item.id] = gramsToKgInput(item.weightG);
+      nextSaveFlags[item.id] = false;
+    });
+    setItemWeightsKg(nextWeights);
+    setSaveProductWeights(nextSaveFlags);
+  };
+
   const openLabelDrawer = async () => {
     if (!order) return;
     setDrawerOpen(true);
+    setLabelStep("form");
     setDrawerLoading(true);
     setDrawerError("");
+    setQuotes([]);
+    setSelectedQuoteId("");
+    setTotalWeightOverrideKg("");
     try {
       const detail = await getLogisticsOrder(order.id);
       setLogistics(detail);
       setShipment(detail.shipment || shipment);
+      initializeWeights(detail.items);
       const recommendedId = detail.recommendation.recommendedBox?.id || detail.packagings[0]?.id || null;
       setSelectedPackagingId(recommendedId);
     } catch (err: any) {
@@ -167,6 +216,36 @@ export default function OrderDetailPage() {
     } finally {
       setDrawerLoading(false);
     }
+  };
+
+  const selectedPackaging = useMemo(() => {
+    return logistics?.packagings.find((packaging) => packaging.id === selectedPackagingId) || null;
+  }, [logistics?.packagings, selectedPackagingId]);
+
+  const articleWeightG = useMemo(() => {
+    return (logistics?.items || []).reduce((sum, item) => {
+      const unitWeightG = parseKgToGrams(itemWeightsKg[item.id]);
+      return sum + unitWeightG * item.quantity;
+    }, 0);
+  }, [logistics?.items, itemWeightsKg]);
+
+  const calculatedPackageWeightG = articleWeightG + (selectedPackaging?.selfWeightG || 0);
+  const overrideWeightG = parseKgToGrams(totalWeightOverrideKg);
+  const packageWeightG = overrideWeightG || calculatedPackageWeightG;
+  const hasZeroWeight = packageWeightG <= 0;
+  const selectedQuote = quotes.find((quote) => quote.id === selectedQuoteId);
+  const cheapestQuoteId = quotes.reduce<string>((currentId, quote) => {
+    if (!quote.purchasable) return currentId;
+    const currentQuote = quotes.find((item) => item.id === currentId);
+    if (!currentQuote || quote.amountCents < currentQuote.amountCents) return quote.id;
+    return currentId;
+  }, "");
+  const purchasableQuotes = quotes.filter((quote) => quote.purchasable);
+
+  const handlePackagingChange = (value: string) => {
+    setSelectedPackagingId(value ? Number(value) : null);
+    setQuotes([]);
+    setSelectedQuoteId("");
   };
 
   const calculateQuotes = async () => {
@@ -177,28 +256,40 @@ export default function OrderDetailPage() {
       const result = await getLogisticsCarrierQuotes(order.id, selectedPackagingId);
       setQuotes(result.quotes);
       setSelectedQuoteId(result.quotes.find((quote) => quote.purchasable)?.id || result.quotes[0]?.id || "");
+      if (!result.quotes.length) {
+        setDrawerError("Aucun devis transporteur n’a été retourné pour cette commande.");
+      }
     } catch (err: any) {
       setDrawerError(err.message || "Impossible de calculer les devis transporteur.");
+      setQuotes([]);
+      setSelectedQuoteId("");
     } finally {
       setDrawerLoading(false);
     }
   };
 
   const purchaseLabel = async () => {
-    if (!order || !selectedQuoteId) return;
-    const quote = quotes.find((item) => item.id === selectedQuoteId);
-    if (!quote) return;
+    if (!order || !selectedQuote) return;
+    if (hasZeroWeight) {
+      setDrawerError("Veuillez renseigner le poids des articles");
+      return;
+    }
+    if (!selectedQuote.purchasable) {
+      setDrawerError(selectedQuote.configurationError || "Ce devis transporteur ne peut pas être acheté.");
+      return;
+    }
     setDrawerLoading(true);
     setDrawerError("");
     try {
       const result = await purchaseLogisticsLabel(order.id, {
-        carrier: quote.carrier,
-        offerId: quote.id,
-        insuranceValueCents: quote.insuranceValueCents,
+        carrier: selectedQuote.carrier,
+        offerId: selectedQuote.id,
+        insuranceValueCents: selectedQuote.insuranceValueCents,
         packagingId: selectedPackagingId,
       });
       setShipment(result.shipment);
       setLabelUrl(result.label?.downloadUrl || getLogisticsLabelUrl(order.id));
+      setLabelStep("confirmation");
       await loadOrder();
     } catch (err: any) {
       setDrawerError(err.message || "Impossible d’acheter l’étiquette.");
@@ -207,7 +298,7 @@ export default function OrderDetailPage() {
     }
   };
 
-  const downloadLabel = async () => {
+  const downloadLabel = async (fileNameSuffix = "etiquette") => {
     if (!order) return;
     const token = getAdminToken();
     const response = await fetch(labelUrl || getLogisticsLabelUrl(order.id), {
@@ -218,7 +309,7 @@ export default function OrderDetailPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `etiquette-${order.orderNumber}.pdf`;
+    link.download = `${fileNameSuffix}-${order.orderNumber}.pdf`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -259,7 +350,9 @@ export default function OrderDetailPage() {
 
   const pay = paymentBadge(order);
   const fulfillment = fulfillmentBadge(order);
-  const selectedQuote = quotes.find((quote) => quote.id === selectedQuoteId);
+  const labelBlockerMessage = hasZeroWeight ? "Veuillez renseigner le poids des articles" : "";
+  const activeShipment = shipment || (order.shipment as ShipmentRecord | null) || null;
+  const totalItemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 text-gray-900 sm:p-6 lg:p-8">
@@ -386,58 +479,122 @@ export default function OrderDetailPage() {
       </div>
 
       {drawerOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40" onClick={() => setDrawerOpen(false)}>
-          <aside className="ml-auto flex h-full w-full max-w-xl flex-col bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
-              <div><h2 className="text-lg font-semibold text-gray-950">Créer une étiquette d'expédition</h2><p className="text-sm text-gray-500">{order.orderNumber}</p></div>
-              <button onClick={() => setDrawerOpen(false)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"><X className="h-5 w-5" /></button>
-            </div>
-            <div className="flex-1 space-y-5 overflow-y-auto p-5">
-              {drawerError && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{drawerError}</div>}
-              <div>
-                <label className="text-sm font-medium text-gray-700">Transporteur</label>
-                <select value={selectedQuoteId} onChange={(event) => setSelectedQuoteId(event.target.value)} className="mt-2 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-900">
-                  <option value="">Calculer un devis pour choisir</option>
-                  {quotes.map((quote) => <option key={quote.id} value={quote.id}>{quote.carrierLabel} · {quote.serviceLabel} · {formatPrice(quote.amountCents / 100, quote.currency)}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700">Poids colis</label>
-                <input readOnly value={`${logistics?.recommendation.packageTotalWeightG || logistics?.recommendation.totalWeightG || shipment?.totalWeightG || "—"} g`} className="mt-2 w-full rounded-xl border border-gray-300 bg-gray-50 px-3 py-2.5 text-sm text-gray-700" />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700">Emballage</label>
-                <select value={selectedPackagingId || ""} onChange={(event) => setSelectedPackagingId(event.target.value ? Number(event.target.value) : null)} className="mt-2 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-900">
-                  <option value="">Aucun emballage</option>
-                  {(logistics?.packagings || []).map((packaging: Packaging) => (
-                    <option key={packaging.id} value={packaging.id}>{packaging.name} · {packaging.lengthCm}×{packaging.widthCm}×{packaging.heightCm} cm · max {packaging.maxWeightG} g</option>
-                  ))}
-                </select>
-              </div>
-              <button onClick={calculateQuotes} disabled={drawerLoading} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">
-                {drawerLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Calculer devis
-              </button>
-              {selectedQuote && (
-                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                  <p className="text-sm font-semibold text-gray-950">Prix transporteur</p>
-                  <p className="mt-2 text-2xl font-semibold text-gray-950">{formatPrice(selectedQuote.amountCents / 100, selectedQuote.currency)}</p>
-                  <p className="mt-1 text-sm text-gray-500">{selectedQuote.carrierLabel} · {selectedQuote.serviceLabel} · {selectedQuote.estimatedDeliveryDays}</p>
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-gray-950/45 p-0 sm:p-4" onClick={() => setDrawerOpen(false)}>
+          <section className="min-h-screen bg-gray-50 text-gray-900 shadow-2xl sm:mx-auto sm:min-h-0 sm:max-w-7xl sm:rounded-3xl" onClick={(event) => event.stopPropagation()}>
+            <div className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 px-4 py-4 backdrop-blur sm:rounded-t-3xl sm:px-6">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    <span className={labelStep === "form" ? "text-gray-950" : "text-gray-400"}>1. Formulaire</span>
+                    <span>→</span>
+                    <span className={labelStep === "confirmation" ? "text-gray-950" : "text-gray-400"}>2. Confirmation</span>
+                  </div>
+                  <h2 className="mt-1 text-xl font-semibold text-gray-950 sm:text-2xl">{labelStep === "confirmation" ? "1 étiquette achetée" : "Créer une étiquette d’expédition"}</h2>
+                  <p className="text-sm text-gray-500">{order.orderNumber} · {totalItemCount} article{totalItemCount > 1 ? "s" : ""}</p>
                 </div>
-              )}
-              <button onClick={purchaseLabel} disabled={drawerLoading || !selectedQuoteId} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-50">
-                Acheter étiquette
-              </button>
-              {shipment?.trackingNumber && (
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-                  <p className="font-semibold">Étiquette générée</p>
-                  <p className="mt-1">Numéro de suivi : {shipment.trackingNumber}</p>
-                  <button onClick={downloadLabel} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
-                    <Download className="h-4 w-4" /> Télécharger PDF étiquette
-                  </button>
-                </div>
-              )}
+                <button onClick={() => setDrawerOpen(false)} className="self-start rounded-xl p-2 text-gray-500 hover:bg-gray-100 lg:self-auto"><X className="h-5 w-5" /></button>
+              </div>
             </div>
-          </aside>
+
+            {labelStep === "form" ? (
+              <div className="grid gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="space-y-5">
+                  {drawerError && (
+                    <div className="flex gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+                      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+                      <p>{drawerError}</p>
+                    </div>
+                  )}
+
+                  <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                    <div className="mb-4 flex items-center gap-2"><MapPin className="h-5 w-5 text-gray-500" /><h3 className="font-semibold text-gray-950">Adresse de livraison</h3></div>
+                    {activeShipment?.carrier === "mondial_relay" ? (
+                      <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span className="mr-2 rounded bg-red-600 px-1.5 py-0.5 text-xs font-bold text-white">MR</span>Point relais {activeShipment.relayPointId ? `· ${activeShipment.relayPointId}` : ""}</div>
+                    ) : (
+                      <div className="mb-4 inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">Colissimo à domicile</div>
+                    )}
+                    {renderAddress(order.shippingAddress)}
+                  </section>
+
+                  <section className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+                    <div className="border-b border-gray-200 px-5 py-4">
+                      <h3 className="font-semibold text-gray-950">Articles et poids</h3>
+                      <p className="mt-1 text-sm text-gray-500">Renseignez le poids unitaire en kilogrammes. Le bouton d’achat reste bloqué si le poids total vaut 0.</p>
+                    </div>
+                    <div className="divide-y divide-gray-100">
+                      {drawerLoading && !logistics ? (
+                        <div className="flex items-center gap-2 px-5 py-6 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Chargement de la préparation…</div>
+                      ) : (logistics?.items || []).map((item) => (
+                        <div key={item.id} className="grid gap-4 px-5 py-4 md:grid-cols-[minmax(0,1fr)_190px] md:items-center">
+                          <div className="flex gap-4">
+                            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50">{item.image ? <img src={item.image} alt="" className="h-full w-full object-cover" /> : <Package className="h-5 w-5 text-gray-300" />}</div>
+                            <div className="min-w-0"><p className="font-medium text-gray-950">{item.name}</p><p className="mt-1 text-sm text-gray-500">Quantité : {item.quantity}</p>{(item.isFragile || item.isLiquid || item.isAerosol) && <p className="mt-2 text-xs font-medium text-amber-700">Précaution logistique</p>}</div>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-gray-600">Poids unitaire (kg)</label>
+                            <input type="number" min="0" step="0.001" value={itemWeightsKg[item.id] || ""} onChange={(event) => setItemWeightsKg((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="0,000" className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10" />
+                            <label className="flex items-start gap-2 text-xs text-gray-500"><input type="checkbox" checked={saveProductWeights[item.id] || false} onChange={(event) => setSaveProductWeights((current) => ({ ...current, [item.id]: event.target.checked }))} className="mt-0.5 rounded border-gray-300" />Enregistrer le poids dans les détails du produit</label>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="grid gap-5 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm md:grid-cols-2">
+                    <div>
+                      <div className="mb-2 flex items-center justify-between gap-3"><label className="text-sm font-semibold text-gray-950">Emballage</label><Link href="/admin/logistique/emballages" className="inline-flex items-center gap-1 text-xs font-semibold text-gray-700 hover:text-gray-950">Ajouter un emballage <ExternalLink className="h-3.5 w-3.5" /></Link></div>
+                      <select value={selectedPackagingId || ""} onChange={(event) => handlePackagingChange(event.target.value)} className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10">
+                        <option value="">Aucun emballage</option>
+                        {(logistics?.packagings || []).map((packaging: Packaging) => <option key={packaging.id} value={packaging.id}>{packaging.name} · {packaging.lengthCm}×{packaging.widthCm}×{packaging.heightCm} cm · max {packaging.maxWeightG} g</option>)}
+                      </select>
+                      {selectedPackaging && <p className="mt-2 text-xs text-gray-500">Poids emballage : {formatWeight(selectedPackaging.selfWeightG)} · Stock : {selectedPackaging.stock}</p>}
+                    </div>
+                    <div>
+                      <label className="text-sm font-semibold text-gray-950">Poids total du colis</label>
+                      <div className="mt-2 flex rounded-xl border border-gray-300 bg-white focus-within:border-gray-900 focus-within:ring-2 focus-within:ring-gray-900/10"><span className="flex items-center border-r border-gray-200 px-3 text-gray-500"><Scale className="h-4 w-4" /></span><input type="number" min="0" step="0.001" value={totalWeightOverrideKg} onChange={(event) => setTotalWeightOverrideKg(event.target.value)} placeholder={calculatedPackageWeightG ? gramsToKgInput(calculatedPackageWeightG) : "0,000"} className="w-full rounded-r-xl px-3 py-2.5 text-sm outline-none" /></div>
+                      <p className="mt-2 text-xs text-gray-500">Calculé : articles {formatWeight(articleWeightG)} + emballage {formatWeight(selectedPackaging?.selfWeightG)} = {formatWeight(calculatedPackageWeightG)}.</p>
+                    </div>
+                  </section>
+
+                  <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-semibold text-gray-950">Devis transporteurs</h3><p className="mt-1 text-sm text-gray-500">Comparez les services disponibles avant achat.</p></div><button onClick={calculateQuotes} disabled={drawerLoading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">{drawerLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Calculer les devis</button></div>
+                    <div className="mt-4 grid gap-3">
+                      {quotes.length === 0 ? <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-500">Aucun devis calculé pour le moment.</div> : quotes.map((quote) => {
+                        const isSelected = quote.id === selectedQuoteId;
+                        const isCheapest = quote.id === cheapestQuoteId;
+                        const hasCarrierError = !quote.purchasable || quote.configurationError;
+                        return (
+                          <button key={quote.id} type="button" onClick={() => setSelectedQuoteId(quote.id)} className={`rounded-2xl border p-4 text-left transition ${isSelected ? "border-gray-950 bg-gray-50 ring-2 ring-gray-950/10" : "border-gray-200 bg-white hover:border-gray-300"}`}>
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-gray-950">{quote.carrierLabel}</p><span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">{quote.serviceLabel}</span>{isCheapest && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Le moins cher</span>}{quote.id === purchasableQuotes[0]?.id && <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">Suggéré</span>}</div><div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500"><span>Livraison : {quote.estimatedDeliveryDays}</span><span>Suivi ✓</span><span>Assurance {quote.insuranceValueCents > 0 ? "✓" : "—"}</span></div>{hasCarrierError && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{quote.configurationError || "Ce service n’est pas achetable pour cette commande."}</p>}</div><div className="text-left sm:text-right"><p className="text-xl font-semibold text-gray-950">{formatPrice(quote.amountCents / 100, quote.currency)}</p><p className="text-xs text-gray-500">{quote.requiresRelayPoint ? "Point relais requis" : "Livraison domicile"}</p></div></div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                </div>
+
+                <aside className="space-y-5 lg:sticky lg:top-24 lg:self-start">
+                  <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                    <h3 className="font-semibold text-gray-950">Résumé de l’achat</h3>
+                    <div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-gray-500">Commande</span><span className="font-medium text-gray-950">{order.orderNumber}</span></div><div className="flex justify-between gap-3"><span className="text-gray-500">Articles</span><span>{totalItemCount}</span></div><div className="flex justify-between gap-3"><span className="text-gray-500">Emballage</span><span className="text-right">{selectedPackaging?.name || "Aucun"}</span></div><div className="flex justify-between gap-3"><span className="text-gray-500">Poids total</span><span className="font-medium text-gray-950">{formatWeight(packageWeightG)}</span></div><div className="flex justify-between gap-3"><span className="text-gray-500">Transporteur</span><span className="text-right">{selectedQuote ? `${selectedQuote.carrierLabel} · ${selectedQuote.serviceLabel}` : "À choisir"}</span></div><div className="border-t border-gray-200 pt-3"><div className="flex justify-between gap-3 text-base font-semibold"><span>Coût étiquette</span><span>{selectedQuote ? formatPrice(selectedQuote.amountCents / 100, selectedQuote.currency) : "—"}</span></div></div></div>
+                    <div className="mt-5 space-y-4"><label className="block text-sm font-medium text-gray-700">Date d’expédition<input type="date" value={shipDate} onChange={(event) => setShipDate(event.target.value)} className="mt-2 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10" /></label><label className="flex items-start gap-2 text-sm text-gray-600"><input type="checkbox" checked={sendEmailToCustomer} onChange={(event) => setSendEmailToCustomer(event.target.checked)} className="mt-1 rounded border-gray-300" />Envoyer un email de suivi au client après l’achat</label>{labelBlockerMessage && <p className="rounded-xl bg-amber-50 p-3 text-sm font-medium text-amber-800">{labelBlockerMessage}</p>}<button onClick={purchaseLabel} disabled={drawerLoading || !selectedQuote || hasZeroWeight || !selectedQuote.purchasable} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50">{drawerLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />} Acheter l’étiquette</button></div>
+                  </section>
+                </aside>
+              </div>
+            ) : (
+              <div className="grid gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="space-y-5">
+                  <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-900 shadow-sm"><div className="flex gap-3"><CheckCircle2 className="mt-1 h-6 w-6 shrink-0" /><div><h3 className="text-lg font-semibold">1 étiquette achetée</h3><p className="mt-1 text-sm">{totalItemCount} article{totalItemCount > 1 ? "s" : ""} · expéditeur Barber Paradise.</p>{activeShipment?.trackingNumber && <p className="mt-2 text-sm font-medium">Numéro de suivi : {activeShipment.trackingNumber}</p>}</div></div></section>
+                  <section className="rounded-2xl border border-gray-200 bg-white shadow-sm"><div className="border-b border-gray-200 px-5 py-4"><h3 className="font-semibold text-gray-950">Récapitulatif commande</h3></div><div className="divide-y divide-gray-100 text-sm"><div className="grid gap-2 px-5 py-4 sm:grid-cols-3"><span className="text-gray-500">Commande</span><span className="font-medium text-gray-950 sm:col-span-2">{order.orderNumber}</span></div><div className="grid gap-2 px-5 py-4 sm:grid-cols-3"><span className="text-gray-500">Service</span><span className="sm:col-span-2">{selectedQuote ? `${selectedQuote.carrierLabel} · ${selectedQuote.serviceLabel}` : carrierLabel(activeShipment?.carrier)}</span></div><div className="grid gap-2 px-5 py-4 sm:grid-cols-3"><span className="text-gray-500">Coût</span><span className="font-semibold text-gray-950 sm:col-span-2">{selectedQuote ? formatPrice(selectedQuote.amountCents / 100, selectedQuote.currency) : activeShipment?.labelPriceCents ? formatPrice(activeShipment.labelPriceCents / 100, activeShipment.labelCurrency || "EUR") : "—"}</span></div></div></section>
+                  <section className="rounded-2xl border border-gray-200 bg-white shadow-sm"><div className="border-b border-gray-200 px-5 py-4"><h3 className="font-semibold text-gray-950">Détail du colis</h3></div><div className="divide-y divide-gray-100">{(logistics?.items || []).map((item) => <div key={item.id} className="flex gap-4 px-5 py-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50">{item.image ? <img src={item.image} alt="" className="h-full w-full object-cover" /> : <Package className="h-5 w-5 text-gray-300" />}</div><div className="min-w-0 flex-1"><p className="font-medium text-gray-950">{item.name}</p><p className="text-sm text-gray-500">Quantité {item.quantity} · {formatWeight(parseKgToGrams(itemWeightsKg[item.id]) * item.quantity)}</p></div></div>)}</div><div className="grid gap-3 border-t border-gray-200 px-5 py-4 text-sm sm:grid-cols-3"><div><p className="text-gray-500">Emballage</p><p className="font-medium text-gray-950">{selectedPackaging?.name || activeShipment?.packaging?.name || "—"}</p></div><div><p className="text-gray-500">Poids</p><p className="font-medium text-gray-950">{formatWeight(activeShipment?.totalWeightG || packageWeightG)}</p></div><div><p className="text-gray-500">Services</p><p className="font-medium text-gray-950">Suivi ✓ · Assurance {selectedQuote?.insuranceValueCents ? "✓" : "—"}</p></div></div></section>
+                </div>
+                <aside className="space-y-5 lg:sticky lg:top-24 lg:self-start">
+                  <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><h3 className="font-semibold text-gray-950">Documents</h3><div className="mt-4 space-y-4"><label className="block text-sm font-medium text-gray-700">Format étiquette<select value={labelPrintFormat} onChange={(event) => setLabelPrintFormat(event.target.value)} className="mt-2 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"><option value="100x150">100×150 mm</option><option value="a4">A4</option></select></label><label className="block text-sm font-medium text-gray-700">Format bordereau<select value={packingSlipFormat} onChange={(event) => setPackingSlipFormat(event.target.value)} className="mt-2 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"><option value="a4">A4</option><option value="compact">Compact</option></select></label><label className="flex items-start gap-2 text-sm text-gray-600"><input type="checkbox" checked={includePackingSlip} onChange={(event) => setIncludePackingSlip(event.target.checked)} className="mt-1 rounded border-gray-300" />Inclure le bordereau dans le colis</label><button onClick={() => downloadLabel("etiquette")} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800"><Download className="h-4 w-4" /> Télécharger PDF étiquette</button><button onClick={() => downloadLabel("bordereau")} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50"><FileText className="h-4 w-4" /> Télécharger le bordereau</button></div></section>
+                  <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><h3 className="font-semibold text-gray-950">Résumé achat</h3><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between"><span className="text-gray-500">Étiquette</span><span>{selectedQuote ? formatPrice(selectedQuote.amountCents / 100, selectedQuote.currency) : activeShipment?.labelPriceCents ? formatPrice(activeShipment.labelPriceCents / 100, activeShipment.labelCurrency || "EUR") : "—"}</span></div><div className="flex justify-between"><span className="text-gray-500">Email client</span><span>{sendEmailToCustomer ? "Activé" : "Désactivé"}</span></div><div className="flex justify-between"><span className="text-gray-500">Format</span><span>{labelPrintFormat === "100x150" ? "100×150 mm" : "A4"}</span></div></div><div className="mt-5 space-y-2"><button type="button" className="inline-flex w-full items-center justify-center rounded-xl border border-rose-200 px-4 py-3 text-sm font-semibold text-rose-700 hover:bg-rose-50">Annuler l’étiquette</button><button onClick={() => setDrawerOpen(false)} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800"><ShieldCheck className="h-4 w-4" /> Terminé</button></div></section>
+                </aside>
+              </div>
+            )}
+          </section>
         </div>
       )}
     </div>
