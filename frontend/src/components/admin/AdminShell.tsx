@@ -4,7 +4,6 @@ import { ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import AdminLoginPage from "./AdminLoginPage";
-import { getLogisticsOrders } from "@/lib/admin-api";
 import {
   LayoutDashboard,
   Package,
@@ -39,12 +38,6 @@ const NAV_ITEMS = [
   { href: "/admin/seo", label: "Agent SEO", icon: Search },
   { href: "/admin/marketing", label: "Agent Marketing", icon: Megaphone },
   { href: "/admin/geo", label: "Outils GEO", icon: Globe },
-  {
-    href: "/admin/logistique/commandes",
-    label: "Commandes à expédier",
-    icon: Truck,
-    badgeKey: "logisticsPending",
-  },
   { href: "/admin/logistique/emballages", label: "Emballages", icon: Boxes },
   { href: "/admin/parametres/expedition", label: "Expédition", icon: Truck },
   { href: "/admin/import-reviews", label: "Import Avis", icon: MessageSquare },
@@ -55,23 +48,12 @@ export default function AdminShell({ children }: { children: ReactNode }) {
   const { admin, logout, isLoading } = useAdminAuth();
   const [pathname, setPathname] = useState("/admin");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [logisticsPendingCount, setLogisticsPendingCount] = useState<
-    number | null
-  >(null);
-
   useEffect(() => {
     const syncLocation = () => setPathname(window.location.pathname);
     syncLocation();
     window.addEventListener("popstate", syncLocation);
     return () => window.removeEventListener("popstate", syncLocation);
   }, []);
-
-  useEffect(() => {
-    if (!admin) return;
-    getLogisticsOrders()
-      .then(data => setLogisticsPendingCount(data.pendingCount))
-      .catch(() => setLogisticsPendingCount(null));
-  }, [admin]);
 
   if (isLoading) {
     return (
@@ -144,10 +126,6 @@ export default function AdminShell({ children }: { children: ReactNode }) {
         <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
           {NAV_ITEMS.map(item => {
             const isActive = isNavItemActive(item.href);
-            const badgeValue =
-              item.badgeKey === "logisticsPending"
-                ? logisticsPendingCount
-                : null;
             return (
               <Link
                 key={item.href}
@@ -161,11 +139,6 @@ export default function AdminShell({ children }: { children: ReactNode }) {
               >
                 <item.icon size={18} />
                 <span className="flex-1">{item.label}</span>
-                {badgeValue !== null && badgeValue > 0 && (
-                  <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[11px] font-bold text-cyan-200">
-                    {badgeValue}
-                  </span>
-                )}
               </Link>
             );
           })}
