@@ -428,7 +428,9 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
 </soapenv:Envelope>`;
 
   const endpoint = process.env.COLISSIMO_SLS_ENDPOINT || "https://ws.colissimo.fr/sls-ws/SlsServiceWS/2.0";
-  const xml = await postSoap(endpoint, "generateLabel", envelope);
+  // Le WSDL Colissimo SLS 2.0 expose generateLabel avec un SOAPAction vide.
+  // Envoyer "generateLabel" provoque un rejet SOAP côté Colissimo.
+  const xml = await postSoap(endpoint, '""', envelope);
   const trackingNumber = getXmlValue(xml, "parcelNumber") || getXmlValue(xml, "parcelNumberPartner");
   const pdfUrl = getXmlValue(xml, "pdfUrl");
   const labelBase64 = getXmlValue(xml, "label") || (pdfUrl ? await downloadPdfAsBase64(pdfUrl) : null);
