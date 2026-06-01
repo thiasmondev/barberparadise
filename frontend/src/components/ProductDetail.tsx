@@ -50,6 +50,8 @@ export default function ProductDetail({ product }: { product: Product }) {
 
   const hasMultipleImages = displayImages.length > 1;
 
+  const closeLightbox = () => setIsLightboxOpen(false);
+
   const goToPreviousImage = () => {
     if (!hasMultipleImages) return;
     setSelectedImage((current) => (current - 1 + displayImages.length) % displayImages.length);
@@ -257,8 +259,8 @@ export default function ProductDetail({ product }: { product: Product }) {
 
             {isLightboxOpen && displayImages[selectedImage] && (
               <div
-                className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
-                onClick={() => setIsLightboxOpen(false)}
+                className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 p-4"
+                onClick={closeLightbox}
                 role="dialog"
                 aria-modal="true"
                 aria-label="Galerie produit agrandie"
@@ -267,7 +269,7 @@ export default function ProductDetail({ product }: { product: Product }) {
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();
-                    setIsLightboxOpen(false);
+                    closeLightbox();
                   }}
                   className="absolute right-4 top-4 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-white text-2xl font-black text-black transition-colors hover:bg-[#ff4a8d] hover:text-white"
                   aria-label="Fermer la galerie"
@@ -302,7 +304,7 @@ export default function ProductDetail({ product }: { product: Product }) {
                   </>
                 )}
 
-                <div className="relative h-full max-h-[90vh] w-full max-w-6xl" onClick={(event) => event.stopPropagation()}>
+                <div className="relative h-full max-h-[90vh] w-full max-w-6xl">
                   <Image
                     src={displayImages[selectedImage]}
                     alt={product.name}
@@ -310,6 +312,7 @@ export default function ProductDetail({ product }: { product: Product }) {
                     className="object-contain"
                     sizes="100vw"
                     priority
+                    onClick={(event) => event.stopPropagation()}
                   />
                 </div>
               </div>
