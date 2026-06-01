@@ -257,8 +257,26 @@ seoRouter.get("/analyze/:id", async (req, res) => {
       return;
     }
 
+    const recommendedProductIds = Array.isArray(product.recommendedProductIds)
+      ? product.recommendedProductIds.filter((id) => typeof id === "string" && id !== product.id).slice(0, 4)
+      : [];
+    const recommendedProducts = recommendedProductIds.length > 0
+      ? await prisma.product.findMany({
+          where: { id: { in: recommendedProductIds } },
+          select: { id: true, name: true, brand: true, category: true, slug: true, images: true, price: true, originalPrice: true, status: true },
+        })
+      : [];
+    const recommendedById = new Map(recommendedProducts.map((item) => [item.id, item]));
+
     const { score, details } = calculateSeoScore(product as ProductData);
-    res.json({ product, score, details });
+    res.json({
+      product: {
+        ...product,
+        recommendedProducts: recommendedProductIds.map((id) => recommendedById.get(id)).filter(Boolean),
+      },
+      score,
+      details,
+    });
   } catch (err: any) {
     console.error("SEO Analyze error:", err);
     res.status(500).json({ error: err.message });

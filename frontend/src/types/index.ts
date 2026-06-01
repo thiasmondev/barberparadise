@@ -35,6 +35,8 @@ export interface Product {
   isPromo: boolean;
   tags: string | string[];
   status: string;
+  recommendedProductIds?: string[];
+  recommendedProducts?: Product[];
   comparePrice?: number | null;
   metaDescription?: string | null;
   seoTitle?: string | null;

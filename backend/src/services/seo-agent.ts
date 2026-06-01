@@ -72,6 +72,24 @@ export interface ProductUrlSource {
   images: string[];
 }
 
+export interface ProductRecommendationSuggestion {
+  id: string;
+  reason: string;
+}
+
+export interface ProductRecommendationCatalogItem {
+  id: string;
+  name: string;
+  category: string;
+}
+
+export interface ProductRecommendationContext {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+}
+
 export interface ProductDraftFromUrl {
   sourceUrl: string;
   sourceDomain: string;
@@ -492,6 +510,67 @@ function parseJsonResponse(raw: string): Record<string, unknown> {
   return JSON.parse(jsonStr);
 }
 
+
+
+// ─── Recommandations produits IA ─────────────────────────────
+
+export async function generateProductRecommendations(
+  currentProduct: ProductRecommendationContext,
+  catalog: ProductRecommendationCatalogItem[],
+): Promise<ProductRecommendationSuggestion[]> {
+  const availableProducts = catalog
+    .filter((item) => item.id !== currentProduct.id)
+    .map((item) => ({ id: item.id, name: item.name, category: item.category }));
+
+  if (availableProducts.length === 0) return [];
+
+  const prompt = `Tu es l'agent SEO/GEO de Barber Paradise, e-commerce français spécialisé en matériel professionnel de barbier et coiffure.
+
+OBJECTIF : recommander 4 produits complémentaires ou pertinents à afficher sur une fiche produit.
+
+PRODUIT COURANT :
+${JSON.stringify({
+  id: currentProduct.id,
+  name: currentProduct.name,
+  category: currentProduct.category,
+  description: currentProduct.description?.slice(0, 1800) || "",
+}, null, 2)}
+
+CATALOGUE DISPONIBLE :
+${JSON.stringify(availableProducts, null, 2)}
+
+RÈGLES :
+1. Retourne exactement 4 produits si le catalogue le permet, sinon le maximum disponible.
+2. Ne recommande jamais le produit courant.
+3. Privilégie la pertinence métier : complémentarité d'usage, même univers barbier/coiffure, montée en gamme ou routine cohérente.
+4. Utilise uniquement des IDs présents dans le catalogue fourni.
+5. La raison doit être claire, courte et utile pour un administrateur SEO, en français.
+
+Réponds UNIQUEMENT avec un JSON valide au format :
+{
+  "recommendations": [
+    { "id": "id-produit", "reason": "raison concise" }
+  ]
+}`;
+
+  const raw = await callClaude(prompt, 1800);
+  const parsed = parseJsonResponse(raw) as { recommendations?: unknown };
+  const allowedIds = new Set(availableProducts.map((item) => item.id));
+  const seenIds = new Set<string>();
+
+  return (Array.isArray(parsed.recommendations) ? parsed.recommendations : [])
+    .map((item) => item as Partial<ProductRecommendationSuggestion>)
+    .filter((item): item is ProductRecommendationSuggestion => {
+      if (!item.id || typeof item.id !== "string" || !allowedIds.has(item.id) || seenIds.has(item.id)) return false;
+      seenIds.add(item.id);
+      return true;
+    })
+    .slice(0, 4)
+    .map((item) => ({
+      id: item.id,
+      reason: typeof item.reason === "string" && item.reason.trim() ? item.reason.trim() : "Produit recommandé par l'agent SEO.",
+    }));
+}
 
 // ─── Création produit depuis URL marque ──────────────────────
 

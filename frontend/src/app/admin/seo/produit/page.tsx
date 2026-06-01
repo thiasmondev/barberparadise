@@ -21,6 +21,8 @@ import {
   bulkGenerateImageAlts,
   generateProductDraftFromUrl,
   createProductFromUrlDraft,
+  generateProductRecommendations,
+  saveProductRecommendations,
   getAdminProducts,
   getAdminBrands,
   type AdminBrand,
@@ -344,6 +346,11 @@ function ProductPreview({
   );
 }
 
+type ProductRecommendationSelection = {
+  product: Product;
+  reason: string;
+};
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SeoProductPage() {
   return (
@@ -459,6 +466,14 @@ function SeoProductPageContent() {
   const [productSearchLoading, setProductSearchLoading] = useState(false);
   const [productSearchError, setProductSearchError] = useState("");
   const [editPriceEur, setEditPriceEur] = useState("");
+  const [recommendations, setRecommendations] = useState<ProductRecommendationSelection[]>([]);
+  const [recommendationSearchTerm, setRecommendationSearchTerm] = useState("");
+  const [recommendationSearchResults, setRecommendationSearchResults] = useState<Product[]>([]);
+  const [recommendationSearchOpen, setRecommendationSearchOpen] = useState(false);
+  const [recommendationSearchLoading, setRecommendationSearchLoading] = useState(false);
+  const [recommendationGenerating, setRecommendationGenerating] = useState(false);
+  const [recommendationSaving, setRecommendationSaving] = useState(false);
+  const [recommendationSaved, setRecommendationSaved] = useState(false);
 
   // Charger les métadonnées pour l'autocomplétion
   useEffect(() => {
@@ -526,6 +541,16 @@ function SeoProductPageContent() {
             ? (data.product.tags as string).split(",").map((t: string) => t.trim()).filter(Boolean)
             : []
         );
+        const savedRecommendedProducts = Array.isArray((data.product as any).recommendedProducts)
+          ? ((data.product as any).recommendedProducts as Product[])
+          : [];
+        setRecommendations(
+          savedRecommendedProducts
+            .filter((item) => item.id !== data.product.id)
+            .slice(0, 4)
+            .map((item) => ({ product: item, reason: "Recommandation enregistrée" }))
+        );
+        setRecommendationSaved(false);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -564,6 +589,40 @@ function SeoProductPageContent() {
       clearTimeout(timer);
     };
   }, [productSearchTerm]);
+
+  useEffect(() => {
+    const query = recommendationSearchTerm.trim();
+    if (query.length < 2) {
+      setRecommendationSearchResults([]);
+      setRecommendationSearchLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setRecommendationSearchLoading(true);
+    const timer = setTimeout(() => {
+      getAdminProducts({ search: query, limit: 8, status: "active" })
+        .then((data) => {
+          if (!cancelled) {
+            const selectedIds = new Set(recommendations.map((item) => item.product.id));
+            setRecommendationSearchResults(
+              data.products.filter((item) => item.id !== productId && !selectedIds.has(item.id)).slice(0, 8)
+            );
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setRecommendationSearchResults([]);
+        })
+        .finally(() => {
+          if (!cancelled) setRecommendationSearchLoading(false);
+        });
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [recommendationSearchTerm, recommendations, productId]);
 
   // Sync champs éditables quand l'IA génère
   useEffect(() => {
@@ -610,6 +669,58 @@ function SeoProductPageContent() {
     priceProEur: editPriceProEur.trim() === "" ? null : Number(editPriceProEur),
     status: editStatus,
   });
+
+  const handleGenerateRecommendations = async () => {
+    if (!productId) return;
+    setRecommendationGenerating(true);
+    setRecommendationSaved(false);
+    setError("");
+    try {
+      const data = await generateProductRecommendations(productId);
+      setRecommendations(
+        data.recommendations
+          .filter((item) => item.product)
+          .slice(0, 4)
+          .map((item) => ({ product: item.product as Product, reason: item.reason }))
+      );
+    } catch (err: any) {
+      setError(err.message || "Impossible de générer les recommandations produit.");
+    } finally {
+      setRecommendationGenerating(false);
+    }
+  };
+
+  const handleAddRecommendedProduct = (item: Product) => {
+    if (!item || item.id === productId || recommendations.some((rec) => rec.product.id === item.id) || recommendations.length >= 4) return;
+    setRecommendations((current) => [...current, { product: item, reason: "Ajout manuel par l’agent SEO" }].slice(0, 4));
+    setRecommendationSearchTerm("");
+    setRecommendationSearchResults([]);
+    setRecommendationSearchOpen(false);
+    setRecommendationSaved(false);
+  };
+
+  const handleRemoveRecommendedProduct = (id: string) => {
+    setRecommendations((current) => current.filter((item) => item.product.id !== id));
+    setRecommendationSaved(false);
+  };
+
+  const handleSaveRecommendations = async () => {
+    if (!productId) return;
+    setRecommendationSaving(true);
+    setRecommendationSaved(false);
+    setError("");
+    try {
+      const ids = recommendations.map((item) => item.product.id);
+      const data = await saveProductRecommendations(productId, ids);
+      setProduct((current) => current ? { ...current, recommendedProductIds: data.recommendedProductIds } : current);
+      setRecommendationSaved(true);
+      setTimeout(() => setRecommendationSaved(false), 2500);
+    } catch (err: any) {
+      setError(err.message || "Impossible d’enregistrer les recommandations produit.");
+    } finally {
+      setRecommendationSaving(false);
+    }
+  };
 
   const handleSaveProductFields = async () => {
     if (!productId || !product) return;
@@ -1244,6 +1355,113 @@ function SeoProductPageContent() {
             </div>
           </div>
 
+
+          {/* Produits recommandés */}
+          <div className="bg-white rounded-xl shadow-sm border border-fuchsia-100 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between mb-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs font-semibold text-fuchsia-700 bg-fuchsia-50 px-2 py-0.5 rounded">PRODUITS RECOMMANDÉS</span>
+                  <span className="text-xs text-gray-400">Sélection IA modifiable manuellement</span>
+                </div>
+                <p className="text-xs text-gray-500 max-w-2xl">
+                  L’agent SEO propose jusqu’à 4 produits pertinents à afficher dans « Ça pourrait te plaire : ».
+                  Si aucune recommandation n’est enregistrée, la fiche publique garde le fallback par catégorie.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleGenerateRecommendations}
+                disabled={recommendationGenerating || !productId}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-fuchsia-600 px-4 py-2 text-xs font-black text-white hover:bg-fuchsia-700 disabled:opacity-60"
+              >
+                {recommendationGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                Générer avec l’IA
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {recommendations.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                  Aucune recommandation enregistrée. La page publique affichera automatiquement des produits de la même catégorie.
+                </div>
+              ) : (
+                recommendations.map((item, index) => (
+                  <div key={item.product.id} className="flex items-start gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-fuchsia-100 text-xs font-black text-fuchsia-700">{index + 1}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold text-sm text-gray-900 truncate">{item.product.name}</p>
+                        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-gray-500 border border-gray-100">{item.product.category}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500 leading-relaxed">{item.reason}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveRecommendedProduct(item.product.id)}
+                      className="rounded-full p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                      aria-label="Supprimer ce produit recommandé"
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
+              <div className="relative">
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Ajouter un produit manuellement</label>
+                <div className="relative">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    value={recommendationSearchTerm}
+                    onChange={(e) => { setRecommendationSearchTerm(e.target.value); setRecommendationSearchOpen(true); }}
+                    onFocus={() => setRecommendationSearchOpen(true)}
+                    disabled={recommendations.length >= 4}
+                    placeholder={recommendations.length >= 4 ? "Maximum 4 produits" : "Rechercher un produit du catalogue..."}
+                    className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/20 disabled:bg-gray-50"
+                  />
+                </div>
+                {recommendationSearchOpen && recommendationSearchTerm.trim().length >= 2 && (
+                  <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
+                    {recommendationSearchLoading ? (
+                      <div className="flex items-center gap-2 px-3 py-3 text-xs text-gray-500"><Loader2 size={14} className="animate-spin" /> Recherche...</div>
+                    ) : recommendationSearchResults.length > 0 ? (
+                      recommendationSearchResults.map((item) => (
+                        <button
+                          type="button"
+                          key={item.id}
+                          onClick={() => handleAddRecommendedProduct(item)}
+                          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-fuchsia-50"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-medium text-gray-900">{item.name}</span>
+                            <span className="block text-xs text-gray-500">{item.brand} · {item.category}</span>
+                          </span>
+                          <Plus size={15} className="shrink-0 text-fuchsia-600" />
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-3 py-3 text-xs text-gray-500">Aucun produit disponible pour cette recherche.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col justify-end gap-2">
+                {recommendationSaved && <span className="text-xs font-semibold text-emerald-600">Recommandations enregistrées</span>}
+                <button
+                  type="button"
+                  onClick={handleSaveRecommendations}
+                  disabled={recommendationSaving || !productId}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-xs font-black text-white hover:bg-black disabled:opacity-60"
+                >
+                  {recommendationSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  Enregistrer les recommandations
+                </button>
+              </div>
+            </div>
+          </div>
 
 
           {/* Tarification produit */}

@@ -324,7 +324,24 @@ productsRouter.get("/:slug", async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    res.json(serializeProduct(product, isApprovedPro));
+    const recommendedProductIds = Array.isArray(product.recommendedProductIds)
+      ? product.recommendedProductIds.filter((id) => typeof id === "string" && id !== product.id).slice(0, 4)
+      : [];
+    const recommendedProducts = recommendedProductIds.length > 0
+      ? await prisma.product.findMany({
+          where: { id: { in: recommendedProductIds }, status: "active" },
+          include: { variants: { orderBy: { order: "asc" } } },
+        })
+      : [];
+    const recommendedById = new Map(recommendedProducts.map((item) => [item.id, item]));
+    const orderedRecommendedProducts = recommendedProductIds
+      .map((id) => recommendedById.get(id))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+    res.json({
+      ...serializeProduct(product, isApprovedPro),
+      recommendedProducts: orderedRecommendedProducts.map((item) => serializeProduct(item, isApprovedPro)),
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur serveur" });

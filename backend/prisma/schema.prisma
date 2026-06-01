@@ -13,42 +13,43 @@ datasource db {
 
 // ─── PRODUITS ────────────────────────────────────────────────
 model Product {
-  id               String   @id @default(cuid())
-  handle           String   @unique
-  name             String
-  slug             String   @unique
-  brand            String
-  brandId          Int?
-  category         String
-  subcategory      String
-  subsubcategory   String   @default("")
-  price            Float
-  priceProEur      Float? // Prix pro HT — null = même prix que B2C
-  originalPrice    Float?
-  images           String // JSON array
-  imageAlts        String   @default("[]") // JSON array of alt texts matching images order
-  description      String
-  shortDescription String
-  features         String   @default("[]") // JSON array
-  inStock          Boolean  @default(true)
-  stockCount       Int      @default(0)
-  weightG          Int? // Poids en grammes
-  lengthCm         Float? // Longueur cm
-  widthCm          Float? // Largeur cm
-  heightCm         Float? // Hauteur cm
-  isFragile        Boolean  @default(false)
-  isLiquid         Boolean  @default(false)
-  isAerosol        Boolean  @default(false)
-  requiresGlass    Boolean  @default(false)
-  logisticNote     String? // Note spéciale ex: "ne pas coucher"
-  rating           Float    @default(0)
-  reviewCount      Int      @default(0)
-  isNew            Boolean  @default(false)
-  isPromo          Boolean  @default(false)
-  tags             String   @default("[]") // JSON array
-  status           String   @default("active") // active, draft, archived
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  handle                String   @unique
+  name                  String
+  slug                  String   @unique
+  brand                 String
+  brandId               Int?
+  category              String
+  subcategory           String
+  subsubcategory        String   @default("")
+  price                 Float
+  priceProEur           Float? // Prix pro HT — null = même prix que B2C
+  originalPrice         Float?
+  images                String // JSON array
+  imageAlts             String   @default("[]") // JSON array of alt texts matching images order
+  description           String
+  shortDescription      String
+  features              String   @default("[]") // JSON array
+  inStock               Boolean  @default(true)
+  stockCount            Int      @default(0)
+  weightG               Int? // Poids en grammes
+  lengthCm              Float? // Longueur cm
+  widthCm               Float? // Largeur cm
+  heightCm              Float? // Hauteur cm
+  isFragile             Boolean  @default(false)
+  isLiquid              Boolean  @default(false)
+  isAerosol             Boolean  @default(false)
+  requiresGlass         Boolean  @default(false)
+  logisticNote          String? // Note spéciale ex: "ne pas coucher"
+  rating                Float    @default(0)
+  reviewCount           Int      @default(0)
+  isNew                 Boolean  @default(false)
+  isPromo               Boolean  @default(false)
+  tags                  String   @default("[]") // JSON array
+  status                String   @default("active") // active, draft, archived
+  recommendedProductIds String[] @default([])
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   brandRef   Brand?           @relation(fields: [brandId], references: [id])
   orderItems OrderItem[]
@@ -79,7 +80,6 @@ model AbandonedCartSession {
   @@index([lastSeenAt])
   @@index([convertedAt])
 }
-
 
 model ShippingZone {
   id        String         @id @default(cuid())
@@ -273,34 +273,34 @@ model OrderItem {
 }
 
 model Shipment {
-  id                 String     @id @default(cuid())
-  orderId            String     @unique
-  order              Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  carrier            String // 'colissimo', 'mondial_relay', 'colissimo_international'
-  carrierShipmentId  String?
-  trackingNumber     String?
-  trackingUrl        String?
-  packagingId        Int?
-  packaging          Packaging? @relation(fields: [packagingId], references: [id])
-  totalWeightG       Int?
-  offerId            String?
-  serviceCode        String?
-  deliveryMode       String?
-  relayPointId       String?
-  labelPriceCents    Int?
-  labelCurrency      String?    @default("EUR")
+  id                  String     @id @default(cuid())
+  orderId             String     @unique
+  order               Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  carrier             String // 'colissimo', 'mondial_relay', 'colissimo_international'
+  carrierShipmentId   String?
+  trackingNumber      String?
+  trackingUrl         String?
+  packagingId         Int?
+  packaging           Packaging? @relation(fields: [packagingId], references: [id])
+  totalWeightG        Int?
+  offerId             String?
+  serviceCode         String?
+  deliveryMode        String?
+  relayPointId        String?
+  labelPriceCents     Int?
+  labelCurrency       String?    @default("EUR")
   insuranceValueCents Int?
-  labelPdfBase64     String?
-  labelFormat        String?
-  labelSource        String?
-  labelStatus        String?
-  labelGeneratedAt   DateTime?
-  carrierRawResponse Json?
-  lastTrackingStatus String?
-  lastTrackingSyncAt DateTime?
-  shippedAt          DateTime?
-  shippedBy          String? // email admin
-  createdAt          DateTime   @default(now())
+  labelPdfBase64      String?
+  labelFormat         String?
+  labelSource         String?
+  labelStatus         String?
+  labelGeneratedAt    DateTime?
+  carrierRawResponse  Json?
+  lastTrackingStatus  String?
+  lastTrackingSyncAt  DateTime?
+  shippedAt           DateTime?
+  shippedBy           String? // email admin
+  createdAt           DateTime   @default(now())
 
   @@index([carrier])
   @@index([labelStatus])
@@ -493,10 +493,10 @@ model Category {
 
 // ─── NEWSLETTER ──────────────────────────────────────────────
 model NewsletterSubscriber {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  subscribedAt DateTime @default(now())
+  id             String    @id @default(cuid())
+  email          String    @unique
+  subscribedAt   DateTime  @default(now())
   unsubscribedAt DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }

@@ -112,10 +112,15 @@ export default function ProductPage() {
       try {
         const p = await getProduct(slug);
         setProduct(p);
-        try {
-          const data = await getProducts({ category: p.category, limit: 5 });
-          setRelated(data.products.filter((r) => r.id !== p.id).slice(0, 4));
-        } catch { /* ignore */ }
+        const recommendedProducts = Array.isArray(p.recommendedProducts) ? p.recommendedProducts.slice(0, 4) : [];
+        if (recommendedProducts.length > 0) {
+          setRelated(recommendedProducts);
+        } else {
+          try {
+            const data = await getProducts({ category: p.category, limit: 5 });
+            setRelated(data.products.filter((r) => r.id !== p.id).slice(0, 4));
+          } catch { /* ignore */ }
+        }
       } catch {
         setError(true);
       } finally {
@@ -197,7 +202,7 @@ export default function ProductPage() {
 
       {related.length > 0 && (
         <section className="mt-16 pt-12 border-t border-gray-100">
-          <h2 className="section-title mb-8">Produits similaires</h2>
+          <h2 className="section-title mb-8">Ça pourrait te plaire :</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
             {related.map((p) => (
               <ProductCard key={p.id} product={p} />

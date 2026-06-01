@@ -197,6 +197,30 @@ export function updateProduct(id: string, data: Record<string, unknown>) {
   });
 }
 
+
+export type ProductRecommendationSuggestion = {
+  id: string;
+  reason: string;
+  product: Product | null;
+};
+
+export function generateProductRecommendations(productId: string) {
+  return adminFetch<{ recommendations: ProductRecommendationSuggestion[] }>(
+    `/api/admin/products/${productId}/recommendations/generate`,
+    { method: "POST" }
+  );
+}
+
+export function saveProductRecommendations(productId: string, recommendedProductIds: string[]) {
+  return adminFetch<{ success: boolean; recommendedProductIds: string[] }>(
+    `/api/admin/products/${productId}/recommendations`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ recommendedProductIds }),
+    }
+  );
+}
+
 export function deleteProduct(id: string) {
   return adminFetch<{ success: boolean }>(`/api/admin/products/${id}`, {
     method: "DELETE",

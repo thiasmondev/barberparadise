@@ -28,6 +28,7 @@ import {
   LogisticsCarrier,
 } from "../services/logisticsCarrierService";
 import { ensureDefaultShippingZones } from "../services/shippingCalculator";
+import { generateProductRecommendations } from "../services/seo-agent";
 
 // ─── Cloudinary Config ───────────────────────────────────────
 cloudinary.config({
@@ -1824,6 +1825,102 @@ adminRouter.get(
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Erreur serveur" });
+    }
+  }
+);
+
+
+// POST /api/admin/products/:id/recommendations/generate — Générer les recommandations produit via l'agent SEO
+adminRouter.post(
+  "/products/:id/recommendations/generate",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const currentProduct = await prisma.product.findUnique({
+        where: { id: req.params.id },
+        select: { id: true, name: true, description: true, category: true },
+      });
+
+      if (!currentProduct) {
+        res.status(404).json({ error: "Produit introuvable" });
+        return;
+      }
+
+      const catalog = await prisma.product.findMany({
+        where: { status: "active", NOT: { id: currentProduct.id } },
+        select: { id: true, name: true, category: true },
+        orderBy: { name: "asc" },
+      });
+
+      const recommendations = await generateProductRecommendations(currentProduct, catalog);
+      const productIds = recommendations.map((item) => item.id);
+      const recommendedProducts = productIds.length > 0
+        ? await prisma.product.findMany({
+            where: { id: { in: productIds } },
+            select: { id: true, name: true, category: true, brand: true, slug: true, images: true },
+          })
+        : [];
+      const byId = new Map(recommendedProducts.map((item) => [item.id, item]));
+
+      res.json({
+        recommendations: recommendations.map((item) => ({
+          ...item,
+          product: byId.get(item.id) || null,
+        })),
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: err instanceof Error ? err.message : "Erreur génération recommandations produit" });
+    }
+  }
+);
+
+// PUT /api/admin/products/:id/recommendations — Enregistrer les recommandations produit manuelles
+adminRouter.put(
+  "/products/:id/recommendations",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const product = await prisma.product.findUnique({
+        where: { id: req.params.id },
+        select: { id: true },
+      });
+
+      if (!product) {
+        res.status(404).json({ error: "Produit introuvable" });
+        return;
+      }
+
+      const rawIds: unknown[] = Array.isArray(req.body?.recommendedProductIds) ? req.body.recommendedProductIds : [];
+      const recommendedProductIds: string[] = Array.from(new Set(
+        rawIds
+          .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+          .map((id: string) => id.trim())
+          .filter((id: string) => id !== product.id)
+      )).slice(0, 4);
+
+      if (recommendedProductIds.length > 0) {
+        const found = await prisma.product.findMany({
+          where: { id: { in: recommendedProductIds } },
+          select: { id: true },
+        });
+        const foundIds = new Set(found.map((item) => item.id));
+        const invalidIds = recommendedProductIds.filter((id) => !foundIds.has(id));
+        if (invalidIds.length > 0) {
+          res.status(400).json({ error: `Produits recommandés introuvables : ${invalidIds.join(", ")}` });
+          return;
+        }
+      }
+
+      const updated = await prisma.product.update({
+        where: { id: product.id },
+        data: { recommendedProductIds },
+      });
+
+      res.json({ success: true, recommendedProductIds: updated.recommendedProductIds });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur sauvegarde recommandations produit" });
     }
   }
 );
