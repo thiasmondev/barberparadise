@@ -477,7 +477,7 @@ export default function ProductDetail({ product }: { product: Product }) {
 
             {/* Alerte variante requise */}
             {variants.length > 0 && !selectedVariant && (
-              <p className="text-[10px] font-black tracking-widest uppercase text-amber-400 bg-amber-400/10 border border-amber-400/20 px-4 py-3 mb-4">
+              <p className="text-[10px] font-black tracking-widest uppercase text-[#061923] bg-primary border border-primary/40 px-4 py-3 mb-4">
                 Sélectionnez une option avant d&apos;ajouter au panier
               </p>
             )}
