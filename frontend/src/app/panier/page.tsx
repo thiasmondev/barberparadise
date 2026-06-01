@@ -43,10 +43,20 @@ export default function CartPage() {
 
   const estimatedShippingOption = useMemo(() => shippingOptions[0], [shippingOptions]);
   const shipping = estimatedShippingOption?.price ?? 0;
+  const subtotalHT = useMemo(() => {
+    const rawSubtotalHT = items.reduce((sum, item) => {
+      const unitPrice = item.product.price;
+      const publicTtcPrice = typeof item.product.pricePublic === "number" ? item.product.pricePublic : unitPrice;
+      const unitHT = isApprovedPro && item.product.hasPriceProEur ? unitPrice : publicTtcPrice / 1.2;
+      return sum + unitHT * item.quantity;
+    }, 0);
+    return Math.round((rawSubtotalHT + Number.EPSILON) * 100) / 100;
+  }, [isApprovedPro, items]);
+  const shippingReferenceAmount = isApprovedPro ? subtotalHT : total;
   const grandTotal = total + shipping;
   const minimumProOrder = 200;
-  const proRemaining = Math.max(0, minimumProOrder - total);
-  const isProMinimumBlocked = isApprovedPro && total < minimumProOrder;
+  const proRemaining = Math.max(0, minimumProOrder - subtotalHT);
+  const isProMinimumBlocked = isApprovedPro && subtotalHT < minimumProOrder;
   const paymentMethods = ([
     { id: "card", label: "CARTE BANCAIRE", icon: CreditCard },
     { id: "paypal_4x", label: "PAYPAL 4X SANS FRAIS", icon: WalletCards },
@@ -95,7 +105,7 @@ export default function CartPage() {
       setShippingLoading(true);
       setShippingError("");
       try {
-        const params = new URLSearchParams({ country: "FR", total: String(total), isPro: String(isApprovedPro) });
+        const params = new URLSearchParams({ country: "FR", total: String(shippingReferenceAmount), isB2B: String(isApprovedPro), isPro: String(isApprovedPro) });
         const res = await fetch(`${API_URL}/api/checkout/shipping-options?${params.toString()}`, {
           signal: controller.signal,
         });
@@ -116,7 +126,7 @@ export default function CartPage() {
 
     loadEstimatedShipping();
     return () => controller.abort();
-  }, [items.length, total, isApprovedPro]);
+  }, [items.length, shippingReferenceAmount, isApprovedPro]);
 
   if (items.length === 0) {
     return (

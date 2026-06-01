@@ -130,7 +130,16 @@ export default function CheckoutPage() {
   const countryCode = useMemo(() => getCountryCode(form.pays), [form.pays]);
   const effectiveIsB2B = isB2B || isApprovedPro;
   const vatRate = useMemo(() => getEstimatedVatRate(countryCode, effectiveIsB2B, vatNumber), [countryCode, effectiveIsB2B, vatNumber]);
-  const subtotalHT = useMemo(() => Math.round((total / 1.2 + Number.EPSILON) * 100) / 100, [total]);
+  const subtotalHT = useMemo(() => {
+    const rawSubtotalHT = items.reduce((sum, item) => {
+      const unitPrice = item.product.price;
+      const publicTtcPrice = typeof item.product.pricePublic === "number" ? item.product.pricePublic : unitPrice;
+      const unitHT = effectiveIsB2B && item.product.hasPriceProEur ? unitPrice : publicTtcPrice / 1.2;
+      return sum + unitHT * item.quantity;
+    }, 0);
+    return Math.round((rawSubtotalHT + Number.EPSILON) * 100) / 100;
+  }, [effectiveIsB2B, items]);
+  const shippingReferenceAmount = effectiveIsB2B ? subtotalHT : total;
   const vatAmount = useMemo(() => Math.round((subtotalHT * (vatRate / 100) + Number.EPSILON) * 100) / 100, [subtotalHT, vatRate]);
   const grandTotal = subtotalHT + vatAmount + shipping;
 
@@ -279,7 +288,7 @@ export default function CheckoutPage() {
       setShippingLoading(true);
       setShippingError("");
       try {
-        const params = new URLSearchParams({ country: countryCode, total: String(total), isPro: String(isApprovedPro) });
+        const params = new URLSearchParams({ country: countryCode, total: String(shippingReferenceAmount), isB2B: String(effectiveIsB2B), isPro: String(isApprovedPro) });
         const res = await fetch(`${API_URL}/api/checkout/shipping-options?${params.toString()}`, {
           signal: controller.signal,
         });
@@ -299,7 +308,7 @@ export default function CheckoutPage() {
     }
     loadShippingOptions();
     return () => controller.abort();
-  }, [countryCode, total, isApprovedPro]);
+  }, [countryCode, shippingReferenceAmount, effectiveIsB2B, isApprovedPro]);
 
   const updateForm = (key: string, value: string | boolean) => {
     setForm((prev) => ({ ...prev, [key]: value }));

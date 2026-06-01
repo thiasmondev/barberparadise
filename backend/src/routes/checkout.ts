@@ -251,17 +251,21 @@ checkoutRouter.get("/shipping-options", async (req: Request, res: Response): Pro
   try {
     const country = normalizeCountry(typeof req.query.country === "string" ? req.query.country : "FR");
     const totalParam = typeof req.query.total === "string" ? Number(req.query.total) : 0;
-    const orderTotal = Number.isFinite(totalParam) ? totalParam : 0;
+    const orderTotal = Number.isFinite(totalParam) ? Math.max(0, totalParam) : 0;
     const isPro = req.query.isPro === "true";
-    const freeShippingFrom = await getFreeShippingThresholdForCountry(country, isPro);
-    const options = await calculateShippingOptions(country, orderTotal, isPro);
+    const isB2B = req.query.isB2B === "true" || isPro;
+    const amountBasis = isB2B ? "HT" : "TTC";
+    const freeShippingFrom = await getFreeShippingThresholdForCountry(country, isB2B);
+    const options = await calculateShippingOptions(country, orderTotal, isB2B);
     res.json({
       options,
       country,
       orderTotal,
+      amountBasis,
+      isB2B,
       isPro,
       freeShippingFrom,
-      freeShippingRemaining: await calculateFreeShippingRemaining(country, orderTotal, isPro),
+      freeShippingRemaining: await calculateFreeShippingRemaining(country, orderTotal, isB2B),
     });
   } catch (err) {
     console.error("Erreur options livraison", err);
