@@ -70,7 +70,7 @@ function MegaMenuProduits({
 
   return (
     <div
-      className="absolute top-full left-1/2 -translate-x-1/2 mt-0 z-50 flex shadow-2xl border border-white/10"
+      className="absolute top-full left-1/2 -translate-x-1/2 mt-0 z-50 flex"
       style={{ minWidth: 720 }}
       onMouseLeave={onClose}
     >
@@ -144,7 +144,7 @@ function MegaMenuProduits({
 
       {/* Colonne L3 : enfants de l'item L2 survolé, visible seulement s'ils existent */}
       {colL3.length > 0 && (
-        <div className="bg-[#0c0c0c] py-6 min-w-[220px] flex flex-col">
+        <div className="py-6 min-w-[220px] flex flex-col border-0 bg-transparent shadow-none outline-none">
           <Link
             href={`/catalogue?category=${hoveredL2}`}
             onClick={onClose}
@@ -193,7 +193,7 @@ function MegaMenuMateriel({
 
   return (
     <div
-      className="absolute top-full left-1/2 -translate-x-1/2 mt-0 z-50 flex shadow-2xl border border-white/10"
+      className="absolute top-full left-1/2 -translate-x-1/2 mt-0 z-50 flex"
       style={{ minWidth: 720 }}
       onMouseLeave={onClose}
     >
@@ -282,7 +282,7 @@ function MegaMenuMateriel({
       )}
 
       {colL3.length > 0 && (
-        <div className="bg-[#0c0c0c] py-6 min-w-[220px] flex flex-col">
+        <div className="py-6 min-w-[220px] flex flex-col border-0 bg-transparent shadow-none outline-none">
           <Link
             href={`/catalogue?category=${hoveredL2}`}
             onClick={onClose}
