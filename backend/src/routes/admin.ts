@@ -2343,6 +2343,7 @@ adminRouter.post(
       const offerId = String(req.body?.offerId || "").trim();
       const relayPointId = String(req.body?.relayPointId || "").trim() || null;
       const insuranceValueCents = Math.max(parseInt(String(req.body?.insuranceValueCents || "0"), 10) || 0, 0);
+      const signatureRequired = Boolean(req.body?.signatureRequired);
       const packagingIdRaw = req.body?.packagingId;
       const packagingId =
         packagingIdRaw === undefined || packagingIdRaw === null || packagingIdRaw === ""
@@ -2398,6 +2399,7 @@ adminRouter.post(
         carrier,
         offerId,
         insuranceValueCents,
+        signatureRequired,
         packagingId,
         relayPointId,
         orderNumber: order.orderNumber,
@@ -2476,6 +2478,11 @@ adminRouter.post(
           source: labelResult.labelSource,
           priceCents: labelResult.priceCents,
           insuranceValueCents: labelResult.insuranceValueCents,
+          priceTaxIncluded: labelResult.priceTaxIncluded,
+          priceTaxLabel: labelResult.priceTaxLabel,
+          taxAmountCents: labelResult.taxAmountCents,
+          totalWithTaxCents: labelResult.totalWithTaxCents,
+          signatureRequired: labelResult.signatureRequired,
         },
       });
     } catch (err) {

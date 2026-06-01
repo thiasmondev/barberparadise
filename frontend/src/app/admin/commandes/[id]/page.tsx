@@ -52,6 +52,27 @@ function formatPrice(value: number, currency = "EUR") {
   return value.toLocaleString("fr-FR", { style: "currency", currency });
 }
 
+function centsToEuroInput(value?: number | null) {
+  if (!value || value <= 0) return "";
+  return (value / 100).toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function parseEuroToCents(value?: string) {
+  const normalized = (value || "").replace(",", ".").trim();
+  const parsed = Number.parseFloat(normalized);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.round(parsed * 100);
+}
+
+function getQuoteTaxDetails(quote?: LogisticsCarrierQuote | null, fallbackCents?: number | null, fallbackCurrency = "EUR") {
+  const amountCents = quote?.amountCents ?? fallbackCents ?? 0;
+  const currency = quote?.currency || fallbackCurrency;
+  const label = quote?.priceTaxLabel || "TTC";
+  const taxAmountCents = label === "HT" ? quote?.taxAmountCents ?? Math.round(amountCents * 0.2) : 0;
+  const totalWithTaxCents = label === "HT" ? quote?.totalWithTaxCents ?? amountCents + taxAmountCents : amountCents;
+  return { amountCents, currency, label, taxAmountCents, totalWithTaxCents };
+}
+
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("fr-FR", {
     day: "2-digit",
@@ -161,6 +182,8 @@ export default function OrderDetailPage() {
   const [labelPrintFormat, setLabelPrintFormat] = useState("100x150");
   const [packingSlipFormat, setPackingSlipFormat] = useState("a4");
   const [includePackingSlip, setIncludePackingSlip] = useState(true);
+  const [carrierInsuranceValues, setCarrierInsuranceValues] = useState<Record<string, string>>({});
+  const [carrierSignatureRequired, setCarrierSignatureRequired] = useState<Record<string, boolean>>({});
 
   const loadOrder = async () => {
     if (!id) return;
@@ -234,6 +257,7 @@ export default function OrderDetailPage() {
   const packageWeightG = overrideWeightG || calculatedPackageWeightG;
   const hasZeroWeight = packageWeightG <= 0;
   const selectedQuote = quotes.find((quote) => quote.id === selectedQuoteId);
+  const activeShipment = shipment || (order?.shipment as ShipmentRecord | null) || null;
   const cheapestQuoteId = quotes.reduce<string>((currentId, quote) => {
     if (!quote.purchasable) return currentId;
     const currentQuote = quotes.find((item) => item.id === currentId);
@@ -241,11 +265,15 @@ export default function OrderDetailPage() {
     return currentId;
   }, "");
   const purchasableQuotes = quotes.filter((quote) => quote.purchasable);
+  const selectedQuoteTax = getQuoteTaxDetails(selectedQuote);
+  const activeShipmentTax = getQuoteTaxDetails(selectedQuote, activeShipment?.labelPriceCents, activeShipment?.labelCurrency || "EUR");
 
   const handlePackagingChange = (value: string) => {
     setSelectedPackagingId(value ? Number(value) : null);
     setQuotes([]);
     setSelectedQuoteId("");
+    setCarrierInsuranceValues({});
+    setCarrierSignatureRequired({});
   };
 
   const calculateQuotes = async () => {
@@ -255,6 +283,8 @@ export default function OrderDetailPage() {
     try {
       const result = await getLogisticsCarrierQuotes(order.id, selectedPackagingId);
       setQuotes(result.quotes);
+      setCarrierInsuranceValues(Object.fromEntries(result.quotes.map((quote) => [quote.id, centsToEuroInput(quote.insuranceValueCents)])));
+      setCarrierSignatureRequired(Object.fromEntries(result.quotes.map((quote) => [quote.id, Boolean(quote.signatureRequired)])));
       setSelectedQuoteId(result.quotes.find((quote) => quote.purchasable)?.id || result.quotes[0]?.id || "");
       if (!result.quotes.length) {
         setDrawerError("Aucun devis transporteur n’a été retourné pour cette commande.");
@@ -263,6 +293,8 @@ export default function OrderDetailPage() {
       setDrawerError(err.message || "Impossible de calculer les devis transporteur.");
       setQuotes([]);
       setSelectedQuoteId("");
+      setCarrierInsuranceValues({});
+      setCarrierSignatureRequired({});
     } finally {
       setDrawerLoading(false);
     }
@@ -281,10 +313,12 @@ export default function OrderDetailPage() {
     setDrawerLoading(true);
     setDrawerError("");
     try {
+      const selectedInsuranceValueCents = parseEuroToCents(carrierInsuranceValues[selectedQuote.id]);
       const result = await purchaseLogisticsLabel(order.id, {
         carrier: selectedQuote.carrier,
         offerId: selectedQuote.id,
-        insuranceValueCents: selectedQuote.insuranceValueCents,
+        insuranceValueCents: selectedInsuranceValueCents,
+        signatureRequired: selectedQuote.carrier !== "mondial_relay" ? Boolean(carrierSignatureRequired[selectedQuote.id]) : false,
         packagingId: selectedPackagingId,
       });
       setShipment(result.shipment);
@@ -351,7 +385,6 @@ export default function OrderDetailPage() {
   const pay = paymentBadge(order);
   const fulfillment = fulfillmentBadge(order);
   const labelBlockerMessage = hasZeroWeight ? "Veuillez renseigner le poids des articles" : "";
-  const activeShipment = shipment || (order.shipment as ShipmentRecord | null) || null;
   const totalItemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
@@ -557,16 +590,22 @@ export default function OrderDetailPage() {
                   </section>
 
                   <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-semibold text-gray-950">Devis transporteurs</h3><p className="mt-1 text-sm text-gray-500">Comparez les services disponibles avant achat.</p></div><button onClick={calculateQuotes} disabled={drawerLoading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">{drawerLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Calculer les devis</button></div>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-semibold text-gray-950">Devis transporteurs</h3><p className="mt-1 text-sm text-gray-500">Comparez les services disponibles, leurs options et la base tarifaire HT/TTC avant achat.</p></div><button onClick={calculateQuotes} disabled={drawerLoading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">{drawerLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Calculer les devis</button></div>
                     <div className="mt-4 grid gap-3">
                       {quotes.length === 0 ? <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-500">Aucun devis calculé pour le moment.</div> : quotes.map((quote) => {
                         const isSelected = quote.id === selectedQuoteId;
                         const isCheapest = quote.id === cheapestQuoteId;
                         const hasCarrierError = !quote.purchasable || quote.configurationError;
+                        const quoteTax = getQuoteTaxDetails(quote);
+                        const insuranceValue = carrierInsuranceValues[quote.id] ?? centsToEuroInput(quote.insuranceValueCents);
                         return (
-                          <button key={quote.id} type="button" onClick={() => setSelectedQuoteId(quote.id)} className={`rounded-2xl border p-4 text-left transition ${isSelected ? "border-gray-950 bg-gray-50 ring-2 ring-gray-950/10" : "border-gray-200 bg-white hover:border-gray-300"}`}>
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-gray-950">{quote.carrierLabel}</p><span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">{quote.serviceLabel}</span>{isCheapest && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Le moins cher</span>}{quote.id === purchasableQuotes[0]?.id && <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">Suggéré</span>}</div><div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500"><span>Livraison : {quote.estimatedDeliveryDays}</span><span>Suivi ✓</span><span>Assurance {quote.insuranceValueCents > 0 ? "✓" : "—"}</span></div>{hasCarrierError && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{quote.configurationError || "Ce service n’est pas achetable pour cette commande."}</p>}</div><div className="text-left sm:text-right"><p className="text-xl font-semibold text-gray-950">{formatPrice(quote.amountCents / 100, quote.currency)}</p><p className="text-xs text-gray-500">{quote.requiresRelayPoint ? "Point relais requis" : "Livraison domicile"}</p></div></div>
-                          </button>
+                          <div key={quote.id} role="button" tabIndex={0} onClick={() => setSelectedQuoteId(quote.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedQuoteId(quote.id); }} className={`cursor-pointer rounded-2xl border p-4 text-left transition ${isSelected ? "border-gray-950 bg-gray-50 ring-2 ring-gray-950/10" : "border-gray-200 bg-white hover:border-gray-300"}`}>
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-gray-950">{quote.carrierLabel}</p><span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">{quote.serviceLabel}</span>{isCheapest && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Le moins cher</span>}{quote.id === purchasableQuotes[0]?.id && <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">Suggéré</span>}</div><div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500"><span>Livraison : {quote.estimatedDeliveryDays}</span><span>Suivi ✓</span><span>Assurance {parseEuroToCents(insuranceValue) > 0 ? "✓" : "—"}</span>{quote.signatureAvailable && <span>Signature {carrierSignatureRequired[quote.id] ? "✓" : "—"}</span>}{quote.carrier !== "mondial_relay" && <span>{quote.contractNumberApplied ? `Contrat Colissimo appliqué${quote.contractNumberSuffix ? ` · ****${quote.contractNumberSuffix}` : ""}` : "Contrat Colissimo non configuré"}</span>}</div>{hasCarrierError && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{quote.configurationError || "Ce service n’est pas achetable pour cette commande."}</p>}</div><div className="text-left sm:text-right"><p className="text-xl font-semibold text-gray-950">{formatPrice(quote.amountCents / 100, quote.currency)} {quoteTax.label}</p>{quoteTax.label === "HT" ? <p className="text-xs text-gray-500">TVA {formatPrice(quoteTax.taxAmountCents / 100, quote.currency)} · total {formatPrice(quoteTax.totalWithTaxCents / 100, quote.currency)} TTC</p> : <p className="text-xs text-gray-500">Prix transporteur TTC</p>}<p className="mt-1 text-xs text-gray-500">{quote.requiresRelayPoint ? "Point relais requis" : "Livraison domicile"}</p></div></div>
+                            <div className="mt-4 grid gap-3 border-t border-gray-200 pt-4 md:grid-cols-2">
+                              <label className="text-sm font-medium text-gray-700" onClick={(event) => event.stopPropagation()}>Montant déclaré assurance (€)<input type="number" min="0" step="0.01" value={insuranceValue} onChange={(event) => setCarrierInsuranceValues((current) => ({ ...current, [quote.id]: event.target.value }))} className="mt-2 w-full rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10" placeholder="0,00" /></label>
+                              {quote.carrier !== "mondial_relay" ? <label className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700" onClick={(event) => event.stopPropagation()}><span>Livraison avec signature</span><input type="checkbox" checked={Boolean(carrierSignatureRequired[quote.id])} onChange={(event) => setCarrierSignatureRequired((current) => ({ ...current, [quote.id]: event.target.checked }))} className="h-4 w-4 rounded border-gray-300" /></label> : <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-500">Signature non applicable à Mondial Relay.</div>}
+                            </div>
+                          </div>
                         );
                       })}
                     </div>
@@ -576,7 +615,7 @@ export default function OrderDetailPage() {
                 <aside className="space-y-5 lg:sticky lg:top-24 lg:self-start">
                   <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                     <h3 className="font-semibold text-gray-950">Résumé de l’achat</h3>
-                    <div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-gray-500">Commande</span><span className="font-medium text-gray-950">{order.orderNumber}</span></div><div className="flex justify-between gap-3"><span className="text-gray-500">Articles</span><span>{totalItemCount}</span></div><div className="flex justify-between gap-3"><span className="text-gray-500">Emballage</span><span className="text-right">{selectedPackaging?.name || "Aucun"}</span></div><div className="flex justify-between gap-3"><span className="text-gray-500">Poids total</span><span className="font-medium text-gray-950">{formatWeight(packageWeightG)}</span></div><div className="flex justify-between gap-3"><span className="text-gray-500">Transporteur</span><span className="text-right">{selectedQuote ? `${selectedQuote.carrierLabel} · ${selectedQuote.serviceLabel}` : "À choisir"}</span></div><div className="border-t border-gray-200 pt-3"><div className="flex justify-between gap-3 text-base font-semibold"><span>Coût étiquette</span><span>{selectedQuote ? formatPrice(selectedQuote.amountCents / 100, selectedQuote.currency) : "—"}</span></div></div></div>
+                    <div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-gray-500">Commande</span><span className="font-medium text-gray-950">{order.orderNumber}</span></div><div className="flex justify-between gap-3"><span className="text-gray-500">Articles</span><span>{totalItemCount}</span></div><div className="flex justify-between gap-3"><span className="text-gray-500">Emballage</span><span className="text-right">{selectedPackaging?.name || "Aucun"}</span></div><div className="flex justify-between gap-3"><span className="text-gray-500">Poids total</span><span className="font-medium text-gray-950">{formatWeight(packageWeightG)}</span></div><div className="flex justify-between gap-3"><span className="text-gray-500">Transporteur</span><span className="text-right">{selectedQuote ? `${selectedQuote.carrierLabel} · ${selectedQuote.serviceLabel}` : "À choisir"}</span></div><div className="border-t border-gray-200 pt-3"><div className="flex justify-between gap-3 text-base font-semibold"><span>Coût étiquette</span><span>{selectedQuote ? `${formatPrice(selectedQuoteTax.amountCents / 100, selectedQuoteTax.currency)} ${selectedQuoteTax.label}` : "—"}</span></div>{selectedQuote && selectedQuoteTax.label === "HT" && <div className="mt-2 space-y-1 text-xs text-gray-500"><div className="flex justify-between"><span>TVA calculée</span><span>{formatPrice(selectedQuoteTax.taxAmountCents / 100, selectedQuoteTax.currency)}</span></div><div className="flex justify-between font-semibold text-gray-700"><span>Total TTC</span><span>{formatPrice(selectedQuoteTax.totalWithTaxCents / 100, selectedQuoteTax.currency)}</span></div></div>}</div></div>
                     <div className="mt-5 space-y-4"><label className="block text-sm font-medium text-gray-700">Date d’expédition<input type="date" value={shipDate} onChange={(event) => setShipDate(event.target.value)} className="mt-2 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10" /></label><label className="flex items-start gap-2 text-sm text-gray-600"><input type="checkbox" checked={sendEmailToCustomer} onChange={(event) => setSendEmailToCustomer(event.target.checked)} className="mt-1 rounded border-gray-300" />Envoyer un email de suivi au client après l’achat</label>{labelBlockerMessage && <p className="rounded-xl bg-amber-50 p-3 text-sm font-medium text-amber-800">{labelBlockerMessage}</p>}<button onClick={purchaseLabel} disabled={drawerLoading || !selectedQuote || hasZeroWeight || !selectedQuote.purchasable} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50">{drawerLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />} Acheter l’étiquette</button></div>
                   </section>
                 </aside>
@@ -585,12 +624,12 @@ export default function OrderDetailPage() {
               <div className="grid gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_360px]">
                 <div className="space-y-5">
                   <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-900 shadow-sm"><div className="flex gap-3"><CheckCircle2 className="mt-1 h-6 w-6 shrink-0" /><div><h3 className="text-lg font-semibold">1 étiquette achetée</h3><p className="mt-1 text-sm">{totalItemCount} article{totalItemCount > 1 ? "s" : ""} · expéditeur Barber Paradise.</p>{activeShipment?.trackingNumber && <p className="mt-2 text-sm font-medium">Numéro de suivi : {activeShipment.trackingNumber}</p>}</div></div></section>
-                  <section className="rounded-2xl border border-gray-200 bg-white shadow-sm"><div className="border-b border-gray-200 px-5 py-4"><h3 className="font-semibold text-gray-950">Récapitulatif commande</h3></div><div className="divide-y divide-gray-100 text-sm"><div className="grid gap-2 px-5 py-4 sm:grid-cols-3"><span className="text-gray-500">Commande</span><span className="font-medium text-gray-950 sm:col-span-2">{order.orderNumber}</span></div><div className="grid gap-2 px-5 py-4 sm:grid-cols-3"><span className="text-gray-500">Service</span><span className="sm:col-span-2">{selectedQuote ? `${selectedQuote.carrierLabel} · ${selectedQuote.serviceLabel}` : carrierLabel(activeShipment?.carrier)}</span></div><div className="grid gap-2 px-5 py-4 sm:grid-cols-3"><span className="text-gray-500">Coût</span><span className="font-semibold text-gray-950 sm:col-span-2">{selectedQuote ? formatPrice(selectedQuote.amountCents / 100, selectedQuote.currency) : activeShipment?.labelPriceCents ? formatPrice(activeShipment.labelPriceCents / 100, activeShipment.labelCurrency || "EUR") : "—"}</span></div></div></section>
-                  <section className="rounded-2xl border border-gray-200 bg-white shadow-sm"><div className="border-b border-gray-200 px-5 py-4"><h3 className="font-semibold text-gray-950">Détail du colis</h3></div><div className="divide-y divide-gray-100">{(logistics?.items || []).map((item) => <div key={item.id} className="flex gap-4 px-5 py-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50">{item.image ? <img src={item.image} alt="" className="h-full w-full object-cover" /> : <Package className="h-5 w-5 text-gray-300" />}</div><div className="min-w-0 flex-1"><p className="font-medium text-gray-950">{item.name}</p><p className="text-sm text-gray-500">Quantité {item.quantity} · {formatWeight(parseKgToGrams(itemWeightsKg[item.id]) * item.quantity)}</p></div></div>)}</div><div className="grid gap-3 border-t border-gray-200 px-5 py-4 text-sm sm:grid-cols-3"><div><p className="text-gray-500">Emballage</p><p className="font-medium text-gray-950">{selectedPackaging?.name || activeShipment?.packaging?.name || "—"}</p></div><div><p className="text-gray-500">Poids</p><p className="font-medium text-gray-950">{formatWeight(activeShipment?.totalWeightG || packageWeightG)}</p></div><div><p className="text-gray-500">Services</p><p className="font-medium text-gray-950">Suivi ✓ · Assurance {selectedQuote?.insuranceValueCents ? "✓" : "—"}</p></div></div></section>
+                  <section className="rounded-2xl border border-gray-200 bg-white shadow-sm"><div className="border-b border-gray-200 px-5 py-4"><h3 className="font-semibold text-gray-950">Récapitulatif commande</h3></div><div className="divide-y divide-gray-100 text-sm"><div className="grid gap-2 px-5 py-4 sm:grid-cols-3"><span className="text-gray-500">Commande</span><span className="font-medium text-gray-950 sm:col-span-2">{order.orderNumber}</span></div><div className="grid gap-2 px-5 py-4 sm:grid-cols-3"><span className="text-gray-500">Service</span><span className="sm:col-span-2">{selectedQuote ? `${selectedQuote.carrierLabel} · ${selectedQuote.serviceLabel}` : carrierLabel(activeShipment?.carrier)}</span></div><div className="grid gap-2 px-5 py-4 sm:grid-cols-3"><span className="text-gray-500">Coût</span><span className="font-semibold text-gray-950 sm:col-span-2">{activeShipmentTax.amountCents ? `${formatPrice(activeShipmentTax.amountCents / 100, activeShipmentTax.currency)} ${activeShipmentTax.label}` : "—"}{activeShipmentTax.label === "HT" && activeShipmentTax.amountCents > 0 ? ` · TVA ${formatPrice(activeShipmentTax.taxAmountCents / 100, activeShipmentTax.currency)} · total ${formatPrice(activeShipmentTax.totalWithTaxCents / 100, activeShipmentTax.currency)} TTC` : ""}</span></div></div></section>
+                  <section className="rounded-2xl border border-gray-200 bg-white shadow-sm"><div className="border-b border-gray-200 px-5 py-4"><h3 className="font-semibold text-gray-950">Détail du colis</h3></div><div className="divide-y divide-gray-100">{(logistics?.items || []).map((item) => <div key={item.id} className="flex gap-4 px-5 py-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50">{item.image ? <img src={item.image} alt="" className="h-full w-full object-cover" /> : <Package className="h-5 w-5 text-gray-300" />}</div><div className="min-w-0 flex-1"><p className="font-medium text-gray-950">{item.name}</p><p className="text-sm text-gray-500">Quantité {item.quantity} · {formatWeight(parseKgToGrams(itemWeightsKg[item.id]) * item.quantity)}</p></div></div>)}</div><div className="grid gap-3 border-t border-gray-200 px-5 py-4 text-sm sm:grid-cols-3"><div><p className="text-gray-500">Emballage</p><p className="font-medium text-gray-950">{selectedPackaging?.name || activeShipment?.packaging?.name || "—"}</p></div><div><p className="text-gray-500">Poids</p><p className="font-medium text-gray-950">{formatWeight(activeShipment?.totalWeightG || packageWeightG)}</p></div><div><p className="text-gray-500">Services</p><p className="font-medium text-gray-950">Suivi ✓ · Assurance {selectedQuote ? (parseEuroToCents(carrierInsuranceValues[selectedQuote.id]) > 0 ? "✓" : "—") : activeShipment?.insuranceValueCents ? "✓" : "—"}{selectedQuote?.carrier !== "mondial_relay" && (selectedQuote || activeShipment?.carrier !== "mondial_relay") ? ` · Signature ${selectedQuote && carrierSignatureRequired[selectedQuote.id] ? "✓" : "—"}` : ""}</p></div></div></section>
                 </div>
                 <aside className="space-y-5 lg:sticky lg:top-24 lg:self-start">
                   <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><h3 className="font-semibold text-gray-950">Documents</h3><div className="mt-4 space-y-4"><label className="block text-sm font-medium text-gray-700">Format étiquette<select value={labelPrintFormat} onChange={(event) => setLabelPrintFormat(event.target.value)} className="mt-2 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"><option value="100x150">100×150 mm</option><option value="a4">A4</option></select></label><label className="block text-sm font-medium text-gray-700">Format bordereau<select value={packingSlipFormat} onChange={(event) => setPackingSlipFormat(event.target.value)} className="mt-2 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"><option value="a4">A4</option><option value="compact">Compact</option></select></label><label className="flex items-start gap-2 text-sm text-gray-600"><input type="checkbox" checked={includePackingSlip} onChange={(event) => setIncludePackingSlip(event.target.checked)} className="mt-1 rounded border-gray-300" />Inclure le bordereau dans le colis</label><button onClick={() => downloadLabel("etiquette")} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800"><Download className="h-4 w-4" /> Télécharger PDF étiquette</button><button onClick={() => downloadLabel("bordereau")} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50"><FileText className="h-4 w-4" /> Télécharger le bordereau</button></div></section>
-                  <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><h3 className="font-semibold text-gray-950">Résumé achat</h3><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between"><span className="text-gray-500">Étiquette</span><span>{selectedQuote ? formatPrice(selectedQuote.amountCents / 100, selectedQuote.currency) : activeShipment?.labelPriceCents ? formatPrice(activeShipment.labelPriceCents / 100, activeShipment.labelCurrency || "EUR") : "—"}</span></div><div className="flex justify-between"><span className="text-gray-500">Email client</span><span>{sendEmailToCustomer ? "Activé" : "Désactivé"}</span></div><div className="flex justify-between"><span className="text-gray-500">Format</span><span>{labelPrintFormat === "100x150" ? "100×150 mm" : "A4"}</span></div></div><div className="mt-5 space-y-2"><button type="button" className="inline-flex w-full items-center justify-center rounded-xl border border-rose-200 px-4 py-3 text-sm font-semibold text-rose-700 hover:bg-rose-50">Annuler l’étiquette</button><button onClick={() => setDrawerOpen(false)} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800"><ShieldCheck className="h-4 w-4" /> Terminé</button></div></section>
+                  <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><h3 className="font-semibold text-gray-950">Résumé achat</h3><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between"><span className="text-gray-500">Étiquette</span><span>{activeShipmentTax.amountCents ? `${formatPrice(activeShipmentTax.amountCents / 100, activeShipmentTax.currency)} ${activeShipmentTax.label}` : "—"}</span></div>{activeShipmentTax.label === "HT" && activeShipmentTax.amountCents > 0 && <><div className="flex justify-between"><span className="text-gray-500">TVA</span><span>{formatPrice(activeShipmentTax.taxAmountCents / 100, activeShipmentTax.currency)}</span></div><div className="flex justify-between font-semibold text-gray-950"><span>Total TTC</span><span>{formatPrice(activeShipmentTax.totalWithTaxCents / 100, activeShipmentTax.currency)}</span></div></>}<div className="flex justify-between"><span className="text-gray-500">Email client</span><span>{sendEmailToCustomer ? "Activé" : "Désactivé"}</span></div><div className="flex justify-between"><span className="text-gray-500">Format</span><span>{labelPrintFormat === "100x150" ? "100×150 mm" : "A4"}</span></div></div><div className="mt-5 space-y-2"><button type="button" className="inline-flex w-full items-center justify-center rounded-xl border border-rose-200 px-4 py-3 text-sm font-semibold text-rose-700 hover:bg-rose-50">Annuler l’étiquette</button><button onClick={() => setDrawerOpen(false)} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800"><ShieldCheck className="h-4 w-4" /> Terminé</button></div></section>
                 </aside>
               </div>
             )}

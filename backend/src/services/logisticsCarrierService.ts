@@ -37,12 +37,14 @@ export type ShipmentQuoteInput = {
   totalWeightG: number;
   orderValueCents: number;
   packageDimensions?: ShipmentDimensions | null;
+  requestedInsuranceValueCents?: number | null;
 };
 
 export type ShipmentLabelInput = ShipmentQuoteInput & {
   carrier: LogisticsCarrier;
   offerId: string;
   insuranceValueCents: number;
+  signatureRequired?: boolean;
   packagingId?: number | null;
   relayPointId?: string | null;
 };
@@ -56,8 +58,17 @@ export type ShipmentRateQuote = {
   deliveryMode: "home" | "relay";
   amountCents: number;
   currency: "EUR";
+  priceTaxIncluded: boolean;
+  priceTaxLabel: "HT" | "TTC";
+  taxRate: number;
+  taxAmountCents: number;
+  totalWithTaxCents: number;
   insuranceValueCents: number;
   insuranceLabel: string;
+  signatureAvailable: boolean;
+  signatureRequired: boolean;
+  contractNumberApplied: boolean;
+  contractNumberSuffix: string | null;
   estimatedDeliveryDays: string;
   requiresRelayPoint: boolean;
   purchasable: boolean;
@@ -82,6 +93,11 @@ export type ShipmentLabelResult = {
   priceCents: number;
   currency: "EUR";
   insuranceValueCents: number;
+  priceTaxIncluded: boolean;
+  priceTaxLabel: "HT" | "TTC";
+  taxAmountCents: number;
+  totalWithTaxCents: number;
+  signatureRequired: boolean;
   rawResponse: Record<string, unknown> | null;
   notice: string | null;
 };
@@ -130,6 +146,30 @@ const DEFAULT_TARIFFS: Record<LogisticsCarrier, TariffStep[]> = {
 
 const COLISSIMO_INSURANCE_LEVELS = [0, 15000, 30000, 50000, 100000, 200000, 500000];
 const MONDIAL_RELAY_INSURANCE_LEVELS = [0, 2500, 5000, 12500, 25000, 50000];
+const DEFAULT_CARRIER_VAT_RATE = 0.2;
+
+function getColissimoContractNumber() {
+  return (process.env.COLISSIMO_CONTRACT_NUMBER || "").trim();
+}
+
+function quoteTaxMode(carrier: LogisticsCarrier): "HT" | "TTC" {
+  const envKey = `LOGISTICS_${carrier.toUpperCase()}_PRICE_TAX_MODE`;
+  const configured = (process.env[envKey] || process.env.LOGISTICS_CARRIER_PRICE_TAX_MODE || "TTC").trim().toUpperCase();
+  return configured === "HT" ? "HT" : "TTC";
+}
+
+function enrichCarrierTax(amountCents: number, carrier: LogisticsCarrier) {
+  const priceTaxLabel = quoteTaxMode(carrier);
+  const priceTaxIncluded = priceTaxLabel === "TTC";
+  const taxAmountCents = priceTaxIncluded ? 0 : Math.round(amountCents * DEFAULT_CARRIER_VAT_RATE);
+  return {
+    priceTaxIncluded,
+    priceTaxLabel,
+    taxRate: DEFAULT_CARRIER_VAT_RATE,
+    taxAmountCents,
+    totalWithTaxCents: amountCents + taxAmountCents,
+  };
+}
 
 function xmlEscape(value: string | number | null | undefined) {
   return String(value ?? "")
@@ -233,12 +273,16 @@ export function buildShipmentQuotes(input: ShipmentQuoteInput): ShipmentRateQuot
   const carriers: LogisticsCarrier[] = domestic
     ? ["colissimo", "mondial_relay"]
     : ["colissimo_international"];
+  const colissimoContractNumber = getColissimoContractNumber();
 
   return carriers.map(carrier => {
-    const insuranceValueCents = insuranceLevel(carrier, input.orderValueCents);
+    const requestedInsuranceValueCents = input.requestedInsuranceValueCents ?? undefined;
+    const insuranceValueCents = insuranceLevel(carrier, input.orderValueCents, requestedInsuranceValueCents);
     const serviceCode = carrier === "mondial_relay" ? "24R" : carrier === "colissimo" ? "DOM" : "COLI_INTER";
     const amountCents = calculateBaseAmount(carrier, input.totalWeightG) + insuranceSurcharge(carrier, insuranceValueCents);
     const requiresRelayPoint = carrier === "mondial_relay";
+    const isColissimo = carrier === "colissimo" || carrier === "colissimo_international";
+    const tax = enrichCarrierTax(amountCents, carrier);
     return {
       id: buildOfferId(carrier, serviceCode, insuranceValueCents),
       carrier,
@@ -248,8 +292,13 @@ export function buildShipmentQuotes(input: ShipmentQuoteInput): ShipmentRateQuot
       deliveryMode: carrier === "mondial_relay" ? "relay" : "home",
       amountCents,
       currency: "EUR",
+      ...tax,
       insuranceValueCents,
       insuranceLabel: insuranceValueCents > 0 ? `Assurance jusqu’à ${(insuranceValueCents / 100).toLocaleString("fr-FR")} €` : "Assurance standard transporteur",
+      signatureAvailable: isColissimo,
+      signatureRequired: false,
+      contractNumberApplied: isColissimo ? Boolean(colissimoContractNumber) : true,
+      contractNumberSuffix: isColissimo && colissimoContractNumber ? colissimoContractNumber.slice(-4) : null,
       estimatedDeliveryDays: carrier === "mondial_relay" ? "3 à 5 jours ouvrés" : domestic ? "2 jours ouvrés indicatifs" : "3 à 8 jours ouvrés indicatifs",
       requiresRelayPoint,
       purchasable: hasCarrierCredentials(carrier),
@@ -295,6 +344,8 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
   const productCode = input.carrier === "colissimo_international" ? "COLI" : "DOM";
   const countryCode = normalizeCountryCode(input.recipient.country);
   const insuranceValue = input.insuranceValueCents || quote.insuranceValueCents;
+  const contractNumber = getColissimoContractNumber();
+  const signatureRequired = Boolean(input.signatureRequired);
 
   const envelope = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sls="http://sls.ws.coliposte.fr">
@@ -318,6 +369,7 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
             <insuranceValue>${insuranceValue}</insuranceValue>
             <weight>${Math.max(input.totalWeightG / 1000, 0.01).toFixed(3)}</weight>
             <nonMachinable>false</nonMachinable>
+            <ftd>${signatureRequired ? "true" : "false"}</ftd>
           </parcel>
           <sender>
             <senderParcelRef>${xmlEscape(input.orderNumber)}</senderParcelRef>
@@ -351,6 +403,10 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
           <field>
             <key>CUSER_KEY</key>
             <value>${xmlEscape(apiKey)}</value>
+          </field>
+          <field>
+            <key>ACCOUNT_NUMBER</key>
+            <value>${xmlEscape(contractNumber)}</value>
           </field>
         </fields>
       </generateLabelRequest>
@@ -388,7 +444,12 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
     priceCents: quote.amountCents,
     currency: quote.currency,
     insuranceValueCents: insuranceValue,
-    rawResponse: { carrier: "colissimo", offer: quote, responseXml: xml.slice(0, 4000) },
+    priceTaxIncluded: quote.priceTaxIncluded,
+    priceTaxLabel: quote.priceTaxLabel,
+    taxAmountCents: quote.taxAmountCents,
+    totalWithTaxCents: quote.totalWithTaxCents,
+    signatureRequired,
+    rawResponse: { carrier: "colissimo", offer: quote, signatureRequired, contractNumberApplied: Boolean(contractNumber), contractNumberSuffix: contractNumber ? contractNumber.slice(-4) : null, responseXml: xml.slice(0, 4000) },
     notice: null,
   };
 }
@@ -481,6 +542,11 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
     priceCents: quote.amountCents,
     currency: quote.currency,
     insuranceValueCents: input.insuranceValueCents,
+    priceTaxIncluded: quote.priceTaxIncluded,
+    priceTaxLabel: quote.priceTaxLabel,
+    taxAmountCents: quote.taxAmountCents,
+    totalWithTaxCents: quote.totalWithTaxCents,
+    signatureRequired: false,
     rawResponse: { carrier: "mondial_relay", offer: quote, expeditionXml: xml.slice(0, 4000), labelUrl },
     notice: null,
   };
@@ -492,10 +558,12 @@ export async function createOfficialShipmentLabel(input: ShipmentLabelInput): Pr
     throw new Error("L’offre sélectionnée ne correspond pas au transporteur demandé.");
   }
 
-  const quote = buildShipmentQuotes(input).find(item => item.id === input.offerId);
+  const quote = buildShipmentQuotes({ ...input, requestedInsuranceValueCents: input.insuranceValueCents }).find(item => item.carrier === carrier && item.serviceCode === serviceCode);
   if (!quote) {
     throw new Error("Offre transporteur introuvable ou incompatible avec cette commande.");
   }
+  quote.id = input.offerId;
+  quote.signatureRequired = carrier !== "mondial_relay" ? Boolean(input.signatureRequired) : false;
   if (!quote.purchasable) {
     throw new Error(quote.configurationError || "Identifiants transporteur manquants.");
   }

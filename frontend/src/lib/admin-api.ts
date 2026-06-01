@@ -1273,8 +1273,17 @@ export interface LogisticsCarrierQuote {
   deliveryMode: "home" | "relay";
   amountCents: number;
   currency: "EUR";
+  priceTaxIncluded: boolean;
+  priceTaxLabel: "HT" | "TTC";
+  taxRate: number;
+  taxAmountCents: number;
+  totalWithTaxCents: number;
   insuranceValueCents: number;
   insuranceLabel: string;
+  signatureAvailable: boolean;
+  signatureRequired: boolean;
+  contractNumberApplied: boolean;
+  contractNumberSuffix: string | null;
   estimatedDeliveryDays: string;
   requiresRelayPoint: boolean;
   purchasable: boolean;
@@ -1314,6 +1323,7 @@ export function purchaseLogisticsLabel(
     carrier: ShipmentRecord["carrier"];
     offerId: string;
     insuranceValueCents?: number;
+    signatureRequired?: boolean;
     relayPointId?: string | null;
     packagingId?: number | null;
   }
@@ -1327,6 +1337,11 @@ export function purchaseLogisticsLabel(
       priceCents: number;
       currency?: string;
       insuranceValueCents: number;
+      priceTaxIncluded?: boolean;
+      priceTaxLabel?: "HT" | "TTC";
+      taxAmountCents?: number;
+      totalWithTaxCents?: number;
+      signatureRequired?: boolean;
     };
   }>(`/api/admin/logistics/orders/${orderId}/label`, {
     method: "POST",
