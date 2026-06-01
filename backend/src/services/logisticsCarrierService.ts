@@ -158,6 +158,10 @@ function getColissimoContractNumber() {
   return (process.env.COLISSIMO_CONTRACT_NUMBER || "").trim();
 }
 
+function getColissimoPassword() {
+  return (process.env.COLISSIMO_PASSWORD || process.env.COLISSIMO_API_KEY || "").trim();
+}
+
 function quoteTaxMode(carrier: LogisticsCarrier): "HT" | "TTC" {
   const envKey = `LOGISTICS_${carrier.toUpperCase()}_PRICE_TAX_MODE`;
   const configured = (process.env[envKey] || process.env.LOGISTICS_CARRIER_PRICE_TAX_MODE || "TTC").trim().toUpperCase();
@@ -226,7 +230,7 @@ function hasCarrierCredentials(carrier: LogisticsCarrier) {
   if (carrier === "mondial_relay") {
     return Boolean(process.env.MONDIAL_RELAY_ENSEIGNE && process.env.MONDIAL_RELAY_PRIVATE_KEY);
   }
-  return Boolean(process.env.COLISSIMO_API_KEY);
+  return Boolean(getColissimoContractNumber() && getColissimoPassword());
 }
 
 function carrierConfigurationError(carrier: LogisticsCarrier) {
@@ -234,7 +238,7 @@ function carrierConfigurationError(carrier: LogisticsCarrier) {
   if (carrier === "mondial_relay") {
     return "MONDIAL_RELAY_ENSEIGNE et MONDIAL_RELAY_PRIVATE_KEY doivent être configurés pour acheter l’étiquette officielle Mondial Relay.";
   }
-  return "COLISSIMO_API_KEY doit être configurée pour acheter l’étiquette officielle Colissimo.";
+  return "COLISSIMO_CONTRACT_NUMBER et COLISSIMO_PASSWORD doivent être configurés pour acheter l’étiquette officielle Colissimo. COLISSIMO_API_KEY reste accepté comme alias de compatibilité pour le mot de passe.";
 }
 
 function tariffFor(carrier: LogisticsCarrier) {
@@ -347,8 +351,9 @@ async function downloadPdfAsBase64(url: string) {
 }
 
 async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRateQuote): Promise<ShipmentLabelResult> {
-  const apiKey = process.env.COLISSIMO_API_KEY;
-  if (!apiKey) {
+  const contractNumber = getColissimoContractNumber();
+  const password = getColissimoPassword();
+  if (!contractNumber || !password) {
     throw new Error(carrierConfigurationError(input.carrier) || "Configuration Colissimo absente.");
   }
 
@@ -357,7 +362,6 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
   const productCode = input.carrier === "colissimo_international" ? "COLI" : "DOM";
   const countryCode = normalizeCountryCode(input.recipient.country);
   const insuranceValue = input.insuranceValueCents || quote.insuranceValueCents;
-  const contractNumber = getColissimoContractNumber();
   const signatureRequired = Boolean(input.signatureRequired);
 
   const envelope = `<?xml version="1.0" encoding="UTF-8"?>
@@ -366,6 +370,8 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
   <soapenv:Body>
     <sls:generateLabel>
       <generateLabelRequest>
+        <contractNumber>${xmlEscape(contractNumber)}</contractNumber>
+        <password>${xmlEscape(password)}</password>
         <outputFormat>
           <x>0</x>
           <y>0</y>
@@ -412,16 +418,6 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
             </address>
           </addressee>
         </letter>
-        <fields>
-          <field>
-            <key>CUSER_KEY</key>
-            <value>${xmlEscape(apiKey)}</value>
-          </field>
-          <field>
-            <key>ACCOUNT_NUMBER</key>
-            <value>${xmlEscape(contractNumber)}</value>
-          </field>
-        </fields>
       </generateLabelRequest>
     </sls:generateLabel>
   </soapenv:Body>
