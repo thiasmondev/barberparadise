@@ -131,7 +131,7 @@ const DEFAULT_TARIFFS: Record<LogisticsCarrier, TariffStep[]> = {
     { maxWeightG: 30000, amountCents: 3299 },
   ],
   mondial_relay: [
-    { maxWeightG: 500, amountCents: 459 },
+    { maxWeightG: 500, amountCents: 359 },
     { maxWeightG: 1000, amountCents: 549 },
     { maxWeightG: 2000, amountCents: 669 },
     { maxWeightG: 3000, amountCents: 789 },
@@ -160,6 +160,14 @@ function getColissimoContractNumber() {
 
 function getColissimoPassword() {
   return (process.env.COLISSIMO_PASSWORD || process.env.COLISSIMO_API_KEY || "").trim();
+}
+
+function getMondialRelayEnseigne() {
+  return (process.env.MONDIAL_RELAY_ENSEIGNE || "").trim();
+}
+
+function getMondialRelayPrivateKey() {
+  return (process.env.MONDIAL_RELAY_PRIVATE_KEY || "").trim();
 }
 
 function quoteTaxMode(carrier: LogisticsCarrier): "HT" | "TTC" {
@@ -228,7 +236,7 @@ function buildTrackingUrl(carrier: LogisticsCarrier, trackingNumber: string) {
 
 function hasCarrierCredentials(carrier: LogisticsCarrier) {
   if (carrier === "mondial_relay") {
-    return Boolean(process.env.MONDIAL_RELAY_ENSEIGNE && process.env.MONDIAL_RELAY_PRIVATE_KEY);
+    return Boolean(getMondialRelayEnseigne() && getMondialRelayPrivateKey());
   }
   return Boolean(getColissimoContractNumber() && getColissimoPassword());
 }
@@ -254,7 +262,8 @@ function calculateBaseAmount(carrier: LogisticsCarrier, totalWeightG: number) {
 
 function insuranceLevel(carrier: LogisticsCarrier, orderValueCents: number, requestedInsuranceCents?: number) {
   const levels = carrier === "mondial_relay" ? MONDIAL_RELAY_INSURANCE_LEVELS : COLISSIMO_INSURANCE_LEVELS;
-  const target = Math.max(orderValueCents, requestedInsuranceCents || 0, 0);
+  const requested = Math.max(requestedInsuranceCents || 0, 0);
+  const target = carrier === "mondial_relay" ? requested : Math.max(orderValueCents, requested, 0);
   return levels.find(level => level >= target) ?? levels[levels.length - 1];
 }
 
@@ -314,8 +323,8 @@ export function buildShipmentQuotes(input: ShipmentQuoteInput): ShipmentRateQuot
       insuranceLabel: insuranceValueCents > 0 ? `Assurance jusqu’à ${(insuranceValueCents / 100).toLocaleString("fr-FR")} €` : "Assurance standard transporteur",
       signatureAvailable: isColissimo,
       signatureRequired,
-      contractNumberApplied: isColissimo ? Boolean(colissimoContractNumber) : true,
-      contractNumberSuffix: isColissimo && colissimoContractNumber ? colissimoContractNumber.slice(-4) : null,
+      contractNumberApplied: isColissimo ? Boolean(colissimoContractNumber) : Boolean(getMondialRelayEnseigne()),
+      contractNumberSuffix: isColissimo && colissimoContractNumber ? colissimoContractNumber.slice(-4) : carrier === "mondial_relay" && getMondialRelayEnseigne() ? getMondialRelayEnseigne().slice(-4) : null,
       estimatedDeliveryDays: carrier === "mondial_relay" ? "3 à 5 jours ouvrés" : domestic ? "2 jours ouvrés indicatifs" : "3 à 8 jours ouvrés indicatifs",
       requiresRelayPoint,
       purchasable: hasCarrierCredentials(carrier),
@@ -466,13 +475,13 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
 }
 
 function mondialRelaySecurity(values: Array<string | number | null | undefined>) {
-  const privateKey = process.env.MONDIAL_RELAY_PRIVATE_KEY || "";
+  const privateKey = getMondialRelayPrivateKey();
   return crypto.createHash("md5").update(values.map(value => String(value ?? "")).join("") + privateKey).digest("hex").toUpperCase();
 }
 
 async function createMondialRelayLabel(input: ShipmentLabelInput, quote: ShipmentRateQuote): Promise<ShipmentLabelResult> {
-  const enseigne = process.env.MONDIAL_RELAY_ENSEIGNE;
-  if (!enseigne || !process.env.MONDIAL_RELAY_PRIVATE_KEY) {
+  const enseigne = getMondialRelayEnseigne();
+  if (!enseigne || !getMondialRelayPrivateKey()) {
     throw new Error(carrierConfigurationError("mondial_relay") || "Configuration Mondial Relay absente.");
   }
   if (!input.relayPointId) {
@@ -486,13 +495,14 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
   const modeCol = process.env.MONDIAL_RELAY_MODE_COL || "CCC";
   const modeLiv = process.env.MONDIAL_RELAY_MODE_LIV || "24R";
   const values = [
-    enseigne, modeCol, modeLiv, "", "", poids, "", "", "1", expValeur, "EUR", assurance,
-    process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise", "", process.env.LOGISTICS_SENDER_ADDRESS || "",
-    process.env.LOGISTICS_SENDER_ADDRESS_2 || "", process.env.LOGISTICS_SENDER_POSTAL_CODE || "", process.env.LOGISTICS_SENDER_CITY || "", "FR",
-    process.env.LOGISTICS_SENDER_PHONE || "", process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr",
-    `${input.recipient.firstName} ${input.recipient.lastName}`.trim(), "", input.recipient.address, input.recipient.extension || "",
-    input.recipient.postalCode, input.recipient.city, countryCode, input.recipient.phone || "", input.customerEmail,
-    "", input.relayPointId, "FR", "", "FR", input.orderNumber,
+    enseigne, modeCol, modeLiv, input.orderNumber, input.customerEmail,
+    "FR", process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise", "", process.env.LOGISTICS_SENDER_ADDRESS || "",
+    process.env.LOGISTICS_SENDER_ADDRESS_2 || "", process.env.LOGISTICS_SENDER_CITY || "", process.env.LOGISTICS_SENDER_POSTAL_CODE || "", "FR",
+    process.env.LOGISTICS_SENDER_PHONE || "", "", process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr",
+    "FR", `${input.recipient.firstName} ${input.recipient.lastName}`.trim(), "", input.recipient.address, input.recipient.extension || "",
+    input.recipient.city, input.recipient.postalCode, countryCode, input.recipient.phone || "", "", input.customerEmail,
+    poids, input.packageDimensions?.lengthCm || "", "", "1", "0", "EUR", expValeur, "EUR",
+    "FR", input.relayPointId, "FR", "", "", "", "", assurance, "",
   ];
   const security = mondialRelaySecurity(values);
 
@@ -503,11 +513,11 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
       <Enseigne>${xmlEscape(enseigne)}</Enseigne><ModeCol>${xmlEscape(modeCol)}</ModeCol><ModeLiv>${xmlEscape(modeLiv)}</ModeLiv>
       <NDossier>${xmlEscape(input.orderNumber)}</NDossier><NClient>${xmlEscape(input.customerEmail)}</NClient><Expe_Langage>FR</Expe_Langage>
       <Expe_Ad1>${xmlEscape(process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise")}</Expe_Ad1><Expe_Ad2></Expe_Ad2><Expe_Ad3>${xmlEscape(process.env.LOGISTICS_SENDER_ADDRESS || "")}</Expe_Ad3><Expe_Ad4>${xmlEscape(process.env.LOGISTICS_SENDER_ADDRESS_2 || "")}</Expe_Ad4>
-      <Expe_Ville>${xmlEscape(process.env.LOGISTICS_SENDER_CITY || "")}</Expe_Ville><Expe_CP>${xmlEscape(process.env.LOGISTICS_SENDER_POSTAL_CODE || "")}</Expe_CP><Expe_Pays>FR</Expe_Pays><Expe_Tel1>${xmlEscape(process.env.LOGISTICS_SENDER_PHONE || "")}</Expe_Tel1><Expe_Mail>${xmlEscape(process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr")}</Expe_Mail>
+      <Expe_Ville>${xmlEscape(process.env.LOGISTICS_SENDER_CITY || "")}</Expe_Ville><Expe_CP>${xmlEscape(process.env.LOGISTICS_SENDER_POSTAL_CODE || "")}</Expe_CP><Expe_Pays>FR</Expe_Pays><Expe_Tel1>${xmlEscape(process.env.LOGISTICS_SENDER_PHONE || "")}</Expe_Tel1><Expe_Tel2></Expe_Tel2><Expe_Mail>${xmlEscape(process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr")}</Expe_Mail>
       <Dest_Langage>FR</Dest_Langage><Dest_Ad1>${xmlEscape(`${input.recipient.firstName} ${input.recipient.lastName}`.trim())}</Dest_Ad1><Dest_Ad2></Dest_Ad2><Dest_Ad3>${xmlEscape(input.recipient.address)}</Dest_Ad3><Dest_Ad4>${xmlEscape(input.recipient.extension || "")}</Dest_Ad4>
-      <Dest_Ville>${xmlEscape(input.recipient.city)}</Dest_Ville><Dest_CP>${xmlEscape(input.recipient.postalCode)}</Dest_CP><Dest_Pays>${xmlEscape(countryCode)}</Dest_Pays><Dest_Tel1>${xmlEscape(input.recipient.phone || "")}</Dest_Tel1><Dest_Mail>${xmlEscape(input.customerEmail)}</Dest_Mail>
+      <Dest_Ville>${xmlEscape(input.recipient.city)}</Dest_Ville><Dest_CP>${xmlEscape(input.recipient.postalCode)}</Dest_CP><Dest_Pays>${xmlEscape(countryCode)}</Dest_Pays><Dest_Tel1>${xmlEscape(input.recipient.phone || "")}</Dest_Tel1><Dest_Tel2></Dest_Tel2><Dest_Mail>${xmlEscape(input.customerEmail)}</Dest_Mail>
       <Poids>${xmlEscape(poids)}</Poids><Longueur>${xmlEscape(input.packageDimensions?.lengthCm || "")}</Longueur><Taille></Taille><NbColis>1</NbColis>
-      <CRT_Valeur>0</CRT_Valeur><CRT_Devise>EUR</CRT_Devise><Exp_Valeur>${xmlEscape(expValeur)}</Exp_Valeur><Exp_Devise>EUR</Exp_Devise><COL_Rel_Pays>FR</COL_Rel_Pays><LIV_Rel_Pays>FR</LIV_Rel_Pays><LIV_Rel>${xmlEscape(input.relayPointId)}</LIV_Rel><Assurance>${xmlEscape(assurance)}</Assurance><Instructions></Instructions><Security>${security}</Security>
+      <CRT_Valeur>0</CRT_Valeur><CRT_Devise>EUR</CRT_Devise><Exp_Valeur>${xmlEscape(expValeur)}</Exp_Valeur><Exp_Devise>EUR</Exp_Devise><COL_Rel_Pays>FR</COL_Rel_Pays><COL_Rel></COL_Rel><LIV_Rel_Pays>FR</LIV_Rel_Pays><LIV_Rel>${xmlEscape(input.relayPointId)}</LIV_Rel><TAvisage></TAvisage><TReprise></TReprise><Montage></Montage><TRDV></TRDV><Assurance>${xmlEscape(assurance)}</Assurance><Instructions></Instructions><Security>${security}</Security>
     </WSI2_CreationExpedition>
   </soap:Body>
 </soap:Envelope>`;

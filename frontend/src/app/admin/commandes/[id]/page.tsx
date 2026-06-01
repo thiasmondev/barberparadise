@@ -272,10 +272,7 @@ export default function OrderDetailPage() {
 
   const handlePackagingChange = (value: string) => {
     setSelectedPackagingId(value ? Number(value) : null);
-    setQuotes([]);
     setSelectedQuoteId("");
-    setCarrierInsuranceValues({});
-    setCarrierSignatureRequired({});
     setQuoteRefreshingByCarrier({});
     setQuoteErrorsByCarrier({});
   };
@@ -315,7 +312,7 @@ export default function OrderDetailPage() {
 
   const calculateQuotes = async (mode: "manual" | "auto" = "manual") => {
     if (!order) return;
-    const carrierKeys = quotes.map((quote) => quote.carrier);
+    const carrierKeys = quotes.length > 0 ? quotes.map((quote) => quote.carrier) : ["colissimo", "mondial_relay"];
     if (mode === "manual") {
       setDrawerLoading(true);
       setQuoteErrorsByCarrier({});
@@ -353,9 +350,9 @@ export default function OrderDetailPage() {
   };
 
   useEffect(() => {
-    if (!drawerOpen || labelStep !== "form" || !order || quotes.length === 0 || hasZeroWeight) return;
+    if (!drawerOpen || labelStep !== "form" || !order || hasZeroWeight) return;
     const timer = window.setTimeout(() => {
-      calculateQuotes("auto").catch(console.error);
+      calculateQuotes(quotes.length > 0 ? "auto" : "manual").catch(console.error);
     }, 800);
     return () => window.clearTimeout(timer);
   }, [
