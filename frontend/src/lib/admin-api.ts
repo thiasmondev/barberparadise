@@ -1373,11 +1373,31 @@ export function getLogisticsOrder(orderId: string) {
   );
 }
 
+export interface LogisticsCarrierQuoteOptions {
+  packagingId?: number | null;
+  totalWeightG?: number | null;
+  colissimoInsuranceValueCents?: number | null;
+  colissimoSignatureRequired?: boolean;
+  mondialRelayInsuranceValueCents?: number | null;
+}
+
 export function getLogisticsCarrierQuotes(
   orderId: string,
-  packagingId?: number | null
+  options: LogisticsCarrierQuoteOptions = {}
 ) {
-  const query = packagingId ? `?packagingId=${packagingId}` : "";
+  const params = new URLSearchParams();
+  if (options.packagingId) params.set("packagingId", String(options.packagingId));
+  if (options.totalWeightG && options.totalWeightG > 0) params.set("totalWeightG", String(options.totalWeightG));
+  if (options.colissimoInsuranceValueCents !== undefined && options.colissimoInsuranceValueCents !== null) {
+    params.set("colissimoInsuranceValueCents", String(options.colissimoInsuranceValueCents));
+  }
+  if (options.colissimoSignatureRequired !== undefined) {
+    params.set("colissimoSignatureRequired", options.colissimoSignatureRequired ? "true" : "false");
+  }
+  if (options.mondialRelayInsuranceValueCents !== undefined && options.mondialRelayInsuranceValueCents !== null) {
+    params.set("mondialRelayInsuranceValueCents", String(options.mondialRelayInsuranceValueCents));
+  }
+  const query = params.toString() ? `?${params.toString()}` : "";
   return adminFetch<{
     quotes: LogisticsCarrierQuote[];
     totalWeightG: number;

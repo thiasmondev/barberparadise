@@ -184,6 +184,8 @@ export default function OrderDetailPage() {
   const [includePackingSlip, setIncludePackingSlip] = useState(true);
   const [carrierInsuranceValues, setCarrierInsuranceValues] = useState<Record<string, string>>({});
   const [carrierSignatureRequired, setCarrierSignatureRequired] = useState<Record<string, boolean>>({});
+  const [quoteRefreshingByCarrier, setQuoteRefreshingByCarrier] = useState<Record<string, boolean>>({});
+  const [quoteErrorsByCarrier, setQuoteErrorsByCarrier] = useState<Record<string, string>>({});
 
   const loadOrder = async () => {
     if (!id) return;
@@ -274,31 +276,98 @@ export default function OrderDetailPage() {
     setSelectedQuoteId("");
     setCarrierInsuranceValues({});
     setCarrierSignatureRequired({});
+    setQuoteRefreshingByCarrier({});
+    setQuoteErrorsByCarrier({});
   };
 
-  const calculateQuotes = async () => {
+  const buildQuoteRequestOptions = () => {
+    const currentColissimoQuote = quotes.find((quote) => quote.carrier === "colissimo" || quote.carrier === "colissimo_international");
+    const currentMondialRelayQuote = quotes.find((quote) => quote.carrier === "mondial_relay");
+    return {
+      packagingId: selectedPackagingId,
+      totalWeightG: packageWeightG > 0 ? packageWeightG : null,
+      colissimoInsuranceValueCents: currentColissimoQuote ? parseEuroToCents(carrierInsuranceValues[currentColissimoQuote.id]) : null,
+      colissimoSignatureRequired: currentColissimoQuote ? Boolean(carrierSignatureRequired[currentColissimoQuote.id]) : undefined,
+      mondialRelayInsuranceValueCents: currentMondialRelayQuote ? parseEuroToCents(carrierInsuranceValues[currentMondialRelayQuote.id]) : null,
+    };
+  };
+
+  const mergeQuoteOptions = (nextQuotes: LogisticsCarrierQuote[], preserveCurrentOptions: boolean) => {
+    setCarrierInsuranceValues((current) => {
+      const next = { ...current };
+      nextQuotes.forEach((quote) => {
+        if (!preserveCurrentOptions || next[quote.id] === undefined) {
+          next[quote.id] = centsToEuroInput(quote.insuranceValueCents);
+        }
+      });
+      return next;
+    });
+    setCarrierSignatureRequired((current) => {
+      const next = { ...current };
+      nextQuotes.forEach((quote) => {
+        if (!preserveCurrentOptions || next[quote.id] === undefined) {
+          next[quote.id] = Boolean(quote.signatureRequired);
+        }
+      });
+      return next;
+    });
+  };
+
+  const calculateQuotes = async (mode: "manual" | "auto" = "manual") => {
     if (!order) return;
-    setDrawerLoading(true);
+    const carrierKeys = quotes.map((quote) => quote.carrier);
+    if (mode === "manual") {
+      setDrawerLoading(true);
+      setQuoteErrorsByCarrier({});
+    } else {
+      setQuoteRefreshingByCarrier(Object.fromEntries(carrierKeys.map((carrier) => [carrier, true])));
+      setQuoteErrorsByCarrier({});
+    }
     setDrawerError("");
     try {
-      const result = await getLogisticsCarrierQuotes(order.id, selectedPackagingId);
+      const result = await getLogisticsCarrierQuotes(order.id, buildQuoteRequestOptions());
       setQuotes(result.quotes);
-      setCarrierInsuranceValues(Object.fromEntries(result.quotes.map((quote) => [quote.id, centsToEuroInput(quote.insuranceValueCents)])));
-      setCarrierSignatureRequired(Object.fromEntries(result.quotes.map((quote) => [quote.id, Boolean(quote.signatureRequired)])));
-      setSelectedQuoteId(result.quotes.find((quote) => quote.purchasable)?.id || result.quotes[0]?.id || "");
+      mergeQuoteOptions(result.quotes, mode === "auto");
+      setSelectedQuoteId((current) => {
+        if (current && result.quotes.some((quote) => quote.id === current)) return current;
+        return result.quotes.find((quote) => quote.purchasable)?.id || result.quotes[0]?.id || "";
+      });
       if (!result.quotes.length) {
         setDrawerError("Aucun devis transporteur n’a été retourné pour cette commande.");
       }
     } catch (err: any) {
-      setDrawerError(err.message || "Impossible de calculer les devis transporteur.");
-      setQuotes([]);
-      setSelectedQuoteId("");
-      setCarrierInsuranceValues({});
-      setCarrierSignatureRequired({});
+      const message = err.message || "Impossible de calculer les devis transporteur.";
+      if (mode === "manual" || quotes.length === 0) {
+        setDrawerError(message);
+        setQuotes([]);
+        setSelectedQuoteId("");
+        setCarrierInsuranceValues({});
+        setCarrierSignatureRequired({});
+      } else {
+        setQuoteErrorsByCarrier(Object.fromEntries(carrierKeys.map((carrier) => [carrier, message])));
+      }
     } finally {
-      setDrawerLoading(false);
+      if (mode === "manual") setDrawerLoading(false);
+      setQuoteRefreshingByCarrier({});
     }
   };
+
+  useEffect(() => {
+    if (!drawerOpen || labelStep !== "form" || !order || quotes.length === 0 || hasZeroWeight) return;
+    const timer = window.setTimeout(() => {
+      calculateQuotes("auto").catch(console.error);
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [
+    drawerOpen,
+    labelStep,
+    order?.id,
+    selectedPackagingId,
+    packageWeightG,
+    JSON.stringify(carrierInsuranceValues),
+    JSON.stringify(carrierSignatureRequired),
+  ]);
+
 
   const purchaseLabel = async () => {
     if (!order || !selectedQuote) return;
@@ -590,17 +659,19 @@ export default function OrderDetailPage() {
                   </section>
 
                   <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-semibold text-gray-950">Devis transporteurs</h3><p className="mt-1 text-sm text-gray-500">Comparez les services disponibles, leurs options et la base tarifaire HT/TTC avant achat.</p></div><button onClick={calculateQuotes} disabled={drawerLoading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">{drawerLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Calculer les devis</button></div>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-semibold text-gray-950">Devis transporteurs</h3><p className="mt-1 text-sm text-gray-500">Comparez les services disponibles, leurs options et la base tarifaire HT/TTC avant achat.</p></div><button onClick={() => calculateQuotes()} disabled={drawerLoading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50">{drawerLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Calculer les devis</button></div>
                     <div className="mt-4 grid gap-3">
                       {quotes.length === 0 ? <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-500">Aucun devis calculé pour le moment.</div> : quotes.map((quote) => {
                         const isSelected = quote.id === selectedQuoteId;
                         const isCheapest = quote.id === cheapestQuoteId;
-                        const hasCarrierError = !quote.purchasable || quote.configurationError;
+                        const cardRefreshing = Boolean(quoteRefreshingByCarrier[quote.carrier]);
+                        const cardError = quoteErrorsByCarrier[quote.carrier];
+                        const hasCarrierError = !quote.purchasable || quote.configurationError || cardError;
                         const quoteTax = getQuoteTaxDetails(quote);
                         const insuranceValue = carrierInsuranceValues[quote.id] ?? centsToEuroInput(quote.insuranceValueCents);
                         return (
-                          <div key={quote.id} role="button" tabIndex={0} onClick={() => setSelectedQuoteId(quote.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedQuoteId(quote.id); }} className={`cursor-pointer rounded-2xl border p-4 text-left transition ${isSelected ? "border-gray-950 bg-gray-50 ring-2 ring-gray-950/10" : "border-gray-200 bg-white hover:border-gray-300"}`}>
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-gray-950">{quote.carrierLabel}</p><span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">{quote.serviceLabel}</span>{isCheapest && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Le moins cher</span>}{quote.id === purchasableQuotes[0]?.id && <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">Suggéré</span>}</div><div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500"><span>Livraison : {quote.estimatedDeliveryDays}</span><span>Suivi ✓</span><span>Assurance {parseEuroToCents(insuranceValue) > 0 ? "✓" : "—"}</span>{quote.signatureAvailable && <span>Signature {carrierSignatureRequired[quote.id] ? "✓" : "—"}</span>}{quote.carrier !== "mondial_relay" && <span>{quote.contractNumberApplied ? `Contrat Colissimo appliqué${quote.contractNumberSuffix ? ` · ****${quote.contractNumberSuffix}` : ""}` : "Contrat Colissimo non configuré"}</span>}</div>{hasCarrierError && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{quote.configurationError || "Ce service n’est pas achetable pour cette commande."}</p>}</div><div className="text-left sm:text-right"><p className="text-xl font-semibold text-gray-950">{formatPrice(quote.amountCents / 100, quote.currency)} {quoteTax.label}</p>{quoteTax.label === "HT" ? <p className="text-xs text-gray-500">TVA {formatPrice(quoteTax.taxAmountCents / 100, quote.currency)} · total {formatPrice(quoteTax.totalWithTaxCents / 100, quote.currency)} TTC</p> : <p className="text-xs text-gray-500">Prix transporteur TTC</p>}<p className="mt-1 text-xs text-gray-500">{quote.requiresRelayPoint ? "Point relais requis" : "Livraison domicile"}</p></div></div>
+                          <div key={quote.id} role="button" tabIndex={0} onClick={() => setSelectedQuoteId(quote.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedQuoteId(quote.id); }} className={`cursor-pointer rounded-2xl border p-4 text-left transition ${cardRefreshing ? "opacity-60" : ""} ${isSelected ? "border-gray-950 bg-gray-50 ring-2 ring-gray-950/10" : "border-gray-200 bg-white hover:border-gray-300"}`}>
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-gray-950">{quote.carrierLabel}</p><span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">{quote.serviceLabel}</span>{isCheapest && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Le moins cher</span>}{quote.id === purchasableQuotes[0]?.id && <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">Suggéré</span>}</div><div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500"><span>Livraison : {quote.estimatedDeliveryDays}</span><span>Suivi ✓</span><span>Assurance {parseEuroToCents(insuranceValue) > 0 ? "✓" : "—"}</span>{quote.signatureAvailable && <span>Signature {carrierSignatureRequired[quote.id] ? "✓" : "—"}</span>}{quote.carrier !== "mondial_relay" && <span>{quote.contractNumberApplied ? `Contrat Colissimo appliqué${quote.contractNumberSuffix ? ` · ****${quote.contractNumberSuffix}` : ""}` : "Contrat Colissimo non configuré"}</span>}</div>{cardRefreshing && <p className="mt-2 inline-flex items-center gap-2 rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-700"><Loader2 className="h-4 w-4 animate-spin" /> Recalcul du devis…</p>}{hasCarrierError && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{cardError || quote.configurationError || "Ce service n’est pas achetable pour cette commande."}</p>}</div><div className="text-left sm:text-right"><p className="text-xl font-semibold text-gray-950">{formatPrice(quote.amountCents / 100, quote.currency)} {quoteTax.label}</p>{quoteTax.label === "HT" ? <p className="text-xs text-gray-500">TVA {formatPrice(quoteTax.taxAmountCents / 100, quote.currency)} · total {formatPrice(quoteTax.totalWithTaxCents / 100, quote.currency)} TTC</p> : <p className="text-xs text-gray-500">Prix transporteur TTC</p>}<p className="mt-1 text-xs text-gray-500">{quote.requiresRelayPoint ? "Point relais requis" : "Livraison domicile"}</p></div></div>
                             <div className="mt-4 grid gap-3 border-t border-gray-200 pt-4 md:grid-cols-2">
                               <label className="text-sm font-medium text-gray-700" onClick={(event) => event.stopPropagation()}>Montant déclaré assurance (€)<input type="number" min="0" step="0.01" value={insuranceValue} onChange={(event) => setCarrierInsuranceValues((current) => ({ ...current, [quote.id]: event.target.value }))} className="mt-2 w-full rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10" placeholder="0,00" /></label>
                               {quote.carrier !== "mondial_relay" ? <label className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700" onClick={(event) => event.stopPropagation()}><span>Livraison avec signature</span><input type="checkbox" checked={Boolean(carrierSignatureRequired[quote.id])} onChange={(event) => setCarrierSignatureRequired((current) => ({ ...current, [quote.id]: event.target.checked }))} className="h-4 w-4 rounded border-gray-300" /></label> : <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-500">Signature non applicable à Mondial Relay.</div>}

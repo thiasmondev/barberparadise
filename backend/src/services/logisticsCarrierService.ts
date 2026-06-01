@@ -30,6 +30,11 @@ export type ShipmentDimensions = {
   heightCm: number;
 };
 
+export type ShipmentQuoteOption = {
+  insuranceValueCents?: number | null;
+  signatureRequired?: boolean;
+};
+
 export type ShipmentQuoteInput = {
   orderNumber: string;
   customerEmail: string;
@@ -38,6 +43,7 @@ export type ShipmentQuoteInput = {
   orderValueCents: number;
   packageDimensions?: ShipmentDimensions | null;
   requestedInsuranceValueCents?: number | null;
+  carrierOptions?: Partial<Record<LogisticsCarrier, ShipmentQuoteOption>>;
 };
 
 export type ShipmentLabelInput = ShipmentQuoteInput & {
@@ -254,6 +260,11 @@ function insuranceSurcharge(carrier: LogisticsCarrier, insuranceValueCents: numb
   return Math.ceil(insuranceValueCents * 0.008);
 }
 
+function signatureSurcharge(carrier: LogisticsCarrier, signatureRequired?: boolean) {
+  if (!signatureRequired) return 0;
+  return carrier === "colissimo" || carrier === "colissimo_international" ? 150 : 0;
+}
+
 function buildOfferId(carrier: LogisticsCarrier, serviceCode: string, insuranceValueCents: number) {
   return `${carrier}:${serviceCode}:ins_${insuranceValueCents}`;
 }
@@ -276,12 +287,14 @@ export function buildShipmentQuotes(input: ShipmentQuoteInput): ShipmentRateQuot
   const colissimoContractNumber = getColissimoContractNumber();
 
   return carriers.map(carrier => {
-    const requestedInsuranceValueCents = input.requestedInsuranceValueCents ?? undefined;
+    const carrierOption = input.carrierOptions?.[carrier];
+    const requestedInsuranceValueCents = carrierOption?.insuranceValueCents ?? input.requestedInsuranceValueCents ?? undefined;
+    const isColissimo = carrier === "colissimo" || carrier === "colissimo_international";
+    const signatureRequired = isColissimo ? Boolean(carrierOption?.signatureRequired) : false;
     const insuranceValueCents = insuranceLevel(carrier, input.orderValueCents, requestedInsuranceValueCents);
     const serviceCode = carrier === "mondial_relay" ? "24R" : carrier === "colissimo" ? "DOM" : "COLI_INTER";
-    const amountCents = calculateBaseAmount(carrier, input.totalWeightG) + insuranceSurcharge(carrier, insuranceValueCents);
+    const amountCents = calculateBaseAmount(carrier, input.totalWeightG) + insuranceSurcharge(carrier, insuranceValueCents) + signatureSurcharge(carrier, signatureRequired);
     const requiresRelayPoint = carrier === "mondial_relay";
-    const isColissimo = carrier === "colissimo" || carrier === "colissimo_international";
     const tax = enrichCarrierTax(amountCents, carrier);
     return {
       id: buildOfferId(carrier, serviceCode, insuranceValueCents),
@@ -296,7 +309,7 @@ export function buildShipmentQuotes(input: ShipmentQuoteInput): ShipmentRateQuot
       insuranceValueCents,
       insuranceLabel: insuranceValueCents > 0 ? `Assurance jusqu’à ${(insuranceValueCents / 100).toLocaleString("fr-FR")} €` : "Assurance standard transporteur",
       signatureAvailable: isColissimo,
-      signatureRequired: false,
+      signatureRequired,
       contractNumberApplied: isColissimo ? Boolean(colissimoContractNumber) : true,
       contractNumberSuffix: isColissimo && colissimoContractNumber ? colissimoContractNumber.slice(-4) : null,
       estimatedDeliveryDays: carrier === "mondial_relay" ? "3 à 5 jours ouvrés" : domestic ? "2 jours ouvrés indicatifs" : "3 à 8 jours ouvrés indicatifs",

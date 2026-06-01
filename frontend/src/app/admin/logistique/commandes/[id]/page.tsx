@@ -130,7 +130,7 @@ export default function AdminLogisticsPreparationPage() {
     try {
       const result = await getLogisticsCarrierQuotes(
         detail.order.id,
-        packagingId ? Number(packagingId) : null
+        { packagingId: packagingId ? Number(packagingId) : null }
       );
       setQuotes(result.quotes);
       const firstPurchasable = result.quotes.find(quote => quote.purchasable) || result.quotes[0];

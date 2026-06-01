@@ -2459,13 +2459,31 @@ adminRouter.get(
   async (req: Request, res: Response): Promise<void> => {
     try {
       const packagingIdRaw = req.query?.packagingId;
-      const packagingId =
-        packagingIdRaw === undefined || packagingIdRaw === null || packagingIdRaw === ""
-          ? null
-          : parseInt(String(packagingIdRaw), 10);
+      const totalWeightRaw = req.query?.totalWeightG;
+      const parseOptionalInteger = (value: unknown) =>
+        value === undefined || value === null || value === "" ? null : parseInt(String(value), 10);
+      const parseOptionalBoolean = (value: unknown) =>
+        value === undefined || value === null || value === "" ? undefined : String(value) === "true";
+      const packagingId = parseOptionalInteger(packagingIdRaw);
+      const overriddenTotalWeightG = parseOptionalInteger(totalWeightRaw);
+      const colissimoInsuranceValueCents = parseOptionalInteger(req.query?.colissimoInsuranceValueCents);
+      const mondialRelayInsuranceValueCents = parseOptionalInteger(req.query?.mondialRelayInsuranceValueCents);
+      const colissimoSignatureRequired = parseOptionalBoolean(req.query?.colissimoSignatureRequired);
 
       if (packagingId !== null && !Number.isFinite(packagingId)) {
         res.status(400).json({ error: "Carton sélectionné invalide" });
+        return;
+      }
+      if (overriddenTotalWeightG !== null && (!Number.isFinite(overriddenTotalWeightG) || overriddenTotalWeightG <= 0)) {
+        res.status(400).json({ error: "Poids total du colis invalide" });
+        return;
+      }
+      if (colissimoInsuranceValueCents !== null && (!Number.isFinite(colissimoInsuranceValueCents) || colissimoInsuranceValueCents < 0)) {
+        res.status(400).json({ error: "Montant d’assurance Colissimo invalide" });
+        return;
+      }
+      if (mondialRelayInsuranceValueCents !== null && (!Number.isFinite(mondialRelayInsuranceValueCents) || mondialRelayInsuranceValueCents < 0)) {
+        res.status(400).json({ error: "Montant d’assurance Mondial Relay invalide" });
         return;
       }
 
@@ -2496,13 +2514,27 @@ adminRouter.get(
       }
 
       const metrics = computeLogisticsMetrics(order.items as LogisticsOrderItem[]);
-      const totalWeightG = metrics.totalWeightG + (packaging?.selfWeightG || 0);
+      const computedTotalWeightG = metrics.totalWeightG + (packaging?.selfWeightG || 0);
+      const totalWeightG = overriddenTotalWeightG || computedTotalWeightG;
       const quotes = buildShipmentQuotes({
         orderNumber: order.orderNumber,
         customerEmail: order.email,
         recipient: order.shippingAddress,
         totalWeightG,
         orderValueCents: Math.round(Number(order.total || 0) * 100),
+        carrierOptions: {
+          colissimo: {
+            insuranceValueCents: colissimoInsuranceValueCents,
+            signatureRequired: colissimoSignatureRequired,
+          },
+          colissimo_international: {
+            insuranceValueCents: colissimoInsuranceValueCents,
+            signatureRequired: colissimoSignatureRequired,
+          },
+          mondial_relay: {
+            insuranceValueCents: mondialRelayInsuranceValueCents,
+          },
+        },
         packageDimensions: packaging
           ? {
               lengthCm: packaging.lengthCm,
