@@ -31,7 +31,7 @@ assert.deepEqual(getAvailableMethods("NL", false), [
 ]);
 
 assert.deepEqual(getAvailableMethods("US", false), ["card_international"]);
-assert.deepEqual(getAvailableMethods("FR", true), ["pay_by_bank", "sepa"]);
+assert.deepEqual(getAvailableMethods("FR", true), ["pay_by_bank"]);
 assert.deepEqual(getAvailableMethods("US", true), []);
 
 assert.equal(getPaymentProvider({ method: "card", country: "FR", isB2B: false }), "mollie");
@@ -39,7 +39,7 @@ assert.equal(getPaymentProvider({ method: "bancontact", country: "BE", isB2B: fa
 assert.equal(getPaymentProvider({ method: "paypal_4x", country: "FR", isB2B: false }), "paypal");
 assert.equal(getPaymentProvider({ method: "card_international", country: "US", isB2B: false }), "checkout");
 assert.equal(getPaymentProvider({ method: "pay_by_bank", country: "FR", isB2B: true }), "mollie");
-assert.equal(getPaymentProvider({ method: "sepa", country: "FR", isB2B: true }), "mollie");
+assert.equal(getAvailableMethods("FR", true).includes("sepa"), false);
 assert.equal(getAvailableMethods("US", true).includes("sepa"), false);
 
 console.log("paymentRouter regression tests passed");

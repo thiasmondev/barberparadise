@@ -143,8 +143,11 @@ export default function CheckoutPage() {
   const grandTotal = subtotalHT + vatAmount + shipping;
 
   const displayMethods = useMemo(
-    () => availableMethods.filter((method) => method !== "apple_pay" || supportsApplePay()),
-    [availableMethods],
+    () => availableMethods.filter((method) => {
+      if (effectiveIsB2B && method === "sepa") return false;
+      return method !== "apple_pay" || supportsApplePay();
+    }),
+    [availableMethods, effectiveIsB2B],
   );
 
   const checkoutSteps: Step[] = isAuthenticated ? ["livraison", "paiement"] : ["contact", "livraison", "paiement"];

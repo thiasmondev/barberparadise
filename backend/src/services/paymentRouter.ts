@@ -69,7 +69,7 @@ export const SUPPORTED_PAYMENT_METHODS: PaymentMethod[] = [
 
 export const MOLLIE_METHOD_MAP: Record<Exclude<PaymentMethod, "paypal_4x" | "card_international">, string[]> = {
   card: ["creditcard"],
-  pay_by_bank: ["paybybank"],
+  pay_by_bank: ["banktransfer"],
   sepa: ["directdebit"],
   apple_pay: ["applepay"],
   google_pay: ["googlepay"],
@@ -99,7 +99,7 @@ export function getAvailableMethods(country: string, isB2B: boolean): PaymentMet
   }
 
   if (isB2B) {
-    return ["pay_by_bank", "sepa"];
+    return ["pay_by_bank"];
   }
 
   const commonMethods: PaymentMethod[] = ["card", "pay_by_bank", "paypal_4x", "apple_pay", "google_pay", "sepa"];
