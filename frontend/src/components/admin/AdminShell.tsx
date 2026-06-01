@@ -46,6 +46,7 @@ const NAV_ITEMS = [
     badgeKey: "logisticsPending",
   },
   { href: "/admin/logistique/emballages", label: "Emballages", icon: Boxes },
+  { href: "/admin/parametres/expedition", label: "Expédition", icon: Truck },
   { href: "/admin/import-reviews", label: "Import Avis", icon: MessageSquare },
   { href: "/admin/parametres", label: "Paramètres", icon: Settings },
 ];

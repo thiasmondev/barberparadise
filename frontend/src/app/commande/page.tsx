@@ -31,6 +31,10 @@ type ShippingOption = {
   carrier: string;
   days: string;
   isFree: boolean;
+  zoneId?: string;
+  zoneName?: string;
+  minAmount?: number;
+  maxAmount?: number | null;
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";

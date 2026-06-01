@@ -27,6 +27,7 @@ import {
   LOGISTICS_CARRIERS,
   LogisticsCarrier,
 } from "../services/logisticsCarrierService";
+import { ensureDefaultShippingZones } from "../services/shippingCalculator";
 
 // ─── Cloudinary Config ───────────────────────────────────────
 cloudinary.config({
@@ -122,6 +123,39 @@ function toRequiredFloat(value: NumericInput, field: string): number {
 
 function toOptionalBoolean(value: unknown): boolean | undefined {
   return value === undefined ? undefined : Boolean(value);
+}
+
+function normalizeCountries(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : [];
+  return Array.from(
+    new Set(
+      values
+        .map((item) => String(item || "").trim().toUpperCase())
+        .filter((item) => /^[A-Z]{2}$/.test(item)),
+    ),
+  );
+}
+
+function buildShippingZoneData(body: Record<string, unknown>) {
+  return {
+    name: String(body.name || "").trim(),
+    countries: normalizeCountries(body.countries),
+  };
+}
+
+function buildShippingRateData(body: Record<string, unknown>) {
+  const isFree = Boolean(body.isFree);
+  return {
+    name: String(body.name || "").trim(),
+    minAmount: toRequiredFloat(body.minAmount as NumericInput, "Montant minimum"),
+    maxAmount:
+      body.maxAmount === null || body.maxAmount === undefined || body.maxAmount === ""
+        ? null
+        : toRequiredFloat(body.maxAmount as NumericInput, "Montant maximum"),
+    price: isFree ? 0 : toRequiredFloat(body.price as NumericInput, "Prix"),
+    isFree,
+    deliveryTime: String(body.deliveryTime || "").trim() || null,
+  };
 }
 
 function buildPackagingData(body: Record<string, unknown>) {
@@ -2003,6 +2037,159 @@ adminRouter.post(
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Erreur création produit" });
+    }
+  }
+);
+
+
+// GET /api/admin/shipping/zones — Liste des zones et tarifs d'expédition
+adminRouter.get(
+  "/shipping/zones",
+  requireAdmin,
+  async (_req: Request, res: Response): Promise<void> => {
+    try {
+      await ensureDefaultShippingZones();
+      const zones = await prisma.shippingZone.findMany({
+        include: { rates: { orderBy: [{ minAmount: "asc" }, { name: "asc" }] } },
+        orderBy: { name: "asc" },
+      });
+      res.json({ zones });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur chargement zones d'expédition" });
+    }
+  }
+);
+
+// POST /api/admin/shipping/zones — Créer une zone d'expédition
+adminRouter.post(
+  "/shipping/zones",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const data = buildShippingZoneData(req.body || {});
+      if (!data.name) {
+        res.status(400).json({ error: "Le nom de la zone est requis" });
+        return;
+      }
+      if (!data.countries.length) {
+        res.status(400).json({ error: "Sélectionnez au moins un pays" });
+        return;
+      }
+      const zone = await prisma.shippingZone.create({
+        data,
+        include: { rates: { orderBy: [{ minAmount: "asc" }, { name: "asc" }] } },
+      });
+      res.status(201).json(zone);
+    } catch (err) {
+      console.error(err);
+      res.status(400).json({ error: err instanceof Error ? err.message : "Erreur création zone" });
+    }
+  }
+);
+
+// PUT /api/admin/shipping/zones/:id — Modifier une zone d'expédition
+adminRouter.put(
+  "/shipping/zones/:id",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const data = buildShippingZoneData(req.body || {});
+      if (!data.name) {
+        res.status(400).json({ error: "Le nom de la zone est requis" });
+        return;
+      }
+      if (!data.countries.length) {
+        res.status(400).json({ error: "Sélectionnez au moins un pays" });
+        return;
+      }
+      const zone = await prisma.shippingZone.update({
+        where: { id: req.params.id },
+        data,
+        include: { rates: { orderBy: [{ minAmount: "asc" }, { name: "asc" }] } },
+      });
+      res.json(zone);
+    } catch (err) {
+      console.error(err);
+      res.status(400).json({ error: err instanceof Error ? err.message : "Erreur mise à jour zone" });
+    }
+  }
+);
+
+// DELETE /api/admin/shipping/zones/:id — Supprimer une zone d'expédition
+adminRouter.delete(
+  "/shipping/zones/:id",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      await prisma.shippingZone.delete({ where: { id: req.params.id } });
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur suppression zone" });
+    }
+  }
+);
+
+// POST /api/admin/shipping/zones/:id/rates — Ajouter un tarif à une zone
+adminRouter.post(
+  "/shipping/zones/:id/rates",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const data = buildShippingRateData(req.body || {});
+      if (!data.name) {
+        res.status(400).json({ error: "Le nom du tarif est requis" });
+        return;
+      }
+      if (data.maxAmount !== null && data.maxAmount <= data.minAmount) {
+        res.status(400).json({ error: "Le montant maximum doit être supérieur au minimum" });
+        return;
+      }
+      const rate = await prisma.shippingRate.create({ data: { ...data, zoneId: req.params.id } });
+      res.status(201).json(rate);
+    } catch (err) {
+      console.error(err);
+      res.status(400).json({ error: err instanceof Error ? err.message : "Erreur création tarif" });
+    }
+  }
+);
+
+// PUT /api/admin/shipping/rates/:id — Modifier un tarif
+adminRouter.put(
+  "/shipping/rates/:id",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const data = buildShippingRateData(req.body || {});
+      if (!data.name) {
+        res.status(400).json({ error: "Le nom du tarif est requis" });
+        return;
+      }
+      if (data.maxAmount !== null && data.maxAmount <= data.minAmount) {
+        res.status(400).json({ error: "Le montant maximum doit être supérieur au minimum" });
+        return;
+      }
+      const rate = await prisma.shippingRate.update({ where: { id: req.params.id }, data });
+      res.json(rate);
+    } catch (err) {
+      console.error(err);
+      res.status(400).json({ error: err instanceof Error ? err.message : "Erreur mise à jour tarif" });
+    }
+  }
+);
+
+// DELETE /api/admin/shipping/rates/:id — Supprimer un tarif
+adminRouter.delete(
+  "/shipping/rates/:id",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      await prisma.shippingRate.delete({ where: { id: req.params.id } });
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur suppression tarif" });
     }
   }
 );

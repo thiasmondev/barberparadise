@@ -20,6 +20,13 @@ type ShippingOption = {
   isFree: boolean;
 };
 
+type ShippingEstimateResponse = {
+  options?: ShippingOption[];
+  freeShippingFrom?: number | null;
+  freeShippingRemaining?: number;
+  error?: string;
+};
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
 
 export default function CartPage() {
@@ -32,13 +39,12 @@ export default function CartPage() {
   const [shippingError, setShippingError] = useState("");
   const [promoCode, setPromoCode] = useState("");
   const [promoSaved, setPromoSaved] = useState(false);
+  const [freeShippingRemaining, setFreeShippingRemaining] = useState(0);
 
   const estimatedShippingOption = useMemo(() => shippingOptions[0], [shippingOptions]);
   const shipping = estimatedShippingOption?.price ?? 0;
   const grandTotal = total + shipping;
   const minimumProOrder = 200;
-  const freeShippingThreshold = isApprovedPro ? 500 : 49;
-  const freeShippingRemaining = Math.max(0, freeShippingThreshold - total);
   const proRemaining = Math.max(0, minimumProOrder - total);
   const isProMinimumBlocked = isApprovedPro && total < minimumProOrder;
   const paymentMethods = ([
@@ -93,12 +99,14 @@ export default function CartPage() {
         const res = await fetch(`${API_URL}/api/checkout/shipping-options?${params.toString()}`, {
           signal: controller.signal,
         });
-        const data = (await res.json()) as { options?: ShippingOption[]; error?: string };
+        const data = (await res.json()) as ShippingEstimateResponse;
         if (!res.ok) throw new Error(data.error || "Impossible d’estimer la livraison");
         setShippingOptions(data.options || []);
+        setFreeShippingRemaining(Math.max(0, data.freeShippingRemaining ?? 0));
       } catch (err) {
         if ((err as Error).name !== "AbortError") {
           setShippingOptions([]);
+          setFreeShippingRemaining(0);
           setShippingError(err instanceof Error ? err.message : "Erreur d’estimation livraison");
         }
       } finally {

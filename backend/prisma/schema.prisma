@@ -80,6 +80,35 @@ model AbandonedCartSession {
   @@index([convertedAt])
 }
 
+
+model ShippingZone {
+  id        String         @id @default(cuid())
+  name      String
+  countries String[]
+  rates     ShippingRate[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([name])
+}
+
+model ShippingRate {
+  id           String       @id @default(cuid())
+  zoneId       String
+  zone         ShippingZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  name         String
+  minAmount    Float        @default(0)
+  maxAmount    Float?
+  price        Float
+  isFree       Boolean      @default(false)
+  deliveryTime String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([zoneId])
+  @@index([minAmount])
+}
+
 model Packaging {
   id                Int     @id @default(autoincrement())
   name              String // ex: "Carton S", "Enveloppe bulle", "Carton renforcé L"

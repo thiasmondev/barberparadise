@@ -10,7 +10,7 @@ import {
   PaymentMethod,
   PaymentProvider,
 } from "../services/paymentRouter";
-import { calculateFreeShippingRemaining, calculateShippingOptions, getFreeShippingThreshold } from "../services/shippingCalculator";
+import { calculateFreeShippingRemaining, calculateShippingOptions, getFreeShippingThresholdForCountry } from "../services/shippingCalculator";
 import { getVatRate } from "../services/vatCalculator";
 import { calculateDiscountAmount } from "../services/marketingAgentService";
 
@@ -247,21 +247,26 @@ checkoutRouter.get("/available-methods", (req: Request, res: Response): void => 
   res.json({ methods, country, isB2B, isPro });
 });
 
-checkoutRouter.get("/shipping-options", (req: Request, res: Response): void => {
-  const country = normalizeCountry(typeof req.query.country === "string" ? req.query.country : "FR");
-  const totalParam = typeof req.query.total === "string" ? Number(req.query.total) : 0;
-  const orderTotal = Number.isFinite(totalParam) ? totalParam : 0;
-  const isPro = req.query.isPro === "true";
-  const freeShippingFrom = getFreeShippingThreshold(isPro);
-  const options = calculateShippingOptions(country, orderTotal, isPro);
-  res.json({
-    options,
-    country,
-    orderTotal,
-    isPro,
-    freeShippingFrom,
-    freeShippingRemaining: calculateFreeShippingRemaining(orderTotal, isPro),
-  });
+checkoutRouter.get("/shipping-options", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const country = normalizeCountry(typeof req.query.country === "string" ? req.query.country : "FR");
+    const totalParam = typeof req.query.total === "string" ? Number(req.query.total) : 0;
+    const orderTotal = Number.isFinite(totalParam) ? totalParam : 0;
+    const isPro = req.query.isPro === "true";
+    const freeShippingFrom = await getFreeShippingThresholdForCountry(country, isPro);
+    const options = await calculateShippingOptions(country, orderTotal, isPro);
+    res.json({
+      options,
+      country,
+      orderTotal,
+      isPro,
+      freeShippingFrom,
+      freeShippingRemaining: await calculateFreeShippingRemaining(country, orderTotal, isPro),
+    });
+  } catch (err) {
+    console.error("Erreur options livraison", err);
+    res.status(500).json({ error: "Erreur calcul options livraison" });
+  }
 });
 
 checkoutRouter.post("/promo/validate", async (req: Request, res: Response): Promise<void> => {
@@ -429,7 +434,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const shippingOptions = calculateShippingOptions(country, isB2B ? subtotalHT : subtotalTTC, isB2B);
+    const shippingOptions = await calculateShippingOptions(country, isB2B ? subtotalHT : subtotalTTC, isB2B);
     const selectedShippingOption = shippingOptions.find((option) => option.id === body.shippingOptionId) || shippingOptions[0];
     if (!selectedShippingOption) {
       res.status(400).json({ error: "Aucune option de livraison disponible pour ce pays" });

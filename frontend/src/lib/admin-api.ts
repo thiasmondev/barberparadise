@@ -228,6 +228,74 @@ export function deletePackaging(id: number) {
   });
 }
 
+
+// ─── Shipping Zones ─────────────────────────────────────────
+export interface ShippingRate {
+  id: string;
+  zoneId: string;
+  name: string;
+  minAmount: number;
+  maxAmount: number | null;
+  price: number;
+  isFree: boolean;
+  deliveryTime: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ShippingZone {
+  id: string;
+  name: string;
+  countries: string[];
+  rates: ShippingRate[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function getShippingZones() {
+  return adminFetch<{ zones: ShippingZone[] }>("/api/admin/shipping/zones");
+}
+
+export function createShippingZone(data: { name: string; countries: string[] }) {
+  return adminFetch<ShippingZone>("/api/admin/shipping/zones", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateShippingZone(id: string, data: { name: string; countries: string[] }) {
+  return adminFetch<ShippingZone>(`/api/admin/shipping/zones/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteShippingZone(id: string) {
+  return adminFetch<{ success: boolean }>(`/api/admin/shipping/zones/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export function createShippingRate(zoneId: string, data: Record<string, unknown>) {
+  return adminFetch<ShippingRate>(`/api/admin/shipping/zones/${zoneId}/rates`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateShippingRate(id: string, data: Record<string, unknown>) {
+  return adminFetch<ShippingRate>(`/api/admin/shipping/rates/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteShippingRate(id: string) {
+  return adminFetch<{ success: boolean }>(`/api/admin/shipping/rates/${id}`, {
+    method: "DELETE",
+  });
+}
+
 // ─── Orders ──────────────────────────────────────────────────
 
 export function getAdminOrders(params?: {
