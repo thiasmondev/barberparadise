@@ -6,7 +6,6 @@ import Image from "next/image";
 import { Trash2, Minus, Plus, ArrowLeft, ArrowRight, ShoppingBag, CreditCard, Landmark, WalletCards } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
-import { getProStatus } from "@/lib/customer-api";
 import { parseImages, formatPrice } from "@/lib/utils";
 
 type PaymentMethod = "card" | "pay_by_bank" | "paypal_4x";
@@ -31,8 +30,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backe
 
 export default function CartPage() {
   const { items, removeItem, updateQuantity, total, itemCount } = useCart();
-  const { isAuthenticated, customer } = useCustomerAuth();
-  const [isApprovedPro, setIsApprovedPro] = useState(false);
+  const { isApprovedPro } = useCustomerAuth();
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
   const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
   const [shippingLoading, setShippingLoading] = useState(false);
@@ -53,7 +51,8 @@ export default function CartPage() {
     return Math.round((rawSubtotalHT + Number.EPSILON) * 100) / 100;
   }, [isApprovedPro, items]);
   const shippingReferenceAmount = isApprovedPro ? subtotalHT : total;
-  const grandTotal = total + shipping;
+  const vatAmount = useMemo(() => Math.round((subtotalHT * 0.2 + Number.EPSILON) * 100) / 100, [subtotalHT]);
+  const grandTotal = isApprovedPro ? subtotalHT + vatAmount + shipping : total + shipping;
   const minimumProOrder = 200;
   const proRemaining = Math.max(0, minimumProOrder - subtotalHT);
   const isProMinimumBlocked = isApprovedPro && subtotalHT < minimumProOrder;
@@ -63,17 +62,6 @@ export default function CartPage() {
     { id: "pay_by_bank", label: "VIREMENT BANCAIRE", icon: Landmark },
   ] satisfies Array<{ id: PaymentMethod; label: string; icon: typeof CreditCard }>).filter((method) => !isApprovedPro || method.id === "pay_by_bank");
 
-  useEffect(() => {
-    let cancelled = false;
-    if (!isAuthenticated) {
-      setIsApprovedPro(false);
-      return;
-    }
-    getProStatus()
-      .then((status) => { if (!cancelled) setIsApprovedPro(status.isApprovedPro); })
-      .catch(() => { if (!cancelled) setIsApprovedPro(false); });
-    return () => { cancelled = true; };
-  }, [isAuthenticated, customer?.id]);
 
   useEffect(() => {
     if (isApprovedPro && paymentMethod !== "pay_by_bank") setPaymentMethod("pay_by_bank");
@@ -280,10 +268,23 @@ export default function CartPage() {
               <h2 className="text-xs font-black tracking-[0.3em] uppercase text-gray-500 mb-8">RÉCAPITULATIF</h2>
 
               <div className="space-y-4 mb-8">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total</span>
-                  <span className="text-sm font-black">{formatPrice(total)}</span>
-                </div>
+                {isApprovedPro ? (
+                  <>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total HT</span>
+                      <span className="text-sm font-black">{formatPrice(subtotalHT)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-gray-400 uppercase tracking-widest">TVA (20%)</span>
+                      <span className="text-sm font-black">{formatPrice(vatAmount)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total</span>
+                    <span className="text-sm font-black">{formatPrice(total)}</span>
+                  </div>
+                )}
                 <div className="space-y-2 border border-white/10 bg-black/20 p-4">
                   <label className="text-[10px] font-black tracking-[0.25em] uppercase text-gray-500">Code promo</label>
                   <div className="flex gap-2">
@@ -302,7 +303,7 @@ export default function CartPage() {
                   </p>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-400 uppercase tracking-widest">Livraison estimée</span>
+                  <span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>
                   {shippingLoading ? (
                     <span className="text-[10px] text-gray-500 uppercase tracking-widest">Calcul...</span>
                   ) : shipping === 0 ? (
@@ -333,7 +334,7 @@ export default function CartPage() {
                   </p>
                 )}
                 <div className="border-t border-white/5 pt-4 flex justify-between items-center">
-                  <span className="text-xs font-black tracking-widest uppercase">TOTAL</span>
+                  <span className="text-xs font-black tracking-widest uppercase">{isApprovedPro ? "TOTAL TTC" : "TOTAL"}</span>
                   <span className="text-2xl font-black">{formatPrice(grandTotal)}</span>
                 </div>
               </div>

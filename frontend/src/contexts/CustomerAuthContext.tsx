@@ -7,11 +7,15 @@ import {
   customerLogin,
   customerRegister,
   getCustomerMe,
+  getProStatus,
+  type ProAccount,
   type RegisterData,
 } from "@/lib/customer-api";
 
 interface CustomerAuthContextValue {
   customer: Customer | null;
+  proAccount: ProAccount | null;
+  isApprovedPro: boolean;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -32,12 +36,30 @@ function isTokenExpired(token: string): boolean {
 
 export function CustomerAuthProvider({ children }: { children: ReactNode }) {
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const [proAccount, setProAccount] = useState<ProAccount | null>(null);
+  const [isApprovedPro, setIsApprovedPro] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  const clearProStatus = useCallback(() => {
+    setProAccount(null);
+    setIsApprovedPro(false);
+  }, []);
+
+  const refreshProStatus = useCallback(async () => {
+    try {
+      const status = await getProStatus();
+      setProAccount(status.proAccount);
+      setIsApprovedPro(status.isApprovedPro);
+    } catch {
+      clearProStatus();
+    }
+  }, [clearProStatus]);
 
   const logout = useCallback(() => {
     localStorage.removeItem(CUSTOMER_TOKEN_KEY);
     setCustomer(null);
-  }, []);
+    clearProStatus();
+  }, [clearProStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,16 +69,25 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
 
       if (!token || isTokenExpired(token)) {
         if (token) localStorage.removeItem(CUSTOMER_TOKEN_KEY);
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled) {
+          clearProStatus();
+          setIsLoading(false);
+        }
         return;
       }
 
       try {
         const profile = await getCustomerMe(token);
-        if (!cancelled) setCustomer(profile);
+        if (!cancelled) {
+          setCustomer(profile);
+          await refreshProStatus();
+        }
       } catch {
         localStorage.removeItem(CUSTOMER_TOKEN_KEY);
-        if (!cancelled) setCustomer(null);
+        if (!cancelled) {
+          setCustomer(null);
+          clearProStatus();
+        }
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -67,7 +98,7 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [clearProStatus, refreshProStatus]);
 
   useEffect(() => {
     const handleSessionExpired = () => logout();
@@ -79,18 +110,22 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
     const response = await customerLogin(email, password);
     localStorage.setItem(CUSTOMER_TOKEN_KEY, response.token);
     setCustomer(response.user);
-  }, []);
+    await refreshProStatus();
+  }, [refreshProStatus]);
 
   const register = useCallback(async (data: RegisterData) => {
     const response = await customerRegister(data);
     localStorage.setItem(CUSTOMER_TOKEN_KEY, response.token);
     setCustomer(response.user);
-  }, []);
+    clearProStatus();
+  }, [clearProStatus]);
 
   return (
     <CustomerAuthContext.Provider
       value={{
         customer,
+        proAccount,
+        isApprovedPro,
         isAuthenticated: Boolean(customer),
         isLoading,
         login,

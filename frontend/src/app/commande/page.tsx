@@ -6,7 +6,7 @@ import Image from "next/image";
 import { ArrowLeft, Lock, ChevronDown, ShoppingBag, CreditCard, Landmark, WalletCards, ReceiptText, AlertCircle, Smartphone } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
-import { getCustomerAddresses, getProStatus, type CustomerAddress } from "@/lib/customer-api";
+import { getCustomerAddresses, type CustomerAddress } from "@/lib/customer-api";
 import { parseImages, formatPrice } from "@/lib/utils";
 
 type Step = "contact" | "livraison" | "paiement";
@@ -91,7 +91,7 @@ function supportsApplePay(): boolean {
 
 export default function CheckoutPage() {
   const { items, total, cartSessionId } = useCart();
-  const { customer, isAuthenticated, isLoading: customerLoading } = useCustomerAuth();
+  const { customer, isAuthenticated, isLoading: customerLoading, isApprovedPro } = useCustomerAuth();
   const [step, setStep] = useState<Step>("contact");
   const [guestCheckout, setGuestCheckout] = useState(false);
   const [orderSummaryOpen, setOrderSummaryOpen] = useState(false);
@@ -105,7 +105,6 @@ export default function CheckoutPage() {
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [isB2B, setIsB2B] = useState(false);
-  const [isApprovedPro, setIsApprovedPro] = useState(false);
   const [vatNumber, setVatNumber] = useState("");
   const [promoCode, setPromoCode] = useState("");
 
@@ -202,24 +201,6 @@ export default function CheckoutPage() {
       cancelled = true;
     };
   }, [isAuthenticated]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!isAuthenticated) {
-      setIsApprovedPro(false);
-      return;
-    }
-    getProStatus()
-      .then((status) => {
-        if (!cancelled) setIsApprovedPro(status.isApprovedPro);
-      })
-      .catch(() => {
-        if (!cancelled) setIsApprovedPro(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated, customer?.id]);
 
   useEffect(() => {
     if (isApprovedPro) setIsB2B(true);
@@ -403,7 +384,18 @@ export default function CheckoutPage() {
                   </div>
                 );
               })}
-              <div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Total</span><span className="font-black">{formatPrice(grandTotal)}</span></div>
+              <div className="border-t border-white/5 pt-4 space-y-3">
+                {effectiveIsB2B ? (
+                  <>
+                    <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Sous-total HT</span><span className="font-black">{formatPrice(subtotalHT)}</span></div>
+                    <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">TVA ({vatRate}%)</span><span className="font-black">{formatPrice(vatAmount)}</span></div>
+                    <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Livraison</span>{shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="font-black">{formatPrice(shipping)}</span>}</div>
+                    <div className="border-t border-white/5 pt-3 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL TTC</span><span className="font-black">{formatPrice(grandTotal)}</span></div>
+                  </>
+                ) : (
+                  <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Total</span><span className="font-black">{formatPrice(grandTotal)}</span></div>
+                )}
+              </div>
             </div>
           )}
 
@@ -554,7 +546,22 @@ export default function CheckoutPage() {
                 );
               })}
             </div>
-            <div className="border-t border-white/5 pt-6 space-y-3"><div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total TTC catalogue</span><span className="text-sm font-black">{formatPrice(total)}</span></div><div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total HT</span><span className="text-sm font-black">{formatPrice(subtotalHT)}</span></div><div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">TVA ({vatRate}%)</span><span className="text-sm font-black">{formatPrice(vatAmount)}</span></div><div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>{shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>}</div><div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL</span><span className="text-2xl font-black">{formatPrice(grandTotal)}</span></div></div>
+            <div className="border-t border-white/5 pt-6 space-y-3">
+              {effectiveIsB2B ? (
+                <>
+                  <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total HT</span><span className="text-sm font-black">{formatPrice(subtotalHT)}</span></div>
+                  <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">TVA ({vatRate}%)</span><span className="text-sm font-black">{formatPrice(vatAmount)}</span></div>
+                  <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>{shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>}</div>
+                  <div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL TTC</span><span className="text-2xl font-black">{formatPrice(grandTotal)}</span></div>
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total</span><span className="text-sm font-black">{formatPrice(total)}</span></div>
+                  <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>{shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>}</div>
+                  <div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL</span><span className="text-2xl font-black">{formatPrice(grandTotal)}</span></div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
