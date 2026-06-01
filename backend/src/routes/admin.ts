@@ -1,11 +1,13 @@
 import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../utils/prisma";
 import {
   getCustomerName,
   sendEmail,
   sendOrderShippedEmail,
+  sendPasswordResetEmail,
 } from "../services/emailService";
 import { requireAdmin, AuthRequest } from "../middleware/auth";
 import multer from "multer";
@@ -86,6 +88,94 @@ const pdfUpload = multer({
 });
 
 export const adminRouter = Router();
+
+const PASSWORD_RESET_TOKEN_MINUTES = 60;
+
+
+function getFrontendUrl(): string {
+  return (process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "https://barberparadise.fr").replace(/\/$/, "");
+}
+
+function hashPasswordResetToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// POST /api/admin/customers/send-reset-emails — Envoi massif des liens de réinitialisation aux clients importés
+adminRouter.post("/customers/send-reset-emails", requireAdmin, async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const customers = await prisma.customer.findMany({
+      where: { mustResetPassword: true },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, email: true, firstName: true, lastName: true },
+    });
+
+    let sent = 0;
+    let skipped = 0;
+    let errors = 0;
+    const failedCustomerIds: string[] = [];
+
+    for (let index = 0; index < customers.length; index += 1) {
+      const customer = customers[index];
+
+      try {
+        await prisma.passwordResetToken.updateMany({
+          where: { customerId: customer.id, usedAt: null, expiresAt: { gt: new Date() } },
+          data: { usedAt: new Date() },
+        });
+
+        const rawToken = crypto.randomBytes(32).toString("hex");
+        const expiresAt = new Date(Date.now() + PASSWORD_RESET_TOKEN_MINUTES * 60 * 1000);
+        await prisma.passwordResetToken.create({
+          data: {
+            customerId: customer.id,
+            tokenHash: hashPasswordResetToken(rawToken),
+            expiresAt,
+          },
+        });
+
+        const result = await sendPasswordResetEmail({
+          to: customer.email,
+          customerName: getCustomerName(customer, customer.email),
+          resetUrl: `${getFrontendUrl()}/reinitialiser-mot-de-passe?token=${rawToken}`,
+          expiresInMinutes: PASSWORD_RESET_TOKEN_MINUTES,
+        });
+
+        if (result.sent) {
+          sent += 1;
+        } else if (result.skipped) {
+          skipped += 1;
+        } else {
+          errors += 1;
+          failedCustomerIds.push(customer.id);
+        }
+      } catch (error) {
+        errors += 1;
+        failedCustomerIds.push(customer.id);
+        console.error(`[admin] Erreur envoi reset customerId=${customer.id}`, error);
+      }
+
+      if (index < customers.length - 1) {
+        await wait(100);
+      }
+    }
+
+    res.json({
+      totalEligible: customers.length,
+      sent,
+      skipped,
+      errors,
+      failedCustomerIds,
+      rateLimit: "10 emails/seconde",
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur envoi emails de réinitialisation" });
+  }
+});
 
 function asPrismaJson(value: unknown): Prisma.InputJsonValue | undefined {
   if (value === null || value === undefined) return undefined;

@@ -171,7 +171,10 @@ authRouter.post("/reset-password", authLimiter, async (req: Request, res: Respon
 
     const hashedPassword = await bcrypt.hash(password, 12);
     await prisma.$transaction([
-      prisma.customer.update({ where: { id: resetToken.customerId }, data: { password: hashedPassword } }),
+      prisma.customer.update({
+        where: { id: resetToken.customerId },
+        data: { password: hashedPassword, mustResetPassword: false },
+      }),
       prisma.passwordResetToken.update({ where: { id: resetToken.id }, data: { usedAt: new Date() } }),
     ]);
 
