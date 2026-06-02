@@ -75,7 +75,7 @@ function MegaMenuProduits({
       onMouseLeave={onClose}
     >
       {/* Colonne L1 : grandes catégories */}
-      <div className="bg-[#1a1a1a] py-6 min-w-[200px] border-r border-white/5">
+      <div className="bg-[#111111] py-6 min-w-[200px] border-r border-white/5">
         <Link
           href="/catalogue"
           onClick={onClose}
@@ -144,7 +144,7 @@ function MegaMenuProduits({
 
       {/* Colonne L3 : enfants de l'item L2 survolé, visible seulement s'ils existent */}
       {colL3.length > 0 && (
-        <div className="py-6 min-w-[220px] flex flex-col border-0 bg-transparent shadow-none outline-none">
+        <div className="bg-[#111111] py-6 min-w-[220px] flex flex-col border-0 shadow-none outline-none">
           <Link
             href={`/catalogue?category=${hoveredL2}`}
             onClick={onClose}
@@ -197,7 +197,7 @@ function MegaMenuMateriel({
       style={{ minWidth: 720 }}
       onMouseLeave={onClose}
     >
-      <div className="bg-[#1a1a1a] py-6 min-w-[240px] border-r border-white/5">
+      <div className="bg-[#111111] py-6 min-w-[240px] border-r border-white/5">
         <Link
           href="/catalogue?category=materiel"
           onClick={onClose}
@@ -282,7 +282,7 @@ function MegaMenuMateriel({
       )}
 
       {colL3.length > 0 && (
-        <div className="py-6 min-w-[220px] flex flex-col border-0 bg-transparent shadow-none outline-none">
+        <div className="bg-[#111111] py-6 min-w-[220px] flex flex-col border-0 shadow-none outline-none">
           <Link
             href={`/catalogue?category=${hoveredL2}`}
             onClick={onClose}
