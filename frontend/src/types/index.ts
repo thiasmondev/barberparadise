@@ -234,6 +234,12 @@ export interface Customer {
   phone: string | null;
   createdAt: string;
   updatedAt?: string;
+  totalSpent?: number;
+  proAccount?: {
+    id: string;
+    companyName: string;
+    status: string;
+  } | null;
   _count?: {
     orders: number;
     wishlist?: number;

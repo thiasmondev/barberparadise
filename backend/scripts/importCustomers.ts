@@ -5,6 +5,8 @@
  *
  * Usage :
  *   npx ts-node scripts/importCustomers.ts customers_export.csv
+ *   npx ts-node scripts/importCustomers.ts /tmp/customers_export.csv
+ *   npx ts-node scripts/importCustomers.ts https://url-du-fichier.csv
  *
  * Le script est idempotent : les emails déjà présents sont ignorés.
  * Aucun email n'est envoyé pendant l'import et aucun mot de passe n'est logué.
@@ -51,6 +53,28 @@ function normalizeEmail(email: string | undefined): string {
   return clean(email).toLowerCase();
 }
 
+function isHttpUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+async function loadCsvSource(source: string): Promise<string> {
+  if (isHttpUrl(source)) {
+    console.log(`Téléchargement du CSV depuis l'URL : ${source}`);
+    const response = await fetch(source);
+    if (!response.ok) {
+      throw new Error(`Téléchargement impossible (${response.status} ${response.statusText})`);
+    }
+    return response.text();
+  }
+
+  if (!fs.existsSync(source)) {
+    throw new Error(`Fichier CSV introuvable : ${source}`);
+  }
+
+  console.log(`Lecture du CSV local : ${source}`);
+  return fs.readFileSync(source, "utf-8");
+}
+
 function parseBoolean(value: string | undefined): boolean {
   const normalized = clean(value).toLowerCase();
   return ["yes", "true", "1", "oui", "y"].includes(normalized);
@@ -84,16 +108,17 @@ function buildActivity(row: ShopifyCustomerRow): string {
 }
 
 async function main() {
-  const csvPath = process.argv[2] || path.join(__dirname, "customers_export.csv");
+  const csvSource = process.argv[2] || path.join(__dirname, "customers_export.csv");
 
-  if (!fs.existsSync(csvPath)) {
-    console.error(`Fichier CSV introuvable : ${csvPath}`);
-    console.error("Usage : npx ts-node scripts/importCustomers.ts customers_export.csv");
+  let raw: string;
+  try {
+    raw = await loadCsvSource(csvSource);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    console.error("Usage : npx ts-node scripts/importCustomers.ts <chemin-local-ou-url-csv>");
     process.exit(1);
   }
 
-  console.log(`Lecture du CSV : ${csvPath}`);
-  const raw = fs.readFileSync(csvPath, "utf-8");
   const rows: ShopifyCustomerRow[] = parse(raw, {
     columns: true,
     skip_empty_lines: true,

@@ -11,9 +11,14 @@ import {
   ChevronRight,
   Eye,
   ShoppingCart,
+  Euro,
 } from "lucide-react";
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function formatPrice(n: number) {
+  return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(n);
 }
 export default function AdminClientsPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -67,9 +72,9 @@ export default function AdminClientsPage() {
               <tr className="border-b border-gray-100 bg-gray-50/50">
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Client</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500 hidden sm:table-cell">Email</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 hidden md:table-cell">Téléphone</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500 hidden lg:table-cell">Inscrit le</th>
                 <th className="text-center px-4 py-3 font-medium text-gray-500">Commandes</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 hidden md:table-cell">Inscrit le</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-500 hidden md:table-cell">Total dépensé</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-500">Actions</th>
               </tr>
             </thead>
@@ -99,18 +104,28 @@ export default function AdminClientsPage() {
                         </div>
                         <div className="min-w-0">
                           <div className="font-medium text-dark-800 truncate">{c.firstName} {c.lastName}</div>
+                          {c.proAccount && (
+                            <span className="inline-flex mt-1 px-2 py-0.5 rounded-full bg-dark-800 text-white text-[10px] font-bold uppercase tracking-wide">
+                              B2B
+                            </span>
+                          )}
                         </div>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-gray-600 hidden sm:table-cell text-xs">{c.email}</td>
-                    <td className="px-4 py-3 text-gray-500 hidden md:table-cell text-xs">{c.phone || "—"}</td>
+                    <td className="px-4 py-3 text-gray-500 hidden lg:table-cell text-xs">{formatDate(c.createdAt)}</td>
                     <td className="px-4 py-3 text-center">
                       <span className="inline-flex items-center gap-1 text-xs text-gray-600">
                         <ShoppingCart size={12} />
                         {c._count?.orders || 0}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-500 hidden md:table-cell text-xs">{formatDate(c.createdAt)}</td>
+                    <td className="px-4 py-3 text-right text-gray-600 hidden md:table-cell text-xs tabular-nums">
+                      <span className="inline-flex items-center gap-1 justify-end">
+                        <Euro size={12} />
+                        {formatPrice(c.totalSpent || 0)}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <Link
                         href={`/admin/clients/${c.id}`}

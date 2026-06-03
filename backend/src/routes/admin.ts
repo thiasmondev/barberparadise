@@ -3430,6 +3430,10 @@ adminRouter.get(
             lastName: true,
             phone: true,
             createdAt: true,
+            orders: { select: { total: true } },
+            proAccount: {
+              select: { id: true, companyName: true, status: true },
+            },
             _count: { select: { orders: true } },
           },
           orderBy: { createdAt: "desc" },
@@ -3438,8 +3442,13 @@ adminRouter.get(
         }),
         prisma.customer.count({ where }),
       ]);
+      const formattedCustomers = customers.map(({ orders, ...customer }) => ({
+        ...customer,
+        totalSpent: orders.reduce((sum, order) => sum + order.total, 0),
+      }));
+
       res.json({
-        customers,
+        customers: formattedCustomers,
         total,
         page: parseInt(page),
         pages: Math.ceil(total / parseInt(limit)),
@@ -3465,6 +3474,7 @@ adminRouter.get(
             orderBy: { createdAt: "desc" },
           },
           addresses: true,
+          proAccount: { select: { id: true, companyName: true, status: true } },
           _count: { select: { orders: true, wishlist: true } },
         },
       });
