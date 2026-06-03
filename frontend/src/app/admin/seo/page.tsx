@@ -125,6 +125,13 @@ export default function SeoDashboardPage() {
             Rechercher ou créer un produit
           </Link>
           <Link
+            href="/admin/seo/produits"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-emerald-200 text-emerald-700 rounded-lg text-sm font-medium hover:bg-emerald-50 transition-colors"
+          >
+            Page produit
+            <ArrowRight size={16} />
+          </Link>
+          <Link
             href="/admin/seo/optimiser"
             className="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 transition-colors shadow-sm"
           >

@@ -9,6 +9,8 @@ import {
   analyzeSeoProduct,
   optimizeSeoProduct,
   applySeoOptimization,
+  saveProductSeo,
+  applyWhiteBackgroundToProductImages,
   getProductsMeta,
   updateProduct,
   deleteProduct,
@@ -413,6 +415,9 @@ function SeoProductPageContent() {
   const [altsError, setAltsError] = useState("");
   const [bulkGenerating, setBulkGenerating] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ processed: number; total: number; remaining: number; message: string } | null>(null);
+  const [whiteSquareProcessing, setWhiteSquareProcessing] = useState(false);
+  const [whiteSquareProgress, setWhiteSquareProgress] = useState(0);
+  const [whiteSquareResult, setWhiteSquareResult] = useState<{ processed: number; errors: number; total: number; errorDetails?: string[] } | null>(null);
 
   // UI state
   const [loading, setLoading] = useState(true);
@@ -522,6 +527,46 @@ function SeoProductPageContent() {
         setEditBrandName(data.product.brand || "");
         setEditImages(parseImages(data.product.images));
         setEditImageAlts(JSON.parse((data.product as any).imageAlts || "[]"));
+        const savedFaqItems = Array.isArray((data.product as any).faqItems) ? (data.product as any).faqItems : [];
+        const savedLongTailQuestions = Array.isArray((data.product as any).longTailQuestions) ? (data.product as any).longTailQuestions : [];
+        const savedCompetitorComparison = Array.isArray((data.product as any).competitorComparison) ? (data.product as any).competitorComparison : [];
+        const savedUseCases = Array.isArray((data.product as any).useCases) ? (data.product as any).useCases : [];
+        const savedEntityKeywords = Array.isArray((data.product as any).entityKeywords) ? (data.product as any).entityKeywords : [];
+        setEditSchemaJsonLd((data.product as any).schemaJsonLd || "");
+        setEditFaqItems(savedFaqItems);
+        setEditDirectAnswer((data.product as any).directAnswerIntro || "");
+        setEditVoiceSnippet((data.product as any).voiceSnippet || "");
+        setEditEeaatContent((data.product as any).eeaatContent || "");
+        setEditLongTailQuestions(savedLongTailQuestions);
+        setEditCompetitorComparison(savedCompetitorComparison);
+        setEditUseCases(savedUseCases);
+        setEditBuyingGuideSnippet((data.product as any).buyingGuideSnippet || "");
+        setEditEntityKeywords(savedEntityKeywords);
+        setGeoOptimization(
+          ((data.product as any).schemaJsonLd || savedFaqItems.length > 0 || (data.product as any).directAnswerIntro)
+            ? {
+                schemaJsonLd: (data.product as any).schemaJsonLd || "",
+                faqItems: savedFaqItems,
+                directAnswerIntro: (data.product as any).directAnswerIntro || "",
+                geoScore: (data as any).geoScore || 0,
+                geoDetails: (data as any).geoDetails || [],
+                geoSuggestions: [],
+              }
+            : null
+        );
+        setGeoEnriched(
+          ((data.product as any).voiceSnippet || (data.product as any).eeaatContent || savedLongTailQuestions.length > 0 || savedEntityKeywords.length > 0)
+            ? {
+                voiceSnippet: (data.product as any).voiceSnippet || "",
+                eeaatContent: (data.product as any).eeaatContent || "",
+                longTailQuestions: savedLongTailQuestions,
+                competitorComparison: savedCompetitorComparison,
+                useCases: savedUseCases,
+                buyingGuideSnippet: (data.product as any).buyingGuideSnippet || "",
+                entityKeywords: savedEntityKeywords,
+              }
+            : null
+        );
         setEditWeightG(data.product.weightG != null ? String(data.product.weightG) : "");
         setEditLengthCm(data.product.lengthCm != null ? String(data.product.lengthCm) : "");
         setEditWidthCm(data.product.widthCm != null ? String(data.product.widthCm) : "");
@@ -670,6 +715,30 @@ function SeoProductPageContent() {
     status: editStatus,
   });
 
+  const handleApplyWhiteSquareImages = async () => {
+    if (!productId) return;
+    setWhiteSquareProcessing(true);
+    setWhiteSquareProgress(8);
+    setWhiteSquareResult(null);
+    setError("");
+    const progressTimer = window.setInterval(() => {
+      setWhiteSquareProgress((value) => (value < 88 ? value + 12 : value));
+    }, 350);
+    try {
+      const res = await applyWhiteBackgroundToProductImages(productId);
+      setWhiteSquareProgress(100);
+      setWhiteSquareResult({ processed: res.processed, errors: res.errors, total: res.total, errorDetails: res.errorDetails });
+      setEditImages(res.images);
+      setProduct(res.product);
+    } catch (err: any) {
+      setWhiteSquareProgress(0);
+      setError(err.message || "Impossible d’appliquer le fond blanc 1:1 aux images.");
+    } finally {
+      window.clearInterval(progressTimer);
+      setTimeout(() => setWhiteSquareProcessing(false), 350);
+    }
+  };
+
   const handleGenerateRecommendations = async () => {
     if (!productId) return;
     setRecommendationGenerating(true);
@@ -746,12 +815,21 @@ function SeoProductPageContent() {
     setApplying(true);
     setError("");
     try {
-      // Appliquer l'optimisation SEO (titre, meta, description, tags)
-      await applySeoOptimization(productId, {
+      await saveProductSeo(productId, {
         optimizedTitle: editTitle,
         metaDescription: editMeta,
         seoDescription: editDescription,
         suggestedTags: editTags,
+        schemaJsonLd: editSchemaJsonLd,
+        faqItems: editFaqItems,
+        directAnswerIntro: editDirectAnswer,
+        voiceSnippet: editVoiceSnippet,
+        eeaatContent: editEeaatContent,
+        longTailQuestions: editLongTailQuestions,
+        competitorComparison: editCompetitorComparison,
+        useCases: editUseCases,
+        buyingGuideSnippet: editBuyingGuideSnippet,
+        entityKeywords: editEntityKeywords,
       });
       // Sauvegarder aussi les données produit modifiables hors SEO, dont la logistique.
       await updateProduct(productId, buildProductUpdatePayload());
@@ -873,7 +951,7 @@ function SeoProductPageContent() {
     setGeoApplying(true);
     setError("");
     try {
-      await applyGeoOptimization(productId, {
+      await saveProductSeo(productId, {
         schemaJsonLd: editSchemaJsonLd,
         faqItems: editFaqItems,
         directAnswerIntro: editDirectAnswer,
@@ -920,7 +998,7 @@ function SeoProductPageContent() {
     setGeoEnrichApplying(true);
     setError("");
     try {
-      await applyGeoEnrichedContent(productId, {
+      await saveProductSeo(productId, {
         voiceSnippet: editVoiceSnippet,
         eeaatContent: editEeaatContent,
         longTailQuestions: editLongTailQuestions,
@@ -1561,11 +1639,38 @@ function SeoProductPageContent() {
           {/* Gestion des images */}
           {productId && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-xs font-semibold text-pink-600 bg-pink-50 px-2 py-0.5 rounded">IMAGES DU PRODUIT</span>
-                <span className="text-xs text-gray-400">{editImages.length} image(s) — glissez pour réorganiser</span>
-                <ImageIcon size={13} className="text-gray-300 ml-auto" />
+              <div className="flex flex-col gap-3 mb-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-pink-600 bg-pink-50 px-2 py-0.5 rounded">IMAGES DU PRODUIT</span>
+                  <span className="text-xs text-gray-400">{editImages.length} image(s) — glissez pour réorganiser</span>
+                  <ImageIcon size={13} className="text-gray-300" />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleApplyWhiteSquareImages}
+                  disabled={whiteSquareProcessing || editImages.length === 0}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-pink-200 bg-pink-50 px-3 py-2 text-xs font-bold text-pink-700 transition hover:bg-pink-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {whiteSquareProcessing ? <Loader2 size={13} className="animate-spin" /> : <ImageIcon size={13} />}
+                  Appliquer fond blanc 1:1 à toutes les images
+                </button>
               </div>
+              {(whiteSquareProcessing || whiteSquareResult) && (
+                <div className="mb-4 rounded-xl border border-pink-100 bg-pink-50/60 p-3">
+                  <div className="flex items-center justify-between text-xs font-semibold text-pink-700">
+                    <span>{whiteSquareProcessing ? "Transformation Cloudinary en cours..." : "Transformation Cloudinary terminée"}</span>
+                    <span>{whiteSquareProcessing ? `${whiteSquareProgress}%` : `${whiteSquareResult?.processed || 0}/${whiteSquareResult?.total || 0} image(s)`}</span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
+                    <div className="h-full rounded-full bg-pink-500 transition-all" style={{ width: `${whiteSquareProcessing ? whiteSquareProgress : 100}%` }} />
+                  </div>
+                  {whiteSquareResult && (
+                    <p className="mt-2 text-xs text-pink-700">
+                      Résumé : {whiteSquareResult.processed} image(s) traitée(s), {whiteSquareResult.errors} erreur(s).
+                    </p>
+                  )}
+                </div>
+              )}
               <ImageManager
                 productId={productId}
                 images={editImages}

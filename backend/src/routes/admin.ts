@@ -216,6 +216,77 @@ function toOptionalBoolean(value: unknown): boolean | undefined {
   return value === undefined ? undefined : Boolean(value);
 }
 
+function parseJsonObject(value: unknown): Record<string, any> {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, any>;
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function parseJsonArray(value: unknown): any[] {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function serializeProductForAdmin(product: any) {
+  const features = parseJsonObject(product.features);
+  const tags = parseJsonArray(product.tags);
+  return {
+    ...product,
+    images: parseJsonArray(product.images),
+    tags,
+    features,
+    metaDescription: product.shortDescription || "",
+    seoDescription: product.description || "",
+    seoTags: tags,
+    schemaJsonLd: features.schemaJsonLd || "",
+    faqItems: Array.isArray(features.faqItems) ? features.faqItems : [],
+    directAnswerIntro: features.directAnswerIntro || "",
+    directAnswer: features.directAnswerIntro || "",
+    voiceSnippet: features.voiceSnippet || "",
+    eeaatContent: features.eeaatContent || "",
+    longTailQuestions: Array.isArray(features.longTailQuestions) ? features.longTailQuestions : [],
+    competitorComparison: Array.isArray(features.competitorComparison) ? features.competitorComparison : [],
+    useCases: Array.isArray(features.useCases) ? features.useCases : [],
+    buyingGuideSnippet: features.buyingGuideSnippet || "",
+    entityKeywords: Array.isArray(features.entityKeywords) ? features.entityKeywords : [],
+  };
+}
+
+function normalizeNullableString(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  return String(value).trim();
+}
+
+function normalizeStringArray(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item).trim()).filter(Boolean);
+}
+
+function normalizeFaqItems(value: unknown): { question: string; answer: string }[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item: any) => ({
+      question: String(item?.question || "").trim(),
+      answer: String(item?.answer || "").trim(),
+    }))
+    .filter((item) => item.question || item.answer);
+}
+
 function normalizeCountries(value: unknown): string[] {
   const values = Array.isArray(value) ? value : [];
   return Array.from(
@@ -1903,11 +1974,7 @@ adminRouter.get(
         prisma.product.count({ where }),
       ]);
       res.json({
-        products: products.map(p => ({
-          ...p,
-          images: JSON.parse(p.images || "[]"),
-          tags: JSON.parse(p.tags || "[]"),
-        })),
+        products: products.map((p) => serializeProductForAdmin(p)),
         total,
         page: parseInt(page),
         pages: Math.ceil(total / parseInt(limit)),
@@ -2011,6 +2078,107 @@ adminRouter.put(
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Erreur sauvegarde recommandations produit" });
+    }
+  }
+);
+
+// GET /api/admin/products/:id — Détail produit admin avec champs SEO/GEO pré-remplissables
+adminRouter.get(
+  "/products/:id",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const product = await prisma.product.findUnique({ where: { id: req.params.id } });
+      if (!product) {
+        res.status(404).json({ error: "Produit introuvable" });
+        return;
+      }
+
+      res.json(serializeProductForAdmin(product));
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur récupération produit" });
+    }
+  }
+);
+
+// PUT /api/admin/products/:id/seo — Sauvegarder les champs SEO/GEO édités dans l'agent SEO
+adminRouter.put(
+  "/products/:id/seo",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const product = await prisma.product.findUnique({ where: { id: req.params.id } });
+      if (!product) {
+        res.status(404).json({ error: "Produit introuvable" });
+        return;
+      }
+
+      const {
+        optimizedTitle,
+        title,
+        name,
+        metaDescription,
+        seoDescription,
+        description,
+        suggestedTags,
+        seoTags,
+        tags,
+        schemaJsonLd,
+        faqItems,
+        directAnswerIntro,
+        directAnswer,
+        voiceSnippet,
+        eeaatContent,
+        longTailQuestions,
+        competitorComparison,
+        useCases,
+        buyingGuideSnippet,
+        entityKeywords,
+      } = req.body || {};
+
+      const existingFeatures = parseJsonObject(product.features);
+      const nextFeatures = { ...existingFeatures };
+      const nextSchema = normalizeNullableString(schemaJsonLd);
+      const nextDirectAnswer = normalizeNullableString(directAnswerIntro ?? directAnswer);
+      const nextVoiceSnippet = normalizeNullableString(voiceSnippet);
+      const nextEeaatContent = normalizeNullableString(eeaatContent);
+      const nextBuyingGuideSnippet = normalizeNullableString(buyingGuideSnippet);
+      const nextFaqItems = normalizeFaqItems(faqItems);
+      const nextLongTailQuestions = Array.isArray(longTailQuestions) ? longTailQuestions : longTailQuestions === undefined ? undefined : [];
+      const nextCompetitorComparison = Array.isArray(competitorComparison) ? competitorComparison : competitorComparison === undefined ? undefined : [];
+      const nextUseCases = Array.isArray(useCases) ? useCases : useCases === undefined ? undefined : [];
+      const nextEntityKeywords = normalizeStringArray(entityKeywords);
+
+      if (nextSchema !== undefined) nextFeatures.schemaJsonLd = nextSchema;
+      if (nextFaqItems !== undefined) nextFeatures.faqItems = nextFaqItems;
+      if (nextDirectAnswer !== undefined) nextFeatures.directAnswerIntro = nextDirectAnswer;
+      if (nextVoiceSnippet !== undefined) nextFeatures.voiceSnippet = nextVoiceSnippet;
+      if (nextEeaatContent !== undefined) nextFeatures.eeaatContent = nextEeaatContent;
+      if (nextLongTailQuestions !== undefined) nextFeatures.longTailQuestions = nextLongTailQuestions;
+      if (nextCompetitorComparison !== undefined) nextFeatures.competitorComparison = nextCompetitorComparison;
+      if (nextUseCases !== undefined) nextFeatures.useCases = nextUseCases;
+      if (nextBuyingGuideSnippet !== undefined) nextFeatures.buyingGuideSnippet = nextBuyingGuideSnippet;
+      if (nextEntityKeywords !== undefined) nextFeatures.entityKeywords = nextEntityKeywords;
+
+      const nextTags = normalizeStringArray(suggestedTags ?? seoTags ?? tags);
+      const updateData: Record<string, any> = {
+        name: normalizeNullableString(optimizedTitle ?? title ?? name) || undefined,
+        shortDescription: normalizeNullableString(metaDescription) ?? undefined,
+        description: normalizeNullableString(seoDescription ?? description) ?? undefined,
+        tags: nextTags !== undefined ? JSON.stringify(nextTags) : undefined,
+        features: JSON.stringify(nextFeatures),
+      };
+
+      const updated = await prisma.product.update({
+        where: { id: product.id },
+        data: updateData,
+      });
+
+      res.json({ success: true, product: serializeProductForAdmin(updated) });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur sauvegarde SEO produit" });
     }
   }
 );

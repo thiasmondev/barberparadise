@@ -36,6 +36,54 @@ function isImportableImageUrl(value: string): boolean {
   }
 }
 
+function parseJsonObject(value: unknown): Record<string, any> {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, any>;
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function parseJsonArray(value: unknown): any[] {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function serializeSeoProduct(product: any) {
+  const features = parseJsonObject(product.features);
+  const tags = parseJsonArray(product.tags);
+  return {
+    ...product,
+    images: parseJsonArray(product.images),
+    tags,
+    features,
+    metaDescription: product.shortDescription || "",
+    seoDescription: product.description || "",
+    seoTags: tags,
+    schemaJsonLd: features.schemaJsonLd || "",
+    faqItems: Array.isArray(features.faqItems) ? features.faqItems : [],
+    directAnswerIntro: features.directAnswerIntro || "",
+    directAnswer: features.directAnswerIntro || "",
+    voiceSnippet: features.voiceSnippet || "",
+    eeaatContent: features.eeaatContent || "",
+    longTailQuestions: Array.isArray(features.longTailQuestions) ? features.longTailQuestions : [],
+    competitorComparison: Array.isArray(features.competitorComparison) ? features.competitorComparison : [],
+    useCases: Array.isArray(features.useCases) ? features.useCases : [],
+    buyingGuideSnippet: features.buyingGuideSnippet || "",
+    entityKeywords: Array.isArray(features.entityKeywords) ? features.entityKeywords : [],
+  };
+}
+
 async function importDraftImagesToCloudinary(draft: ProductDraftFromUrl, productId: string): Promise<string[]> {
   if (!hasCloudinaryConfig()) return [];
 
@@ -271,7 +319,7 @@ seoRouter.get("/analyze/:id", async (req, res) => {
     const { score, details } = calculateSeoScore(product as ProductData);
     res.json({
       product: {
-        ...product,
+        ...serializeSeoProduct(product),
         recommendedProducts: recommendedProductIds.map((id) => recommendedById.get(id)).filter(Boolean),
       },
       score,
@@ -295,7 +343,7 @@ seoRouter.post("/optimize/:id", async (req, res) => {
     }
 
     const optimization = await optimizeProduct(product as ProductData);
-    res.json({ product, optimization });
+    res.json({ product: serializeSeoProduct(product), optimization });
   } catch (err: any) {
     console.error("SEO Optimize error:", err);
     res.status(500).json({ error: err.message });
@@ -328,7 +376,7 @@ seoRouter.post("/apply/:id", async (req, res) => {
       data: updateData,
     });
 
-    res.json({ success: true, product: updated });
+    res.json({ success: true, product: serializeSeoProduct(updated) });
   } catch (err: any) {
     console.error("SEO Apply error:", err);
     res.status(500).json({ error: err.message });
@@ -557,7 +605,7 @@ seoRouter.post("/geo-optimize/:id", async (req, res) => {
     };
 
     const geoOptimization = await optimizeProductGeo(productData as any);
-    res.json({ product, geoOptimization });
+    res.json({ product: serializeSeoProduct(product), geoOptimization });
   } catch (err: any) {
     console.error("GEO Optimize error:", err);
     res.status(500).json({ error: err.message });
@@ -595,7 +643,7 @@ seoRouter.post("/geo-apply/:id", async (req, res) => {
       data: updateData,
     });
 
-    res.json({ success: true, product: updated });
+    res.json({ success: true, product: serializeSeoProduct(updated) });
   } catch (err: any) {
     console.error("GEO Apply error:", err);
     res.status(500).json({ error: err.message });
@@ -615,7 +663,7 @@ seoRouter.get("/geo-score/:id", async (req, res) => {
 
     const { calculateGeoScore } = await import("../services/seo-agent");
     const { score, details } = calculateGeoScore(product as any);
-    res.json({ product, geoScore: score, geoDetails: details });
+    res.json({ product: serializeSeoProduct(product), geoScore: score, geoDetails: details });
   } catch (err: any) {
     console.error("GEO Score error:", err);
     res.status(500).json({ error: err.message });
@@ -736,7 +784,7 @@ seoRouter.post("/geo-enrich/:id", async (req, res) => {
 
     const { generateGeoEnrichedContent } = await import("../services/seo-agent");
     const enriched = await generateGeoEnrichedContent(product as any);
-    res.json({ product, enriched });
+    res.json({ product: serializeSeoProduct(product), enriched });
   } catch (err: any) {
     console.error("GEO Enrich error:", err);
     res.status(500).json({ error: err.message });
@@ -771,7 +819,7 @@ seoRouter.post("/geo-enrich-apply/:id", async (req, res) => {
       data: { features: JSON.stringify(existingFeatures) },
     });
 
-    res.json({ success: true, product: updated });
+    res.json({ success: true, product: serializeSeoProduct(updated) });
   } catch (err: any) {
     console.error("GEO Enrich Apply error:", err);
     res.status(500).json({ error: err.message });
@@ -911,6 +959,62 @@ seoRouter.post("/geo-category", async (req, res) => {
   } catch (err: any) {
     console.error("GEO Category error:", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+function buildWhiteSquareCloudinaryUrl(url: string): string {
+  if (!url.includes("res.cloudinary.com") || !url.includes("/image/upload/")) {
+    throw new Error("URL non Cloudinary");
+  }
+
+  const transformation = "b_white,ar_1:1,c_pad,q_auto,f_auto";
+  const marker = "/image/upload/";
+  const [prefix, suffix] = url.split(marker);
+  if (!prefix || !suffix) throw new Error("URL Cloudinary invalide");
+  if (suffix.startsWith(`${transformation}/`)) return url;
+
+  const cleanedSuffix = suffix.replace(/^(b_white,)?ar_1:1,c_pad[^/]*\//, "");
+  return `${prefix}${marker}${transformation}/${cleanedSuffix}`;
+}
+
+// ─── POST /api/seo/images/white-square/:id — Appliquer fond blanc 1:1 aux images Cloudinary ─
+seoRouter.post("/images/white-square/:id", requireAdmin, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const product = await prisma.product.findUnique({ where: { id: req.params.id } });
+    if (!product) { res.status(404).json({ error: "Produit introuvable" }); return; }
+
+    const images = parseJsonArray(product.images).filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+    const transformedImages: string[] = [];
+    const errorDetails: string[] = [];
+    let processed = 0;
+
+    images.forEach((imageUrl, index) => {
+      try {
+        const transformedUrl = buildWhiteSquareCloudinaryUrl(imageUrl);
+        transformedImages.push(transformedUrl);
+        processed += 1;
+      } catch (error: any) {
+        transformedImages.push(imageUrl);
+        errorDetails.push(`Image ${index + 1}: ${error?.message || "transformation impossible"}`);
+      }
+    });
+
+    const updated = await prisma.product.update({
+      where: { id: product.id },
+      data: { images: JSON.stringify(transformedImages) },
+    });
+
+    res.json({
+      product: serializeSeoProduct(updated),
+      images: transformedImages,
+      processed,
+      errors: errorDetails.length,
+      total: images.length,
+      errorDetails,
+    });
+  } catch (err: any) {
+    console.error("Image white square error:", err);
+    res.status(500).json({ error: err.message || "Erreur transformation images" });
   }
 });
 

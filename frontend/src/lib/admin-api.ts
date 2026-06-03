@@ -678,6 +678,47 @@ export function applySeoOptimization(
   );
 }
 
+export function saveProductSeo(
+  id: string,
+  data: {
+    optimizedTitle?: string;
+    metaDescription?: string;
+    seoDescription?: string;
+    suggestedTags?: string[];
+    schemaJsonLd?: string;
+    faqItems?: { question: string; answer: string }[];
+    directAnswerIntro?: string;
+    voiceSnippet?: string;
+    eeaatContent?: string;
+    longTailQuestions?: { question: string; answer: string; intent?: string }[];
+    competitorComparison?: { feature: string; ourProduct: string; competitor1: string; competitor2: string }[];
+    useCases?: { profile: string; useCase: string; benefit: string }[];
+    buyingGuideSnippet?: string;
+    entityKeywords?: string[];
+  }
+) {
+  return adminFetch<{ success: boolean; product: Product }>(
+    `/api/admin/products/${id}/seo`,
+    {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }
+  );
+}
+
+export function applyWhiteBackgroundToProductImages(id: string) {
+  return adminFetch<{
+    product: Product;
+    images: string[];
+    processed: number;
+    errors: number;
+    total: number;
+    errorDetails: string[];
+  }>(`/api/admin/seo/images/white-square/${id}`, {
+    method: "POST",
+  });
+}
+
 export function bulkOptimizeSeo(productIds: string[], autoApply: boolean) {
   return adminFetch<{
     total: number;
