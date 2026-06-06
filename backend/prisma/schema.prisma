@@ -502,3 +502,73 @@ model NewsletterSubscriber {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 }
+
+// ============================================
+// HERMES AGENT - Marketing AI
+// ============================================
+model HermesConversation {
+  id        String   @id @default(cuid())
+  title     String?
+  channel   String   @default("workspace")
+  status    String   @default("active")
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages HermesMessage[]
+
+  @@index([channel])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model HermesMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           String
+  content        String   @db.Text
+  module         String?
+  model          String?
+  tokensInput    Int?
+  tokensOutput   Int?
+  durationMs     Int?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  conversation HermesConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
+model HermesTemplate {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  module    String
+  prompt    String   @db.Text
+  variables Json?
+  isActive  Boolean  @default(true)
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([module])
+  @@index([isActive])
+}
+
+model ContentDraft {
+  id        String   @id @default(cuid())
+  type      String
+  title     String
+  content   String   @db.Text
+  status    String   @default("draft")
+  seoMeta   Json?
+  metadata  Json?
+  messageId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}

@@ -34,6 +34,7 @@ import { webhooksRouter } from "./routes/webhooks";
 import { proRouter } from "./routes/pro";
 import { cronRouter } from "./routes/cron";
 import newsletterRouter from "./routes/newsletter";
+import { hermesRouter } from "./routes/hermes";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -64,6 +65,7 @@ app.use("/api/webhooks", webhooksRouter);
 app.use("/api/pro", proRouter);
 app.use("/api/cron", cronRouter);
 app.use("/api/newsletter", newsletterRouter);
+app.use("/api/hermes", hermesRouter);
 
 // ─── Root & Health Check ─────────────────────────────────────
 app.get("/", (_req, res) => {
@@ -84,6 +86,7 @@ app.get("/", (_req, res) => {
       blog: "/api/blog",
       admin: "/api/admin",
       marketing: "/api/admin/marketing",
+      hermes: "/api/hermes",
     },
   });
 });

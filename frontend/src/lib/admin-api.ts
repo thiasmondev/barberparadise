@@ -1786,3 +1786,68 @@ export function syncMarketingBrevoContacts(listId?: number) {
     body: JSON.stringify({ listId }),
   });
 }
+
+// ─── Hermes Agent ───────────────────────────────────────────────
+
+export interface HermesMessage {
+  id: string;
+  conversationId: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  module?: string | null;
+  model?: string | null;
+  tokensInput?: number | null;
+  tokensOutput?: number | null;
+  durationMs?: number | null;
+  createdAt: string;
+}
+
+export interface HermesConversation {
+  id: string;
+  title?: string | null;
+  channel: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  messages?: HermesMessage[];
+  _count?: { messages: number };
+}
+
+export interface HermesStats {
+  totalConversations: number;
+  activeConversations: number;
+  totalMessages: number;
+  last30DaysMessages: number;
+  totalTokensInput: number;
+  totalTokensOutput: number;
+  avgResponseTimeMs: number;
+}
+
+export interface HermesConversationListResponse {
+  conversations: HermesConversation[];
+  pagination: { page: number; limit: number; total: number; totalPages: number };
+}
+
+export function getHermesConversations(status = "active") {
+  return adminFetch<HermesConversationListResponse>(`/api/hermes/conversations?status=${encodeURIComponent(status)}`);
+}
+
+export function getHermesConversation(id: string) {
+  return adminFetch<HermesConversation>(`/api/hermes/conversations/${id}`);
+}
+
+export function archiveHermesConversation(id: string) {
+  return adminFetch<HermesConversation>(`/api/hermes/conversations/${id}/archive`, { method: "PATCH" });
+}
+
+export function deleteHermesConversation(id: string) {
+  return adminFetch<{ success: boolean }>(`/api/hermes/conversations/${id}`, { method: "DELETE" });
+}
+
+export function getHermesStats() {
+  return adminFetch<HermesStats>("/api/hermes/stats");
+}
+
+export function getHermesChatUrl() {
+  return `${API_URL}/api/hermes/chat`;
+}
