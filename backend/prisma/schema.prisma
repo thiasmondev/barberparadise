@@ -626,3 +626,60 @@ model CampaignPlan {
   @@index([conversationId])
   @@index([createdAt])
 }
+
+// ============================================
+// HERMES PHASE 4 - Image Generator + Analytics
+// ============================================
+model HermesImage {
+  id             String   @id @default(cuid())
+  prompt         String   @db.Text
+  negativePrompt String?  @db.Text
+  model          String
+  replicateId    String?
+  status         String   @default("pending")
+  replicateUrl   String?
+  cloudinaryUrl  String?
+  cloudinaryId   String?
+  width          Int      @default(1024)
+  height         Int      @default(1024)
+  aspectRatio    String   @default("1:1")
+  format         String   @default("webp")
+  category       String?
+  tags           String[] @default([])
+  conversationId String?
+  messageId      String?
+  durationMs     Int?
+  costUsd        Float?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status])
+  @@index([category])
+  @@index([createdAt])
+}
+
+model MarketingKPI {
+  id                  String   @id @default(cuid())
+  date                DateTime
+  source              String
+  emailsSent          Int?
+  emailsOpened        Int?
+  emailsClicked       Int?
+  emailsBounced       Int?
+  emailsUnsubs        Int?
+  blogPostsPublished  Int?
+  socialPostsCreated  Int?
+  productDescsUpdated Int?
+  hermesConversations Int?
+  hermesMessages      Int?
+  hermesTokensUsed    Int?
+  hermesCostUsd       Float?
+  imagesGenerated     Int?
+  imagesCostUsd       Float?
+  metadata            Json?
+  createdAt           DateTime @default(now())
+
+  @@unique([date, source])
+  @@index([date])
+  @@index([source])
+}

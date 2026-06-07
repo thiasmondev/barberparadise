@@ -2,6 +2,8 @@ import { PrismaClient } from "@prisma/client";
 import OpenAI from "openai";
 import type { Response } from "express";
 import contentEngine from "./modules/contentEngine";
+import imageGenerator from "./modules/imageGenerator";
+import analyticsModule from "./modules/analytics";
 
 const prisma = new PrismaClient();
 
@@ -52,7 +54,27 @@ Tu peux utiliser ces commandes spéciales dans tes réponses, que l'interface af
 - [DRAFT:email] ... [/DRAFT] pour créer un brouillon d'email ou campagne
 - [DRAFT:product] ... [/DRAFT] pour créer un brouillon de fiche produit
 
+Tu peux aussi demander une génération visuelle avec ces blocs :
+- [IMAGE:product] ... [/IMAGE] pour une image produit e-commerce
+- [IMAGE:social] ... [/IMAGE] pour un visuel social media
+- [IMAGE:banner] ... [/IMAGE] pour une bannière marketing
+- [IMAGE:email] ... [/IMAGE] pour un visuel de campagne email
+- [IMAGE:other] ... [/IMAGE] pour un autre visuel
+
+Les prompts d'image doivent être précis, professionnels, en français ou anglais selon le rendu souhaité, et inclure le style, la lumière, le cadrage, les objets, les couleurs et le contexte Barber Paradise.
+
 Réponds toujours en français.${moduleHint}`;
+}
+
+async function buildAnalyticsContext(module?: HermesModule): Promise<string | null> {
+  if (module !== "analytics" && module !== "content" && module !== "campaigns") return null;
+
+  try {
+    return await analyticsModule.getContextSummary();
+  } catch (error) {
+    console.error("[HermesCore] Contexte analytics indisponible:", error);
+    return null;
+  }
 }
 
 function sendSse(res: Response, payload: Record<string, unknown>): void {
@@ -106,6 +128,7 @@ export async function chat({ conversationId, userMessage, module, usePro = false
   let fullResponse = "";
   let tokensInput: number | undefined;
   let tokensOutput: number | undefined;
+  const analyticsContext = await buildAnalyticsContext(module);
 
   try {
     if (!client) {
@@ -116,6 +139,7 @@ export async function chat({ conversationId, userMessage, module, usePro = false
         model,
         messages: [
           { role: "system", content: buildSystemPrompt(module) },
+          ...(analyticsContext ? [{ role: "system" as const, content: analyticsContext }] : []),
           ...previousMessages,
           { role: "user", content: userMessage },
         ],
@@ -157,6 +181,11 @@ export async function chat({ conversationId, userMessage, module, usePro = false
       conversation.id,
       assistantMessage.id
     );
+    const images = await imageGenerator.extractAndGenerateImages(
+      fullResponse,
+      conversation.id,
+      assistantMessage.id
+    );
 
     if (!conversation.title && conversation.messages.length === 0) {
       generateTitle(conversation.id, userMessage).catch(console.error);
@@ -167,7 +196,7 @@ export async function chat({ conversationId, userMessage, module, usePro = false
       data: { updatedAt: new Date() },
     });
 
-    sendSse(res, { type: "done", conversationId: conversation.id, model, durationMs, drafts });
+    sendSse(res, { type: "done", conversationId: conversation.id, model, durationMs, drafts, images });
   } catch (error) {
     console.error("[HermesCore] Erreur streaming:", error);
     sendSse(res, { type: "error", message: "Erreur interne Hermes pendant la génération." });
@@ -193,12 +222,14 @@ export async function chatSync({ conversationId, userMessage, module, usePro = f
   let fullResponse = fallbackResponse(userMessage, module);
   let tokensInput: number | undefined;
   let tokensOutput: number | undefined;
+  const analyticsContext = await buildAnalyticsContext(module);
 
   if (client) {
     const response = await client.chat.completions.create({
       model,
       messages: [
         { role: "system", content: buildSystemPrompt(module) },
+        ...(analyticsContext ? [{ role: "system" as const, content: analyticsContext }] : []),
         ...previousMessages,
         { role: "user", content: userMessage },
       ],
@@ -230,6 +261,11 @@ export async function chatSync({ conversationId, userMessage, module, usePro = f
     conversation.id,
     assistantMessage.id
   );
+  const images = await imageGenerator.extractAndGenerateImages(
+    fullResponse,
+    conversation.id,
+    assistantMessage.id
+  );
 
   if (!conversation.title && conversation.messages.length === 0) {
     generateTitle(conversation.id, userMessage).catch(console.error);
@@ -240,7 +276,7 @@ export async function chatSync({ conversationId, userMessage, module, usePro = f
     data: { updatedAt: new Date() },
   });
 
-  return { conversationId: conversation.id, response: fullResponse, model, durationMs, drafts };
+  return { conversationId: conversation.id, response: fullResponse, model, durationMs, drafts, images };
 }
 
 export const hermesCore = { chat, chatSync, buildSystemPrompt };

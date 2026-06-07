@@ -37,10 +37,13 @@ import newsletterRouter from "./routes/newsletter";
 import { hermesRouter } from "./routes/hermes";
 import { hermesDraftsRouter } from "./routes/hermes-drafts";
 import { hermesCampaignsRouter } from "./routes/hermes-campaigns";
+import { hermesImagesRouter } from "./routes/hermes-images";
+import { hermesAnalyticsRouter } from "./routes/hermes-analytics";
 import telegramRouter from "./routes/telegram";
 import telegramBotService from "./services/telegram/telegramBot";
 import { registerTelegramHandlers } from "./services/telegram/telegramHandlers";
 import { scheduleTelegramDailyDigest } from "./services/telegram/telegramDigest";
+import { scheduleHermesAnalyticsCollection } from "./services/hermes/analyticsScheduler";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -74,6 +77,8 @@ app.use("/api/newsletter", newsletterRouter);
 app.use("/api/hermes", hermesRouter);
 app.use("/api/hermes/drafts", hermesDraftsRouter);
 app.use("/api/hermes/campaigns", hermesCampaignsRouter);
+app.use("/api/hermes/images", hermesImagesRouter);
+app.use("/api/hermes/analytics", hermesAnalyticsRouter);
 app.use("/api/telegram", telegramRouter);
 
 // ─── Root & Health Check ─────────────────────────────────────
@@ -98,6 +103,8 @@ app.get("/", (_req, res) => {
               hermes: "/api/hermes",
               hermesDrafts: "/api/hermes/drafts",
               hermesCampaigns: "/api/hermes/campaigns",
+              hermesImages: "/api/hermes/images",
+              hermesAnalytics: "/api/hermes/analytics",
               telegram: "/api/telegram/status",
 
     },
@@ -131,6 +138,7 @@ app.listen(PORT, () => {
   telegramBotService.initialize();
   registerTelegramHandlers();
   scheduleTelegramDailyDigest();
+  scheduleHermesAnalyticsCollection();
 
   const publicUrl = process.env.RENDER_EXTERNAL_URL || process.env.BACKEND_URL;
   if (publicUrl) {

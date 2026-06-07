@@ -2009,3 +2009,114 @@ export function getHermesCampaignStats() {
     brevoConfigured: boolean;
   }>("/api/hermes/campaigns/stats");
 }
+
+
+// ─── Hermes Images & Analytics Phase 4 ───────────────────────────
+
+export interface HermesImage {
+  id: string;
+  prompt: string;
+  model: string;
+  status: string;
+  category?: string | null;
+  tags: string[];
+  aspectRatio?: string | null;
+  replicateUrl?: string | null;
+  replicateId?: string | null;
+  cloudinaryUrl?: string | null;
+  cloudinaryId?: string | null;
+  width?: number | null;
+  height?: number | null;
+  durationMs?: number | null;
+  costUsd?: number | null;
+  conversationId?: string | null;
+  messageId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HermesImagesResponse {
+  images: HermesImage[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface HermesImageStats {
+  total: number;
+  byCategory: Record<string, number>;
+  byStatus: Record<string, number>;
+  generatedLast30Days: number;
+  totalCostUsd: number;
+  avgGenerationTimeMs: number;
+}
+
+export interface HermesMarketingKPI {
+  id: string;
+  source: string;
+  metric: string;
+  value: number;
+  unit?: string | null;
+  period: string;
+  date: string;
+  metadata?: unknown;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HermesAnalyticsReport {
+  period: { startDate: string; endDate: string; days: number };
+  totals: Record<string, number>;
+  bySource: Record<string, Record<string, number>>;
+  trends: HermesMarketingKPI[];
+  insights: string[];
+}
+
+export function getHermesImages(params?: { category?: string; status?: string; tags?: string; page?: number; limit?: number }) {
+  return adminFetch<HermesImagesResponse>(`/api/hermes/images${toQuery(params)}`);
+}
+
+export function generateHermesImage(data: {
+  prompt: string;
+  category?: string;
+  tags?: string[];
+  aspectRatio?: string;
+  useFastModel?: boolean;
+}) {
+  return adminFetch<HermesImage>("/api/hermes/images/generate", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateHermesImage(id: string, data: { category?: string; tags?: string[] }) {
+  return adminFetch<HermesImage>(`/api/hermes/images/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteHermesImage(id: string) {
+  return adminFetch<{ ok: boolean }>(`/api/hermes/images/${id}`, { method: "DELETE" });
+}
+
+export function getHermesImageStats() {
+  return adminFetch<HermesImageStats>("/api/hermes/images/stats");
+}
+
+export function getHermesAnalyticsKpis(params?: { startDate?: string; endDate?: string; source?: string; period?: string }) {
+  return adminFetch<{ kpis: HermesMarketingKPI[] }>(`/api/hermes/analytics/kpis${toQuery(params)}`);
+}
+
+export function getHermesAnalyticsReport(days = 30) {
+  return adminFetch<HermesAnalyticsReport>(`/api/hermes/analytics/report?days=${encodeURIComponent(String(days))}`);
+}
+
+export function getHermesAnalyticsContext() {
+  return adminFetch<{ context: string }>("/api/hermes/analytics/context");
+}
+
+export function collectHermesAnalytics() {
+  return adminFetch<{ ok: boolean; report: unknown }>("/api/hermes/analytics/collect", { method: "POST" });
+}

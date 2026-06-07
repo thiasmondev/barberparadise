@@ -51,6 +51,7 @@
     "openai": "^6.34.0",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^2.4.5",
+    "replicate": "^1.4.0",
     "resend": "^6.12.2"
   },
   "devDependencies": {

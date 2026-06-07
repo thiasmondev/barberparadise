@@ -80,6 +80,24 @@ class TelegramBotService {
     }
   }
 
+  async sendPhoto(
+    chatId: number | string,
+    photoUrl: string,
+    options?: TelegramBot.SendPhotoOptions
+  ): Promise<TelegramBot.Message | null> {
+    if (!this.bot) return null;
+
+    try {
+      return await this.bot.sendPhoto(chatId, photoUrl, {
+        parse_mode: "HTML",
+        ...options,
+      });
+    } catch (error) {
+      console.error("[Telegram] Erreur envoi photo Buzz:", error);
+      return null;
+    }
+  }
+
   async sendTyping(chatId: number | string): Promise<void> {
     if (!this.bot) return;
 

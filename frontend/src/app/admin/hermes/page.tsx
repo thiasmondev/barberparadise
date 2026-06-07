@@ -26,8 +26,10 @@ import { useHermesCampaigns } from "@/hooks/useHermesCampaigns";
 import { useHermesChat } from "@/hooks/useHermesChat";
 import { useHermesConversations } from "@/hooks/useHermesConversations";
 import { useHermesDrafts } from "@/hooks/useHermesDrafts";
+import { useHermesImages } from "@/hooks/useHermesImages";
+import { useHermesAnalytics } from "@/hooks/useHermesAnalytics";
 import { useHermesStats } from "@/hooks/useHermesStats";
-import type { HermesCampaignPlan, HermesContentDraft } from "@/lib/admin-api";
+import type { HermesCampaignPlan, HermesContentDraft, HermesImage } from "@/lib/admin-api";
 
 const MODULES = [
   { id: null, label: "Workspace", description: "Stratégie, idées, analyses", icon: Sparkles },
@@ -74,7 +76,7 @@ export default function HermesAdminPage() {
   const [input, setInput] = useState("");
   const [selectedModule, setSelectedModule] = useState<string | null>(null);
   const [usePro, setUsePro] = useState(false);
-  const [activeTab, setActiveTab] = useState<"chat" | "drafts" | "campaigns">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "drafts" | "campaigns" | "images" | "analytics">("chat");
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const chat = useHermesChat();
@@ -82,6 +84,8 @@ export default function HermesAdminPage() {
   const stats = useHermesStats();
   const drafts = useHermesDrafts();
   const campaigns = useHermesCampaigns();
+  const images = useHermesImages();
+  const analytics = useHermesAnalytics();
 
   const selectedModuleLabel = useMemo(
     () => MODULES.find((module) => module.id === selectedModule)?.label || "Workspace",
@@ -98,7 +102,7 @@ export default function HermesAdminPage() {
     const message = input;
     setInput("");
     await chat.sendMessage({ message, module: selectedModule, usePro });
-    await Promise.all([conversations.refresh(), stats.refresh(), drafts.refresh(), campaigns.refresh()]);
+    await Promise.all([conversations.refresh(), stats.refresh(), drafts.refresh(), campaigns.refresh(), images.refresh(), analytics.refresh()]);
   };
 
   const handleLoadConversation = async (id: string) => {
@@ -120,12 +124,12 @@ export default function HermesAdminPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary-100">
-              <Bot size={14} /> Hermes Agent Phase 2
+              <Bot size={14} /> Hermes Agent Phase 4
             </div>
             <h1 className="mt-3 text-3xl font-heading font-bold">Workspace marketing IA</h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-200">
               Assistant marketing Barber Paradise pour générer des contenus, préparer des campagnes Brevo,
-              sauvegarder des brouillons éditoriaux et piloter les KPIs marketing en français.
+              produire des visuels Replicate/Cloudinary et piloter les KPIs marketing en français.
             </p>
           </div>
           <button
@@ -141,7 +145,7 @@ export default function HermesAdminPage() {
         <StatCard label="Conversations" value={stats.stats?.totalConversations ?? 0} loading={stats.loading} />
         <StatCard label="Brouillons" value={drafts.drafts.length} loading={drafts.loading} />
         <StatCard label="Campagnes" value={campaigns.campaigns.length} loading={campaigns.loading} />
-        <StatCard label="Temps moyen" value={`${stats.stats?.avgResponseTimeMs ?? 0} ms`} loading={stats.loading} />
+        <StatCard label="Images" value={images.stats?.total ?? images.images.length} loading={images.loading} />
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[320px_1fr]">
@@ -225,6 +229,8 @@ export default function HermesAdminPage() {
                 <TabButton active={activeTab === "chat"} onClick={() => setActiveTab("chat")} icon={MessageSquare} label="Chat" />
                 <TabButton active={activeTab === "drafts"} onClick={() => setActiveTab("drafts")} icon={FileText} label="Content Drafts" />
                 <TabButton active={activeTab === "campaigns"} onClick={() => setActiveTab("campaigns")} icon={Megaphone} label="Campaigns" />
+                <TabButton active={activeTab === "images"} onClick={() => setActiveTab("images")} icon={ImageIcon} label="Images" />
+                <TabButton active={activeTab === "analytics"} onClick={() => setActiveTab("analytics")} icon={BarChart3} label="Analytics" />
               </div>
             </div>
           </div>
@@ -243,6 +249,8 @@ export default function HermesAdminPage() {
 
           {activeTab === "drafts" && <DraftsPanel draftsHook={drafts} />}
           {activeTab === "campaigns" && <CampaignsPanel campaignsHook={campaigns} />}
+          {activeTab === "images" && <ImagesPanel imagesHook={images} />}
+          {activeTab === "analytics" && <AnalyticsPanel analyticsHook={analytics} />}
         </section>
       </div>
     </div>
@@ -323,7 +331,7 @@ function ChatPanel({ chat, input, setInput, handleSubmit, usePro, setUsePro, bot
           </button>
         </div>
         <p className="mt-2 text-xs text-gray-400">
-          Les blocs [DRAFT:blog], [DRAFT:social], [DRAFT:email] et [DRAFT:product] sont automatiquement sauvegardés.
+          Les blocs [DRAFT:*] et [IMAGE:*] sont automatiquement sauvegardés ou générés par Hermes.
         </p>
       </form>
     </>
@@ -520,6 +528,229 @@ function CampaignCard({ campaign, campaignsHook }: { campaign: HermesCampaignPla
         {campaign.scheduledAt && <span className="text-xs text-gray-500"><Clock size={12} className="inline" /> {new Date(campaign.scheduledAt).toLocaleString("fr-FR")}</span>}
       </div>
     </article>
+  );
+}
+
+function ImagesPanel({ imagesHook }: { imagesHook: ReturnType<typeof useHermesImages> }) {
+  const [form, setForm] = useState({ prompt: "", category: "social", aspectRatio: "1:1", tags: "barber paradise" });
+  const [preview, setPreview] = useState<HermesImage | null>(null);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!form.prompt.trim()) return;
+    await imagesHook.generateImage({
+      prompt: form.prompt,
+      category: form.category || undefined,
+      aspectRatio: form.aspectRatio || undefined,
+      tags: form.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+    });
+    setForm({ prompt: "", category: "social", aspectRatio: "1:1", tags: "barber paradise" });
+  };
+
+  return (
+    <div className="space-y-4 bg-gray-50 p-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+        <MiniStat label="Images" value={imagesHook.stats?.total ?? 0} />
+        <MiniStat label="30 derniers jours" value={imagesHook.stats?.generatedLast30Days ?? 0} />
+        <MiniStat label="Coût estimé" value={`$${(imagesHook.stats?.totalCostUsd ?? 0).toFixed(3)}`} />
+        <MiniStat label="Temps moyen" value={`${Math.round(imagesHook.stats?.avgGenerationTimeMs ?? 0)} ms`} />
+      </div>
+
+      <form onSubmit={submit} className="grid grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-white p-4 lg:grid-cols-[1fr_160px_140px_1fr_auto]">
+        <textarea
+          value={form.prompt}
+          onChange={(event) => setForm({ ...form, prompt: event.target.value })}
+          placeholder="Décris le visuel à générer pour Barber Paradise..."
+          className="min-h-[72px] rounded-xl border border-gray-200 px-3 py-2 text-sm lg:col-span-5"
+          required
+        />
+        <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} className="rounded-xl border border-gray-200 px-3 py-2 text-sm">
+          <option value="social">Social</option>
+          <option value="blog">Blog</option>
+          <option value="product">Produit</option>
+          <option value="campaign">Campagne</option>
+          <option value="brand">Brand</option>
+        </select>
+        <select value={form.aspectRatio} onChange={(event) => setForm({ ...form, aspectRatio: event.target.value })} className="rounded-xl border border-gray-200 px-3 py-2 text-sm">
+          <option value="1:1">1:1</option>
+          <option value="16:9">16:9</option>
+          <option value="9:16">9:16</option>
+          <option value="4:5">4:5</option>
+        </select>
+        <input value={form.tags} onChange={(event) => setForm({ ...form, tags: event.target.value })} placeholder="tags séparés par virgules" className="rounded-xl border border-gray-200 px-3 py-2 text-sm" />
+        <button disabled={imagesHook.generating} className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-50">
+          {imagesHook.generating ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}
+          Générer
+        </button>
+      </form>
+
+      <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-wrap gap-2">
+          <select value={imagesHook.category} onChange={(event) => imagesHook.setCategory(event.target.value)} className="rounded-xl border border-gray-200 px-3 py-2 text-sm">
+            <option value="">Toutes catégories</option>
+            <option value="social">Social</option>
+            <option value="blog">Blog</option>
+            <option value="product">Produit</option>
+            <option value="campaign">Campagne</option>
+            <option value="brand">Brand</option>
+          </select>
+          <select value={imagesHook.status} onChange={(event) => imagesHook.setStatus(event.target.value)} className="rounded-xl border border-gray-200 px-3 py-2 text-sm">
+            <option value="">Tous statuts</option>
+            <option value="generated">Generated</option>
+            <option value="uploaded">Uploaded</option>
+            <option value="failed">Failed</option>
+          </select>
+        </div>
+        <button onClick={imagesHook.refresh} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50">
+          <RefreshCw size={16} /> Actualiser
+        </button>
+      </div>
+
+      {imagesHook.error && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{imagesHook.error}</p>}
+      {imagesHook.loading ? (
+        <LoadingBlock />
+      ) : imagesHook.images.length === 0 ? (
+        <EmptyBlock text="Aucune image Hermes ne correspond aux filtres." />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {imagesHook.images.map((image) => {
+            const url = image.cloudinaryUrl || image.replicateUrl;
+            return (
+              <article key={image.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                <div className="flex aspect-square items-center justify-center bg-gray-100">
+                  {url ? <img src={url} alt={image.prompt} className="h-full w-full object-cover" /> : <ImageIcon className="text-gray-300" size={42} />}
+                </div>
+                <div className="space-y-3 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge status={image.status} />
+                    {image.category && <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-semibold uppercase text-primary">{image.category}</span>}
+                    {image.aspectRatio && <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">{image.aspectRatio}</span>}
+                  </div>
+                  <p className="line-clamp-3 text-sm text-gray-700">{image.prompt}</p>
+                  <p className="text-xs text-gray-500">{new Date(image.createdAt).toLocaleString("fr-FR")}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => setPreview(image)} className="ActionButton"><Eye size={14} /> Voir</button>
+                    {url && <button onClick={() => window.open(url, "_blank", "noopener,noreferrer")} className="ActionButton"><ImageIcon size={14} /> Ouvrir</button>}
+                    <button onClick={() => imagesHook.removeImage(image.id)} className="ActionDanger"><Trash2 size={14} /> Supprimer</button>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      {preview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setPreview(null)}>
+          <div className="max-h-[88vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase text-primary">{preview.category || "image"}</p>
+                <h3 className="mt-1 text-xl font-heading font-bold text-gray-900">Visuel Hermes</h3>
+              </div>
+              <button onClick={() => setPreview(null)} className="rounded-xl border border-gray-200 px-3 py-2 text-sm">Fermer</button>
+            </div>
+            {(preview.cloudinaryUrl || preview.replicateUrl) && <img src={preview.cloudinaryUrl || preview.replicateUrl || ""} alt={preview.prompt} className="mt-5 max-h-[58vh] w-full rounded-2xl object-contain" />}
+            <pre className="mt-4 whitespace-pre-wrap rounded-2xl bg-gray-50 p-4 text-sm text-gray-700">{preview.prompt}</pre>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AnalyticsPanel({ analyticsHook }: { analyticsHook: ReturnType<typeof useHermesAnalytics> }) {
+  const totals = analyticsHook.report?.totals ?? {};
+  const mainMetrics = Object.entries(totals).slice(0, 4);
+
+  return (
+    <div className="space-y-4 bg-gray-50 p-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+        {mainMetrics.length > 0 ? mainMetrics.map(([metric, value]) => (
+          <MiniStat key={metric} label={metric} value={Math.round(Number(value) * 100) / 100} />
+        )) : (
+          <>
+            <MiniStat label="KPIs" value={analyticsHook.kpis.length} />
+            <MiniStat label="Période" value={`${analyticsHook.days}j`} />
+            <MiniStat label="Sources" value={Object.keys(analyticsHook.report?.bySource ?? {}).length} />
+            <MiniStat label="Insights" value={analyticsHook.report?.insights.length ?? 0} />
+          </>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap gap-2">
+          <select value={analyticsHook.days} onChange={(event) => analyticsHook.setDays(Number(event.target.value))} className="rounded-xl border border-gray-200 px-3 py-2 text-sm">
+            <option value={7}>7 jours</option>
+            <option value={30}>30 jours</option>
+            <option value={90}>90 jours</option>
+          </select>
+          <select value={analyticsHook.source} onChange={(event) => analyticsHook.setSource(event.target.value)} className="rounded-xl border border-gray-200 px-3 py-2 text-sm">
+            <option value="">Toutes sources</option>
+            <option value="brevo">Brevo</option>
+            <option value="hermes">Hermes</option>
+            <option value="images">Images</option>
+            <option value="content">Content</option>
+          </select>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={analyticsHook.refresh} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"><RefreshCw size={16} /> Actualiser</button>
+          <button onClick={analyticsHook.collectNow} disabled={analyticsHook.collecting} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
+            {analyticsHook.collecting ? <Loader2 className="animate-spin" size={16} /> : <BarChart3 size={16} />}
+            Collecter
+          </button>
+        </div>
+      </div>
+
+      {analyticsHook.error && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{analyticsHook.error}</p>}
+      {analyticsHook.loading ? (
+        <LoadingBlock />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
+          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <h3 className="font-heading text-lg font-bold text-gray-900">Tendances KPI</h3>
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="text-xs uppercase text-gray-500">
+                  <tr>
+                    <th className="px-3 py-2">Date</th>
+                    <th className="px-3 py-2">Source</th>
+                    <th className="px-3 py-2">Métrique</th>
+                    <th className="px-3 py-2">Valeur</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {analyticsHook.kpis.slice(0, 20).map((kpi) => (
+                    <tr key={kpi.id}>
+                      <td className="px-3 py-2 text-gray-500">{new Date(kpi.date).toLocaleDateString("fr-FR")}</td>
+                      <td className="px-3 py-2 font-medium text-gray-800">{kpi.source}</td>
+                      <td className="px-3 py-2 text-gray-700">{kpi.metric}</td>
+                      <td className="px-3 py-2 font-semibold text-gray-900">{Math.round(kpi.value * 100) / 100}{kpi.unit ? ` ${kpi.unit}` : ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {analyticsHook.kpis.length === 0 && <EmptyBlock text="Aucun KPI collecté pour le moment." />}
+            </div>
+          </section>
+
+          <aside className="space-y-4">
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <h3 className="font-heading text-lg font-bold text-gray-900">Insights Hermes</h3>
+              <div className="mt-3 space-y-2">
+                {(analyticsHook.report?.insights ?? []).length === 0 ? <p className="text-sm text-gray-500">Aucun insight disponible.</p> : analyticsHook.report?.insights.map((insight) => (
+                  <p key={insight} className="rounded-xl bg-primary/5 p-3 text-sm text-gray-700">{insight}</p>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <h3 className="font-heading text-lg font-bold text-gray-900">Contexte envoyé à Hermes</h3>
+              <pre className="mt-3 max-h-72 overflow-y-auto whitespace-pre-wrap rounded-xl bg-gray-50 p-3 text-xs text-gray-600">{analyticsHook.context || "Contexte indisponible."}</pre>
+            </div>
+          </aside>
+        </div>
+      )}
+    </div>
   );
 }
 

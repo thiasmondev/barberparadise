@@ -2,6 +2,7 @@ import type TelegramBot from "node-telegram-bot-api";
 import { hermesCore, type HermesModule } from "../hermes/hermesCore";
 import contentEngine from "../hermes/modules/contentEngine";
 import campaignManager from "../hermes/modules/campaignManager";
+import imageGenerator from "../hermes/modules/imageGenerator";
 import telegramBotService from "./telegramBot";
 import { escapeTelegramHtml, markdownToTelegramHtml, splitTelegramMessage } from "./telegramFormatter";
 
@@ -34,6 +35,9 @@ function getQuickActionsKeyboard(): TelegramBot.InlineKeyboardMarkup {
         { text: "📧 Campagne", callback_data: "quick:campaign" },
         { text: "📊 Analyse", callback_data: "quick:analysis" },
       ],
+      [
+        { text: "🎨 Visuel", callback_data: "quick:image" },
+      ],
     ],
   };
 }
@@ -62,7 +66,7 @@ async function handleStart(chatId: number | string): Promise<void> {
 async function handleHelp(chatId: number | string): Promise<void> {
   await telegramBotService.sendMessage(
     chatId,
-    "<b>Commandes Buzz</b>\n\n/start — Démarrer Buzz\n/new — Nouvelle conversation Hermes\n/drafts — Voir les brouillons récents\n/campaigns — Voir les campagnes\n/stats — Stats marketing rapides\n/pro — Activer DeepSeek V4-Pro\n/flash — Activer DeepSeek V4-Flash\n/help — Afficher cette aide\n\nTu peux aussi écrire librement : Buzz répond avec la même intelligence qu'Hermes dans le workspace."
+    "<b>Commandes Buzz</b>\n\n/start — Démarrer Buzz\n/new — Nouvelle conversation Hermes\n/drafts — Voir les brouillons récents\n/campaigns — Voir les campagnes\n/images — Voir les derniers visuels générés\n/stats — Stats marketing rapides\n/pro — Activer DeepSeek V4-Pro\n/flash — Activer DeepSeek V4-Flash\n/help — Afficher cette aide\n\nTu peux aussi écrire librement : Buzz répond avec la même intelligence qu'Hermes dans le workspace. Pour générer un visuel, demande par exemple : « crée un visuel social pour une tondeuse premium »."
   );
 }
 
@@ -123,6 +127,25 @@ async function handleCampaigns(chatId: number | string): Promise<void> {
   await telegramBotService.sendMessage(chatId, text.trim());
 }
 
+async function handleImages(chatId: number | string): Promise<void> {
+  const { images } = await imageGenerator.getImages({ limit: 5, status: "completed" });
+
+  if (images.length === 0) {
+    await telegramBotService.sendMessage(chatId, "Aucun visuel généré pour le moment.");
+    return;
+  }
+
+  await telegramBotService.sendMessage(chatId, "🎨 <b>Derniers visuels Hermes</b>");
+  for (const image of images) {
+    const caption = `🎨 <b>${escapeTelegramHtml(image.category || "Visuel")}</b>\n${escapeTelegramHtml(image.prompt.slice(0, 800))}`;
+    if (image.cloudinaryUrl) {
+      await telegramBotService.sendPhoto(chatId, image.cloudinaryUrl, { caption });
+    } else {
+      await telegramBotService.sendMessage(chatId, caption);
+    }
+  }
+}
+
 async function handleStats(chatId: number | string): Promise<void> {
   const [draftStats, campaignStats] = await Promise.all([
     contentEngine.getStats(),
@@ -181,6 +204,17 @@ async function askHermes(
         `✅ ${result.drafts.length} brouillon(s) créé(s). Utilise /drafts pour les approuver ou les rejeter.`
       );
     }
+
+    if (result.images?.length) {
+      for (const image of result.images) {
+        if (image.cloudinaryUrl) {
+          await telegramBotService.sendPhoto(chatId, image.cloudinaryUrl, {
+            caption: `🎨 <b>Visuel ${escapeTelegramHtml(image.category)}</b>\n${escapeTelegramHtml(image.prompt.slice(0, 850))}`,
+          });
+        }
+      }
+      await telegramBotService.sendMessage(chatId, `✅ ${result.images.length} visuel(s) traité(s). Utilise /images pour les retrouver.`);
+    }
   } catch (error) {
     console.error("[TelegramHandlers] Erreur Hermes Buzz:", error);
     await telegramBotService.sendMessage(chatId, "❌ Erreur interne pendant la génération Hermes.");
@@ -206,6 +240,10 @@ async function handleQuickAction(chatId: number | string, action: string): Promi
     analysis: {
       prompt: "Analyse les priorités marketing Barber Paradise de la semaine et propose un plan d'action concret.",
       module: "analytics",
+    },
+    image: {
+      prompt: "Crée un prompt détaillé puis génère un visuel social premium pour Barber Paradise avec un bloc [IMAGE:social].",
+      module: "images",
     },
   };
 
@@ -265,6 +303,7 @@ async function handleMessage(message: TelegramBot.Message): Promise<void> {
   if (text === "/new") return handleNew(chatId);
   if (text === "/drafts") return handleDrafts(chatId);
   if (text === "/campaigns") return handleCampaigns(chatId);
+  if (text === "/images") return handleImages(chatId);
   if (text === "/stats") return handleStats(chatId);
   if (text === "/pro") {
     session.usePro = true;
