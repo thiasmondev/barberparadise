@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import OpenAI from "openai";
 import type { Response } from "express";
+import contentEngine from "./modules/contentEngine";
 
 const prisma = new PrismaClient();
 
@@ -138,7 +139,7 @@ export async function chat({ conversationId, userMessage, module, usePro = false
     }
 
     const durationMs = Date.now() - startTime;
-    await prisma.hermesMessage.create({
+    const assistantMessage = await prisma.hermesMessage.create({
       data: {
         conversationId: conversation.id,
         role: "assistant",
@@ -151,6 +152,12 @@ export async function chat({ conversationId, userMessage, module, usePro = false
       },
     });
 
+    const drafts = await contentEngine.extractAndSaveDrafts(
+      fullResponse,
+      conversation.id,
+      assistantMessage.id
+    );
+
     if (!conversation.title && conversation.messages.length === 0) {
       generateTitle(conversation.id, userMessage).catch(console.error);
     }
@@ -160,7 +167,7 @@ export async function chat({ conversationId, userMessage, module, usePro = false
       data: { updatedAt: new Date() },
     });
 
-    sendSse(res, { type: "done", conversationId: conversation.id, model, durationMs });
+    sendSse(res, { type: "done", conversationId: conversation.id, model, durationMs, drafts });
   } catch (error) {
     console.error("[HermesCore] Erreur streaming:", error);
     sendSse(res, { type: "error", message: "Erreur interne Hermes pendant la génération." });
@@ -205,7 +212,7 @@ export async function chatSync({ conversationId, userMessage, module, usePro = f
   }
 
   const durationMs = Date.now() - startTime;
-  await prisma.hermesMessage.create({
+  const assistantMessage = await prisma.hermesMessage.create({
     data: {
       conversationId: conversation.id,
       role: "assistant",
@@ -218,6 +225,12 @@ export async function chatSync({ conversationId, userMessage, module, usePro = f
     },
   });
 
+  const drafts = await contentEngine.extractAndSaveDrafts(
+    fullResponse,
+    conversation.id,
+    assistantMessage.id
+  );
+
   if (!conversation.title && conversation.messages.length === 0) {
     generateTitle(conversation.id, userMessage).catch(console.error);
   }
@@ -227,7 +240,7 @@ export async function chatSync({ conversationId, userMessage, module, usePro = f
     data: { updatedAt: new Date() },
   });
 
-  return { conversationId: conversation.id, response: fullResponse, model, durationMs };
+  return { conversationId: conversation.id, response: fullResponse, model, durationMs, drafts };
 }
 
 export const hermesCore = { chat, chatSync, buildSystemPrompt };

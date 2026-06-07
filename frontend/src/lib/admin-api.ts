@@ -1851,3 +1851,161 @@ export function getHermesStats() {
 export function getHermesChatUrl() {
   return `${API_URL}/api/hermes/chat`;
 }
+
+export interface HermesContentDraft {
+  id: string;
+  type: string;
+  title: string;
+  content: string;
+  status: string;
+  seoMeta?: unknown;
+  seoMetaTitle?: string | null;
+  seoMetaDescription?: string | null;
+  seoKeywords: string[];
+  seoSlug?: string | null;
+  metadata?: unknown;
+  conversationId?: string | null;
+  messageId?: string | null;
+  campaignPlanId?: string | null;
+  publishedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HermesDraftsResponse {
+  drafts: HermesContentDraft[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface HermesCampaignPlan {
+  id: string;
+  name: string;
+  targetAudience: string;
+  brevoListIds: number[];
+  subject: string;
+  preheader?: string | null;
+  htmlContent?: string | null;
+  strategyBrief?: string | null;
+  estimatedROI?: string | null;
+  scheduledAt?: string | null;
+  status: string;
+  brevoCampaignId?: number | null;
+  sentAt?: string | null;
+  metricsSent?: number | null;
+  metricsDelivered?: number | null;
+  metricsOpened?: number | null;
+  metricsClicked?: number | null;
+  metricsUnsubscribed?: number | null;
+  metricsBounced?: number | null;
+  conversationId?: string | null;
+  metadata?: unknown;
+  drafts?: HermesContentDraft[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HermesCampaignsResponse {
+  plans: HermesCampaignPlan[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+function toQuery(params?: Record<string, unknown>) {
+  const sp = new URLSearchParams();
+  if (params) {
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") sp.set(key, String(value));
+    });
+  }
+  const query = sp.toString();
+  return query ? `?${query}` : "";
+}
+
+export function getHermesDrafts(params?: { type?: string; status?: string; page?: number; limit?: number }) {
+  return adminFetch<HermesDraftsResponse>(`/api/hermes/drafts${toQuery(params)}`);
+}
+
+export function updateHermesDraft(id: string, data: Partial<HermesContentDraft>) {
+  return adminFetch<HermesContentDraft>(`/api/hermes/drafts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function publishHermesDraft(id: string) {
+  return adminFetch<HermesContentDraft>(`/api/hermes/drafts/${id}/publish`, { method: "POST" });
+}
+
+export function updateHermesDraftStatus(id: string, status: string) {
+  return adminFetch<HermesContentDraft>(`/api/hermes/drafts/${id}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export function deleteHermesDraft(id: string) {
+  return adminFetch<{ ok: boolean }>(`/api/hermes/drafts/${id}`, { method: "DELETE" });
+}
+
+export function getHermesDraftStats() {
+  return adminFetch<{
+    byStatus: Record<string, number>;
+    byType: Record<string, number>;
+    publishedLast30Days: number;
+  }>("/api/hermes/drafts/stats");
+}
+
+export function getHermesCampaigns(params?: { status?: string; targetAudience?: string; page?: number; limit?: number }) {
+  return adminFetch<HermesCampaignsResponse>(`/api/hermes/campaigns${toQuery(params)}`);
+}
+
+export function createHermesCampaign(data: Partial<HermesCampaignPlan>) {
+  return adminFetch<HermesCampaignPlan>("/api/hermes/campaigns", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateHermesCampaign(id: string, data: Partial<HermesCampaignPlan>) {
+  return adminFetch<HermesCampaignPlan>(`/api/hermes/campaigns/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function approveHermesCampaign(id: string) {
+  return adminFetch<HermesCampaignPlan>(`/api/hermes/campaigns/${id}/approve`, { method: "POST" });
+}
+
+export function scheduleHermesCampaign(id: string, scheduledAt: string) {
+  return adminFetch<HermesCampaignPlan>(`/api/hermes/campaigns/${id}/schedule`, {
+    method: "POST",
+    body: JSON.stringify({ scheduledAt }),
+  });
+}
+
+export function sendHermesCampaignNow(id: string) {
+  return adminFetch<HermesCampaignPlan>(`/api/hermes/campaigns/${id}/send-now`, { method: "POST" });
+}
+
+export function syncHermesCampaignStats(id: string) {
+  return adminFetch<HermesCampaignPlan>(`/api/hermes/campaigns/${id}/sync-stats`, { method: "POST" });
+}
+
+export function deleteHermesCampaign(id: string) {
+  return adminFetch<{ ok: boolean }>(`/api/hermes/campaigns/${id}`, { method: "DELETE" });
+}
+
+export function getHermesCampaignStats() {
+  return adminFetch<{
+    byStatus: Record<string, number>;
+    recentSent: HermesCampaignPlan[];
+    lists: unknown;
+    brevoConfigured: boolean;
+  }>("/api/hermes/campaigns/stats");
+}

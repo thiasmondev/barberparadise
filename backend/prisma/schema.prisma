@@ -515,7 +515,9 @@ model HermesConversation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  messages HermesMessage[]
+  messages      HermesMessage[]
+  contentDrafts ContentDraft[]
+  campaignPlans CampaignPlan[]
 
   @@index([channel])
   @@index([status])
@@ -535,7 +537,8 @@ model HermesMessage {
   metadata       Json?
   createdAt      DateTime @default(now())
 
-  conversation HermesConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation  HermesConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  contentDrafts ContentDraft[]
 
   @@index([conversationId])
   @@index([createdAt])
@@ -557,18 +560,69 @@ model HermesTemplate {
 }
 
 model ContentDraft {
-  id        String   @id @default(cuid())
-  type      String
-  title     String
-  content   String   @db.Text
-  status    String   @default("draft")
-  seoMeta   Json?
-  metadata  Json?
-  messageId String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String    @id @default(cuid())
+  type               String
+  title              String
+  content            String    @db.Text
+  status             String    @default("draft")
+  seoMeta            Json?
+  seoMetaTitle       String?
+  seoMetaDescription String?
+  seoKeywords        String[]  @default([])
+  seoSlug            String?
+  metadata           Json?
+  conversationId     String?
+  messageId          String?
+  campaignPlanId     String?
+  publishedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  conversation HermesConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  message      HermesMessage?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  campaignPlan CampaignPlan?       @relation(fields: [campaignPlanId], references: [id], onDelete: SetNull)
 
   @@index([type])
   @@index([status])
+  @@index([conversationId])
+  @@index([messageId])
+  @@index([campaignPlanId])
+  @@index([publishedAt])
+  @@index([createdAt])
+}
+
+model CampaignPlan {
+  id                  String    @id @default(cuid())
+  name                String
+  targetAudience      String
+  brevoListIds        Int[]     @default([])
+  subject             String
+  preheader           String?
+  htmlContent         String?   @db.Text
+  strategyBrief       String?   @db.Text
+  estimatedROI        String?
+  scheduledAt         DateTime?
+  status              String    @default("draft")
+  brevoCampaignId     Int?
+  sentAt              DateTime?
+  metricsSent         Int?
+  metricsDelivered    Int?
+  metricsOpened       Int?
+  metricsClicked      Int?
+  metricsUnsubscribed Int?
+  metricsBounced      Int?
+  conversationId      String?
+  metadata            Json?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  conversation HermesConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  drafts       ContentDraft[]
+
+  @@index([status])
+  @@index([targetAudience])
+  @@index([scheduledAt])
+  @@index([sentAt])
+  @@index([conversationId])
   @@index([createdAt])
 }
