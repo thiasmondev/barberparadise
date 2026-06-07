@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import telegramNotifier from "../../telegram/telegramNotifier";
 
 const prisma = new PrismaClient();
 
@@ -74,6 +75,7 @@ class ContentEngine {
       });
 
       drafts.push({ type, title, id: draft.id });
+      telegramNotifier.notifyDraftReady({ type, title, id: draft.id }).catch(console.error);
     }
 
     return drafts;

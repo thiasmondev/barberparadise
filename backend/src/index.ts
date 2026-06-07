@@ -37,6 +37,10 @@ import newsletterRouter from "./routes/newsletter";
 import { hermesRouter } from "./routes/hermes";
 import { hermesDraftsRouter } from "./routes/hermes-drafts";
 import { hermesCampaignsRouter } from "./routes/hermes-campaigns";
+import telegramRouter from "./routes/telegram";
+import telegramBotService from "./services/telegram/telegramBot";
+import { registerTelegramHandlers } from "./services/telegram/telegramHandlers";
+import { scheduleTelegramDailyDigest } from "./services/telegram/telegramDigest";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -70,6 +74,7 @@ app.use("/api/newsletter", newsletterRouter);
 app.use("/api/hermes", hermesRouter);
 app.use("/api/hermes/drafts", hermesDraftsRouter);
 app.use("/api/hermes/campaigns", hermesCampaignsRouter);
+app.use("/api/telegram", telegramRouter);
 
 // ─── Root & Health Check ─────────────────────────────────────
 app.get("/", (_req, res) => {
@@ -93,6 +98,7 @@ app.get("/", (_req, res) => {
               hermes: "/api/hermes",
               hermesDrafts: "/api/hermes/drafts",
               hermesCampaigns: "/api/hermes/campaigns",
+              telegram: "/api/telegram/status",
 
     },
   });
@@ -121,6 +127,19 @@ app.listen(PORT, () => {
   console.log(`✅ Barber Paradise API démarrée sur http://localhost:${PORT}`);
   console.log(`📊 Panel Admin: http://localhost:${PORT}/api/admin`);
   console.log(`🔒 CORS autorisé pour : ${process.env.CORS_ORIGIN}`);
+
+  telegramBotService.initialize();
+  registerTelegramHandlers();
+  scheduleTelegramDailyDigest();
+
+  const publicUrl = process.env.RENDER_EXTERNAL_URL || process.env.BACKEND_URL;
+  if (publicUrl) {
+    telegramBotService.setupWebhook(publicUrl).catch((error) => {
+      console.error("[Telegram] Impossible de configurer le webhook Buzz:", error);
+    });
+  } else {
+    console.warn("[Telegram] RENDER_EXTERNAL_URL/BACKEND_URL absent — webhook Buzz non configuré automatiquement.");
+  }
 });
 
 export default app;

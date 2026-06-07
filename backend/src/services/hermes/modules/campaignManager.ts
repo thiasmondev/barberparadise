@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import brevoClient from "../../brevo/brevoClient";
+import telegramNotifier from "../../telegram/telegramNotifier";
 
 const prisma = new PrismaClient();
 
@@ -109,13 +110,17 @@ class CampaignManager {
 
     await brevoClient.sendCampaignNow(plan.brevoCampaignId);
 
-    return prisma.campaignPlan.update({
+    const updatedPlan = await prisma.campaignPlan.update({
       where: { id },
       data: {
         status: "sent",
         sentAt: new Date(),
       },
     });
+
+    telegramNotifier.notifyCampaignSent(updatedPlan).catch(console.error);
+
+    return updatedPlan;
   }
 
   async syncStats(id: string) {
@@ -124,7 +129,7 @@ class CampaignManager {
 
     const stats = await brevoClient.getCampaignStats(plan.brevoCampaignId);
 
-    return prisma.campaignPlan.update({
+    const updatedPlan = await prisma.campaignPlan.update({
       where: { id },
       data: {
         metricsSent: stats.sent,
@@ -135,6 +140,18 @@ class CampaignManager {
         metricsBounced: stats.bounced,
       },
     });
+
+    if (stats.sent > 0) {
+      telegramNotifier.notifyCampaignStats({
+        name: updatedPlan.name,
+        metricsSent: updatedPlan.metricsSent || 0,
+        metricsOpened: updatedPlan.metricsOpened || 0,
+        metricsClicked: updatedPlan.metricsClicked || 0,
+        metricsUnsubscribed: updatedPlan.metricsUnsubscribed || 0,
+      }).catch(console.error);
+    }
+
+    return updatedPlan;
   }
 
   async getPlans(filters: PlanFilters) {
