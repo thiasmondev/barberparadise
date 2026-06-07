@@ -313,7 +313,7 @@ function ChatPanel({ chat, input, setInput, handleSubmit, usePro, setUsePro, bot
             value={input}
             onChange={(event) => setInput(event.target.value)}
             placeholder="Demande à Hermes de créer, analyser ou optimiser..."
-            className="min-h-[54px] flex-1 resize-none rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            className="min-h-[54px] flex-1 resize-none rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-950 placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
