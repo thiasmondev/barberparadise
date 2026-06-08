@@ -100,7 +100,7 @@ export default function Carousel() {
       }}
       tabIndex={0}
     >
-      <div className="relative aspect-square w-full md:aspect-[1920/600]">
+      <div className="relative aspect-square w-full md:aspect-video">
         {slides.map((slide, index) => {
           const isActive = index === currentIndex;
           const containerClassName = `absolute inset-0 transition-opacity duration-700 ease-out ${isActive ? "opacity-100" : "pointer-events-none opacity-0"}`;
