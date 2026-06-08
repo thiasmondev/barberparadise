@@ -8,6 +8,8 @@ import {
   AdminPromotionStats,
   createAdminPromotion,
   deleteAdminPromotion,
+  getAdminCategories,
+  getAdminProducts,
   getAdminPromotionStats,
   getAdminPromotions,
   updateAdminPromotion,
@@ -15,15 +17,21 @@ import {
 import {
   AlertCircle,
   BarChart3,
+  Check,
   CheckCircle2,
   Copy,
   Edit3,
+  ImageIcon,
+  Layers,
+  Loader2,
+  Package,
   Plus,
   Search,
   Tag,
   Trash2,
   X,
 } from "lucide-react";
+import type { Category, Product } from "@/types";
 
 const emptyForm: AdminPromotionPayload = {
   code: "",
@@ -68,18 +76,32 @@ function fromDateTimeLocal(value: string) {
   return value ? new Date(value).toISOString() : null;
 }
 
-function splitIds(value: string) {
-  return value
-    .split(/[\n,]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 function getPromotionLabel(promotion: AdminPromotion) {
   if (promotion.type === "free_shipping") return "Livraison offerte";
   if (promotion.type === "fixed_amount") return `${formatMoney(promotion.value)} de remise`;
   if (promotion.type === "buy_x_get_y") return "Offre Buy X Get Y";
   return `${promotion.value || 0}% de remise`;
+}
+
+function getProductImage(product: Product) {
+  if (Array.isArray(product.images)) return product.images[0] || "";
+  try {
+    const parsed = JSON.parse(String(product.images || "[]"));
+    if (Array.isArray(parsed)) return parsed[0] || "";
+  } catch {
+    // Ignorer les images non JSON : certaines fiches peuvent stocker une URL directe.
+  }
+  return String(product.images || "");
+}
+
+function getCategoryDisplayName(category: Category) {
+  return category.parentSlug ? `${category.name} · ${category.parentSlug}` : category.name;
+}
+
+function getTargetSummary(promotion: AdminPromotion) {
+  if (promotion.appliesTo === "products") return `${promotion.productIds.length} produit(s)`;
+  if (promotion.appliesTo === "categories") return `${promotion.categoryIds.length} collection(s)`;
+  return "Toute la commande";
 }
 
 export default function AdminPromotionsPage() {
@@ -95,10 +117,24 @@ export default function AdminPromotionsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminPromotion | null>(null);
   const [form, setForm] = useState<AdminPromotionPayload>(emptyForm);
-  const [productIdsText, setProductIdsText] = useState("");
-  const [categoryIdsText, setCategoryIdsText] = useState("");
+  const [productSearch, setProductSearch] = useState("");
+  const [categorySearch, setCategorySearch] = useState("");
+  const [productOptions, setProductOptions] = useState<Product[]>([]);
+  const [categoryOptions, setCategoryOptions] = useState<Category[]>([]);
+  const [targetsLoading, setTargetsLoading] = useState(false);
 
   const filteredPromotions = useMemo(() => promotions, [promotions]);
+  const selectedProductIds = useMemo(() => new Set(form.productIds || []), [form.productIds]);
+  const selectedCategoryIds = useMemo(() => new Set(form.categoryIds || []), [form.categoryIds]);
+  const productById = useMemo(() => new Map(productOptions.map((product) => [product.id, product])), [productOptions]);
+  const categoryById = useMemo(() => new Map(categoryOptions.map((category) => [category.id, category])), [categoryOptions]);
+  const filteredCategoryOptions = useMemo(() => {
+    const query = categorySearch.trim().toLowerCase();
+    if (!query) return categoryOptions;
+    return categoryOptions.filter((category) =>
+      [category.name, category.slug, category.parentSlug || ""].join(" ").toLowerCase().includes(query)
+    );
+  }, [categoryOptions, categorySearch]);
 
   async function refresh() {
     setLoading(true);
@@ -122,11 +158,37 @@ export default function AdminPromotionsPage() {
     return () => window.clearTimeout(timer);
   }, [search, status, method]);
 
+  useEffect(() => {
+    if (!modalOpen) return;
+    let cancelled = false;
+    setTargetsLoading(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const [productsData, categoriesData] = await Promise.all([
+          getAdminProducts({ search: productSearch, status: "active", limit: 100 }),
+          getAdminCategories(),
+        ]);
+        if (cancelled) return;
+        setProductOptions(productsData.products || []);
+        setCategoryOptions(categoriesData || []);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Impossible de charger les produits et collections");
+      } finally {
+        if (!cancelled) setTargetsLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [modalOpen, productSearch]);
+
   function openCreate() {
     setEditing(null);
     setForm({ ...emptyForm });
-    setProductIdsText("");
-    setCategoryIdsText("");
+    setProductSearch("");
+    setCategorySearch("");
     setSuccess("");
     setError("");
     setModalOpen(true);
@@ -155,8 +217,8 @@ export default function AdminPromotionsPage() {
       startsAt: promotion.startsAt,
       endsAt: promotion.endsAt,
     });
-    setProductIdsText((promotion.productIds || []).join("\n"));
-    setCategoryIdsText((promotion.categoryIds || []).join("\n"));
+    setProductSearch("");
+    setCategorySearch("");
     setSuccess("");
     setError("");
     setModalOpen(true);
@@ -166,6 +228,41 @@ export default function AdminPromotionsPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
+  function updateAppliesTo(value: AdminPromotionPayload["appliesTo"]) {
+    setForm((prev) => ({
+      ...prev,
+      appliesTo: value,
+      productIds: value === "products" ? prev.productIds || [] : [],
+      categoryIds: value === "categories" ? prev.categoryIds || [] : [],
+    }));
+  }
+
+  function toggleProductTarget(productId: string) {
+    setForm((prev) => {
+      const next = new Set(prev.productIds || []);
+      if (next.has(productId)) next.delete(productId);
+      else next.add(productId);
+      return { ...prev, productIds: Array.from(next) };
+    });
+  }
+
+  function toggleCategoryTarget(categoryId: string) {
+    setForm((prev) => {
+      const next = new Set(prev.categoryIds || []);
+      if (next.has(categoryId)) next.delete(categoryId);
+      else next.add(categoryId);
+      return { ...prev, categoryIds: Array.from(next) };
+    });
+  }
+
+  function removeProductTarget(productId: string) {
+    setForm((prev) => ({ ...prev, productIds: (prev.productIds || []).filter((id) => id !== productId) }));
+  }
+
+  function removeCategoryTarget(categoryId: string) {
+    setForm((prev) => ({ ...prev, categoryIds: (prev.categoryIds || []).filter((id) => id !== categoryId) }));
+  }
+
   function normalizePayload(): AdminPromotionPayload {
     const type = form.type || "percentage";
     return {
@@ -173,8 +270,8 @@ export default function AdminPromotionsPage() {
       code: form.method === "automatic" ? null : String(form.code || "").trim().toUpperCase(),
       value: type === "free_shipping" ? null : Number(form.value || 0),
       valueType: type === "fixed_amount" ? "fixed" : "percentage",
-      productIds: splitIds(productIdsText),
-      categoryIds: splitIds(categoryIdsText),
+      productIds: form.appliesTo === "products" ? form.productIds || [] : [],
+      categoryIds: form.appliesTo === "categories" ? form.categoryIds || [] : [],
       minOrderAmount: form.minOrderAmount === null || form.minOrderAmount === undefined || form.minOrderAmount === ("" as unknown as number) ? null : Number(form.minOrderAmount),
       minQuantity: form.minQuantity === null || form.minQuantity === undefined || form.minQuantity === ("" as unknown as number) ? null : Number(form.minQuantity),
       usageLimit: form.usageLimit === null || form.usageLimit === undefined || form.usageLimit === ("" as unknown as number) ? null : Number(form.usageLimit),
@@ -309,7 +406,7 @@ export default function AdminPromotionsPage() {
                       </div>
                     </td>
                     <td className="px-4 py-4 text-sm text-gray-700">{getPromotionLabel(promotion)}</td>
-                    <td className="px-4 py-4 text-sm text-gray-700">{promotion.appliesTo === "all" ? "Toute la commande" : promotion.appliesTo === "products" ? `${promotion.productIds.length} produit(s)` : `${promotion.categoryIds.length} catégorie(s)`}<br /><span className="text-xs text-gray-400">{promotion.customerType.toUpperCase()}</span></td>
+                    <td className="px-4 py-4 text-sm text-gray-700">{getTargetSummary(promotion)}<br /><span className="text-xs text-gray-400">{promotion.customerType.toUpperCase()}</span></td>
                     <td className="px-4 py-4 text-sm text-gray-700">{formatDate(promotion.startsAt)} → {formatDate(promotion.endsAt)}</td>
                     <td className="px-4 py-4 text-sm text-gray-700">{promotion.usageCount}{promotion.usageLimit ? ` / ${promotion.usageLimit}` : ""}</td>
                     <td className="px-4 py-4 text-right">
@@ -371,11 +468,88 @@ export default function AdminPromotionsPage() {
 
                 <Section title="Ciblage">
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="S’applique à"><select value={form.appliesTo} onChange={(e) => updateForm("appliesTo", e.target.value as AdminPromotionPayload["appliesTo"])} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 outline-none focus:border-primary"><option value="all">Toute la commande</option><option value="products">Produits spécifiques</option><option value="categories">Catégories spécifiques</option></select></Field>
+                    <Field label="S’applique à"><select value={form.appliesTo} onChange={(e) => updateAppliesTo(e.target.value as AdminPromotionPayload["appliesTo"])} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 outline-none focus:border-primary"><option value="all">Toute la commande</option><option value="products">Produits spécifiques</option><option value="categories">Collections spécifiques</option></select></Field>
                     <Field label="Type de client"><select value={form.customerType} onChange={(e) => updateForm("customerType", e.target.value as AdminPromotionPayload["customerType"])} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 outline-none focus:border-primary"><option value="all">Tous</option><option value="b2c">B2C uniquement</option><option value="b2b">B2B / pro uniquement</option></select></Field>
                   </div>
-                  {form.appliesTo === "products" && <Field label="IDs produits ciblés, séparés par virgule ou ligne"><textarea rows={4} value={productIdsText} onChange={(e) => setProductIdsText(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 outline-none focus:border-primary font-mono text-xs" /></Field>}
-                  {form.appliesTo === "categories" && <Field label="IDs catégories ciblées, séparées par virgule ou ligne"><textarea rows={4} value={categoryIdsText} onChange={(e) => setCategoryIdsText(e.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 outline-none focus:border-primary font-mono text-xs" /></Field>}
+
+                  {form.appliesTo === "products" && (
+                    <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-gray-900"><Package size={16} /> Produits ciblés</div>
+                        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-500">{selectedProductIds.size} sélectionné{selectedProductIds.size > 1 ? "s" : ""}</span>
+                      </div>
+                      <div className="relative mb-3">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                        <input value={productSearch} onChange={(e) => setProductSearch(e.target.value)} placeholder="Rechercher un produit par nom, marque ou slug..." className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 outline-none focus:border-primary" />
+                      </div>
+                      {(form.productIds || []).length > 0 && (
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          {(form.productIds || []).map((productId) => {
+                            const product = productById.get(productId);
+                            return <button key={productId} type="button" onClick={() => removeProductTarget(productId)} className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/15"><X size={13} />{product?.name || productId}</button>;
+                          })}
+                        </div>
+                      )}
+                      <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2">
+                        {targetsLoading ? (
+                          <div className="flex items-center justify-center py-6 text-sm text-gray-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Chargement des produits...</div>
+                        ) : productOptions.length === 0 ? (
+                          <div className="rounded-lg border border-dashed border-gray-200 p-5 text-center text-sm text-gray-500">Aucun produit trouvé.</div>
+                        ) : productOptions.map((product) => {
+                          const checked = selectedProductIds.has(product.id);
+                          const image = getProductImage(product);
+                          return (
+                            <label key={product.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-transparent p-2 transition hover:border-primary/30 hover:bg-primary/5">
+                              <input type="checkbox" checked={checked} onChange={() => toggleProductTarget(product.id)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
+                              <div className="h-10 w-10 overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                                {image ? <img src={image} alt={product.name} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-gray-300"><ImageIcon size={16} /></div>}
+                              </div>
+                              <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-gray-900">{product.name}</p><p className="truncate text-xs text-gray-500">{product.brand || "Sans marque"} · {product.slug}</p></div>
+                              {checked && <Check size={16} className="text-primary" />}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {form.appliesTo === "categories" && (
+                    <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-gray-900"><Layers size={16} /> Collections ciblées</div>
+                        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-500">{selectedCategoryIds.size} sélectionnée{selectedCategoryIds.size > 1 ? "s" : ""}</span>
+                      </div>
+                      <div className="relative mb-3">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                        <input value={categorySearch} onChange={(e) => setCategorySearch(e.target.value)} placeholder="Rechercher une collection par nom ou slug..." className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 outline-none focus:border-primary" />
+                      </div>
+                      {(form.categoryIds || []).length > 0 && (
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          {(form.categoryIds || []).map((categoryId) => {
+                            const category = categoryById.get(categoryId);
+                            return <button key={categoryId} type="button" onClick={() => removeCategoryTarget(categoryId)} className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/15"><X size={13} />{category ? getCategoryDisplayName(category) : categoryId}</button>;
+                          })}
+                        </div>
+                      )}
+                      <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2">
+                        {targetsLoading ? (
+                          <div className="flex items-center justify-center py-6 text-sm text-gray-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Chargement des collections...</div>
+                        ) : filteredCategoryOptions.length === 0 ? (
+                          <div className="rounded-lg border border-dashed border-gray-200 p-5 text-center text-sm text-gray-500">Aucune collection trouvée.</div>
+                        ) : filteredCategoryOptions.map((category) => {
+                          const checked = selectedCategoryIds.has(category.id);
+                          return (
+                            <label key={category.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-transparent p-2 transition hover:border-primary/30 hover:bg-primary/5">
+                              <input type="checkbox" checked={checked} onChange={() => toggleCategoryTarget(category.id)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
+                              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400"><Layers size={16} /></div>
+                              <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-gray-900">{category.name}</p><p className="truncate text-xs text-gray-500">{category.parentSlug ? `${category.parentSlug} · ` : ""}{category.slug}</p></div>
+                              {checked && <Check size={16} className="text-primary" />}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </Section>
               </div>
 
