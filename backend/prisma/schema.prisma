@@ -112,6 +112,39 @@ model ShippingRate {
   @@index([carrier])
 }
 
+// ─── CARROUSEL PAGE D’ACCUEIL ───────────────────────────────
+model CarouselSlide {
+  id              String   @id @default(cuid())
+  title           String?
+  subtitle        String?
+  description     String?  @db.Text
+  imageUrl        String
+  imageMobileUrl  String?
+  imageAlt        String?
+  cloudinaryId    String?
+  mobileCloudinaryId String?
+  ctaText         String?
+  ctaLink         String?
+  ctaStyle        String?  @default("primary")
+  textPosition    String   @default("left")
+  textColor       String   @default("#FFFFFF")
+  overlayOpacity  Float    @default(0.3)
+  isActive        Boolean  @default(true)
+  startDate       DateTime?
+  endDate         DateTime?
+  position        Int      @default(0)
+  category        String   @default("general")
+  createdBy       String?
+  metadata        Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([position])
+  @@index([startDate, endDate])
+  @@index([category])
+}
+
 model Packaging {
   id                Int     @id @default(autoincrement())
   name              String // ex: "Carton S", "Enveloppe bulle", "Carton renforcé L"

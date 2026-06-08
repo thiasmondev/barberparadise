@@ -40,6 +40,7 @@ import { hermesCampaignsRouter } from "./routes/hermes-campaigns";
 import { hermesImagesRouter } from "./routes/hermes-images";
 import { hermesAnalyticsRouter } from "./routes/hermes-analytics";
 import telegramRouter from "./routes/telegram";
+import carouselRouter from "./routes/carousel";
 import telegramBotService from "./services/telegram/telegramBot";
 import { registerTelegramHandlers } from "./services/telegram/telegramHandlers";
 import { scheduleTelegramDailyDigest } from "./services/telegram/telegramDigest";
@@ -80,6 +81,7 @@ app.use("/api/hermes/campaigns", hermesCampaignsRouter);
 app.use("/api/hermes/images", hermesImagesRouter);
 app.use("/api/hermes/analytics", hermesAnalyticsRouter);
 app.use("/api/telegram", telegramRouter);
+app.use("/api/carousel", carouselRouter);
 
 // ─── Root & Health Check ─────────────────────────────────────
 app.get("/", (_req, res) => {
@@ -106,6 +108,7 @@ app.get("/", (_req, res) => {
               hermesImages: "/api/hermes/images",
               hermesAnalytics: "/api/hermes/analytics",
               telegram: "/api/telegram/status",
+              carousel: "/api/carousel/active",
 
     },
   });

@@ -81,3 +81,34 @@ export async function getBrand(slug: string, params?: { page?: number; limit?: n
 }
 
 export { API_URL };
+
+export type CarouselSlide = {
+  id: string;
+  title?: string | null;
+  subtitle?: string | null;
+  description?: string | null;
+  imageUrl: string;
+  imageMobileUrl?: string | null;
+  imageAlt?: string | null;
+  ctaText?: string | null;
+  ctaLink?: string | null;
+  ctaStyle?: "primary" | "secondary" | "outline" | string | null;
+  textPosition: "left" | "center" | "right" | string;
+  textColor: string;
+  overlayOpacity: number;
+  isActive: boolean;
+  startDate?: string | null;
+  endDate?: string | null;
+  position: number;
+  category: string;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function getActiveCarouselSlides() {
+  const raw = await fetchAPI<{ slides: CarouselSlide[] } | CarouselSlide[]>("/api/carousel/active", {
+    cache: "no-store",
+  });
+  return Array.isArray(raw) ? raw : raw.slides;
+}

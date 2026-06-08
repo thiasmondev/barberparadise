@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import { ArrowRight, Star, ChevronLeft, ChevronRight } from "lucide-react";
 import ProductCard from "@/components/ProductCard";
+import Carousel from "@/components/Carousel";
 import { getBrands, getProducts } from "@/lib/api";
 import type { Brand, Product } from "@/types";
 
@@ -23,31 +24,7 @@ export default function HomePage() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentHeroIndex, setCurrentHeroIndex] = useState(0);
   const [reviewIndex, setReviewIndex] = useState(0);
-
-  const heroSlides = [
-    {
-      subtitle: "LA SÉLECTION PROFESSIONNELLE",
-      title: "MASTER YOUR CRAFT.",
-      description: "Le matériel professionnel pour les barbiers et coiffeurs exigeants. Livraison rapide, prix imbattables.",
-      cta1: "VOIR LES PRODUITS",
-      cta2: "NOUVEAUTÉS",
-      href1: "/catalogue",
-      href2: "/nouveautes",
-      image: "https://lh3.googleusercontent.com/aida-public/AB6AXuBZQYbGi78PWJQPcqgyK9KYdehlfjmpLBWWyB3Vfig1HI1bpjSLulat7qHjOjgP19n2oG9iZ-o5jf_UfGvNenDk_fzQDbZ8ozBlYcby3YWe0TiXOeS6fXIaMHYnOszA9hwUXcxHU5S3P3DeL3ReQSiA1QpEhczYAukQpOXGmqYp7Cv66P5QeWAc8CBYhBx9pTWJw9nnr2zdFGr2cWbIAycqQnU-PrRgnu2VFeLdAzgbvf0EzJ22hT9uPYgmkML66rQVzH_rgx3xYtc",
-    },
-    {
-      subtitle: "MATÉRIEL PROFESSIONNEL",
-      title: "PRECISION TOOLS.",
-      description: "Tondeuses, ciseaux, rasoirs — tout ce qu'il faut pour un résultat parfait à chaque coupe.",
-      cta1: "VOIR LE MATÉRIEL",
-      cta2: "NOS MARQUES",
-      href1: "/catalogue?category=materiel",
-      href2: "/catalogue?marques=true",
-      image: "https://lh3.googleusercontent.com/aida-public/AB6AXuB8Y2LiXGlTBlbdjTIFKXs9yn9ThuZ2DAjo-nIMAGaSvLqarAt9b409XUFhWHyUEEmi3k4JiVwlueMkuTars_QDJNut2JvccybfLOqzjTpUHgpBG61AzdJnWrqnYsHYBO1g6PJHdu8-IGf2d-Qff9DngnRJ8yncm9_c3KZ83r6eOPfUl",
-    }
-  ];
 
   useEffect(() => {
     async function load() {
@@ -77,10 +54,6 @@ export default function HomePage() {
     }
     load();
 
-    const timer = setInterval(() => {
-      setCurrentHeroIndex((prev) => (prev + 1) % heroSlides.length);
-    }, 5000);
-    return () => clearInterval(timer);
   }, []);
 
 
@@ -92,77 +65,8 @@ export default function HomePage() {
   return (
     <div className="bg-[#131313] text-[#e5e2e1] min-h-screen font-sans selection:bg-[#ff4a8d] selection:text-white">
 
-      {/* ─── HERO ─── */}
-      <section className="relative h-[88vh] min-h-[600px] flex items-center overflow-hidden">
-        {heroSlides.map((slide, index) => (
-          <div
-            key={index}
-            className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${
-              index === currentHeroIndex ? "opacity-100 z-10" : "opacity-0 z-0"
-            }`}
-          >
-            <div className="absolute inset-0 bg-gradient-to-br from-black/85 via-black/50 to-transparent z-20" />
-            <img
-              src={slide.image}
-              alt={slide.title}
-              className="absolute inset-0 w-full h-full object-cover mix-blend-luminosity opacity-60"
-            />
-            <div className="relative z-30 max-w-[1440px] mx-auto px-8 h-full flex flex-col justify-center">
-              <div className="max-w-2xl">
-                {/* Logo officiel dans le Hero */}
-                <div className="mb-8">
-                  <Image
-                    src="/logo-barberparadise.png"
-                    alt="Barber Paradise"
-                    width={200}
-                    height={80}
-                    className="object-contain h-16 w-auto"
-                    priority
-                  />
-                </div>
-                <span className="inline-block text-[#ffb1c4] text-xs font-bold tracking-[0.3em] uppercase mb-4">
-                  {slide.subtitle}
-                </span>
-                <h1 className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tighter leading-[0.9] mb-8 uppercase italic">
-                  {slide.title.split(" ").map((word, i) => (
-                    <span key={i} className="block">{word}</span>
-                  ))}
-                </h1>
-                <p className="text-lg text-gray-400 mb-10 max-w-md leading-relaxed">
-                  {slide.description}
-                </p>
-                <div className="flex flex-wrap gap-4">
-                  <Link
-                    href={slide.href1}
-                    className="bg-[#ff4a8d] hover:bg-[#ff1f70] text-white px-8 py-4 text-xs font-black tracking-widest uppercase transition-all transform hover:scale-105"
-                  >
-                    {slide.cta1}
-                  </Link>
-                  <Link
-                    href={slide.href2}
-                    className="border border-white/20 hover:border-white text-white px-8 py-4 text-xs font-black tracking-widest uppercase transition-all"
-                  >
-                    {slide.cta2}
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-
-        {/* Carousel Dots */}
-        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-40 flex gap-3">
-          {heroSlides.map((_, i) => (
-            <button
-              key={i}
-              onClick={() => setCurrentHeroIndex(i)}
-              className={`h-2.5 rounded-full transition-all duration-300 ${
-                i === currentHeroIndex ? "bg-[#ff4a8d] w-8" : "bg-white/30 w-2.5"
-              }`}
-            />
-          ))}
-        </div>
-      </section>
+      {/* ─── CARROUSEL DYNAMIQUE ─── */}
+      <Carousel />
 
       {/* ─── THE PARADISE — Produits phares ─── */}
       <section className="py-24 bg-[#131313]">

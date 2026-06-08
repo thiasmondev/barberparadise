@@ -1,4 +1,5 @@
 import { API_URL } from "./api";
+
 import type {
   DashboardStats,
   Product,
@@ -2121,4 +2122,85 @@ export function getHermesAnalyticsContext() {
 
 export function collectHermesAnalytics() {
   return adminFetch<{ ok: boolean; report: unknown }>("/api/hermes/analytics/collect", { method: "POST" });
+}
+
+// ─── Carousel ───────────────────────────────────────────────────
+
+export type AdminCarouselSlide = {
+  id: string;
+  title?: string | null;
+  subtitle?: string | null;
+  description?: string | null;
+  imageUrl: string;
+  imageMobileUrl?: string | null;
+  imageAlt?: string | null;
+  cloudinaryId?: string | null;
+  mobileCloudinaryId?: string | null;
+  ctaText?: string | null;
+  ctaLink?: string | null;
+  ctaStyle?: "primary" | "secondary" | "outline" | string | null;
+  textPosition: "left" | "center" | "right" | string;
+  textColor: string;
+  overlayOpacity: number;
+  isActive: boolean;
+  startDate?: string | null;
+  endDate?: string | null;
+  position: number;
+  category: "promo" | "nouveaute" | "event" | "saison" | "general" | string;
+  createdBy?: string | null;
+  metadata?: unknown;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminCarouselSlidePayload = Partial<Omit<AdminCarouselSlide, "id" | "createdAt" | "updatedAt">> & {
+  imageUrl?: string;
+};
+
+export function getAdminCarouselSlides(params?: { category?: string; isActive?: boolean }) {
+  const sp = new URLSearchParams();
+  if (params?.category && params.category !== "all") sp.set("category", params.category);
+  if (typeof params?.isActive === "boolean") sp.set("isActive", String(params.isActive));
+  const q = sp.toString();
+  return adminFetch<{ slides: AdminCarouselSlide[] }>(`/api/carousel${q ? `?${q}` : ""}`);
+}
+
+export function createAdminCarouselSlide(payload: AdminCarouselSlidePayload) {
+  return adminFetch<{ slide: AdminCarouselSlide }>("/api/carousel", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateAdminCarouselSlide(id: string, payload: AdminCarouselSlidePayload) {
+  return adminFetch<{ slide: AdminCarouselSlide }>(`/api/carousel/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function toggleAdminCarouselSlide(id: string) {
+  return adminFetch<{ slide: AdminCarouselSlide }>(`/api/carousel/${id}/toggle`, {
+    method: "PATCH",
+  });
+}
+
+export function deleteAdminCarouselSlide(id: string) {
+  return adminFetch<{ success: boolean }>(`/api/carousel/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export function reorderAdminCarouselSlides(order: { id: string; position: number }[]) {
+  return adminFetch<{ success: boolean }>("/api/carousel/reorder", {
+    method: "PUT",
+    body: JSON.stringify({ order }),
+  });
+}
+
+export function uploadAdminCarouselSlide(payload: AdminCarouselSlidePayload & { imageBase64: string }) {
+  return adminFetch<{ slide: AdminCarouselSlide }>("/api/carousel/upload", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
