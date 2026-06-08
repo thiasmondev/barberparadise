@@ -325,11 +325,11 @@ export function registerTelegramHandlers(): void {
   const bot = telegramBotService.getBot();
   if (!bot || registered) return;
 
-  bot.on("message", (message) => {
+  bot.on("message", (message: TelegramBot.Message) => {
     handleMessage(message).catch((error) => console.error("[TelegramHandlers] Erreur message Buzz:", error));
   });
 
-  bot.on("callback_query", (query) => {
+  bot.on("callback_query", (query: TelegramBot.CallbackQuery) => {
     handleCallback(query).catch((error) => console.error("[TelegramHandlers] Erreur callback Buzz:", error));
   });
 
