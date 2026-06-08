@@ -25,6 +25,7 @@ import {
   Megaphone,
   Sparkles,
   Images,
+  KeyRound,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -44,6 +45,7 @@ const NAV_ITEMS = [
   { href: "/admin/geo", label: "Outils GEO", icon: Globe },
   { href: "/admin/logistique/emballages", label: "Emballages", icon: Boxes },
   { href: "/admin/parametres/expedition", label: "Expédition", icon: Truck },
+  { href: "/admin/api-keys", label: "Clés API", icon: KeyRound },
   { href: "/admin/import-reviews", label: "Import Avis", icon: MessageSquare },
   { href: "/admin/parametres", label: "Paramètres", icon: Settings },
 ];

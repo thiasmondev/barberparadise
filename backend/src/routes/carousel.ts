@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import { v2 as cloudinary } from "cloudinary";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../utils/prisma";
-import { requireAdmin } from "../middleware/auth";
+import { requireAdmin, requirePermission } from "../middleware/auth";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -189,8 +189,8 @@ carouselRouter.get("/active", async (_req: Request, res: Response): Promise<void
   }
 });
 
-// Toutes les routes suivantes sont réservées à l’administration et à Buzz via token admin.
-carouselRouter.use(requireAdmin);
+// Toutes les routes suivantes sont réservées à l’administration et à Buzz via clé API autorisée.
+carouselRouter.use(requireAdmin, requirePermission("carousel"));
 
 carouselRouter.get("/", async (req: Request, res: Response): Promise<void> => {
   try {

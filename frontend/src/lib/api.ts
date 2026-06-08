@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
 
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${endpoint}`, {
@@ -79,8 +79,6 @@ export async function getBrand(slug: string, params?: { page?: number; limit?: n
     pagination: { total: number; pages: number; page: number; limit: number };
   }>(`/api/brands/${slug}${qs ? `?${qs}` : ""}`);
 }
-
-export { API_URL };
 
 export type CarouselSlide = {
   id: string;

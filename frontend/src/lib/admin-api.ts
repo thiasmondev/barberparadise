@@ -2204,3 +2204,63 @@ export function uploadAdminCarouselSlide(payload: AdminCarouselSlidePayload & { 
     body: JSON.stringify(payload),
   });
 }
+
+// ─── API Keys ──────────────────────────────────────────────────
+
+export type ApiKeyPermission = "carousel" | "hermes" | "products" | "orders" | "admin";
+
+export const API_KEY_PERMISSION_LABELS: Record<ApiKeyPermission, string> = {
+  carousel: "Carrousel",
+  hermes: "Buzz",
+  products: "Produits",
+  orders: "Commandes",
+  admin: "Administration complète",
+};
+
+export interface AdminApiKey {
+  id: string;
+  name: string;
+  prefix: string;
+  permissions: ApiKeyPermission[];
+  isActive: boolean;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateApiKeyPayload {
+  name: string;
+  permissions: ApiKeyPermission[];
+  expiresAt?: string | null;
+}
+
+export async function listApiKeys() {
+  return adminFetch<{ keys: AdminApiKey[] }>("/api/admin/api-keys");
+}
+
+export async function createApiKey(payload: CreateApiKeyPayload) {
+  return adminFetch<{ message: string; token: string; apiKey: AdminApiKey }>("/api/admin/api-keys", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function revokeApiKey(id: string) {
+  return adminFetch<{ success: boolean; message: string; apiKey: AdminApiKey }>(`/api/admin/api-keys/${id}/revoke`, {
+    method: "PATCH",
+  });
+}
+
+export async function activateApiKey(id: string) {
+  return adminFetch<{ success: boolean; message: string; apiKey: AdminApiKey }>(`/api/admin/api-keys/${id}/activate`, {
+    method: "PATCH",
+  });
+}
+
+export async function deleteApiKey(id: string) {
+  return adminFetch<{ success: boolean }>(`/api/admin/api-keys/${id}`, {
+    method: "DELETE",
+  });
+}

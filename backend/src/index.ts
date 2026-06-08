@@ -41,6 +41,8 @@ import { hermesImagesRouter } from "./routes/hermes-images";
 import { hermesAnalyticsRouter } from "./routes/hermes-analytics";
 import telegramRouter from "./routes/telegram";
 import carouselRouter from "./routes/carousel";
+import apiKeysRouter from "./routes/apiKeys";
+import { requireJwtAdmin } from "./middleware/auth";
 import telegramBotService from "./services/telegram/telegramBot";
 import { registerTelegramHandlers } from "./services/telegram/telegramHandlers";
 import { scheduleTelegramDailyDigest } from "./services/telegram/telegramDigest";
@@ -63,6 +65,7 @@ app.use("/api/products", productsRouter);
 app.use("/api/categories", categoriesRouter);
 app.use("/api/orders", ordersRouter);
 app.use("/api/customers", customersRouter);
+app.use("/api/admin/api-keys", requireJwtAdmin, apiKeysRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/blog", blogRouter);
@@ -109,6 +112,7 @@ app.get("/", (_req, res) => {
               hermesAnalytics: "/api/hermes/analytics",
               telegram: "/api/telegram/status",
               carousel: "/api/carousel/active",
+              apiKeys: "/api/admin/api-keys",
 
     },
   });
