@@ -6,48 +6,43 @@ const router = Router();
 
 /**
  * POST /api/newsletter/subscribe
- * Subscribe an email to the newsletter
+ * Subscribe an email to the B2C newsletter list.
  */
 router.post("/subscribe", async (req: Request, res: Response) => {
   try {
-    const { email } = req.body;
+    const rawEmail = req.body?.email;
 
-    if (!email || typeof email !== "string") {
+    if (!rawEmail || typeof rawEmail !== "string") {
       return res.status(400).json({ error: "Email is required" });
     }
 
-    // Validate email format
+    const email = rawEmail.trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
     if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: "Invalid email format" });
+      return res.status(400).json({ error: "Email invalide" });
     }
 
-    // Check if email already exists in newsletter list
-    const existingSubscriber = await prisma.newsletterSubscriber.findUnique({
-      where: { email },
-    });
-
-    if (existingSubscriber) {
-      return res.status(400).json({ error: "Email already subscribed" });
-    }
-
-    // Add to database
-    await prisma.newsletterSubscriber.create({
-      data: {
-        email,
-        subscribedAt: new Date(),
-      },
-    });
-
-    // Subscribe to Brevo if available
     if (brevoService.isEnabled()) {
       try {
         await brevoService.subscribeToNewsletter(email);
       } catch (brevoError) {
         console.error("Brevo subscription error:", brevoError);
-        // Continue even if Brevo fails - user is still in our database
+        return res.status(502).json({ error: "Impossible d’ajouter cet email à la newsletter pour le moment." });
       }
     }
+
+    await prisma.newsletterSubscriber.upsert({
+      where: { email },
+      update: {
+        subscribedAt: new Date(),
+        unsubscribedAt: null,
+      },
+      create: {
+        email,
+        subscribedAt: new Date(),
+      },
+    });
 
     return res.status(200).json({
       success: true,
