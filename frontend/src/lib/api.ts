@@ -110,3 +110,44 @@ export async function getActiveCarouselSlides() {
   });
   return Array.isArray(raw) ? raw : raw.slides;
 }
+
+export type PromotionCartItemPayload = {
+  productId: string;
+  categoryId?: string | null;
+  quantity: number;
+  price: number;
+};
+
+export type PromotionValidationResult = {
+  valid: boolean;
+  discount?: number;
+  discountType?: string;
+  promotionId?: string;
+  code?: string | null;
+  name?: string;
+  message?: string;
+};
+
+export type PromotionValidationPayload = {
+  code?: string;
+  cartTotal: number;
+  cartItems: PromotionCartItemPayload[];
+  customerId?: string;
+  customerEmail?: string;
+  customerType?: "b2c" | "b2b";
+  shipping?: number;
+};
+
+export async function validatePromotionCode(payload: PromotionValidationPayload) {
+  return fetchAPI<PromotionValidationResult>("/api/promotions/validate", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAutomaticPromotions(payload: Omit<PromotionValidationPayload, "code">) {
+  return fetchAPI<PromotionValidationResult[]>("/api/promotions/automatic", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}

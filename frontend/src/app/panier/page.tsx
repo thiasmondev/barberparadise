@@ -7,6 +7,7 @@ import { Trash2, Minus, Plus, ArrowLeft, ArrowRight, ShoppingBag, CreditCard, La
 import { useCart } from "@/contexts/CartContext";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
 import { parseImages, formatPrice } from "@/lib/utils";
+import { validatePromotionCode, type PromotionValidationResult } from "@/lib/api";
 
 type PaymentMethod = "card" | "pay_by_bank" | "paypal_4x";
 
@@ -36,7 +37,9 @@ export default function CartPage() {
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingError, setShippingError] = useState("");
   const [promoCode, setPromoCode] = useState("");
-  const [promoSaved, setPromoSaved] = useState(false);
+  const [promoResult, setPromoResult] = useState<PromotionValidationResult | null>(null);
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoError, setPromoError] = useState("");
   const [freeShippingRemaining, setFreeShippingRemaining] = useState(0);
 
   const estimatedShippingOption = useMemo(() => shippingOptions[0], [shippingOptions]);
@@ -53,6 +56,18 @@ export default function CartPage() {
   const shippingReferenceAmount = isApprovedPro ? subtotalHT : total;
   const vatAmount = useMemo(() => Math.round((subtotalHT * 0.2 + Number.EPSILON) * 100) / 100, [subtotalHT]);
   const grandTotal = isApprovedPro ? subtotalHT + vatAmount + shipping : total + shipping;
+  const promotionCartItems = useMemo(() => items.map((item) => {
+    const publicTtcPrice = typeof item.product.pricePublic === "number" ? item.product.pricePublic : item.product.price;
+    const proUnitPrice = item.product.hasPriceProEur ? item.product.price : publicTtcPrice / 1.2;
+    return {
+      productId: item.product.id,
+      categoryId: typeof item.product.category === "string" ? item.product.category : null,
+      quantity: item.quantity,
+      price: isApprovedPro ? proUnitPrice : publicTtcPrice,
+    };
+  }), [isApprovedPro, items]);
+  const promoDiscount = promoResult?.valid ? Math.min(promoResult.discount || 0, grandTotal) : 0;
+  const discountedGrandTotal = Math.max(0, grandTotal - promoDiscount);
   const minimumProOrder = 200;
   const proRemaining = Math.max(0, minimumProOrder - subtotalHT);
   const isProMinimumBlocked = isApprovedPro && subtotalHT < minimumProOrder;
@@ -70,18 +85,41 @@ export default function CartPage() {
   useEffect(() => {
     const storedPromo = window.localStorage.getItem("barberparadise-promo-code") || "";
     setPromoCode(storedPromo);
-    setPromoSaved(Boolean(storedPromo));
+    setPromoResult(storedPromo ? { valid: true, code: storedPromo, message: "Code enregistré, validation au récapitulatif." } : null);
   }, []);
 
-  const savePromoCode = () => {
+  const savePromoCode = async () => {
     const normalized = promoCode.trim().toUpperCase();
     setPromoCode(normalized);
-    if (normalized) {
-      window.localStorage.setItem("barberparadise-promo-code", normalized);
-      setPromoSaved(true);
-    } else {
+    setPromoError("");
+    setPromoResult(null);
+
+    if (!normalized) {
       window.localStorage.removeItem("barberparadise-promo-code");
-      setPromoSaved(false);
+      return;
+    }
+
+    setPromoLoading(true);
+    try {
+      const result = await validatePromotionCode({
+        code: normalized,
+        cartTotal: shippingReferenceAmount,
+        cartItems: promotionCartItems,
+        customerType: isApprovedPro ? "b2b" : "b2c",
+        shipping,
+      });
+      if (!result.valid) {
+        window.localStorage.removeItem("barberparadise-promo-code");
+        setPromoError(result.message || "Ce code promo n’est pas applicable à votre panier.");
+        return;
+      }
+      window.localStorage.setItem("barberparadise-promo-code", normalized);
+      setPromoResult(result);
+    } catch (error) {
+      window.localStorage.removeItem("barberparadise-promo-code");
+      setPromoError(error instanceof Error ? error.message : "Impossible de valider ce code promo.");
+    } finally {
+      setPromoLoading(false);
     }
   };
 
@@ -290,17 +328,25 @@ export default function CartPage() {
                   <div className="flex gap-2">
                     <input
                       value={promoCode}
-                      onChange={(event) => { setPromoCode(event.target.value.toUpperCase()); setPromoSaved(false); }}
+                      onChange={(event) => { setPromoCode(event.target.value.toUpperCase()); setPromoResult(null); setPromoError(""); }}
                       placeholder="WELCOME10"
                       className="min-w-0 flex-1 bg-white px-3 py-2 text-xs font-black uppercase tracking-widest text-black outline-none"
                     />
-                    <button type="button" onClick={savePromoCode} className="bg-[#ff4a8d] px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-[#ff1f70]">
-                      OK
+                    <button type="button" onClick={savePromoCode} disabled={promoLoading} className="bg-[#ff4a8d] px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-[#ff1f70] disabled:opacity-60">
+                      {promoLoading ? "..." : "OK"}
                     </button>
                   </div>
-                  <p className="text-[10px] uppercase tracking-widest text-gray-600">
-                    {promoSaved ? `Code ${promoCode} enregistré, il sera vérifié au paiement.` : "Le code sera appliqué et contrôlé à l’étape paiement."}
-                  </p>
+                  {promoResult?.valid ? (
+                    <p className="text-[10px] uppercase tracking-widest text-emerald-300">
+                      {promoResult.name || promoResult.code || promoCode} appliqué · -{formatPrice(promoDiscount)}
+                    </p>
+                  ) : promoError ? (
+                    <p className="text-[10px] uppercase tracking-widest text-red-300">{promoError}</p>
+                  ) : (
+                    <p className="text-[10px] uppercase tracking-widest text-gray-600">
+                      Saisissez un code pour vérifier immédiatement sa remise.
+                    </p>
+                  )}
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>
@@ -333,9 +379,15 @@ export default function CartPage() {
                     Plus que {formatPrice(freeShippingRemaining)}{isApprovedPro ? " HT" : ""} pour la livraison gratuite
                   </p>
                 )}
+                {promoDiscount > 0 && (
+                  <div className="flex justify-between items-center text-emerald-300">
+                    <span className="text-xs text-emerald-300 uppercase tracking-widest">Remise</span>
+                    <span className="text-sm font-black">-{formatPrice(promoDiscount)}</span>
+                  </div>
+                )}
                 <div className="border-t border-white/5 pt-4 flex justify-between items-center">
                   <span className="text-xs font-black tracking-widest uppercase">{isApprovedPro ? "TOTAL TTC" : "TOTAL"}</span>
-                  <span className="text-2xl font-black">{formatPrice(grandTotal)}</span>
+                  <span className="text-2xl font-black">{formatPrice(discountedGrandTotal)}</span>
                 </div>
               </div>
 

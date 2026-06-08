@@ -13,6 +13,7 @@ import {
 import { calculateFreeShippingRemaining, calculateShippingOptions, getFreeShippingThresholdForCountry } from "../services/shippingCalculator";
 import { getVatRate } from "../services/vatCalculator";
 import { calculateDiscountAmount } from "../services/marketingAgentService";
+import promotionService, { PromotionValidationResult } from "../services/promotionService";
 
 export const checkoutRouter = Router();
 
@@ -83,6 +84,50 @@ async function resolvePromoCode(code: string | undefined, baseAmount: number, sh
   }
   const discountAmount = calculateDiscountAmount({ subtotal: baseAmount, shipping, type: promoCode.type, value: promoCode.value });
   return { promoCode, discountAmount: money(discountAmount) };
+}
+
+async function resolveCheckoutPromotion(params: {
+  code?: string;
+  baseAmount: number;
+  shipping: number;
+  cartItems: Array<{ productId: string; categoryId?: string | null; quantity: number; price: number }>;
+  customerId?: string;
+  customerEmail: string;
+  customerType: "b2c" | "b2b";
+}): Promise<{
+  promoCode: Awaited<ReturnType<typeof resolvePromoCode>>["promoCode"];
+  promotion: PromotionValidationResult | null;
+  discountAmount: number;
+  discountType?: string;
+}> {
+  const normalized = normalizePromoCode(params.code || "");
+  if (!normalized) return { promoCode: null, promotion: null, discountAmount: 0 };
+
+  const promotion = await promotionService.validateCode({
+    code: normalized,
+    cartTotal: params.baseAmount,
+    cartItems: params.cartItems,
+    customerId: params.customerId,
+    customerEmail: params.customerEmail,
+    customerType: params.customerType,
+    shipping: params.shipping,
+  });
+
+  if (promotion.valid) {
+    return {
+      promoCode: null,
+      promotion,
+      discountAmount: money(promotion.discount || 0),
+      discountType: promotion.discountType,
+    };
+  }
+
+  try {
+    const legacy = await resolvePromoCode(normalized, params.baseAmount, params.shipping);
+    return { promoCode: legacy.promoCode, promotion: null, discountAmount: legacy.discountAmount };
+  } catch (error) {
+    throw new Error(promotion.message || (error instanceof Error ? error.message : "Code promo invalide"));
+  }
 }
 
 function getFrontendUrl(): string {
@@ -398,6 +443,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
     }
 
     const orderItems = [];
+    const promotionCartItems: Array<{ productId: string; categoryId?: string | null; quantity: number; price: number }> = [];
     let subtotalTTC = 0;
     let subtotalHT = 0;
     for (const item of body.cartItems) {
@@ -428,6 +474,12 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         quantity: item.quantity,
         image: JSON.parse(product.images || "[]")[0] || "",
       });
+      promotionCartItems.push({
+        productId: product.id,
+        categoryId: product.category || null,
+        quantity: item.quantity,
+        price: isB2B ? unitHT : product.price,
+      });
     }
 
     subtotalHT = money(subtotalHT);
@@ -445,12 +497,23 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       return;
     }
     const shipping = selectedShippingOption.price;
-    const promoResolution = await resolvePromoCode(body.promoCode, isB2B ? subtotalHT : subtotalTTC, shipping);
+    const promoResolution = await resolveCheckoutPromotion({
+      code: body.promoCode,
+      baseAmount: isB2B ? subtotalHT : subtotalTTC,
+      shipping,
+      cartItems: promotionCartItems,
+      customerId: body.customerId,
+      customerEmail: body.customerEmail,
+      customerType: isB2B ? "b2b" : "b2c",
+    });
     const discountAmount = promoResolution.discountAmount;
-    const totalHT = money(isB2B ? Math.max(0, subtotalHT - discountAmount) : subtotalHT);
+    const shippingDiscount = promoResolution.discountType === "free_shipping" ? Math.min(shipping, discountAmount) : 0;
+    const productDiscount = promoResolution.discountType === "free_shipping" ? 0 : discountAmount;
+    const chargedShipping = money(Math.max(0, shipping - shippingDiscount));
+    const totalHT = money(isB2B ? Math.max(0, subtotalHT - productDiscount) : subtotalHT);
     const vatRate = getVatRate(country, isB2B, vatNumber);
     const vatAmount = money(totalHT * (vatRate / 100));
-    const totalTTC = money(Math.max(0, totalHT + vatAmount + shipping - (isB2B ? 0 : discountAmount)));
+    const totalTTC = money(Math.max(0, totalHT + vatAmount + chargedShipping - (isB2B ? 0 : productDiscount)));
     const provider = getProvider(body.paymentMethod, country);
 
     const order = await prisma.order.create({
@@ -464,10 +527,11 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         paymentProvider: provider,
         isB2B,
         subtotal: isB2B ? subtotalHT : subtotalTTC,
-        shipping,
+        shipping: chargedShipping,
         total: totalTTC,
         totalHT,
         promoCodeId: promoResolution.promoCode?.id || null,
+        promotionId: promoResolution.promotion?.promotionId || null,
         discountAmount,
         vatRate,
         vatAmount,
@@ -522,7 +586,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       data: { providerPaymentId: checkout.providerPaymentId || null },
     });
 
-    res.status(201).json({ orderId: order.id, orderNumber: order.orderNumber, checkoutUrl: checkout.checkoutUrl, provider });
+    res.status(201).json({ orderId: order.id, orderNumber: order.orderNumber, checkoutUrl: checkout.checkoutUrl, provider, discountAmount });
   } catch (err) {
     console.error("Erreur initialisation checkout", err);
     const message = err instanceof Error ? err.message : "Erreur initialisation paiement";

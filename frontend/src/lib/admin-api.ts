@@ -2348,3 +2348,120 @@ export async function deleteApiKey(id: string) {
     method: "DELETE",
   });
 }
+
+// ─── Promotions Shopify-like ───────────────────────────────────
+
+export type AdminPromotionMethod = "code" | "automatic";
+export type AdminPromotionType = "percentage" | "fixed_amount" | "free_shipping" | "buy_x_get_y";
+export type AdminPromotionAppliesTo = "all" | "products" | "categories";
+export type AdminPromotionCustomerType = "all" | "b2c" | "b2b";
+
+export interface AdminPromotion {
+  id: string;
+  code: string | null;
+  name: string;
+  description?: string | null;
+  method: AdminPromotionMethod;
+  type: AdminPromotionType;
+  value: number | null;
+  valueType: "percentage" | "fixed";
+  appliesTo: AdminPromotionAppliesTo;
+  productIds: string[];
+  categoryIds: string[];
+  minOrderAmount: number | null;
+  minQuantity: number | null;
+  customerType: AdminPromotionCustomerType;
+  usageLimit: number | null;
+  usagePerCustomer: number | null;
+  usageCount: number;
+  stackable: boolean;
+  isActive: boolean;
+  startsAt: string | null;
+  endsAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminPromotionStats {
+  totalPromotions: number;
+  activePromotions: number;
+  codePromotions: number;
+  automaticPromotions: number;
+  totalUsage: number;
+  totalDiscount: number;
+}
+
+export type AdminPromotionPayload = Partial<Omit<AdminPromotion, "id" | "createdAt" | "updatedAt" | "usageCount">>;
+
+export interface AdminPromotionListResponse {
+  promotions: AdminPromotion[];
+  total: number;
+  page: number;
+  pages: number;
+}
+
+export async function getAdminPromotions(params: { search?: string; status?: string; method?: string; page?: number; limit?: number } = {}) {
+  const query = new URLSearchParams();
+  if (params.status === "active") query.set("isActive", "true");
+  if (params.status === "inactive") query.set("isActive", "false");
+  if (params.method && params.method !== "all") query.set("method", params.method);
+  if (params.page) query.set("page", String(params.page));
+  if (params.limit) query.set("limit", String(params.limit));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  const result = await adminFetch<AdminPromotionListResponse>(`/api/promotions${suffix}`);
+  const search = params.search?.trim().toLowerCase();
+  if (!search) return result;
+  return {
+    ...result,
+    promotions: result.promotions.filter((promotion) =>
+      [promotion.name, promotion.code || "", promotion.description || ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(search)
+    ),
+  };
+}
+
+export async function getAdminPromotion(id: string) {
+  const promotion = await adminFetch<AdminPromotion>(`/api/promotions/${id}`);
+  return { promotion };
+}
+
+export async function getAdminPromotionStats() {
+  const stats = await adminFetch<AdminPromotionStats>("/api/promotions/stats");
+  return { stats };
+}
+
+export async function createAdminPromotion(data: AdminPromotionPayload) {
+  const promotion = await adminFetch<AdminPromotion>("/api/promotions", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return { promotion };
+}
+
+export async function updateAdminPromotion(id: string, data: AdminPromotionPayload) {
+  const promotion = await adminFetch<AdminPromotion>(`/api/promotions/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  return { promotion };
+}
+
+export async function toggleAdminPromotion(id: string) {
+  const promotion = await adminFetch<AdminPromotion>(`/api/promotions/${id}/toggle`, {
+    method: "PATCH",
+  });
+  return { promotion };
+}
+
+export async function duplicateAdminPromotion(id: string) {
+  const promotion = await adminFetch<AdminPromotion>(`/api/promotions/${id}/duplicate`, {
+    method: "POST",
+  });
+  return { promotion };
+}
+
+export function deleteAdminPromotion(id: string) {
+  return adminFetch<void>(`/api/promotions/${id}`, { method: "DELETE" });
+}

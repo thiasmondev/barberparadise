@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { prisma } from "../utils/prisma";
 import { formatPaymentMethod, getCustomerName, sendOrderConfirmationEmail } from "../services/emailService";
 import { ensureProInvoiceForOrder } from "../services/proInvoiceService";
+import promotionService from "../services/promotionService";
 
 export const webhooksRouter = Router();
 
@@ -87,6 +88,21 @@ async function markOrderCanceled(orderId: string, providerPaymentId?: string): P
   await prisma.order.update({
     where: { id: orderId },
     data: { status: "canceled", providerPaymentId },
+  });
+}
+
+async function recordPromotionUsageForPaidOrder(orderId: string): Promise<void> {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { id: true, promotionId: true, customerId: true, email: true, customerEmail: true, discountAmount: true },
+  });
+  if (!order?.promotionId || order.discountAmount <= 0) return;
+  await promotionService.recordUsage({
+    promotionId: order.promotionId,
+    orderId: order.id,
+    customerId: order.customerId,
+    customerEmail: order.customerEmail || order.email,
+    discountAmount: order.discountAmount,
   });
 }
 
@@ -181,6 +197,7 @@ webhooksRouter.post("/mollie", async (req: Request, res: Response): Promise<void
     if (payment.status === "paid" && orderId) {
       const changed = await markOrderPaid(orderId, "mollie", payment.id);
       if (changed) {
+        await recordPromotionUsageForPaidOrder(orderId);
         await sendOrderPaidEmail(orderId);
         await ensureProInvoiceForOrder(orderId);
       }
@@ -212,6 +229,7 @@ webhooksRouter.post("/paypal", async (req: Request, res: Response): Promise<void
     if (eventType === "PAYMENT.CAPTURE.COMPLETED" && orderId) {
       const changed = await markOrderPaid(orderId, "paypal", resource?.id || resource?.supplementary_data?.related_ids?.order_id);
       if (changed) {
+        await recordPromotionUsageForPaidOrder(orderId);
         await sendOrderPaidEmail(orderId);
         await ensureProInvoiceForOrder(orderId);
       }
@@ -237,6 +255,7 @@ webhooksRouter.post("/checkout", async (req: Request, res: Response): Promise<vo
     if (["payment_approved", "payment_captured", "payment_capture_pending"].includes(type) && orderId) {
       const changed = await markOrderPaid(orderId, "checkout", req.body?.data?.id || req.body?.id);
       if (changed) {
+        await recordPromotionUsageForPaidOrder(orderId);
         await sendOrderPaidEmail(orderId);
         await ensureProInvoiceForOrder(orderId);
       }

@@ -8,6 +8,7 @@ import { useCart } from "@/contexts/CartContext";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
 import { getCustomerAddresses, type CustomerAddress } from "@/lib/customer-api";
 import { parseImages, formatPrice } from "@/lib/utils";
+import { validatePromotionCode, type PromotionValidationResult } from "@/lib/api";
 
 type Step = "contact" | "livraison" | "paiement";
 type PaymentMethod =
@@ -107,6 +108,9 @@ export default function CheckoutPage() {
   const [isB2B, setIsB2B] = useState(false);
   const [vatNumber, setVatNumber] = useState("");
   const [promoCode, setPromoCode] = useState("");
+  const [promoResult, setPromoResult] = useState<PromotionValidationResult | null>(null);
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoError, setPromoError] = useState("");
 
   const [form, setForm] = useState({
     email: "",
@@ -141,6 +145,18 @@ export default function CheckoutPage() {
   const shippingReferenceAmount = effectiveIsB2B ? subtotalHT : total;
   const vatAmount = useMemo(() => Math.round((subtotalHT * (vatRate / 100) + Number.EPSILON) * 100) / 100, [subtotalHT, vatRate]);
   const grandTotal = subtotalHT + vatAmount + shipping;
+  const promotionCartItems = useMemo(() => items.map((item) => {
+    const publicTtcPrice = typeof item.product.pricePublic === "number" ? item.product.pricePublic : item.product.price;
+    const proUnitPrice = item.product.hasPriceProEur ? item.product.price : publicTtcPrice / 1.2;
+    return {
+      productId: item.product.id,
+      categoryId: typeof item.product.category === "string" ? item.product.category : null,
+      quantity: item.quantity,
+      price: effectiveIsB2B ? proUnitPrice : publicTtcPrice,
+    };
+  }), [effectiveIsB2B, items]);
+  const promoDiscount = promoResult?.valid ? Math.min(promoResult.discount || 0, grandTotal) : 0;
+  const discountedGrandTotal = Math.max(0, grandTotal - promoDiscount);
 
   const displayMethods = useMemo(
     () => availableMethods.filter((method) => {
@@ -214,6 +230,38 @@ export default function CheckoutPage() {
     if (storedMethod && Object.keys(METHOD_CONFIG).includes(storedMethod)) setPaymentMethod(storedMethod);
     setPromoCode(window.localStorage.getItem("barberparadise-promo-code") || "");
   }, []);
+
+  useEffect(() => {
+    const normalized = promoCode.trim().toUpperCase();
+    if (!normalized || items.length === 0) {
+      setPromoResult(null);
+      setPromoError("");
+      return;
+    }
+
+    let cancelled = false;
+    setPromoLoading(true);
+    setPromoError("");
+    validatePromotionCode({
+      code: normalized,
+      cartTotal: shippingReferenceAmount,
+      cartItems: promotionCartItems,
+      customerType: effectiveIsB2B ? "b2b" : "b2c",
+      shipping,
+    }).then((result) => {
+      if (cancelled) return;
+      setPromoResult(result);
+      setPromoError(result.valid ? "" : (result.message || "Ce code promo n’est plus applicable."));
+    }).catch((error) => {
+      if (cancelled) return;
+      setPromoResult(null);
+      setPromoError(error instanceof Error ? error.message : "Impossible de vérifier le code promo.");
+    }).finally(() => {
+      if (!cancelled) setPromoLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [effectiveIsB2B, items.length, promoCode, promotionCartItems, shipping, shippingReferenceAmount]);
 
   useEffect(() => {
     if (!cartSessionId || !form.email.includes("@") || items.length === 0) return;
@@ -372,7 +420,7 @@ export default function CheckoutPage() {
 
           <button onClick={() => setOrderSummaryOpen(!orderSummaryOpen)} className="lg:hidden w-full flex items-center justify-between bg-[#1c1b1b] px-5 py-4 mb-8">
             <div className="flex items-center gap-3"><ShoppingBag size={16} className="text-[#ff4a8d]" /><span className="text-xs font-black tracking-widest uppercase">{orderSummaryOpen ? "MASQUER" : "VOIR"} LE RÉCAPITULATIF</span></div>
-            <div className="flex items-center gap-3"><span className="font-black">{formatPrice(grandTotal)}</span><ChevronDown size={14} className={`transition-transform ${orderSummaryOpen ? "rotate-180" : ""}`} /></div>
+            <div className="flex items-center gap-3"><span className="font-black">{formatPrice(discountedGrandTotal)}</span><ChevronDown size={14} className={`transition-transform ${orderSummaryOpen ? "rotate-180" : ""}`} /></div>
           </button>
 
           {orderSummaryOpen && (
@@ -393,10 +441,14 @@ export default function CheckoutPage() {
                     <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Sous-total HT</span><span className="font-black">{formatPrice(subtotalHT)}</span></div>
                     <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">TVA ({vatRate}%)</span><span className="font-black">{formatPrice(vatAmount)}</span></div>
                     <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Livraison</span>{shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="font-black">{formatPrice(shipping)}</span>}</div>
-                    <div className="border-t border-white/5 pt-3 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL TTC</span><span className="font-black">{formatPrice(grandTotal)}</span></div>
+                    {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="font-black">-{formatPrice(promoDiscount)}</span></div>}
+                    <div className="border-t border-white/5 pt-3 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL TTC</span><span className="font-black">{formatPrice(discountedGrandTotal)}</span></div>
                   </>
                 ) : (
-                  <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Total</span><span className="font-black">{formatPrice(grandTotal)}</span></div>
+                  <>
+                    {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="font-black">-{formatPrice(promoDiscount)}</span></div>}
+                    <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Total</span><span className="font-black">{formatPrice(discountedGrandTotal)}</span></div>
+                  </>
                 )}
               </div>
             </div>
@@ -526,9 +578,11 @@ export default function CheckoutPage() {
               </div>
 
               {promoCode && (
-                <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-emerald-300">Code promo {promoCode} transmis, réduction calculée après vérification serveur.</p>
+                <div className={`mb-3 text-[10px] font-black uppercase tracking-widest ${promoResult?.valid ? "text-emerald-300" : promoError ? "text-red-300" : "text-gray-500"}`}>
+                  {promoLoading ? "Vérification du code promo..." : promoResult?.valid ? `Code ${promoCode} appliqué · -${formatPrice(promoDiscount)}` : promoError || `Code ${promoCode} transmis pour vérification serveur.`}
+                </div>
               )}
-              <button onClick={handleCheckout} disabled={isSubmittingPayment || displayMethods.length === 0 || methodsLoading || shippingLoading || !selectedShippingOption} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-wait text-white py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 transition-colors"><Lock size={12} />{isSubmittingPayment ? "REDIRECTION EN COURS..." : `PAYER ${formatPrice(grandTotal)}`}</button>
+              <button onClick={handleCheckout} disabled={isSubmittingPayment || displayMethods.length === 0 || methodsLoading || shippingLoading || !selectedShippingOption} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-wait text-white py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 transition-colors"><Lock size={12} />{isSubmittingPayment ? "REDIRECTION EN COURS..." : `PAYER ${formatPrice(discountedGrandTotal)}`}</button>
               <button onClick={() => setStep("livraison")} className="w-full text-center text-xs text-gray-500 hover:text-white transition-colors uppercase tracking-widest font-black">← Retour à la livraison</button>
             </div>
           )}
@@ -555,13 +609,15 @@ export default function CheckoutPage() {
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total HT</span><span className="text-sm font-black">{formatPrice(subtotalHT)}</span></div>
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">TVA ({vatRate}%)</span><span className="text-sm font-black">{formatPrice(vatAmount)}</span></div>
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>{shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>}</div>
-                  <div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL TTC</span><span className="text-2xl font-black">{formatPrice(grandTotal)}</span></div>
+                  {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="text-sm font-black">-{formatPrice(promoDiscount)}</span></div>}
+                  <div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL TTC</span><span className="text-2xl font-black">{formatPrice(discountedGrandTotal)}</span></div>
                 </>
               ) : (
                 <>
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total</span><span className="text-sm font-black">{formatPrice(total)}</span></div>
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>{shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>}</div>
-                  <div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL</span><span className="text-2xl font-black">{formatPrice(grandTotal)}</span></div>
+                  {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="text-sm font-black">-{formatPrice(promoDiscount)}</span></div>}
+                  <div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL</span><span className="text-2xl font-black">{formatPrice(discountedGrandTotal)}</span></div>
                 </>
               )}
             </div>

@@ -283,6 +283,7 @@ model Order {
   proInvoiceNumber  String?
   proInvoiceUrl     String?
   promoCodeId       String?
+  promotionId       String?
   discountAmount    Float    @default(0)
   notes             String?
   createdAt         DateTime @default(now())
@@ -293,10 +294,12 @@ model Order {
   shippingAddress ShippingAddress?
   shipment        Shipment?
   promoCode       PromoCode?       @relation(fields: [promoCodeId], references: [id])
+  promotion       Promotion?      @relation(fields: [promotionId], references: [id])
 
   @@index([status])
   @@index([customerId])
   @@index([promoCodeId])
+  @@index([promotionId])
 }
 
 model OrderItem {
@@ -459,7 +462,6 @@ model MarketingCampaign {
   @@index([status])
   @@index([type])
 }
-
 model PromoCode {
   id          String             @id @default(cuid())
   code        String             @unique
@@ -481,6 +483,59 @@ model PromoCode {
 
   @@index([active])
   @@index([campaignId])
+}
+
+// ─── PROMOTIONS SHOPIFY-LIKE ───────────────────────────────────
+model Promotion {
+  id               String   @id @default(cuid())
+  code             String?  @unique
+  name             String
+  description      String?
+  method           String   @default("code") // code, automatic
+  type             String // percentage, fixed_amount, free_shipping, buy_x_get_y
+  value            Float?
+  valueType        String?  @default("percentage")
+  appliesTo        String   @default("all") // all, products, categories
+  productIds       String[] @default([])
+  categoryIds      String[] @default([])
+  minOrderAmount   Float?
+  minQuantity      Int?
+  customerType     String   @default("all") // all, b2c, b2b
+  usageLimit       Int?
+  usagePerCustomer Int?     @default(1)
+  usageCount       Int      @default(0)
+  stackable        Boolean  @default(false)
+  isActive         Boolean  @default(true)
+  startsAt         DateTime?
+  endsAt           DateTime?
+  createdBy        String?
+  metadata         Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  orders           Order[]
+  usages           PromotionUsage[]
+
+  @@index([code])
+  @@index([method])
+  @@index([isActive])
+  @@index([startsAt, endsAt])
+}
+
+model PromotionUsage {
+  id             String   @id @default(cuid())
+  promotionId    String
+  orderId        String?
+  customerId     String?
+  customerEmail  String?
+  discountAmount Float
+  usedAt         DateTime @default(now())
+
+  promotion      Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  @@index([promotionId])
+  @@index([customerId])
+  @@index([orderId])
 }
 
 model EmailCampaign {

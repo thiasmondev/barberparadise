@@ -40,6 +40,7 @@ const NAV_ITEMS = [
   { href: "/admin/brands", label: "Marques", icon: Tag },
   { href: "/admin/seo", label: "Agent SEO", icon: Search },
   { href: "/admin/marketing", label: "Agent Marketing", icon: Megaphone },
+  { href: "/admin/promotions", label: "Promotions", icon: Tag },
   { href: "/admin/carousel", label: "Carrousel", icon: Images },
   { href: "/admin/buzz", label: "Buzz", icon: Sparkles },
   { href: "/admin/geo", label: "Outils GEO", icon: Globe },
