@@ -7,30 +7,24 @@ import { getActiveCarouselSlides, type CarouselSlide } from "@/lib/api";
 
 const AUTOPLAY_DELAY_MS = 5000;
 
-function textAlignment(position: string) {
-  switch (position) {
-    case "center":
-      return "items-center text-center mx-auto";
-    case "right":
-      return "items-end text-right ml-auto";
-    default:
-      return "items-start text-left mr-auto";
-  }
+function slideLabel(slide: CarouselSlide) {
+  return slide.title || slide.imageAlt || "Voir la sélection Barber Paradise";
 }
 
-function ctaClasses(style?: string | null) {
-  if (style === "secondary") {
-    return "border border-white/80 bg-white/15 text-white hover:bg-white/25";
-  }
-  if (style === "outline") {
-    return "border border-white text-white hover:bg-white hover:text-black";
-  }
-  return "bg-white text-black hover:bg-neutral-200";
-}
-
-function normalizeOverlayOpacity(value: number) {
-  if (!Number.isFinite(value)) return 0.3;
-  return Math.min(0.85, Math.max(0, value));
+function SlideImage({ slide, index }: { slide: CarouselSlide; index: number }) {
+  return (
+    <picture>
+      {slide.imageMobileUrl ? <source media="(max-width: 767px)" srcSet={slide.imageMobileUrl} /> : null}
+      <Image
+        src={slide.imageUrl}
+        alt={slide.imageAlt || slide.title || "Barber Paradise"}
+        fill
+        priority={index === 0}
+        sizes="100vw"
+        className="object-cover object-center"
+      />
+    </picture>
+  );
 }
 
 export default function Carousel() {
@@ -109,53 +103,18 @@ export default function Carousel() {
       <div className="relative aspect-square w-full md:aspect-[1920/600]">
         {slides.map((slide, index) => {
           const isActive = index === currentIndex;
-          return (
-            <div
-              key={slide.id}
-              className={`absolute inset-0 transition-opacity duration-700 ease-out ${isActive ? "opacity-100" : "pointer-events-none opacity-0"}`}
-              aria-hidden={!isActive}
-            >
-              <picture>
-                {slide.imageMobileUrl ? <source media="(max-width: 767px)" srcSet={slide.imageMobileUrl} /> : null}
-                <Image
-                  src={slide.imageUrl}
-                  alt={slide.imageAlt || slide.title || "Barber Paradise"}
-                  fill
-                  priority={index === 0}
-                  sizes="100vw"
-                  className="object-cover"
-                />
-              </picture>
+          const containerClassName = `absolute inset-0 transition-opacity duration-700 ease-out ${isActive ? "opacity-100" : "pointer-events-none opacity-0"}`;
+
+          return slide.ctaLink ? (
+            <Link key={slide.id} href={slide.ctaLink} aria-label={slideLabel(slide)} className={containerClassName} aria-hidden={!isActive} tabIndex={isActive ? 0 : -1}>
+              <SlideImage slide={slide} index={index} />
+            </Link>
+          ) : (
+            <div key={slide.id} className={containerClassName} aria-hidden={!isActive}>
+              <SlideImage slide={slide} index={index} />
             </div>
           );
         })}
-
-        <div
-          className="absolute inset-0"
-          style={{ backgroundColor: `rgba(0, 0, 0, ${normalizeOverlayOpacity(currentSlide.overlayOpacity)})` }}
-        />
-
-        <div className="absolute inset-0 flex items-center px-5 py-10 md:px-12 lg:px-20">
-          <div className={`flex max-w-2xl flex-col gap-3 md:gap-5 ${textAlignment(currentSlide.textPosition)}`} style={{ color: currentSlide.textColor || "#FFFFFF" }}>
-            {currentSlide.subtitle ? (
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/90 md:text-sm">{currentSlide.subtitle}</p>
-            ) : null}
-            {currentSlide.title ? (
-              <h2 className="text-3xl font-black uppercase leading-tight tracking-tight md:text-5xl lg:text-6xl">{currentSlide.title}</h2>
-            ) : null}
-            {currentSlide.description ? (
-              <p className="max-w-xl text-sm leading-6 text-white/90 md:text-lg md:leading-8">{currentSlide.description}</p>
-            ) : null}
-            {currentSlide.ctaText && currentSlide.ctaLink ? (
-              <Link
-                href={currentSlide.ctaLink}
-                className={`mt-2 inline-flex rounded-full px-6 py-3 text-sm font-bold uppercase tracking-wide transition ${ctaClasses(currentSlide.ctaStyle)}`}
-              >
-                {currentSlide.ctaText}
-              </Link>
-            ) : null}
-          </div>
-        </div>
 
         {hasMultipleSlides ? (
           <>
@@ -163,7 +122,7 @@ export default function Carousel() {
               type="button"
               aria-label="Afficher la slide précédente"
               onClick={previousSlide}
-              className="absolute left-3 top-1/2 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/40 bg-black/35 text-2xl text-white backdrop-blur transition hover:bg-black/55 md:flex"
+              className="absolute left-3 top-1/2 z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/40 bg-black/35 text-2xl text-white backdrop-blur transition hover:bg-black/55 md:flex"
             >
               ‹
             </button>
@@ -171,11 +130,11 @@ export default function Carousel() {
               type="button"
               aria-label="Afficher la slide suivante"
               onClick={nextSlide}
-              className="absolute right-3 top-1/2 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/40 bg-black/35 text-2xl text-white backdrop-blur transition hover:bg-black/55 md:flex"
+              className="absolute right-3 top-1/2 z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/40 bg-black/35 text-2xl text-white backdrop-blur transition hover:bg-black/55 md:flex"
             >
               ›
             </button>
-            <div className="absolute bottom-5 left-1/2 flex -translate-x-1/2 gap-2" aria-label="Navigation du carrousel">
+            <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 gap-2" aria-label="Navigation du carrousel">
               {slides.map((slide, index) => (
                 <button
                   key={slide.id}

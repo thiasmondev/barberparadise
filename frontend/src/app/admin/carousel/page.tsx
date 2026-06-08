@@ -159,37 +159,19 @@ function categoryLabel(value: string) {
   return categories.find((category) => category.value === value)?.label ?? value;
 }
 
-function textAlignment(position: string) {
-  if (position === "center") return "items-center text-center mx-auto";
-  if (position === "right") return "items-end text-right ml-auto";
-  return "items-start text-left mr-auto";
-}
-
-function ctaClasses(style: string) {
-  if (style === "secondary") return "border border-white/80 bg-white/15 text-white";
-  if (style === "outline") return "border border-white bg-transparent text-white";
-  return "bg-white text-black";
-}
-
 function SlidePreview({ form }: { form: SlideFormState }) {
   const imageUrl = form.imageUrl || form.imageMobileUrl;
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-200 bg-black shadow-sm">
       <div className="relative aspect-[1920/600] min-h-[220px]">
         {imageUrl ? (
-          <Image src={imageUrl} alt={form.imageAlt || form.title || "Aperçu carrousel"} fill sizes="720px" className="object-cover" />
+          <Image src={imageUrl} alt={form.imageAlt || form.title || "Aperçu carrousel"} fill sizes="720px" className="object-cover object-center" />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900 text-sm text-gray-400">Aucun visuel sélectionné</div>
         )}
-        <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${Math.min(0.85, Math.max(0, Number(form.overlayOpacity || 0.3)))})` }} />
-        <div className="absolute inset-0 flex items-center p-8">
-          <div className={`flex max-w-lg flex-col gap-2 ${textAlignment(form.textPosition)}`} style={{ color: form.textColor }}>
-            {form.subtitle && <p className="text-xs font-bold uppercase tracking-[0.3em]">{form.subtitle}</p>}
-            {form.title && <h3 className="text-3xl font-black uppercase leading-tight md:text-5xl">{form.title}</h3>}
-            {form.description && <p className="text-sm leading-6 text-white/90">{form.description}</p>}
-            {form.ctaText && <span className={`mt-2 inline-flex rounded-full px-5 py-2 text-xs font-bold uppercase ${ctaClasses(form.ctaStyle)}`}>{form.ctaText}</span>}
-          </div>
-        </div>
+      </div>
+      <div className="border-t border-gray-200 bg-white px-4 py-3 text-xs leading-5 text-gray-500">
+        Le site affiche uniquement l’image finale. Les champs titre, description et CTA restent conservés pour le SEO, l’accessibilité et le lien de la slide.
       </div>
     </div>
   );
@@ -344,7 +326,7 @@ export default function AdminCarouselPage() {
           <div className="flex items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-bold text-gray-950">{editingSlide ? "Modifier une slide" : "Créer une slide"}</h2>
-              <p className="text-sm text-gray-500">Upload Cloudinary ou URL existante, texte, CTA et planification.</p>
+              <p className="text-sm text-gray-500">Upload Cloudinary ou URL existante. Le texte visible doit déjà être intégré dans l’image par Buzz.</p>
             </div>
             <button disabled={isSaving} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-primary/90 disabled:opacity-60">
               {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -363,7 +345,7 @@ export default function AdminCarouselPage() {
             </label>
             <label className="space-y-1 text-sm font-medium text-gray-700 md:col-span-2">
               Description
-              <textarea value={form.description} onChange={(e) => updateForm("description", e.target.value)} className="min-h-24 w-full rounded-xl border border-gray-200 px-3 py-2" placeholder="Message marketing court affiché sur la bannière." />
+              <textarea value={form.description} onChange={(e) => updateForm("description", e.target.value)} className="min-h-24 w-full rounded-xl border border-gray-200 px-3 py-2" placeholder="Description SEO/accessibilité, non affichée en overlay." />
             </label>
           </div>
 
@@ -393,11 +375,11 @@ export default function AdminCarouselPage() {
 
           <div className="grid gap-4 md:grid-cols-3">
             <label className="space-y-1 text-sm font-medium text-gray-700">
-              Texte bouton
+              Texte bouton SEO/accessibilité
               <input value={form.ctaText} onChange={(e) => updateForm("ctaText", e.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2" placeholder="Voir la sélection" />
             </label>
             <label className="space-y-1 text-sm font-medium text-gray-700">
-              Lien bouton
+              Lien de la slide
               <input value={form.ctaLink} onChange={(e) => updateForm("ctaLink", e.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2" placeholder="/catalogue" />
             </label>
             <label className="space-y-1 text-sm font-medium text-gray-700">
@@ -410,17 +392,17 @@ export default function AdminCarouselPage() {
 
           <div className="grid gap-4 md:grid-cols-5">
             <label className="space-y-1 text-sm font-medium text-gray-700">
-              Position texte
+              Position texte héritée
               <select value={form.textPosition} onChange={(e) => updateForm("textPosition", e.target.value as SlideFormState["textPosition"])} className="w-full rounded-xl border border-gray-200 px-3 py-2">
                 {positions.map((position) => <option key={position.value} value={position.value}>{position.label}</option>)}
               </select>
             </label>
             <label className="space-y-1 text-sm font-medium text-gray-700">
-              Couleur texte
+              Couleur texte héritée
               <input type="color" value={form.textColor} onChange={(e) => updateForm("textColor", e.target.value)} className="h-10 w-full rounded-xl border border-gray-200 px-2 py-1" />
             </label>
             <label className="space-y-1 text-sm font-medium text-gray-700">
-              Overlay
+              Overlay hérité
               <input type="number" min="0" max="1" step="0.05" value={form.overlayOpacity} onChange={(e) => updateForm("overlayOpacity", e.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2" />
             </label>
             <label className="space-y-1 text-sm font-medium text-gray-700">
@@ -452,7 +434,7 @@ export default function AdminCarouselPage() {
             <SlidePreview form={{ ...form, imageUrl: filePreview || form.imageUrl }} />
           </div>
           <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
-            <strong>Buzz</strong> peut créer une slide en une seule requête via <code>/api/carousel/upload</code>. Les slides issues de Buzz affichent un badge dans la liste.
+            <strong>Buzz</strong> doit fournir une image finale avec texte, couleurs et CTA intégrés. Le carrousel public n’ajoute plus aucun overlay texte ; les champs titre, description et CTA servent au SEO, à l’accessibilité et au lien cliquable.
           </div>
         </div>
       </div>
