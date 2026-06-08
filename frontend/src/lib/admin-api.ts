@@ -535,6 +535,47 @@ export async function uploadBrandBanner(
 
 // ─── Categories ────────────────────────────────────────────────────
 
+export interface AdminCategoryDetail {
+  category: Category;
+  products: Product[];
+}
+
+async function uploadCategoryMediaToCloudinary(file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Seules les images sont acceptées (JPG, PNG, WebP, GIF, SVG)");
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error("L'image ne doit pas dépasser 10 Mo");
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+  formData.append("folder", "barberparadise/categories");
+  formData.append("tags", "category,admin");
+
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const message =
+      (data as any)?.error?.message || `Erreur Cloudinary (${res.status})`;
+    throw new Error(message);
+  }
+
+  const data = await res.json();
+  if (typeof data.secure_url !== "string" || !data.secure_url) {
+    throw new Error("Cloudinary n'a pas retourné d'URL sécurisée");
+  }
+  return data.secure_url;
+}
+
 export function getAdminCategories() {
   return adminFetch<Category[]>("/api/categories");
 }
@@ -551,6 +592,49 @@ export function updateCategory(id: string, data: Record<string, unknown>) {
     method: "PUT",
     body: JSON.stringify(data),
   });
+}
+
+export function getAdminCategoryDetail(id: string) {
+  return adminFetch<AdminCategoryDetail>(`/api/admin/categories/${id}`);
+}
+
+export function updateAdminCategoryDetail(id: string, data: Record<string, unknown>) {
+  return adminFetch<Category>(`/api/admin/categories/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export function addProductsToAdminCategory(id: string, productIds: string[]) {
+  return adminFetch<{ success: boolean; products: Product[] }>(
+    `/api/admin/categories/${id}/products`,
+    {
+      method: "POST",
+      body: JSON.stringify({ productIds }),
+    }
+  );
+}
+
+export function removeProductFromAdminCategory(id: string, productId: string) {
+  return adminFetch<{ success: boolean }>(
+    `/api/admin/categories/${id}/products/${productId}`,
+    { method: "DELETE" }
+  );
+}
+
+export function reorderAdminCategoryProducts(id: string, productIds: string[]) {
+  return adminFetch<{ success: boolean }>(
+    `/api/admin/categories/${id}/products/reorder`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ productIds }),
+    }
+  );
+}
+
+export async function uploadCategoryImage(file: File): Promise<{ image: string }> {
+  const image = await uploadCategoryMediaToCloudinary(file);
+  return { image };
 }
 
 export function reorderCategories(items: { id: string; order: number }[]) {

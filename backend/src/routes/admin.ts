@@ -104,6 +104,233 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function parseJsonArraySafe(value?: string | null): unknown[] {
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function serializeCategoryAdminProduct(product: any) {
+  return {
+    ...product,
+    images: parseJsonArraySafe(product.images),
+    tags: parseJsonArraySafe(product.tags),
+    features: parseJsonArraySafe(product.features),
+  };
+}
+
+function getCategoryProductWhere(slug: string) {
+  return {
+    OR: [{ category: slug }, { subcategory: slug }, { subsubcategory: slug }],
+  };
+}
+
+async function getCategoryLevel(category: { slug: string; parentSlug: string }): Promise<0 | 1 | 2> {
+  if (!category.parentSlug) return 0;
+  const parent = await prisma.category.findUnique({
+    where: { slug: category.parentSlug },
+    select: { parentSlug: true },
+  });
+  return parent?.parentSlug ? 2 : 1;
+}
+
+function getProductCategoryField(level: 0 | 1 | 2): "category" | "subcategory" | "subsubcategory" {
+  if (level === 0) return "category";
+  if (level === 1) return "subcategory";
+  return "subsubcategory";
+}
+
+function cleanCategoryPayload(body: Record<string, unknown>) {
+  const payload: Record<string, unknown> = {};
+  const textFields = ["name", "slug", "description", "image", "metaTitle", "metaDescription"];
+
+  textFields.forEach((field) => {
+    if (typeof body[field] === "string") payload[field] = (body[field] as string).trim();
+  });
+
+  if (typeof body.parentSlug === "string") payload.parentSlug = body.parentSlug.trim();
+  if (typeof body.order === "number") payload.order = body.order;
+  if (typeof body.isActive === "boolean") payload.isActive = body.isActive;
+
+  return payload;
+}
+
+// GET /api/admin/categories/:id — Détail catégorie + produits associés
+adminRouter.get("/categories/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const category = await prisma.category.findUnique({ where: { id: req.params.id } });
+    if (!category) {
+      res.status(404).json({ error: "Catégorie introuvable" });
+      return;
+    }
+
+    const products = await prisma.product.findMany({
+      where: getCategoryProductWhere(category.slug),
+      orderBy: [{ categoryOrder: "asc" }, { updatedAt: "desc" }],
+    });
+
+    res.json({
+      category,
+      products: products.map((product) => serializeCategoryAdminProduct(product)),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+// PUT /api/admin/categories/:id — Mise à jour fiche catégorie
+adminRouter.put("/categories/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const existing = await prisma.category.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      res.status(404).json({ error: "Catégorie introuvable" });
+      return;
+    }
+
+    const payload = cleanCategoryPayload(req.body as Record<string, unknown>);
+    if (!payload.name || !payload.slug) {
+      res.status(400).json({ error: "Le nom et le slug sont requis" });
+      return;
+    }
+
+    const nextSlug = String(payload.slug);
+    const category = await prisma.$transaction(async (tx) => {
+      const updated = await tx.category.update({
+        where: { id: req.params.id },
+        data: payload,
+      });
+
+      if (existing.slug !== nextSlug) {
+        await Promise.all([
+          tx.product.updateMany({ where: { category: existing.slug }, data: { category: nextSlug } }),
+          tx.product.updateMany({ where: { subcategory: existing.slug }, data: { subcategory: nextSlug } }),
+          tx.product.updateMany({ where: { subsubcategory: existing.slug }, data: { subsubcategory: nextSlug } }),
+          tx.category.updateMany({ where: { parentSlug: existing.slug }, data: { parentSlug: nextSlug } }),
+        ]);
+      }
+
+      return updated;
+    });
+
+    res.json(category);
+  } catch (err: any) {
+    console.error(err);
+    if (err?.code === "P2002") {
+      res.status(409).json({ error: "Ce slug est déjà utilisé" });
+      return;
+    }
+    res.status(500).json({ error: "Erreur modification catégorie" });
+  }
+});
+
+// POST /api/admin/categories/:id/products — Ajout de produits à la catégorie
+adminRouter.post("/categories/:id/products", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { productIds } = req.body as { productIds?: string[] };
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+      res.status(400).json({ error: "productIds requis" });
+      return;
+    }
+
+    const category = await prisma.category.findUnique({ where: { id: req.params.id } });
+    if (!category) {
+      res.status(404).json({ error: "Catégorie introuvable" });
+      return;
+    }
+
+    const level = await getCategoryLevel(category);
+    const field = getProductCategoryField(level);
+    const maxProduct = await prisma.product.findFirst({
+      where: getCategoryProductWhere(category.slug),
+      orderBy: { categoryOrder: "desc" },
+      select: { categoryOrder: true },
+    });
+    const startOrder = (maxProduct?.categoryOrder ?? -1) + 1;
+
+    await prisma.$transaction(
+      productIds.map((productId, index) =>
+        prisma.product.update({
+          where: { id: productId },
+          data: { [field]: category.slug, categoryOrder: startOrder + index },
+        })
+      )
+    );
+
+    const products = await prisma.product.findMany({
+      where: getCategoryProductWhere(category.slug),
+      orderBy: [{ categoryOrder: "asc" }, { updatedAt: "desc" }],
+    });
+
+    res.status(201).json({
+      success: true,
+      products: products.map((product) => serializeCategoryAdminProduct(product)),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur ajout produits" });
+  }
+});
+
+// PATCH /api/admin/categories/:id/products/reorder — Réordonner les produits de la catégorie
+adminRouter.patch("/categories/:id/products/reorder", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { productIds } = req.body as { productIds?: string[] };
+    if (!Array.isArray(productIds)) {
+      res.status(400).json({ error: "productIds requis" });
+      return;
+    }
+
+    const category = await prisma.category.findUnique({ where: { id: req.params.id } });
+    if (!category) {
+      res.status(404).json({ error: "Catégorie introuvable" });
+      return;
+    }
+
+    await prisma.$transaction(
+      productIds.map((productId, index) =>
+        prisma.product.update({ where: { id: productId }, data: { categoryOrder: index } })
+      )
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur réorganisation produits" });
+  }
+});
+
+// DELETE /api/admin/categories/:id/products/:productId — Retirer un produit de la catégorie
+adminRouter.delete("/categories/:id/products/:productId", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const category = await prisma.category.findUnique({ where: { id: req.params.id } });
+    if (!category) {
+      res.status(404).json({ error: "Catégorie introuvable" });
+      return;
+    }
+
+    const product = await prisma.product.findUnique({ where: { id: req.params.productId } });
+    if (!product) {
+      res.status(404).json({ error: "Produit introuvable" });
+      return;
+    }
+
+    const data: Record<string, unknown> = { categoryOrder: 0 };
+    if (product.category === category.slug) data.category = "";
+    if (product.subcategory === category.slug) data.subcategory = "";
+    if (product.subsubcategory === category.slug) data.subsubcategory = "";
+
+    await prisma.product.update({ where: { id: product.id }, data });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur retrait produit" });
+  }
+});
+
 // POST /api/admin/customers/send-reset-emails — Envoi massif des liens de réinitialisation aux clients importés
 adminRouter.post("/customers/send-reset-emails", requireAdmin, async (_req: AuthRequest, res: Response): Promise<void> => {
   try {

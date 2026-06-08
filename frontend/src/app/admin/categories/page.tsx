@@ -1,5 +1,6 @@
 "use client";
 export const dynamic = "force-dynamic";
+import Link from "next/link";
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   DndContext,
@@ -193,6 +194,13 @@ function SortableRow({
           className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
           onClick={(e) => e.stopPropagation()}
         >
+          <Link
+            href={`/admin/categories/${node.id}`}
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs text-dark-600 bg-white hover:bg-gray-50 border border-gray-200 rounded-lg whitespace-nowrap"
+            title="Ouvrir la fiche catégorie"
+          >
+            Fiche
+          </Link>
           {node.level < 2 && (
             <button
               onClick={() => onAddChild(node.slug)}
@@ -246,6 +254,13 @@ function SortableRow({
                 className="flex items-center gap-1 opacity-0 group-hover/child:opacity-100 transition-opacity"
                 onClick={(e) => e.stopPropagation()}
               >
+                <Link
+                  href={`/admin/categories/${child.id}`}
+                  className="px-1.5 py-1 text-xs text-gray-500 hover:text-dark-700 hover:bg-gray-50 rounded"
+                  title="Ouvrir la fiche catégorie"
+                >
+                  Fiche
+                </Link>
                 {child.level < 2 && (
                   <button
                     onClick={() => onAddChild(child.slug)}

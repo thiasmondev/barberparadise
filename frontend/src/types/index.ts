@@ -35,6 +35,7 @@ export interface Product {
   isPromo: boolean;
   tags: string | string[];
   status: string;
+  categoryOrder?: number;
   recommendedProductIds?: string[];
   recommendedProducts?: Product[];
   comparePrice?: number | null;
@@ -99,6 +100,9 @@ export interface Category {
   image: string;
   parentSlug: string;
   order: number;
+  isActive?: boolean;
+  metaTitle?: string;
+  metaDescription?: string;
 }
 
 // ─── Brand Types ────────────────────────────────────────────

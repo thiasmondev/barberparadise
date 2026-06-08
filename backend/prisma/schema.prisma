@@ -47,6 +47,7 @@ model Product {
   isPromo               Boolean  @default(false)
   tags                  String   @default("[]") // JSON array
   status                String   @default("active") // active, draft, archived
+  categoryOrder         Int      @default(0)
   recommendedProductIds String[] @default([])
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -61,6 +62,7 @@ model Product {
   @@index([brand])
   @@index([brandId])
   @@index([status])
+  @@index([categoryOrder])
 }
 
 // ─── EMBALLAGES LOGISTIQUES ───────────────────────────────────
@@ -538,13 +540,16 @@ model MarketingSetting {
 
 // ─── CATÉGORIES ──────────────────────────────────────────────
 model Category {
-  id          String @id @default(cuid())
-  name        String
-  slug        String @unique
-  description String @default("")
-  image       String @default("")
-  parentSlug  String @default("")
-  order       Int    @default(0)
+  id              String  @id @default(cuid())
+  name            String
+  slug            String  @unique
+  description     String  @default("")
+  image           String  @default("")
+  parentSlug      String  @default("")
+  order           Int     @default(0)
+  isActive        Boolean @default(true)
+  metaTitle       String  @default("")
+  metaDescription String  @default("")
 }
 
 // ─── NEWSLETTER ──────────────────────────────────────────────
