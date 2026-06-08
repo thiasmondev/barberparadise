@@ -12,7 +12,7 @@ const chatLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Trop de requêtes Hermes. Réessayez dans une minute." },
+  message: { error: "Trop de requêtes Buzz. Réessayez dans une minute." },
 });
 
 hermesRouter.use(requireAdmin);
@@ -36,7 +36,7 @@ hermesRouter.post("/chat", chatLimiter, async (req: Request, res: Response) => {
   } catch (error) {
     console.error("[Hermes Route] Erreur chat:", error);
     if (!res.headersSent) {
-      res.status(500).json({ error: "Erreur interne Hermes." });
+      res.status(500).json({ error: "Erreur interne Buzz." });
     }
   }
 });
@@ -61,7 +61,7 @@ hermesRouter.post("/chat/sync", chatLimiter, async (req: Request, res: Response)
     res.json(result);
   } catch (error) {
     console.error("[Hermes Route] Erreur chat sync:", error);
-    res.status(500).json({ error: "Erreur interne Hermes." });
+    res.status(500).json({ error: "Erreur interne Buzz." });
   }
 });
 

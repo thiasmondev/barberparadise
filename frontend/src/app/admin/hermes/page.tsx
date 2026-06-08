@@ -36,6 +36,7 @@ const MODULES = [
   { id: "content", label: "Content", description: "Blog, SEO, réseaux sociaux", icon: MessageSquare },
   { id: "campaigns", label: "Campaigns", description: "Emails, offres et relances", icon: Mail },
   { id: "images", label: "Images", description: "Briefs visuels et concepts", icon: ImageIcon },
+  { id: "carousel", label: "Carrousel", description: "Slides, bannières d’accueil et offres hero", icon: ImageIcon },
   { id: "analytics", label: "Analytics", description: "Lecture performance et KPIs", icon: BarChart3 },
 ];
 
@@ -43,6 +44,7 @@ const QUICK_PROMPTS = [
   "Propose 5 idées de contenus SEO pour augmenter les ventes de tondeuses professionnelles.",
   "Crée une campagne email B2B pour relancer les barbiers inactifs depuis 60 jours.",
   "Analyse les angles marketing pour vendre des soins barbe premium avant la fête des pères.",
+  "Propose 3 carrousels d’accueil pour Barber Paradise avec titre, sous-titre, CTA et visuel desktop/mobile.",
   "Rédige un post Instagram éducatif sur l'entretien d'une tondeuse professionnelle.",
 ];
 
@@ -124,12 +126,12 @@ export default function HermesAdminPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary-100">
-              <Bot size={14} /> Hermes Agent Phase 4
+              <Bot size={14} /> Buzz Agent Phase 4
             </div>
             <h1 className="mt-3 text-3xl font-heading font-bold">Workspace marketing IA</h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-200">
               Assistant marketing Barber Paradise pour générer des contenus, préparer des campagnes Brevo,
-              produire des visuels Replicate/Cloudinary et piloter les KPIs marketing en français.
+              proposer des carrousels d’accueil, produire des visuels Replicate/Cloudinary et piloter les KPIs marketing en français.
             </p>
           </div>
           <button
@@ -188,7 +190,7 @@ export default function HermesAdminPage() {
                   <div key={conversation.id} className="rounded-xl border border-gray-200 p-3 hover:bg-gray-50">
                     <button onClick={() => handleLoadConversation(conversation.id)} className="w-full text-left">
                       <div className="line-clamp-1 text-sm font-semibold text-gray-900">
-                        {conversation.title || "Conversation Hermes"}
+                        {conversation.title || "Conversation Buzz"}
                       </div>
                       <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
                         <span>{conversation._count?.messages ?? conversation.messages?.length ?? 0} messages</span>
@@ -222,7 +224,7 @@ export default function HermesAdminPage() {
           <div className="border-b border-gray-200 p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <h2 className="text-lg font-heading font-bold text-gray-900">Hermes Marketing OS</h2>
+                <h2 className="text-lg font-heading font-bold text-gray-900">Buzz Marketing OS</h2>
                 <p className="text-sm text-gray-500">Module actif : {selectedModuleLabel}</p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -297,7 +299,7 @@ function ChatPanel({ chat, input, setInput, handleSubmit, usePro, setUsePro, bot
                     message.role === "user" ? "bg-primary text-white" : "border border-gray-200 bg-white text-gray-800"
                   }`}
                 >
-                  {message.content || (chat.isStreaming && message.role === "assistant" ? "Hermes réfléchit..." : "")}
+                  {message.content || (chat.isStreaming && message.role === "assistant" ? "Buzz réfléchit..." : "")}
                 </div>
               </div>
             ))}
@@ -312,7 +314,7 @@ function ChatPanel({ chat, input, setInput, handleSubmit, usePro, setUsePro, bot
           <textarea
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Demande à Hermes de créer, analyser ou optimiser..."
+            placeholder="Demande à Buzz de créer, analyser ou optimiser..."
             className="min-h-[54px] flex-1 resize-none rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-950 placeholder:text-gray-400 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
@@ -331,7 +333,7 @@ function ChatPanel({ chat, input, setInput, handleSubmit, usePro, setUsePro, bot
           </button>
         </div>
         <p className="mt-2 text-xs text-gray-400">
-          Les blocs [DRAFT:*] et [IMAGE:*] sont automatiquement sauvegardés ou générés par Hermes.
+          Les blocs [DRAFT:*] et [IMAGE:*] sont automatiquement sauvegardés ou générés par Buzz.
         </p>
       </form>
     </>
@@ -368,7 +370,7 @@ function DraftsPanel({ draftsHook }: { draftsHook: ReturnType<typeof useHermesDr
       {draftsHook.loading ? (
         <LoadingBlock />
       ) : draftsHook.drafts.length === 0 ? (
-        <EmptyBlock text="Aucun brouillon Hermes ne correspond aux filtres." />
+        <EmptyBlock text="Aucun brouillon Buzz ne correspond aux filtres." />
       ) : (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           {draftsHook.drafts.map((draft) => (
@@ -424,7 +426,7 @@ function CampaignsPanel({ campaignsHook }: { campaignsHook: ReturnType<typeof us
       subject: form.subject,
       preheader: form.preheader || undefined,
       scheduledAt: form.scheduledAt ? new Date(form.scheduledAt).toISOString() : undefined,
-      htmlContent: "<p>Contenu à enrichir depuis Hermes.</p>",
+      htmlContent: "<p>Contenu à enrichir depuis Buzz.</p>",
     });
     setForm({ name: "", targetAudience: "b2c", subject: "", preheader: "", scheduledAt: "" });
   };
@@ -474,7 +476,7 @@ function CampaignsPanel({ campaignsHook }: { campaignsHook: ReturnType<typeof us
       {campaignsHook.loading ? (
         <LoadingBlock />
       ) : campaignsHook.campaigns.length === 0 ? (
-        <EmptyBlock text="Aucune campagne Hermes ne correspond aux filtres." />
+        <EmptyBlock text="Aucune campagne Buzz ne correspond aux filtres." />
       ) : (
         <div className="space-y-3">
           {campaignsHook.campaigns.map((campaign) => <CampaignCard key={campaign.id} campaign={campaign} campaignsHook={campaignsHook} />)}
@@ -610,7 +612,7 @@ function ImagesPanel({ imagesHook }: { imagesHook: ReturnType<typeof useHermesIm
       {imagesHook.loading ? (
         <LoadingBlock />
       ) : imagesHook.images.length === 0 ? (
-        <EmptyBlock text="Aucune image Hermes ne correspond aux filtres." />
+        <EmptyBlock text="Aucune image Buzz ne correspond aux filtres." />
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {imagesHook.images.map((image) => {
@@ -646,7 +648,7 @@ function ImagesPanel({ imagesHook }: { imagesHook: ReturnType<typeof useHermesIm
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase text-primary">{preview.category || "image"}</p>
-                <h3 className="mt-1 text-xl font-heading font-bold text-gray-900">Visuel Hermes</h3>
+                <h3 className="mt-1 text-xl font-heading font-bold text-gray-900">Visuel Buzz</h3>
               </div>
               <button onClick={() => setPreview(null)} className="rounded-xl border border-gray-200 px-3 py-2 text-sm">Fermer</button>
             </div>
@@ -688,7 +690,7 @@ function AnalyticsPanel({ analyticsHook }: { analyticsHook: ReturnType<typeof us
           <select value={analyticsHook.source} onChange={(event) => analyticsHook.setSource(event.target.value)} className="rounded-xl border border-gray-200 px-3 py-2 text-sm">
             <option value="">Toutes sources</option>
             <option value="brevo">Brevo</option>
-            <option value="hermes">Hermes</option>
+            <option value="hermes">Buzz</option>
             <option value="images">Images</option>
             <option value="content">Content</option>
           </select>
@@ -736,7 +738,7 @@ function AnalyticsPanel({ analyticsHook }: { analyticsHook: ReturnType<typeof us
 
           <aside className="space-y-4">
             <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-              <h3 className="font-heading text-lg font-bold text-gray-900">Insights Hermes</h3>
+              <h3 className="font-heading text-lg font-bold text-gray-900">Insights Buzz</h3>
               <div className="mt-3 space-y-2">
                 {(analyticsHook.report?.insights ?? []).length === 0 ? <p className="text-sm text-gray-500">Aucun insight disponible.</p> : analyticsHook.report?.insights.map((insight) => (
                   <p key={insight} className="rounded-xl bg-primary/5 p-3 text-sm text-gray-700">{insight}</p>
@@ -744,7 +746,7 @@ function AnalyticsPanel({ analyticsHook }: { analyticsHook: ReturnType<typeof us
               </div>
             </div>
             <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-              <h3 className="font-heading text-lg font-bold text-gray-900">Contexte envoyé à Hermes</h3>
+              <h3 className="font-heading text-lg font-bold text-gray-900">Contexte envoyé à Buzz</h3>
               <pre className="mt-3 max-h-72 overflow-y-auto whitespace-pre-wrap rounded-xl bg-gray-50 p-3 text-xs text-gray-600">{analyticsHook.context || "Contexte indisponible."}</pre>
             </div>
           </aside>

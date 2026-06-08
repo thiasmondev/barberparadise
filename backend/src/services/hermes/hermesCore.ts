@@ -7,7 +7,7 @@ import analyticsModule from "./modules/analytics";
 
 const prisma = new PrismaClient();
 
-export type HermesModule = "content" | "campaigns" | "images" | "analytics" | null | undefined;
+export type HermesModule = "content" | "campaigns" | "images" | "carousel" | "analytics" | null | undefined;
 
 interface ChatBaseInput {
   conversationId?: string | null;
@@ -37,7 +37,7 @@ function buildSystemPrompt(module?: HermesModule): string {
     ? `\nModule actif : ${module}. Adapte tes recommandations à ce contexte métier.`
     : "";
 
-  return `Tu es Hermes, l'agent marketing IA de Barber Paradise (barberparadise.fr).
+  return `Tu es Buzz, l'agent marketing IA de Barber Paradise (barberparadise.fr).
 Barber Paradise vend des cosmétiques hommes et du matériel de barbier professionnel : tondeuses, ciseaux, produits barbe et cheveux.
 Tu sers à la fois des clients B2C et des barbiers professionnels B2B en Europe.
 
@@ -47,6 +47,7 @@ Tu connais l'univers barbershop, les tendances, les marques professionnelles et 
 Quand on te demande de créer du contenu, tu proposes du contenu prêt à publier, optimisé SEO.
 Quand on te demande une analyse, tu es précis, structuré et data-driven.
 Quand on te demande une campagne, tu proposes un plan complet avec cible, objet, contenu, timing et KPIs attendus.
+Quand le module actif est carousel, tu proposes des carrousels prêts à intégrer sur la page d'accueil : titre court, sous-titre, CTA, URL cible, visuel desktop, visuel mobile, ordre recommandé, dates de diffusion et objectif business.
 
 Tu peux utiliser ces commandes spéciales dans tes réponses, que l'interface affichera comme brouillons :
 - [DRAFT:blog] ... [/DRAFT] pour créer un brouillon d'article de blog
@@ -67,7 +68,7 @@ Réponds toujours en français.${moduleHint}`;
 }
 
 async function buildAnalyticsContext(module?: HermesModule): Promise<string | null> {
-  if (module !== "analytics" && module !== "content" && module !== "campaigns") return null;
+  if (module !== "analytics" && module !== "content" && module !== "campaigns" && module !== "carousel") return null;
 
   try {
     return await analyticsModule.getContextSummary();
@@ -97,7 +98,7 @@ async function resolveConversation(conversationId?: string | null, channel = "wo
 }
 
 function fallbackResponse(userMessage: string, module?: HermesModule): string {
-  return `Hermes est prêt, mais la clé DEEPSEEK_API_KEY n'est pas encore configurée côté serveur.\n\nMessage reçu : "${userMessage}"\n\nDès que la clé sera ajoutée dans Render, je pourrai répondre en streaming avec le modèle DeepSeek ${module ? `pour le module ${module}` : "pour le workspace marketing"}.`;
+  return `Buzz est prêt, mais la clé DEEPSEEK_API_KEY n'est pas encore configurée côté serveur.\n\nMessage reçu : "${userMessage}"\n\nDès que la clé sera ajoutée dans Render, je pourrai répondre en streaming avec le modèle DeepSeek ${module ? `pour le module ${module}` : "pour le workspace marketing"}.`;
 }
 
 async function generateTitle(conversationId: string, userMessage: string): Promise<void> {
@@ -199,7 +200,7 @@ export async function chat({ conversationId, userMessage, module, usePro = false
     sendSse(res, { type: "done", conversationId: conversation.id, model, durationMs, drafts, images });
   } catch (error) {
     console.error("[HermesCore] Erreur streaming:", error);
-    sendSse(res, { type: "error", message: "Erreur interne Hermes pendant la génération." });
+    sendSse(res, { type: "error", message: "Erreur interne Buzz pendant la génération." });
   } finally {
     res.end();
   }

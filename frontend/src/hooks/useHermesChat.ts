@@ -79,7 +79,7 @@ export function useHermesChat(initialConversationId?: string | null) {
 
       if (!response.ok || !response.body) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || `Erreur Hermes ${response.status}`);
+        throw new Error(data.error || `Erreur Buzz ${response.status}`);
       }
 
       const reader = response.body.getReader();
@@ -107,12 +107,12 @@ export function useHermesChat(initialConversationId?: string | null) {
             setConversationId(data.conversationId);
             setLastModel(data.model || null);
           } else if (data.type === "error") {
-            throw new Error(data.message || "Erreur interne Hermes");
+            throw new Error(data.message || "Erreur interne Buzz");
           }
         }
       }
     } catch (err) {
-      const messageError = err instanceof Error ? err.message : "Erreur Hermes";
+      const messageError = err instanceof Error ? err.message : "Erreur Buzz";
       setError(messageError);
       setMessages((current) =>
         current.map((item) => (item.id === assistantId ? { ...item, content: `Erreur : ${messageError}` } : item))
