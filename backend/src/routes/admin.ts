@@ -315,6 +315,11 @@ function buildShippingRateData(body: Record<string, unknown>) {
         ? null
         : toRequiredFloat(body.maxAmount as NumericInput, "Montant maximum"),
     price: isFree ? 0 : toRequiredFloat(body.price as NumericInput, "Prix"),
+    carrier: String(body.carrier || "").trim() || null,
+    freeThreshold:
+      body.freeThreshold === null || body.freeThreshold === undefined || body.freeThreshold === ""
+        ? null
+        : toRequiredFloat(body.freeThreshold as NumericInput, "Seuil de gratuité"),
     isFree,
     deliveryTime: String(body.deliveryTime || "").trim() || null,
   };
@@ -2405,7 +2410,7 @@ adminRouter.get(
     try {
       await ensureDefaultShippingZones();
       const zones = await prisma.shippingZone.findMany({
-        include: { rates: { orderBy: [{ minAmount: "asc" }, { name: "asc" }] } },
+        include: { rates: { orderBy: [{ minAmount: "asc" }, { price: "asc" }, { name: "asc" }] } },
         orderBy: { name: "asc" },
       });
       res.json({ zones });
@@ -2433,7 +2438,7 @@ adminRouter.post(
       }
       const zone = await prisma.shippingZone.create({
         data,
-        include: { rates: { orderBy: [{ minAmount: "asc" }, { name: "asc" }] } },
+        include: { rates: { orderBy: [{ minAmount: "asc" }, { price: "asc" }, { name: "asc" }] } },
       });
       res.status(201).json(zone);
     } catch (err) {
@@ -2461,7 +2466,7 @@ adminRouter.put(
       const zone = await prisma.shippingZone.update({
         where: { id: req.params.id },
         data,
-        include: { rates: { orderBy: [{ minAmount: "asc" }, { name: "asc" }] } },
+        include: { rates: { orderBy: [{ minAmount: "asc" }, { price: "asc" }, { name: "asc" }] } },
       });
       res.json(zone);
     } catch (err) {
@@ -2501,6 +2506,10 @@ adminRouter.post(
         res.status(400).json({ error: "Le montant maximum doit être supérieur au minimum" });
         return;
       }
+      if (data.freeThreshold !== null && data.freeThreshold < 0) {
+        res.status(400).json({ error: "Le seuil de gratuité doit être positif" });
+        return;
+      }
       const rate = await prisma.shippingRate.create({ data: { ...data, zoneId: req.params.id } });
       res.status(201).json(rate);
     } catch (err) {
@@ -2523,6 +2532,10 @@ adminRouter.put(
       }
       if (data.maxAmount !== null && data.maxAmount <= data.minAmount) {
         res.status(400).json({ error: "Le montant maximum doit être supérieur au minimum" });
+        return;
+      }
+      if (data.freeThreshold !== null && data.freeThreshold < 0) {
+        res.status(400).json({ error: "Le seuil de gratuité doit être positif" });
         return;
       }
       const rate = await prisma.shippingRate.update({ where: { id: req.params.id }, data });

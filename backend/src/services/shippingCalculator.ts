@@ -11,6 +11,7 @@ export interface ShippingOption {
   zoneName?: string;
   minAmount?: number;
   maxAmount?: number | null;
+  freeThreshold?: number | null;
 }
 
 export const FALLBACK_FREE_SHIPPING_THRESHOLD = 49;
@@ -85,6 +86,10 @@ function isFreeRate(rate: { price: number; isFree: boolean }): boolean {
   return rate.isFree || roundMoney(rate.price) === 0;
 }
 
+function hasReachedRateFreeThreshold(rate: { freeThreshold?: number | null }, amount: number): boolean {
+  return typeof rate.freeThreshold === "number" && Number.isFinite(rate.freeThreshold) && amount >= rate.freeThreshold;
+}
+
 function resolveProPaidRates<T extends { minAmount: number; maxAmount: number | null; price: number; isFree: boolean }>(rates: T[], amountHT: number): T[] {
   const paidRates = rates.filter((rate) => !isFreeRate(rate));
   const matchingPaidRates = paidRates.filter((rate) => rateMatchesAmount(rate, amountHT));
@@ -113,18 +118,22 @@ export async function calculateShippingOptions(country: string | undefined, orde
       ? resolveProPaidRates(zone.rates, safeTotal)
       : zone.rates.filter((rate) => rateMatchesAmount(rate, safeTotal));
 
-  return eligibleRates.map((rate) => ({
-    id: rate.id,
-    label: rate.name,
-    price: proFreeShipping || (!isPro && isFreeRate(rate)) ? 0 : roundMoney(rate.price),
-    carrier: zone.name,
-    days: rate.deliveryTime || "Délai indicatif non renseigné",
-    isFree: proFreeShipping || (!isPro && isFreeRate(rate)),
-    zoneId: zone.id,
-    zoneName: zone.name,
-    minAmount: rate.minAmount,
-    maxAmount: rate.maxAmount,
-  }));
+  return eligibleRates.map((rate) => {
+    const isRateFree = proFreeShipping || (!isPro && (isFreeRate(rate) || hasReachedRateFreeThreshold(rate, safeTotal)));
+    return {
+      id: rate.id,
+      label: rate.name,
+      price: isRateFree ? 0 : roundMoney(rate.price),
+      carrier: rate.carrier || zone.name,
+      days: rate.deliveryTime || "Délai indicatif non renseigné",
+      isFree: isRateFree,
+      zoneId: zone.id,
+      zoneName: zone.name,
+      minAmount: rate.minAmount,
+      maxAmount: rate.maxAmount,
+      freeThreshold: rate.freeThreshold ?? null,
+    };
+  });
 }
 
 export async function calculateFreeShippingRemaining(country: string | undefined, orderTotal: number, isPro: boolean = false): Promise<number> {
@@ -134,12 +143,13 @@ export async function calculateFreeShippingRemaining(country: string | undefined
   const c = (country || "FR").toUpperCase();
   const zones = await listShippingZones();
   const zone = zones.find((candidate) => candidate.countries.map((item) => item.toUpperCase()).includes(c));
-  const freeRate = zone?.rates
-    .filter((rate) => isFreeRate(rate))
-    .sort((a, b) => a.minAmount - b.minAmount)[0];
+  const freeThreshold = zone?.rates
+    .map((rate) => (typeof rate.freeThreshold === "number" && Number.isFinite(rate.freeThreshold) ? rate.freeThreshold : isFreeRate(rate) ? rate.minAmount : null))
+    .filter((threshold): threshold is number => threshold !== null)
+    .sort((a, b) => a - b)[0];
 
-  if (!freeRate) return 0;
-  return roundMoney(Math.max(0, freeRate.minAmount - safeTotal));
+  if (freeThreshold === undefined) return 0;
+  return roundMoney(Math.max(0, freeThreshold - safeTotal));
 }
 
 export async function getFreeShippingThresholdForCountry(country: string | undefined, isPro: boolean = false): Promise<number | null> {
@@ -147,8 +157,9 @@ export async function getFreeShippingThresholdForCountry(country: string | undef
   const c = (country || "FR").toUpperCase();
   const zones = await listShippingZones();
   const zone = zones.find((candidate) => candidate.countries.map((item) => item.toUpperCase()).includes(c));
-  const freeRate = zone?.rates
-    .filter((rate) => isFreeRate(rate))
-    .sort((a, b) => a.minAmount - b.minAmount)[0];
-  return freeRate?.minAmount ?? null;
+  const freeThreshold = zone?.rates
+    .map((rate) => (typeof rate.freeThreshold === "number" && Number.isFinite(rate.freeThreshold) ? rate.freeThreshold : isFreeRate(rate) ? rate.minAmount : null))
+    .filter((threshold): threshold is number => threshold !== null)
+    .sort((a, b) => a - b)[0];
+  return freeThreshold ?? null;
 }

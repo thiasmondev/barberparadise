@@ -261,6 +261,8 @@ export interface ShippingRate {
   minAmount: number;
   maxAmount: number | null;
   price: number;
+  carrier: string | null;
+  freeThreshold: number | null;
   isFree: boolean;
   deliveryTime: string | null;
   createdAt: string;

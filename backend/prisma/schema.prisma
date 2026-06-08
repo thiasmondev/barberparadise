@@ -93,20 +93,23 @@ model ShippingZone {
 }
 
 model ShippingRate {
-  id           String       @id @default(cuid())
-  zoneId       String
-  zone         ShippingZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
-  name         String
-  minAmount    Float        @default(0)
-  maxAmount    Float?
-  price        Float
-  isFree       Boolean      @default(false)
-  deliveryTime String?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id            String       @id @default(cuid())
+  zoneId        String
+  zone          ShippingZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  name          String
+  minAmount     Float        @default(0)
+  maxAmount     Float?
+  price         Float
+  carrier       String?
+  freeThreshold Float?
+  isFree        Boolean      @default(false)
+  deliveryTime  String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
   @@index([zoneId])
   @@index([minAmount])
+  @@index([carrier])
 }
 
 model Packaging {

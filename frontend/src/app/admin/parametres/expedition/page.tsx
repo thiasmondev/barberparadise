@@ -22,6 +22,8 @@ type RateForm = {
   minAmount: string;
   maxAmount: string;
   price: string;
+  carrier: string;
+  freeThreshold: string;
   isFree: boolean;
   deliveryTime: string;
 };
@@ -29,13 +31,23 @@ type RateForm = {
 const EMPTY_ZONE: ZoneForm = { name: "", countries: [] };
 const EMPTY_RATE: RateForm = {
   zoneId: "",
-  name: "Standard",
+  name: "Colissimo",
   minAmount: "0",
   maxAmount: "",
   price: "0",
+  carrier: "colissimo",
+  freeThreshold: "",
   isFree: false,
   deliveryTime: "2 à 4 jours ouvrés",
 };
+
+const SHIPPING_SERVICES = [
+  { value: "colissimo", label: "Colissimo" },
+  { value: "mondial_relay", label: "Mondial Relay" },
+  { value: "chronopost", label: "Chronopost" },
+  { value: "retrait_boutique", label: "Retrait boutique" },
+  { value: "autre", label: "Autre service" },
+];
 
 const COUNTRIES = [
   { code: "FR", label: "France" },
@@ -66,6 +78,17 @@ function amountRange(rate: ShippingRate) {
   return `${min} → ${euro(rate.maxAmount)}`;
 }
 
+function carrierLabel(value?: string | null) {
+  if (!value) return "—";
+  return SHIPPING_SERVICES.find((service) => service.value === value)?.label || value;
+}
+
+function freeThresholdLabel(rate: ShippingRate) {
+  if (rate.isFree) return "Toujours gratuit";
+  if (rate.freeThreshold === null || rate.freeThreshold === undefined) return "—";
+  return `Offert dès ${euro(rate.freeThreshold)}`;
+}
+
 function zoneToForm(zone: ShippingZone): ZoneForm {
   return { id: zone.id, name: zone.name, countries: zone.countries };
 }
@@ -78,6 +101,8 @@ function rateToForm(rate: ShippingRate): RateForm {
     minAmount: String(rate.minAmount),
     maxAmount: rate.maxAmount === null ? "" : String(rate.maxAmount),
     price: String(rate.price),
+    carrier: rate.carrier || "colissimo",
+    freeThreshold: rate.freeThreshold === null ? "" : String(rate.freeThreshold),
     isFree: rate.isFree,
     deliveryTime: rate.deliveryTime || "",
   };
@@ -143,6 +168,8 @@ export default function ShippingSettingsPage() {
       minAmount: Number(rateForm.minAmount || 0),
       maxAmount: rateForm.maxAmount === "" ? null : Number(rateForm.maxAmount),
       price: rateForm.isFree ? 0 : Number(rateForm.price || 0),
+      carrier: rateForm.carrier,
+      freeThreshold: rateForm.isFree || rateForm.freeThreshold === "" ? null : Number(rateForm.freeThreshold),
       isFree: rateForm.isFree,
       deliveryTime: rateForm.deliveryTime,
     };
@@ -254,8 +281,10 @@ export default function ShippingSettingsPage() {
                   <table className="w-full text-left text-sm">
                     <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                       <tr>
+                        <th className="px-4 py-3">Service</th>
                         <th className="px-4 py-3">Nom du tarif</th>
                         <th className="px-4 py-3">Condition</th>
+                        <th className="px-4 py-3">Gratuité</th>
                         <th className="px-4 py-3">Prix</th>
                         <th className="px-4 py-3">Délai indicatif</th>
                         <th className="px-4 py-3 text-right">Actions</th>
@@ -263,11 +292,13 @@ export default function ShippingSettingsPage() {
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
                       {zone.rates.length === 0 ? (
-                        <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-500">Aucun tarif configuré pour cette zone.</td></tr>
+                        <tr><td colSpan={7} className="px-4 py-6 text-center text-gray-500">Aucun tarif configuré pour cette zone.</td></tr>
                       ) : zone.rates.map((rate) => (
                         <tr key={rate.id}>
+                          <td className="px-4 py-3 font-semibold text-dark-900">{carrierLabel(rate.carrier)}</td>
                           <td className="px-4 py-3 font-semibold text-dark-900">{rate.name}</td>
                           <td className="px-4 py-3 text-gray-600">{amountRange(rate)}</td>
+                          <td className="px-4 py-3 text-gray-600">{freeThresholdLabel(rate)}</td>
                           <td className="px-4 py-3 font-semibold text-dark-900">{rate.isFree ? "Gratuit" : euro(rate.price)}</td>
                           <td className="px-4 py-3 text-gray-600">{rate.deliveryTime || "—"}</td>
                           <td className="px-4 py-3 text-right">
@@ -325,12 +356,14 @@ export default function ShippingSettingsPage() {
               <button onClick={() => setRateForm(null)} className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700"><X size={20} /></button>
             </div>
             <div className="grid gap-4 p-6 sm:grid-cols-2">
-              <label className="sm:col-span-2"><span className="text-sm font-semibold text-dark-800">Nom du tarif</span><input value={rateForm.name} onChange={(e) => setRateForm({ ...rateForm, name: e.target.value })} className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-primary" /></label>
-              <label><span className="text-sm font-semibold text-dark-800">Montant minimum (€)</span><input type="number" min="0" step="0.01" value={rateForm.minAmount} onChange={(e) => setRateForm({ ...rateForm, minAmount: e.target.value })} className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-primary" /></label>
-              <label><span className="text-sm font-semibold text-dark-800">Montant maximum (€)</span><input type="number" min="0" step="0.01" value={rateForm.maxAmount} onChange={(e) => setRateForm({ ...rateForm, maxAmount: e.target.value })} placeholder="Vide = aucun maximum" className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-primary" /></label>
-              <label className="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3 sm:col-span-2"><input type="checkbox" checked={rateForm.isFree} onChange={(e) => setRateForm({ ...rateForm, isFree: e.target.checked, price: e.target.checked ? "0" : rateForm.price })} className="rounded border-gray-300 text-primary focus:ring-primary" /><span className="text-sm font-semibold text-dark-800">Ce tarif est gratuit</span></label>
-              <label><span className="text-sm font-semibold text-dark-800">Prix (€)</span><input type="number" min="0" step="0.01" disabled={rateForm.isFree} value={rateForm.price} onChange={(e) => setRateForm({ ...rateForm, price: e.target.value })} className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-primary disabled:bg-gray-100" /></label>
-              <label><span className="text-sm font-semibold text-dark-800">Délai indicatif</span><input value={rateForm.deliveryTime} onChange={(e) => setRateForm({ ...rateForm, deliveryTime: e.target.value })} placeholder="2 à 4 jours ouvrés" className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-primary" /></label>
+              <label><span className="text-sm font-semibold text-dark-800">Service d’expédition</span><select value={rateForm.carrier} onChange={(e) => { const service = SHIPPING_SERVICES.find((item) => item.value === e.target.value); setRateForm({ ...rateForm, carrier: e.target.value, name: service?.label || rateForm.name }); }} className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-primary">{SHIPPING_SERVICES.map((service) => <option key={service.value} value={service.value}>{service.label}</option>)}</select></label>
+              <label><span className="text-sm font-semibold text-dark-800">Nom affiché au client</span><input value={rateForm.name} onChange={(e) => setRateForm({ ...rateForm, name: e.target.value })} placeholder="Colissimo, Mondial Relay…" className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-primary" /></label>
+              <label><span className="text-sm font-semibold text-dark-800">Montant minimum panier (€)</span><input type="number" min="0" step="0.01" value={rateForm.minAmount} onChange={(e) => setRateForm({ ...rateForm, minAmount: e.target.value })} className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-primary" /></label>
+              <label><span className="text-sm font-semibold text-dark-800">Montant maximum panier (€)</span><input type="number" min="0" step="0.01" value={rateForm.maxAmount} onChange={(e) => setRateForm({ ...rateForm, maxAmount: e.target.value })} placeholder="Vide = aucun maximum" className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-primary" /></label>
+              <label className="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3 sm:col-span-2"><input type="checkbox" checked={rateForm.isFree} onChange={(e) => setRateForm({ ...rateForm, isFree: e.target.checked, price: e.target.checked ? "0" : rateForm.price, freeThreshold: e.target.checked ? "" : rateForm.freeThreshold })} className="rounded border-gray-300 text-primary focus:ring-primary" /><span className="text-sm font-semibold text-dark-800">Ce service est toujours gratuit</span></label>
+              <label><span className="text-sm font-semibold text-dark-800">Prix avant gratuité (€)</span><input type="number" min="0" step="0.01" disabled={rateForm.isFree} value={rateForm.price} onChange={(e) => setRateForm({ ...rateForm, price: e.target.value })} className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-primary disabled:bg-gray-100" /></label>
+              <label><span className="text-sm font-semibold text-dark-800">Offert à partir de (€)</span><input type="number" min="0" step="0.01" disabled={rateForm.isFree} value={rateForm.freeThreshold} onChange={(e) => setRateForm({ ...rateForm, freeThreshold: e.target.value })} placeholder="Ex. 49 pour Colissimo, 10 pour Mondial Relay" className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-primary disabled:bg-gray-100" /></label>
+              <label className="sm:col-span-2"><span className="text-sm font-semibold text-dark-800">Délai indicatif</span><input value={rateForm.deliveryTime} onChange={(e) => setRateForm({ ...rateForm, deliveryTime: e.target.value })} placeholder="2 à 4 jours ouvrés" className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-primary" /></label>
             </div>
             <div className="flex justify-end gap-3 border-t border-gray-100 px-6 py-4">
               <button onClick={() => setRateForm(null)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700">Annuler</button>
