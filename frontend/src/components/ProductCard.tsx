@@ -15,6 +15,7 @@ export default function ProductCard({ product }: { product: Product }) {
   const proPrice = typeof product.priceProEur === "number" ? product.priceProEur : null;
   const showsProPrice = Boolean(product.isPro && proPrice !== null);
   const displayedPrice = showsProPrice ? proPrice! : product.price;
+  const compareAtPrice = product.compareAtPrice ?? product.originalPrice;
 
   return (
     <div className="group bg-white rounded-xl border border-gray-100 overflow-hidden hover:shadow-lg hover:border-primary-100 transition-all duration-300">
@@ -34,7 +35,7 @@ export default function ProductCard({ product }: { product: Product }) {
               NOUVEAU
             </span>
           )}
-          {product.originalPrice && product.originalPrice > publicPrice && (
+          {compareAtPrice && compareAtPrice > publicPrice && (
             <span className="bg-[#ff4a8d] text-white text-[10px] font-black uppercase tracking-wide px-2 py-0.5 rounded">
               PROMO
             </span>
@@ -82,9 +83,9 @@ export default function ProductCard({ product }: { product: Product }) {
               <span className="block text-xs text-gray-400 line-through">
                 Public {formatPrice(publicPrice)} TTC
               </span>
-            ) : product.originalPrice && product.originalPrice > publicPrice ? (
+            ) : compareAtPrice && compareAtPrice > publicPrice ? (
               <span className="block text-xs text-gray-400 line-through">
-                {formatPrice(product.originalPrice)}
+                {formatPrice(compareAtPrice)}
               </span>
             ) : null}
           </div>

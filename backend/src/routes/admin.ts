@@ -675,8 +675,12 @@ function parseJsonArray(value: unknown): any[] {
 function serializeProductForAdmin(product: any) {
   const features = parseJsonObject(product.features);
   const tags = parseJsonArray(product.tags);
+  const compareAtPrice = product.compareAtPrice ?? product.originalPrice ?? null;
   return {
     ...product,
+    compareAtPrice,
+    originalPrice: compareAtPrice,
+    purchasePrice: product.purchasePrice ?? null,
     images: parseJsonArray(product.images),
     tags,
     features,
@@ -2668,6 +2672,11 @@ adminRouter.put(
         useCases,
         buyingGuideSnippet,
         entityKeywords,
+        price,
+        priceEur,
+        compareAtPrice,
+        originalPrice,
+        purchasePrice,
       } = req.body || {};
 
       const existingFeatures = parseJsonObject(product.features);
@@ -2695,12 +2704,18 @@ adminRouter.put(
       if (nextEntityKeywords !== undefined) nextFeatures.entityKeywords = nextEntityKeywords;
 
       const nextTags = normalizeStringArray(suggestedTags ?? seoTags ?? tags);
+      const rawPublicPrice = price !== undefined ? price : priceEur;
+      const nextCompareAtPrice = toOptionalFloat((compareAtPrice ?? originalPrice) as NumericInput);
       const updateData: Record<string, any> = {
         name: normalizeNullableString(optimizedTitle ?? title ?? name) || undefined,
         shortDescription: normalizeNullableString(metaDescription) ?? undefined,
         description: normalizeNullableString(seoDescription ?? description) ?? undefined,
         tags: nextTags !== undefined ? JSON.stringify(nextTags) : undefined,
         features: JSON.stringify(nextFeatures),
+        price: rawPublicPrice !== undefined ? toRequiredFloat(rawPublicPrice as NumericInput, "Prix public") : undefined,
+        compareAtPrice: nextCompareAtPrice,
+        originalPrice: nextCompareAtPrice,
+        purchasePrice: toOptionalFloat(purchasePrice as NumericInput),
       };
 
       const updated = await prisma.product.update({
@@ -2733,6 +2748,8 @@ adminRouter.patch(
         priceEur,
         priceProEur,
         originalPrice,
+        compareAtPrice,
+        purchasePrice,
         inStock,
         stockCount,
         status,
@@ -2796,10 +2813,15 @@ adminRouter.patch(
             subsubcategory !== undefined ? subsubcategory || "" : undefined,
           price: rawPublicPrice !== undefined ? nextPublicPrice : undefined,
           priceProEur: nextProPrice,
-          originalPrice:
-            originalPrice !== undefined
-              ? toOptionalFloat(originalPrice)
+          compareAtPrice:
+            compareAtPrice !== undefined || originalPrice !== undefined
+              ? toOptionalFloat((compareAtPrice ?? originalPrice) as NumericInput)
               : undefined,
+          originalPrice:
+            compareAtPrice !== undefined || originalPrice !== undefined
+              ? toOptionalFloat((compareAtPrice ?? originalPrice) as NumericInput)
+              : undefined,
+          purchasePrice: toOptionalFloat(purchasePrice),
           inStock: inStock !== undefined ? Boolean(inStock) : undefined,
           stockCount: nextStockCount,
           description: description || undefined,
@@ -2876,6 +2898,8 @@ adminRouter.post(
         price,
         priceProEur,
         originalPrice,
+        compareAtPrice,
+        purchasePrice,
         inStock,
         description,
         isActive,
@@ -2909,7 +2933,9 @@ adminRouter.post(
           subcategory,
           price: publicPrice,
           priceProEur: proPrice,
-          originalPrice: originalPrice ? parseFloat(originalPrice) : null,
+          compareAtPrice: compareAtPrice !== undefined || originalPrice !== undefined ? toOptionalFloat((compareAtPrice ?? originalPrice) as NumericInput) : null,
+          originalPrice: compareAtPrice !== undefined || originalPrice !== undefined ? toOptionalFloat((compareAtPrice ?? originalPrice) as NumericInput) : null,
+          purchasePrice: toOptionalFloat(purchasePrice) ?? null,
           inStock: inStock ? true : false,
           description,
           status: isActive ? "active" : "inactive",

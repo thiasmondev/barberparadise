@@ -26,7 +26,7 @@ function parseImages(images: unknown): string[] {
 function SchemaJsonLd({ product }: { product: Product }) {
   const images = parseImages(product.images);
   const price = product.price ?? 0;
-  const comparePrice = product.comparePrice ?? 0;
+  const comparePrice = product.compareAtPrice ?? product.originalPrice ?? product.comparePrice ?? 0;
 
   // Schéma Product de base
   const productSchema: Record<string, unknown> = {

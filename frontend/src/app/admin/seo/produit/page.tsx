@@ -197,7 +197,8 @@ function ProductPreview({
   description: string; tags: string[]; category: string; subcategory: string; brand: string; images: string[]; publicationStatus: string;
 }) {
   const images = editImages.length > 0 ? editImages : parseImages(product.images);
-  const discount = getDiscount(product.price, product.originalPrice);
+  const compareAtPrice = product.compareAtPrice ?? product.originalPrice;
+  const discount = getDiscount(product.price, compareAtPrice ?? null);
   const publication = getPublicationStatusMeta(publicationStatus);
 
   return (
@@ -270,8 +271,8 @@ function ProductPreview({
 
             <div className="flex items-baseline gap-2">
               <span className="text-xl font-bold text-gray-900">{formatPrice(product.price)}</span>
-              {product.originalPrice && product.originalPrice > product.price && (
-                <span className="text-sm text-gray-400 line-through">{formatPrice(product.originalPrice)}</span>
+              {compareAtPrice && compareAtPrice > product.price && (
+                <span className="text-sm text-gray-400 line-through">{formatPrice(compareAtPrice)}</span>
               )}
             </div>
 
@@ -471,6 +472,8 @@ function SeoProductPageContent() {
   const [productSearchLoading, setProductSearchLoading] = useState(false);
   const [productSearchError, setProductSearchError] = useState("");
   const [editPriceEur, setEditPriceEur] = useState("");
+  const [editCompareAtPrice, setEditCompareAtPrice] = useState("");
+  const [editPurchasePrice, setEditPurchasePrice] = useState("");
   const [recommendations, setRecommendations] = useState<ProductRecommendationSelection[]>([]);
   const [recommendationSearchTerm, setRecommendationSearchTerm] = useState("");
   const [recommendationSearchResults, setRecommendationSearchResults] = useState<Product[]>([]);
@@ -577,6 +580,8 @@ function SeoProductPageContent() {
         setEditRequiresGlass(Boolean(data.product.requiresGlass));
         setEditLogisticNote(data.product.logisticNote || "");
         setEditPriceEur(data.product.price != null ? String(data.product.price) : "");
+        setEditCompareAtPrice((data.product as any).compareAtPrice != null ? String((data.product as any).compareAtPrice) : (data.product.originalPrice != null ? String(data.product.originalPrice) : ""));
+        setEditPurchasePrice((data.product as any).purchasePrice != null ? String((data.product as any).purchasePrice) : "");
         setEditPriceProEur(data.product.priceProEur != null ? String(data.product.priceProEur) : "");
         setEditStatus(data.product.status || "active");
         setEditTags(
@@ -711,6 +716,9 @@ function SeoProductPageContent() {
     logisticNote: editLogisticNote,
     price: editPriceEur.trim() === "" ? product?.price : Number(editPriceEur),
     priceEur: editPriceEur.trim() === "" ? product?.price : Number(editPriceEur),
+    compareAtPrice: editCompareAtPrice.trim() === "" ? null : Number(editCompareAtPrice),
+    originalPrice: editCompareAtPrice.trim() === "" ? null : Number(editCompareAtPrice),
+    purchasePrice: editPurchasePrice.trim() === "" ? null : Number(editPurchasePrice),
     priceProEur: editPriceProEur.trim() === "" ? null : Number(editPriceProEur),
     status: editStatus,
   });
@@ -803,6 +811,9 @@ function SeoProductPageContent() {
       setScore(data.score);
       setDetails(data.details);
       setEditPriceEur(data.product.price != null ? String(data.product.price) : "");
+      setEditCompareAtPrice((data.product as any).compareAtPrice != null ? String((data.product as any).compareAtPrice) : (data.product.originalPrice != null ? String(data.product.originalPrice) : ""));
+      setEditPurchasePrice((data.product as any).purchasePrice != null ? String((data.product as any).purchasePrice) : "");
+      setEditPriceProEur(data.product.priceProEur != null ? String(data.product.priceProEur) : "");
     } catch (err: any) {
       setError(err.message || "Erreur lors de la sauvegarde du produit.");
     } finally {
@@ -838,6 +849,10 @@ function SeoProductPageContent() {
       setProduct(data.product);
       setScore(data.score);
       setDetails(data.details);
+      setEditPriceEur(data.product.price != null ? String(data.product.price) : "");
+      setEditCompareAtPrice((data.product as any).compareAtPrice != null ? String((data.product as any).compareAtPrice) : (data.product.originalPrice != null ? String(data.product.originalPrice) : ""));
+      setEditPurchasePrice((data.product as any).purchasePrice != null ? String((data.product as any).purchasePrice) : "");
+      setEditPriceProEur(data.product.priceProEur != null ? String(data.product.priceProEur) : "");
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -1547,11 +1562,11 @@ function SeoProductPageContent() {
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">PRIX</span>
-                <span className="text-xs text-gray-400">Prix public catalogue et tarif professionnel optionnel</span>
+                <span className="text-xs text-gray-400">Prix public, prix remisé, prix d’achat confidentiel et tarif professionnel optionnel</span>
               </div>
               <span className="text-xs font-semibold text-gray-500">Prix actuel : {product ? formatPrice(product.price) : "—"}</span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">Prix public TTC (€)</label>
                 <input
@@ -1566,11 +1581,21 @@ function SeoProductPageContent() {
                 <p className="mt-1 text-[11px] text-gray-500">Ce champ met à jour le prix public du produit via l&apos;API admin.</p>
               </div>
               <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Prix remisé barré TTC (€)</label>
+                <input type="number" min="0" step="0.01" value={editCompareAtPrice} onChange={(e) => { setEditCompareAtPrice(e.target.value); setApplied(false); }} placeholder="ex: 69.90" className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none" />
+                <p className="mt-1 text-[11px] text-gray-500">Optionnel. S’il est supérieur au prix public, il devient le prix barré et calcule le badge -X%.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Prix d’achat HT/TTC (€)</label>
+                <input type="number" min="0" step="0.01" value={editPurchasePrice} onChange={(e) => { setEditPurchasePrice(e.target.value); setApplied(false); }} placeholder="ex: 18.50" className="w-full border border-red-200 bg-red-50/30 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-400 outline-none" />
+                <p className="mt-1 text-[11px] text-red-600">Confidentiel : jamais affiché côté client, réservé aux marges et à la valorisation du stock.</p>
+              </div>
+              <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">Prix pro HT (€)</label>
                 <input type="number" min="0" step="0.01" value={editPriceProEur} onChange={(e) => { setEditPriceProEur(e.target.value); setApplied(false); }} placeholder="ex: 24.90" className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none" />
                 <p className="mt-1 text-[11px] text-gray-500">Laissez vide pour ne pas proposer de tarif pro dédié.</p>
               </div>
-              <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 md:col-span-4">
                 <p className="font-semibold">Sauvegarde directe</p>
                 <p className="mt-1">Utilisez le bouton ci-dessous pour enregistrer le prix sans lancer de génération IA.</p>
                 <button
@@ -2455,7 +2480,12 @@ function SeoProductPageContent() {
               <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full ml-auto">Se met à jour en direct</span>
             </div>
             <ProductPreview
-              product={product}
+              product={{
+                ...product,
+                price: editPriceEur.trim() === "" ? product.price : Number(editPriceEur),
+                compareAtPrice: editCompareAtPrice.trim() === "" ? null : Number(editCompareAtPrice),
+                originalPrice: editCompareAtPrice.trim() === "" ? null : Number(editCompareAtPrice),
+              }}
               title={editTitle}
               metaDescription={editMeta}
               description={editDescription}

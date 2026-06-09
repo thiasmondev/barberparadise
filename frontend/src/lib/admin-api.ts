@@ -1786,6 +1786,9 @@ export interface IndyReport {
     tvaCollecteeTotal: number;
     caTTCTotal: number;
     nbCommandesTotal: number;
+    stockPurchaseValue?: number;
+    averageCatalogMarginRate?: number;
+    productsWithPurchasePriceCount?: number;
   };
 }
 

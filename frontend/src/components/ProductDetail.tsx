@@ -37,7 +37,8 @@ export default function ProductDetail({ product }: { product: Product }) {
   const selectedVariantProPrice = selectedVariant && product.isPro && typeof selectedVariant.priceProEur === "number" ? selectedVariant.priceProEur : null;
   const showsProPrice = Boolean(product.isPro && (selectedVariant ? selectedVariantProPrice !== null : proPrice !== null));
   const referencePublicPrice = selectedVariant ? selectedVariantPublicPrice : publicPrice;
-  const discount = getDiscount(referencePublicPrice, product.originalPrice);
+  const compareAtPrice = product.compareAtPrice ?? product.originalPrice;
+  const discount = getDiscount(referencePublicPrice, compareAtPrice ?? null);
 
   const variants = product.variants ?? [];
   const colorVariants = variants.filter((v) => v.type === "color");
@@ -395,9 +396,9 @@ export default function ProductDetail({ product }: { product: Product }) {
                   <span className="text-xl text-gray-600 line-through">
                     Public {formatPrice(referencePublicPrice)} TTC
                   </span>
-                ) : product.originalPrice && product.originalPrice > publicPrice ? (
+                ) : compareAtPrice && compareAtPrice > referencePublicPrice ? (
                   <span className="text-xl text-gray-600 line-through">
-                    {formatPrice(product.originalPrice)}
+                    {formatPrice(compareAtPrice)}
                   </span>
                 ) : null}
                 {discount && !showsProPrice && (

@@ -14,6 +14,8 @@ export interface Product {
   hasPriceProEur?: boolean;
   isPro?: boolean;
   originalPrice: number | null;
+  compareAtPrice?: number | null;
+  purchasePrice?: number | null;
   images: string | string[];
   description: string;
   shortDescription: string;

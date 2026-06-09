@@ -25,6 +25,8 @@ model Product {
   price                 Float
   priceProEur           Float? // Prix pro HT — null = même prix que B2C
   originalPrice         Float?
+  compareAtPrice        Float? // Prix de base barré
+  purchasePrice         Float? // Prix d'achat confidentiel
   images                String // JSON array
   imageAlts             String   @default("[]") // JSON array of alt texts matching images order
   description           String

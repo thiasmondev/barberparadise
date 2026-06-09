@@ -83,14 +83,18 @@ function serializeProduct<T extends JsonProduct & { price: number }>(product: T,
     return serializedVariant;
   });
 
+  const compareAtPrice = (parsed as any).compareAtPrice ?? (parsed as any).originalPrice ?? null;
   const serialized = {
     ...parsed,
     ...(variants ? { variants } : {}),
     price,
     pricePublic,
+    compareAtPrice,
+    originalPrice: compareAtPrice,
     isPro: isApprovedPro,
     hasPriceProEur,
   };
+  delete (serialized as any).purchasePrice;
 
   if (!isApprovedPro) {
     const { priceProEur: _priceProEur, ...publicProduct } = serialized;

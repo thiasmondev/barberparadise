@@ -27,6 +27,12 @@ function formatCurrency(value: number) {
   }).format(value || 0);
 }
 
+function formatPercent(value: number) {
+  return `${new Intl.NumberFormat("fr-FR", {
+    maximumFractionDigits: 2,
+  }).format(value || 0)} %`;
+}
+
 function formatMonth(month: string) {
   const [year, monthIndex] = month.split("-").map(Number);
   if (!year || !monthIndex) return month;
@@ -215,6 +221,21 @@ export default function AdminFinancePage() {
               <MetricCard label="Commandes" value={String(report.summary.nbCommandesTotal)} />
             </div>
 
+            {Boolean(report.summary.productsWithPurchasePriceCount) && (
+              <div className="grid gap-4 md:grid-cols-2">
+                <MetricCard
+                  label="Valorisation stock au prix d’achat"
+                  value={formatCurrency(report.summary.stockPurchaseValue || 0)}
+                  helper={`${report.summary.productsWithPurchasePriceCount} produit(s) avec prix d’achat`}
+                />
+                <MetricCard
+                  label="Marge moyenne catalogue"
+                  value={formatPercent(report.summary.averageCatalogMarginRate || 0)}
+                  helper="Moyenne non pondérée sur les produits renseignés"
+                />
+              </div>
+            )}
+
             <div className="grid gap-6 xl:grid-cols-2">
               <DataTable
                 title="Détail PSP"
@@ -266,7 +287,7 @@ export default function AdminFinancePage() {
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: string }) {
+function MetricCard({ label, value, helper }: { label: string; value: string; helper?: string }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
       <div className="flex items-center justify-between gap-3">
@@ -274,6 +295,7 @@ function MetricCard({ label, value }: { label: string; value: string }) {
         <TrendingUp size={16} className="text-primary" />
       </div>
       <p className="mt-3 text-2xl font-bold text-dark-900">{value}</p>
+      {helper && <p className="mt-2 text-xs text-gray-500">{helper}</p>}
     </div>
   );
 }

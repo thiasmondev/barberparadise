@@ -62,8 +62,12 @@ function parseJsonArray(value: unknown): any[] {
 function serializeSeoProduct(product: any) {
   const features = parseJsonObject(product.features);
   const tags = parseJsonArray(product.tags);
+  const compareAtPrice = product.compareAtPrice ?? product.originalPrice ?? null;
   return {
     ...product,
+    compareAtPrice,
+    originalPrice: compareAtPrice,
+    purchasePrice: product.purchasePrice ?? null,
     images: parseJsonArray(product.images),
     tags,
     features,
@@ -143,7 +147,9 @@ function productDraftToCreateData(draft: ProductDraftFromUrl, slug: string, impo
     subcategory: draft.subcategory.trim() || "nouveautes",
     subsubcategory: draft.subsubcategory?.trim() || "",
     price,
+    compareAtPrice: typeof draft.originalPrice === "number" && Number.isFinite(draft.originalPrice) ? draft.originalPrice : null,
     originalPrice: typeof draft.originalPrice === "number" && Number.isFinite(draft.originalPrice) ? draft.originalPrice : null,
+    purchasePrice: null,
     images: JSON.stringify(storedImageUrls),
     imageAlts: JSON.stringify(storedImageAlts),
     description: draft.seoDescription || draft.directAnswerIntro || draft.shortDescription,

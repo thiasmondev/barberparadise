@@ -77,7 +77,7 @@ export default function CatalogueContent() {
     try {
       const data = await getProducts({ page, limit: 20, category: category || undefined, search: search || undefined, sort, brand: selectedBrands.join(",") || undefined, minPrice: minPrice !== DEFAULT_MIN_PRICE ? minPrice : undefined, maxPrice: maxPrice !== DEFAULT_MAX_PRICE ? maxPrice : undefined, inStock: inStockOnly || undefined, isNew: isNewOnly || undefined });
       let filtered = data.products;
-      if (promo === "true") filtered = filtered.filter((p) => p.originalPrice && p.originalPrice > p.price);
+      if (promo === "true") filtered = filtered.filter((p) => (p.compareAtPrice ?? p.originalPrice) && (p.compareAtPrice ?? p.originalPrice)! > p.price);
       setProducts(filtered); setTotal(data.total); setTotalPages(data.totalPages);
     } catch { setProducts([]); setTotal(0); setTotalPages(1); }
     finally { setLoading(false); }

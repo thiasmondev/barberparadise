@@ -41,6 +41,9 @@ export interface IndyReport {
     tvaCollecteeTotal: number;
     caTTCTotal: number;
     nbCommandesTotal: number;
+    stockPurchaseValue?: number;
+    averageCatalogMarginRate?: number;
+    productsWithPurchasePriceCount?: number;
   };
 }
 
@@ -138,6 +141,41 @@ function getVatRateForIndy(order: OrderForIndy): 0 | 20 {
   return EU_COUNTRIES.has(normalizeCountryForVat(getDeliveryCountry(order))) ? 20 : 0;
 }
 
+async function buildCatalogPurchasePriceKpis() {
+  const products = await prisma.product.findMany({
+    where: {
+      purchasePrice: { not: null },
+    },
+    select: {
+      price: true,
+      purchasePrice: true,
+      stockCount: true,
+    },
+  });
+
+  if (products.length === 0) return null;
+
+  const stockPurchaseValue = products.reduce((sum, product) => {
+    const purchasePrice = Number(product.purchasePrice || 0);
+    const stock = Math.max(0, Number(product.stockCount || 0));
+    return sum + purchasePrice * stock;
+  }, 0);
+
+  const marginRates = products
+    .filter(product => Number(product.price || 0) > 0 && Number(product.purchasePrice || 0) >= 0)
+    .map(product => ((Number(product.price) - Number(product.purchasePrice || 0)) / Number(product.price)) * 100);
+
+  const averageCatalogMarginRate = marginRates.length > 0
+    ? marginRates.reduce((sum, rate) => sum + rate, 0) / marginRates.length
+    : 0;
+
+  return {
+    stockPurchaseValue: money(stockPurchaseValue),
+    averageCatalogMarginRate: money(averageCatalogMarginRate),
+    productsWithPurchasePriceCount: products.length,
+  };
+}
+
 async function fetchOrdersForIndy(start: Date, end: Date, statuses: string[]) {
   return prisma.order.findMany({
     where: {
@@ -166,9 +204,10 @@ async function fetchOrdersForIndy(start: Date, end: Date, statuses: string[]) {
 
 export async function buildIndyReport(monthParam?: unknown): Promise<IndyReport> {
   const { month, start, end } = parseIndyMonth(monthParam);
-  const [salesOrders, refundOrders] = await Promise.all([
+  const [salesOrders, refundOrders, catalogPurchaseKpis] = await Promise.all([
     fetchOrdersForIndy(start, end, SALES_STATUSES),
     fetchOrdersForIndy(start, end, REFUND_STATUSES),
+    buildCatalogPurchasePriceKpis(),
   ]);
 
   const pspMap = new Map<IndyPspName, { psp: IndyPspName; ventesRealisees: number; commissionsPrelevees: number; variationTotale: number }>();
@@ -231,6 +270,7 @@ export async function buildIndyReport(monthParam?: unknown): Promise<IndyReport>
       tvaCollecteeTotal: money(ventesParPaysEtTVA.reduce((sum, line) => sum + line.montantTVA, 0)),
       caTTCTotal: money(ventesParPaysEtTVA.reduce((sum, line) => sum + line.totalTTC, 0)),
       nbCommandesTotal: salesOrders.length,
+      ...(catalogPurchaseKpis || {}),
     },
   };
 }
@@ -281,6 +321,7 @@ export function buildIndyEmailHtml(report: IndyReport, cfoAnalysis: string): str
         <li>TVA collectée : <strong>${report.summary.tvaCollecteeTotal.toFixed(2)} €</strong></li>
         <li>CA TTC : <strong>${report.summary.caTTCTotal.toFixed(2)} €</strong></li>
         <li>Commandes encaissées : <strong>${report.summary.nbCommandesTotal}</strong></li>
+        ${report.summary.productsWithPurchasePriceCount ? `<li>Valorisation stock au prix d’achat : <strong>${(report.summary.stockPurchaseValue || 0).toFixed(2)} €</strong></li><li>Marge moyenne catalogue : <strong>${(report.summary.averageCatalogMarginRate || 0).toFixed(2)} %</strong></li>` : ""}
       </ul>
       <h2>Détail PSP</h2>
       <table style="border-collapse:collapse;width:100%;max-width:760px;">
