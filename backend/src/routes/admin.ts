@@ -31,6 +31,7 @@ import {
 } from "../services/logisticsCarrierService";
 import { calculateShippingOptions, ensureDefaultShippingZones } from "../services/shippingCalculator";
 import { generateProductRecommendations } from "../services/seo-agent";
+import { notifyIfRestocked, notifySingleStockAlert } from "../services/stockAlertService";
 
 // ─── Cloudinary Config ───────────────────────────────────────
 cloudinary.config({
@@ -1952,6 +1953,78 @@ adminRouter.put(
   }
 );
 
+
+// GET /api/admin/stock-alerts — Alertes de retour en stock
+adminRouter.get(
+  "/stock-alerts",
+  requireAdmin,
+  async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const [alerts, pendingCount] = await Promise.all([
+        prisma.stockAlert.findMany({
+          orderBy: { createdAt: "desc" },
+          include: {
+            product: { select: { id: true, name: true, slug: true } },
+            variant: { select: { id: true, name: true } },
+          },
+          take: 500,
+        }),
+        prisma.stockAlert.count({ where: { notified: false } }),
+      ]);
+
+      res.json({
+        alerts: alerts.map(alert => ({
+          id: alert.id,
+          email: alert.email,
+          productId: alert.productId,
+          productName: alert.product.name,
+          productSlug: alert.product.slug,
+          variantId: alert.variantId,
+          variantName: alert.variant?.name ?? null,
+          createdAt: alert.createdAt,
+          notified: alert.notified,
+          notifiedAt: alert.notifiedAt,
+        })),
+        pendingCount,
+        total: alerts.length,
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur chargement alertes stock" });
+    }
+  }
+);
+
+// POST /api/admin/stock-alerts/:id/notify — Notification manuelle
+adminRouter.post(
+  "/stock-alerts/:id/notify",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const result = await notifySingleStockAlert(req.params.id);
+      res.json({ success: result.failed === 0, result });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur notification manuelle" });
+    }
+  }
+);
+
+// DELETE /api/admin/stock-alerts/:id — Supprimer une alerte
+adminRouter.delete(
+  "/stock-alerts/:id",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      await prisma.stockAlert.delete({ where: { id: req.params.id } });
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur suppression alerte stock" });
+    }
+  }
+);
+
 // GET /api/admin/stock/brands — Synthèse stock par marque
 adminRouter.get(
   "/stock/brands",
@@ -2108,7 +2181,7 @@ adminRouter.patch(
     try {
       const currentProduct = await prisma.product.findUnique({
         where: { id: req.params.id },
-        select: { price: true },
+        select: { price: true, stockCount: true },
       });
       if (!currentProduct) {
         res.status(404).json({ error: "Produit introuvable" });
@@ -2131,15 +2204,16 @@ adminRouter.patch(
         });
         return;
       }
+      const nextStockCount = toNonNegativeInt(
+        req.body.stockCount as NumericInput,
+        "Stock"
+      );
       const updated = await prisma.product.update({
         where: { id: req.params.id },
         data: {
           price: req.body.price !== undefined ? nextPublicPrice : undefined,
           priceProEur: nextProPrice,
-          stockCount: toNonNegativeInt(
-            req.body.stockCount as NumericInput,
-            "Stock"
-          ),
+          stockCount: nextStockCount,
           inStock:
             req.body.inStock !== undefined
               ? Boolean(req.body.inStock)
@@ -2148,6 +2222,13 @@ adminRouter.patch(
         },
         include: { variants: { orderBy: { order: "asc" } } },
       });
+      if (nextStockCount !== undefined) {
+        await notifyIfRestocked({
+          productId: updated.id,
+          previousStock: currentProduct.stockCount,
+          nextStock: nextStockCount,
+        });
+      }
       res.json({ ...updated, images: JSON.parse(updated.images || "[]") });
     } catch (err) {
       console.error(err);
@@ -2166,7 +2247,7 @@ adminRouter.patch(
     try {
       const currentVariant = await prisma.productVariant.findUnique({
         where: { id: req.params.id },
-        select: { price: true, product: { select: { price: true } } },
+        select: { stock: true, price: true, productId: true, product: { select: { price: true } } },
       });
       if (!currentVariant) {
         res.status(404).json({ error: "Variante introuvable" });
@@ -2187,13 +2268,14 @@ adminRouter.patch(
         });
         return;
       }
+      const nextVariantStock = toNonNegativeInt(
+        req.body.stock as NumericInput,
+        "Stock variante"
+      );
       const updated = await prisma.productVariant.update({
         where: { id: req.params.id },
         data: {
-          stock: toNonNegativeInt(
-            req.body.stock as NumericInput,
-            "Stock variante"
-          ),
+          stock: nextVariantStock,
           inStock:
             req.body.inStock !== undefined
               ? Boolean(req.body.inStock)
@@ -2201,6 +2283,14 @@ adminRouter.patch(
           priceProEur: nextProPrice,
         },
       });
+      if (nextVariantStock !== undefined) {
+        await notifyIfRestocked({
+          productId: currentVariant.productId,
+          variantId: updated.id,
+          previousStock: currentVariant.stock,
+          nextStock: nextVariantStock,
+        });
+      }
       res.json(updated);
     } catch (err) {
       console.error(err);
@@ -2310,6 +2400,7 @@ adminRouter.post(
       }
       let updated = 0;
       const errors: string[] = [];
+      const restockNotifications: Array<{ productId: string; variantId?: string | null; previousStock: number; nextStock: number }> = [];
       await prisma.$transaction(async tx => {
         for (const raw of adjustments) {
           const item = raw as Record<string, unknown>;
@@ -2328,7 +2419,7 @@ adminRouter.post(
           if (variantId) {
             const variant = await tx.productVariant.findUnique({
               where: { id: variantId },
-              select: { stock: true },
+              select: { stock: true, productId: true },
             });
             if (!variant) {
               errors.push(`Variante introuvable : ${variantId}`);
@@ -2340,6 +2431,7 @@ adminRouter.post(
               where: { id: variantId },
               data: { stock: nextStock, inStock: nextStock > 0 },
             });
+            restockNotifications.push({ productId: variant.productId, variantId, previousStock: variant.stock, nextStock });
             updated += 1;
             continue;
           }
@@ -2358,10 +2450,14 @@ adminRouter.post(
               where: { id: productId },
               data: { stockCount: nextStock, inStock: nextStock > 0 },
             });
+            restockNotifications.push({ productId, previousStock: product.stockCount, nextStock });
             updated += 1;
           }
         }
       });
+      for (const notification of restockNotifications) {
+        await notifyIfRestocked(notification);
+      }
       res.json({ updated, errors });
     } catch (err) {
       console.error(err);
@@ -2655,7 +2751,7 @@ adminRouter.patch(
       } = req.body;
       const currentProduct = await prisma.product.findUnique({
         where: { id: req.params.id },
-        select: { price: true },
+        select: { price: true, stockCount: true },
       });
       if (!currentProduct) {
         res.status(404).json({ error: "Produit introuvable" });
@@ -2729,6 +2825,13 @@ adminRouter.patch(
               : undefined,
         },
       });
+      if (nextStockCount !== undefined) {
+        await notifyIfRestocked({
+          productId: product.id,
+          previousStock: currentProduct.stockCount,
+          nextStock: nextStockCount,
+        });
+      }
       res.json(product);
     } catch (err) {
       console.error(err);
@@ -2744,6 +2847,7 @@ adminRouter.delete(
   async (req: Request, res: Response): Promise<void> => {
     try {
       await prisma.$transaction(async (tx) => {
+        await tx.stockAlert.deleteMany({ where: { productId: req.params.id } });
         await tx.productVariant.deleteMany({ where: { productId: req.params.id } });
         await tx.review.deleteMany({ where: { productId: req.params.id } });
         await tx.wishlistItem.deleteMany({ where: { productId: req.params.id } });

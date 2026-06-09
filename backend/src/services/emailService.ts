@@ -3,6 +3,7 @@ import { orderConfirmationEmail } from "../emails/orderConfirmation";
 import { orderShippedEmail } from "../emails/orderShipped";
 import { passwordResetEmail } from "../emails/passwordResetEmail";
 import { welcomeEmail } from "../emails/welcomeEmail";
+import { stockAlertEmail } from "../emails/stockAlert";
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const fromEmail = process.env.FROM_EMAIL || "noreply@barberparadise.fr";
@@ -94,5 +95,13 @@ export async function sendOrderShippedEmail(params: Parameters<typeof orderShipp
     to: params.to,
     subject: `Votre commande ${params.orderNumber} est en route`,
     html: orderShippedEmail(params),
+  });
+}
+
+export async function sendStockAlertEmail(params: Parameters<typeof stockAlertEmail>[0] & { to: string }) {
+  return sendEmail({
+    to: params.to,
+    subject: `Bonne nouvelle ! ${params.productName} est de retour en stock 🎉`,
+    html: stockAlertEmail(params),
   });
 }

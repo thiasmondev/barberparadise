@@ -44,6 +44,7 @@ import carouselRouter from "./routes/carousel";
 import promotionsRouter from "./routes/promotions";
 import apiKeysRouter from "./routes/apiKeys";
 import { chatRouter } from "./routes/chat";
+import { stockAlertsRouter } from "./routes/stock-alerts";
 import { requireJwtAdmin } from "./middleware/auth";
 import telegramBotService from "./services/telegram/telegramBot";
 import { registerTelegramHandlers } from "./services/telegram/telegramHandlers";
@@ -89,6 +90,7 @@ app.use("/api/telegram", telegramRouter);
 app.use("/api/carousel", carouselRouter);
 app.use("/api/promotions", promotionsRouter);
 app.use("/api/chat", chatRouter);
+app.use("/api/stock-alerts", stockAlertsRouter);
 
 // ─── Root & Health Check ─────────────────────────────────────
 app.get("/", (_req, res) => {
@@ -118,6 +120,7 @@ app.get("/", (_req, res) => {
               carousel: "/api/carousel/active",
               promotions: "/api/promotions/validate",
               chat: "/api/chat/barbara",
+              stockAlerts: "/api/stock-alerts",
               apiKeys: "/api/admin/api-keys",
 
     },

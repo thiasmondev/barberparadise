@@ -1328,6 +1328,40 @@ export function saveAdminProPricesByBrand(
 
 // ─── Stock Management ─────────────────────────────────────────
 
+
+export interface StockAlertRow {
+  id: string;
+  email: string;
+  productId: string;
+  productName: string;
+  productSlug: string;
+  variantId: string | null;
+  variantName: string | null;
+  createdAt: string;
+  notified: boolean;
+  notifiedAt: string | null;
+}
+
+export function getStockAlerts() {
+  return adminFetch<{ alerts: StockAlertRow[]; pendingCount: number; total: number }>(
+    "/api/admin/stock-alerts"
+  );
+}
+
+export function deleteStockAlert(id: string) {
+  return adminFetch<{ success: boolean }>(`/api/admin/stock-alerts/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export function notifyStockAlertManually(id: string) {
+  return adminFetch<{ success: boolean; result: { attempted: number; sent: number; skipped: number; failed: number } }>(
+    `/api/admin/stock-alerts/${id}/notify`,
+    { method: "POST" }
+  );
+}
+
+
 export interface StockBrandSummary {
   brandId: number | null;
   brand: string;

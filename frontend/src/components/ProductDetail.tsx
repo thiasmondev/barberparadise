@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { type FormEvent, useEffect, useState, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -10,11 +10,12 @@ import { parseImages, formatPrice, getDiscount } from "@/lib/utils";
 import { useCart } from "@/contexts/CartContext";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
 import { addCustomerWishlist, getCustomerWishlist, removeCustomerWishlist } from "@/lib/customer-api";
+import { createStockAlert } from "@/lib/api";
 
 export default function ProductDetail({ product }: { product: Product }) {
   const router = useRouter();
   const { addItem } = useCart();
-  const { isAuthenticated, isLoading: authLoading } = useCustomerAuth();
+  const { customer, isAuthenticated, isLoading: authLoading } = useCustomerAuth();
   const images = parseImages(product.images);
   const [selectedImage, setSelectedImage] = useState(0);
   const [quantity, setQuantity] = useState(1);
@@ -24,6 +25,11 @@ export default function ProductDetail({ product }: { product: Product }) {
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [wishlistLoading, setWishlistLoading] = useState(false);
   const [wishlistMessage, setWishlistMessage] = useState("");
+  const [stockAlertOpen, setStockAlertOpen] = useState(false);
+  const [stockAlertEmail, setStockAlertEmail] = useState("");
+  const [stockAlertLoading, setStockAlertLoading] = useState(false);
+  const [stockAlertMessage, setStockAlertMessage] = useState("");
+  const [stockAlertError, setStockAlertError] = useState("");
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const publicPrice = typeof product.pricePublic === "number" ? product.pricePublic : product.price;
   const proPrice = typeof product.priceProEur === "number" ? product.priceProEur : null;
@@ -40,6 +46,9 @@ export default function ProductDetail({ product }: { product: Product }) {
 
   const displayPrice = selectedVariant ? selectedVariantProPrice ?? selectedVariant.price ?? product.price : showsProPrice ? proPrice! : product.price;
   const isInStock = selectedVariant ? selectedVariant.inStock : product.inStock;
+  const requiresVariantSelection = variants.length > 0 && !selectedVariant;
+  const canSubmitCart = isInStock && !requiresVariantSelection;
+  const canRequestStockAlert = !isInStock && !requiresVariantSelection;
 
   const displayImages = useMemo(() => {
     if (selectedVariant?.image) {
@@ -61,6 +70,16 @@ export default function ProductDetail({ product }: { product: Product }) {
     if (!hasMultipleImages) return;
     setSelectedImage((current) => (current + 1) % displayImages.length);
   };
+
+  useEffect(() => {
+    setStockAlertEmail(customer?.email ?? "");
+  }, [customer?.email]);
+
+  useEffect(() => {
+    setStockAlertOpen(false);
+    setStockAlertMessage("");
+    setStockAlertError("");
+  }, [product.id, selectedVariant?.id, isInStock]);
 
   useEffect(() => {
     if (selectedImage >= displayImages.length) {
@@ -122,6 +141,35 @@ export default function ProductDetail({ product }: { product: Product }) {
   const handleSelectVariant = (v: ProductVariant) => {
     setSelectedVariant(selectedVariant?.id === v.id ? null : v);
     setSelectedImage(0);
+  };
+
+  const handleStockAlertSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!canRequestStockAlert || stockAlertLoading) return;
+
+    const email = stockAlertEmail.trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      setStockAlertError("Merci de saisir une adresse email valide.");
+      setStockAlertMessage("");
+      return;
+    }
+
+    setStockAlertLoading(true);
+    setStockAlertError("");
+    setStockAlertMessage("");
+    try {
+      const response = await createStockAlert({
+        email,
+        productId: product.id,
+        variantId: selectedVariant?.id ?? null,
+      });
+      setStockAlertMessage(response.message || "Vous serez prévenu dès que cet article sera de nouveau disponible !");
+      setStockAlertOpen(false);
+    } catch (err) {
+      setStockAlertError(err instanceof Error ? err.message : "Impossible d’enregistrer votre alerte pour le moment.");
+    } finally {
+      setStockAlertLoading(false);
+    }
   };
 
   const handleWishlistToggle = async () => {
@@ -384,13 +432,12 @@ export default function ProductDetail({ product }: { product: Product }) {
                     <button
                       key={v.id}
                       onClick={() => handleSelectVariant(v)}
-                      disabled={!v.inStock}
                       title={v.name + (!v.inStock ? " (Rupture)" : "")}
                       className={`relative w-10 h-10 border-2 transition-all focus:outline-none ${
                         selectedVariant?.id === v.id
                           ? "border-[#ff4a8d] scale-110"
                           : "border-white/10 hover:border-white/40"
-                      } ${!v.inStock ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}
+                      } ${!v.inStock ? "opacity-50 cursor-pointer grayscale" : "cursor-pointer"}`}
                       style={{ backgroundColor: v.colorHex || "#333" }}
                     >
                       {selectedVariant?.id === v.id && (
@@ -415,12 +462,11 @@ export default function ProductDetail({ product }: { product: Product }) {
                     <button
                       key={v.id}
                       onClick={() => handleSelectVariant(v)}
-                      disabled={!v.inStock}
                       className={`max-w-full break-words border px-3 py-2 text-xs font-black uppercase tracking-widest transition-all sm:px-4 ${
                         selectedVariant?.id === v.id
                           ? "border-[#ff4a8d] bg-[#ff4a8d] text-white"
                           : "border-white/10 text-gray-400 hover:border-white/40 hover:text-white"
-                      } ${!v.inStock ? "opacity-30 cursor-not-allowed line-through" : "cursor-pointer"}`}
+                      } ${!v.inStock ? "opacity-50 cursor-pointer line-through" : "cursor-pointer"}`}
                     >
                       {v.size || v.name}
                     </button>
@@ -440,12 +486,11 @@ export default function ProductDetail({ product }: { product: Product }) {
                     <button
                       key={v.id}
                       onClick={() => handleSelectVariant(v)}
-                      disabled={!v.inStock}
                       className={`max-w-full break-words border px-3 py-2 text-xs font-black uppercase tracking-widest transition-all sm:px-4 ${
                         selectedVariant?.id === v.id
                           ? "border-[#ff4a8d] bg-[#ff4a8d] text-white"
                           : "border-white/10 text-gray-400 hover:border-white/40 hover:text-white"
-                      } ${!v.inStock ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}
+                      } ${!v.inStock ? "opacity-50 cursor-pointer grayscale" : "cursor-pointer"}`}
                     >
                       {v.name}
                       {v.price != null && v.price !== product.price && (
@@ -501,7 +546,7 @@ export default function ProductDetail({ product }: { product: Product }) {
               </div>
               <button
                 onClick={handleAddToCart}
-                disabled={!isInStock || (variants.length > 0 && !selectedVariant)}
+                disabled={!canSubmitCart}
                 className={`flex min-w-0 flex-1 items-center justify-center gap-2 px-3 py-4 text-center text-xs font-black uppercase tracking-widest transition-all sm:gap-3 ${
                   added
                     ? "bg-green-500 text-white"
@@ -521,6 +566,52 @@ export default function ProductDetail({ product }: { product: Product }) {
                 )}
               </button>
             </div>
+
+            {canRequestStockAlert && (
+              <div className="mb-4 border border-[#ff4a8d]/30 bg-[#ff4a8d]/10 p-4">
+                {!stockAlertOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => setStockAlertOpen(true)}
+                    className="flex w-full items-center justify-center border border-[#ff4a8d] bg-[#ff4a8d] px-5 py-4 text-xs font-black uppercase tracking-widest text-white transition hover:bg-[#ff1f70]"
+                  >
+                    Me prévenir quand c'est en stock
+                  </button>
+                ) : (
+                  <form onSubmit={handleStockAlertSubmit} className="space-y-3">
+                    <label htmlFor="stock-alert-email" className="block text-[10px] font-black uppercase tracking-[0.25em] text-[#ff8fbd]">
+                      Recevoir l’alerte par email
+                    </label>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <input
+                        id="stock-alert-email"
+                        type="email"
+                        value={stockAlertEmail}
+                        onChange={(event) => setStockAlertEmail(event.target.value)}
+                        placeholder="votre@email.com"
+                        className="min-w-0 flex-1 border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none transition placeholder:text-gray-500 focus:border-[#ff4a8d]"
+                        required
+                      />
+                      <button
+                        type="submit"
+                        disabled={stockAlertLoading}
+                        className="border border-[#ff4a8d] bg-[#ff4a8d] px-5 py-3 text-xs font-black uppercase tracking-widest text-white transition hover:bg-[#ff1f70] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {stockAlertLoading ? "Envoi..." : "M'alerter"}
+                      </button>
+                    </div>
+                  </form>
+                )}
+                {stockAlertMessage && <p className="mt-3 text-xs font-semibold text-green-300">{stockAlertMessage}</p>}
+                {stockAlertError && <p className="mt-3 text-xs font-semibold text-red-300">{stockAlertError}</p>}
+              </div>
+            )}
+
+            {requiresVariantSelection && (
+              <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-gray-500">
+                Sélectionnez une variante pour vérifier sa disponibilité.
+              </p>
+            )}
 
             <button
               type="button"

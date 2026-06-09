@@ -152,3 +152,23 @@ export async function getAutomaticPromotions(payload: Omit<PromotionValidationPa
     body: JSON.stringify(payload),
   });
 }
+
+
+export type CreateStockAlertPayload = {
+  email: string;
+  productId: string;
+  variantId?: string | null;
+};
+
+export type CreateStockAlertResult = {
+  success: boolean;
+  alreadySubscribed: boolean;
+  message: string;
+};
+
+export async function createStockAlert(payload: CreateStockAlertPayload) {
+  return fetchAPI<CreateStockAlertResult>("/api/stock-alerts", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}

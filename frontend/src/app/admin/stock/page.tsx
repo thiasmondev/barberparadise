@@ -18,11 +18,15 @@ import {
 } from "lucide-react";
 import {
   applyStockInvoiceAdjustments,
+  deleteStockAlert,
+  getStockAlerts,
   getStockBrands,
   getStockProducts,
   importStockInvoicePdf,
+  notifyStockAlertManually,
   updateStockProduct,
   updateStockVariant,
+  type StockAlertRow,
   type StockBrandSummary,
   type StockImportProposal,
   type StockImportResult,
@@ -87,6 +91,10 @@ export default function AdminStockPage() {
   const [applyingImport, setApplyingImport] = useState(false);
   const [importResult, setImportResult] = useState<StockImportResult | null>(null);
   const [selectedProposalKeys, setSelectedProposalKeys] = useState<Set<string>>(new Set());
+  const [stockAlerts, setStockAlerts] = useState<StockAlertRow[]>([]);
+  const [pendingAlertCount, setPendingAlertCount] = useState(0);
+  const [loadingAlerts, setLoadingAlerts] = useState(true);
+  const [alertActionId, setAlertActionId] = useState<string | null>(null);
 
   const selectedBrand = useMemo(
     () => brands.find(brand => (brand.brandId != null ? `id:${brand.brandId}` : `name:${brand.brand}`) === selectedBrandKey) ?? null,
@@ -129,8 +137,22 @@ export default function AdminStockPage() {
     }
   }, [selectedBrand, search, status]);
 
+  const loadAlerts = useCallback(async () => {
+    setLoadingAlerts(true);
+    try {
+      const data = await getStockAlerts();
+      setStockAlerts(data.alerts);
+      setPendingAlertCount(data.pendingCount);
+    } catch (error) {
+      setFeedback({ type: "error", message: error instanceof Error ? error.message : "Erreur chargement alertes stock" });
+    } finally {
+      setLoadingAlerts(false);
+    }
+  }, []);
+
   useEffect(() => { loadBrands(); }, [loadBrands]);
   useEffect(() => { loadProducts(); }, [loadProducts]);
+  useEffect(() => { loadAlerts(); }, [loadAlerts]);
 
   const totals = useMemo(() => {
     const stock = products.reduce((sum, product) => sum + Number(productForms[product.id]?.stockCount ?? product.stockCount ?? 0), 0);
@@ -156,6 +178,7 @@ export default function AdminStockPage() {
       setProductForms(current => ({ ...current, [product.id]: productDraft({ ...product, ...updated }) }));
       setFeedback({ type: "success", message: `Stock mis à jour pour ${product.name}` });
       loadBrands();
+      loadAlerts();
     } catch (error) {
       setFeedback({ type: "error", message: error instanceof Error ? error.message : "Erreur sauvegarde produit" });
     } finally {
@@ -180,6 +203,7 @@ export default function AdminStockPage() {
       })));
       setVariantForms(current => ({ ...current, [variant.id]: variantDraft(updated) }));
       setFeedback({ type: "success", message: `Variante ${variant.name} mise à jour` });
+      loadAlerts();
     } catch (error) {
       setFeedback({ type: "error", message: error instanceof Error ? error.message : "Erreur sauvegarde variante" });
     } finally {
@@ -207,6 +231,35 @@ export default function AdminStockPage() {
     }
   };
 
+  const notifyAlert = async (alert: StockAlertRow) => {
+    setAlertActionId(alert.id);
+    setFeedback(null);
+    try {
+      const response = await notifyStockAlertManually(alert.id);
+      const sentLabel = response.result.sent > 0 ? "envoyée" : "traitée";
+      setFeedback({ type: "success", message: `Alerte ${sentLabel} pour ${alert.email}` });
+      loadAlerts();
+    } catch (error) {
+      setFeedback({ type: "error", message: error instanceof Error ? error.message : "Erreur notification manuelle" });
+    } finally {
+      setAlertActionId(null);
+    }
+  };
+
+  const removeAlert = async (alert: StockAlertRow) => {
+    setAlertActionId(alert.id);
+    setFeedback(null);
+    try {
+      await deleteStockAlert(alert.id);
+      setFeedback({ type: "success", message: `Alerte supprimée pour ${alert.email}` });
+      loadAlerts();
+    } catch (error) {
+      setFeedback({ type: "error", message: error instanceof Error ? error.message : "Erreur suppression alerte" });
+    } finally {
+      setAlertActionId(null);
+    }
+  };
+
   const applyImport = async () => {
     if (!importResult) return;
     const adjustments = importResult.proposals
@@ -225,6 +278,7 @@ export default function AdminStockPage() {
       setImportResult(null);
       loadProducts();
       loadBrands();
+      loadAlerts();
     } catch (error) {
       setFeedback({ type: "error", message: error instanceof Error ? error.message : "Erreur application import" });
     } finally {
@@ -259,12 +313,78 @@ export default function AdminStockPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
         <StatCard label="Produits marque" value={products.length} />
         <StatCard label="Stock total affiché" value={totals.stock} />
         <StatCard label="Variantes" value={totals.variants} />
         <StatCard label="Ruptures" value={totals.ruptures} tone={totals.ruptures > 0 ? "warning" : "default"} />
+        <StatCard label="Alertes en attente" value={pendingAlertCount} tone={pendingAlertCount > 0 ? "warning" : "default"} />
       </div>
+
+
+      <section className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="font-semibold text-dark-800">Alertes retour en stock</h2>
+            <p className="text-xs text-gray-400">{pendingAlertCount} alerte(s) en attente · notification automatique lors d’un passage de stock de 0 à positif.</p>
+          </div>
+          <button onClick={loadAlerts} className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-dark-800 hover:bg-gray-50">
+            {loadingAlerts ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />} Rafraîchir
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[820px]">
+            <thead className="bg-gray-50/80 border-b border-gray-100">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium text-gray-500">Produit</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500">Email</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500">Inscription</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500">Statut</th>
+                <th className="px-4 py-3 text-right font-medium text-gray-500">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {loadingAlerts ? (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400"><Loader2 size={18} className="mx-auto mb-2 animate-spin text-primary" />Chargement des alertes...</td></tr>
+              ) : stockAlerts.length === 0 ? (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">Aucune alerte enregistrée.</td></tr>
+              ) : stockAlerts.map(alert => (
+                <tr key={alert.id} className="hover:bg-gray-50/60">
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-dark-800">{alert.productName}</div>
+                    {alert.variantName && <div className="text-xs text-gray-400">Variante : {alert.variantName}</div>}
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">{alert.email}</td>
+                  <td className="px-4 py-3 text-gray-500">{new Date(alert.createdAt).toLocaleDateString("fr-FR")}</td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${alert.notified ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"}`}>
+                      {alert.notified ? "Notifié" : "En attente"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => notifyAlert(alert)}
+                        disabled={alert.notified || alertActionId === alert.id}
+                        className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {alertActionId === alert.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />} Notifier manuellement
+                      </button>
+                      <button
+                        onClick={() => removeAlert(alert)}
+                        disabled={alertActionId === alert.id}
+                        className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <X size={13} /> Supprimer
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-5">
         <aside className="bg-white rounded-2xl border border-gray-100 overflow-hidden h-fit">
