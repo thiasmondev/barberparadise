@@ -10,6 +10,7 @@ type BarbaraMessage = {
 };
 
 const SESSION_STORAGE_KEY = "bp_barbara_session_id";
+const CONSENT_STORAGE_KEY = "rgpd_consent";
 const WELCOME_MESSAGE = "Bonjour ! Je suis Barbara, votre assistante Barber Paradise 💈 Comment puis-je vous aider ?";
 const QUICK_QUESTIONS = [
   "Quels sont vos délais de livraison ?",
@@ -40,6 +41,7 @@ export default function BarbaraChatbot() {
   const [isTyping, setIsTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState("");
+  const [hasCookieConsent, setHasCookieConsent] = useState(true);
   const [messages, setMessages] = useState<BarbaraMessage[]>([
     { role: "assistant", content: WELCOME_MESSAGE },
   ]);
@@ -48,6 +50,9 @@ export default function BarbaraChatbot() {
 
   const isAdminRoute = pathname?.startsWith("/admin") ?? false;
   const canSend = input.trim().length >= 2 && !isTyping;
+  const closedPositionClass = hasCookieConsent
+    ? "bottom-[calc(env(safe-area-inset-bottom)+1.25rem)] sm:bottom-6"
+    : "bottom-[calc(env(safe-area-inset-bottom)+9rem)] sm:bottom-6";
 
   const apiMessages = useMemo(
     () => messages.filter((message) => !(message.role === "assistant" && message.content === WELCOME_MESSAGE)),
@@ -56,6 +61,19 @@ export default function BarbaraChatbot() {
 
   useEffect(() => {
     setSessionId(getSessionId());
+    setHasCookieConsent(Boolean(window.localStorage.getItem(CONSENT_STORAGE_KEY)));
+
+    const updateCookieConsentState = () => {
+      setHasCookieConsent(Boolean(window.localStorage.getItem(CONSENT_STORAGE_KEY)));
+    };
+
+    window.addEventListener("bp:cookie-consent-updated", updateCookieConsentState);
+    window.addEventListener("storage", updateCookieConsentState);
+
+    return () => {
+      window.removeEventListener("bp:cookie-consent-updated", updateCookieConsentState);
+      window.removeEventListener("storage", updateCookieConsentState);
+    };
   }, []);
 
   useEffect(() => {
@@ -125,10 +143,10 @@ export default function BarbaraChatbot() {
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-[900] print:hidden sm:bottom-6 sm:right-6">
+    <div className={`fixed right-4 z-[10000] print:hidden sm:right-6 ${closedPositionClass}`}>
       {isOpen ? (
-        <div className="fixed inset-0 z-[900] flex items-end justify-end bg-black/35 p-0 backdrop-blur-[1px] sm:inset-auto sm:bottom-6 sm:right-6 sm:block sm:bg-transparent sm:p-0 sm:backdrop-blur-0">
-          <section className="flex h-[100dvh] w-full flex-col overflow-hidden bg-white text-[#181818] shadow-2xl sm:h-[500px] sm:w-[350px] sm:rounded-3xl sm:border sm:border-white/20">
+        <div className="fixed inset-0 z-[10000] flex items-end justify-end bg-black/35 p-0 backdrop-blur-[1px] sm:inset-auto sm:bottom-6 sm:right-6 sm:block sm:bg-transparent sm:p-0 sm:backdrop-blur-0">
+          <section className="flex h-[100svh] max-h-[100svh] w-full flex-col overflow-hidden bg-white text-[#181818] shadow-2xl sm:h-[500px] sm:w-[350px] sm:rounded-3xl sm:border sm:border-white/20">
             <header className="flex items-center justify-between bg-[#181818] px-4 py-4 text-white">
               <div className="flex items-center gap-3">
                 <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#ff4a8d] text-lg font-black text-white shadow-lg shadow-[#ff4a8d]/30">
