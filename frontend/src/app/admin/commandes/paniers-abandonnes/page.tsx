@@ -3,12 +3,14 @@
 export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import AdminOrdersTabs from "@/components/admin/AdminOrdersTabs";
 import {
+  exportAbandonedCartToDraft,
   getAdminAbandonedCarts,
   type AdminAbandonedCartItem,
 } from "@/lib/admin-api";
-import { ShoppingCart } from "lucide-react";
+import { FileText, Loader2, ShoppingCart } from "lucide-react";
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("fr-FR", {
@@ -28,9 +30,12 @@ function formatDate(value: string) {
 }
 
 export default function AdminAbandonedCartsPage() {
+  const router = useRouter();
   const [carts, setCarts] = useState<AdminAbandonedCartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [convertingId, setConvertingId] = useState<string | null>(null);
 
   const loadCarts = useCallback(async () => {
     setLoading(true);
@@ -49,6 +54,22 @@ export default function AdminAbandonedCartsPage() {
     loadCarts();
   }, [loadCarts]);
 
+  const handleExportToDraft = async (cart: AdminAbandonedCartItem) => {
+    setConvertingId(cart.id);
+    setError("");
+    setSuccess("");
+    try {
+      const data = await exportAbandonedCartToDraft(cart.id);
+      setSuccess(`Panier exporté en brouillon ${data.draft.orderNumber}.`);
+      await loadCarts();
+      router.push("/admin/commandes/brouillons");
+    } catch (err: any) {
+      setError(err.message || "Erreur lors de l’export du panier en brouillon");
+    } finally {
+      setConvertingId(null);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div>
@@ -60,6 +81,11 @@ export default function AdminAbandonedCartsPage() {
       {error && (
         <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
+        </div>
+      )}
+      {success && (
+        <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {success}
         </div>
       )}
 
@@ -82,6 +108,7 @@ export default function AdminAbandonedCartsPage() {
                   <th className="px-4 py-3 text-left font-medium text-gray-500">Articles</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-500">Montant</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-500">Date d’abandon</th>
+                  <th className="px-4 py-3 text-right font-medium text-gray-500">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -96,6 +123,17 @@ export default function AdminAbandonedCartsPage() {
                     <td className="px-4 py-3 text-gray-600">{cart.itemCount}</td>
                     <td className="px-4 py-3 font-medium text-dark-800">{formatMoney(cart.total)}</td>
                     <td className="px-4 py-3 text-gray-500">{formatDate(cart.abandonedAt)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleExportToDraft(cart)}
+                        disabled={convertingId === cart.id}
+                        className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-dark-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {convertingId === cart.id ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+                        Exporter en brouillon
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

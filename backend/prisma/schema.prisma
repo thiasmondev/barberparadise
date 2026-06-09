@@ -264,7 +264,7 @@ model Order {
   orderNumber       String   @unique
   customerId        String?
   email             String
-  status            String   @default("pending") // pending, pending_payment, paid, processing, shipped, delivered, cancelled
+  status            String   @default("pending") // draft, pending, pending_payment, paid, processing, shipped, delivered, cancelled
   paymentMethod     String?
   paymentProvider   String?
   providerPaymentId String?

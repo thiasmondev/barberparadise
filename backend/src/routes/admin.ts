@@ -29,7 +29,7 @@ import {
   LOGISTICS_CARRIERS,
   LogisticsCarrier,
 } from "../services/logisticsCarrierService";
-import { ensureDefaultShippingZones } from "../services/shippingCalculator";
+import { calculateShippingOptions, ensureDefaultShippingZones } from "../services/shippingCalculator";
 import { generateProductRecommendations } from "../services/seo-agent";
 
 // ─── Cloudinary Config ───────────────────────────────────────
@@ -111,6 +111,211 @@ function parseJsonArraySafe(value?: string | null): unknown[] {
   } catch {
     return [];
   }
+}
+
+
+const STANDARD_VAT_RATE = 20;
+const PRO_MINIMUM_ORDER_HT = 200;
+const CURRENCY = "EUR";
+
+type AdminDraftLineInput = {
+  productId?: unknown;
+  quantity?: unknown;
+};
+
+type AdminDraftAddressInput = {
+  firstName?: unknown;
+  lastName?: unknown;
+  address?: unknown;
+  extension?: unknown;
+  city?: unknown;
+  postalCode?: unknown;
+  country?: unknown;
+  phone?: unknown;
+};
+
+type NormalizedDraftAddress = {
+  firstName: string;
+  lastName: string;
+  address: string;
+  extension: string;
+  city: string;
+  postalCode: string;
+  country: string;
+  phone: string;
+};
+
+type DraftCalculationResult = {
+  orderItems: Array<{
+    productId: string;
+    name: string;
+    price: number;
+    quantity: number;
+    image: string;
+  }>;
+  subtotalHT: number;
+  subtotalTTC: number;
+  subtotal: number;
+  shipping: number;
+  totalHT: number;
+  vatRate: number;
+  vatAmount: number;
+  totalTTC: number;
+  total: number;
+};
+
+function money(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function normalizeCountry(country?: unknown): string {
+  const raw = typeof country === "string" && country.trim() ? country.trim() : "FR";
+  if (raw.length === 2) return raw.toUpperCase();
+  const normalized = raw.toLowerCase();
+  if (["france", "fr", "métropole", "metropole"].includes(normalized)) return "FR";
+  if (["belgique", "belgium", "be"].includes(normalized)) return "BE";
+  return raw.toUpperCase();
+}
+
+function getVatRate(country: string, isB2B: boolean, vatNumber?: string | null): number {
+  if (!isB2B) return STANDARD_VAT_RATE;
+  const normalizedCountry = normalizeCountry(country);
+  const normalizedVat = (vatNumber || "").toUpperCase().trim();
+  if (normalizedCountry !== "FR" && normalizedVat && !normalizedVat.startsWith("FR")) return 0;
+  return STANDARD_VAT_RATE;
+}
+
+function generateAdminDraftOrderNumber(): string {
+  const date = new Date();
+  const year = date.getFullYear();
+  const rand = Math.floor(Math.random() * 100000).toString().padStart(5, "0");
+  return `BP-${year}-${rand}`;
+}
+
+function asOptionalString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value.trim() : fallback;
+}
+
+function normalizeDraftAddress(input?: AdminDraftAddressInput | null): NormalizedDraftAddress | null {
+  if (!input) return null;
+  const address = {
+    firstName: asOptionalString(input.firstName),
+    lastName: asOptionalString(input.lastName),
+    address: asOptionalString(input.address),
+    extension: asOptionalString(input.extension),
+    city: asOptionalString(input.city),
+    postalCode: asOptionalString(input.postalCode),
+    country: normalizeCountry(input.country),
+    phone: asOptionalString(input.phone),
+  };
+  if (!address.firstName || !address.lastName || !address.address || !address.city || !address.postalCode) return null;
+  return address;
+}
+
+function normalizeDraftItems(items: unknown): Array<{ productId: string; quantity: number }> {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item: AdminDraftLineInput) => {
+      const productId = typeof item?.productId === "string" ? item.productId.trim() : "";
+      const quantity = Number(item?.quantity);
+      return {
+        productId,
+        quantity: Number.isInteger(quantity) && quantity > 0 ? quantity : 0,
+      };
+    })
+    .filter((item) => item.productId && item.quantity > 0);
+}
+
+function firstProductImage(images: string | null | undefined): string {
+  const parsed = parseJsonArraySafe(images);
+  const first = parsed[0];
+  return typeof first === "string" ? first : "";
+}
+
+async function calculateAdminDraftTotals(params: {
+  items: Array<{ productId: string; quantity: number }>;
+  isB2B: boolean;
+  country: string;
+  vatNumber?: string | null;
+  shippingOverride?: unknown;
+  enforceProMinimum?: boolean;
+}): Promise<DraftCalculationResult> {
+  if (params.items.length === 0) throw new Error("Ajoutez au moins un produit au brouillon");
+
+  const products = await prisma.product.findMany({
+    where: { id: { in: params.items.map((item) => item.productId) } },
+  });
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const orderItems: DraftCalculationResult["orderItems"] = [];
+  let subtotalHT = 0;
+  let subtotalTTC = 0;
+
+  for (const item of params.items) {
+    const product = productById.get(item.productId);
+    if (!product) throw new Error(`Produit introuvable : ${item.productId}`);
+    if (product.status !== "active") throw new Error(`Produit indisponible : ${product.name}`);
+    if (product.stockCount > 0 && product.stockCount < item.quantity) throw new Error(`Stock insuffisant pour ${product.name}`);
+
+    const unitHT = params.isB2B
+      ? money(product.priceProEur ?? product.price / (1 + STANDARD_VAT_RATE / 100))
+      : money(product.price / (1 + STANDARD_VAT_RATE / 100));
+    const unitTTC = params.isB2B ? money(unitHT * (1 + getVatRate(params.country, true, params.vatNumber) / 100)) : product.price;
+
+    subtotalHT += unitHT * item.quantity;
+    subtotalTTC += unitTTC * item.quantity;
+    orderItems.push({
+      productId: product.id,
+      name: product.name,
+      price: params.isB2B ? unitHT : product.price,
+      quantity: item.quantity,
+      image: firstProductImage(product.images),
+    });
+  }
+
+  subtotalHT = money(subtotalHT);
+  subtotalTTC = money(subtotalTTC);
+  if (params.enforceProMinimum !== false && params.isB2B && subtotalHT < PRO_MINIMUM_ORDER_HT) {
+    throw new Error(`Le minimum de commande professionnel est de ${PRO_MINIMUM_ORDER_HT} € HT`);
+  }
+
+  const shippingOverride = Number(params.shippingOverride);
+  let shipping = Number.isFinite(shippingOverride) && shippingOverride >= 0 ? money(shippingOverride) : 0;
+  if (!Number.isFinite(shippingOverride)) {
+    const shippingOptions = await calculateShippingOptions(params.country, params.isB2B ? subtotalHT : subtotalTTC, params.isB2B);
+    shipping = money(shippingOptions[0]?.price ?? 0);
+  }
+
+  const vatRate = getVatRate(params.country, params.isB2B, params.vatNumber);
+  const totalHT = subtotalHT;
+  const vatAmount = money(totalHT * (vatRate / 100));
+  const totalTTC = money(totalHT + vatAmount + shipping);
+  const subtotal = params.isB2B ? subtotalHT : subtotalTTC;
+
+  return {
+    orderItems,
+    subtotalHT,
+    subtotalTTC,
+    subtotal,
+    shipping,
+    totalHT,
+    vatRate,
+    vatAmount,
+    totalTTC,
+    total: totalTTC,
+  };
+}
+
+async function serializeAdminDraft(orderId: string) {
+  return prisma.order.findUnique({
+    where: { id: orderId },
+    include: {
+      items: true,
+      shippingAddress: true,
+      customer: {
+        include: { proAccount: true, addresses: true, _count: { select: { orders: true } } },
+      },
+    },
+  });
 }
 
 function serializeCategoryAdminProduct(product: any) {
@@ -3734,6 +3939,359 @@ adminRouter.get(
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Erreur serveur" });
+    }
+  }
+);
+
+
+// GET /api/admin/orders/drafts — Liste des brouillons de commande
+adminRouter.get(
+  "/orders/drafts",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { page = "1", limit = "20", search } = req.query as Record<string, string>;
+      const pageNumber = Math.max(1, parseInt(page) || 1);
+      const pageSize = Math.max(1, Math.min(100, parseInt(limit) || 20));
+      const skip = (pageNumber - 1) * pageSize;
+      const where: Prisma.OrderWhereInput = { status: "draft" };
+      if (search?.trim()) {
+        const term = search.trim();
+        where.OR = [
+          { orderNumber: { contains: term, mode: "insensitive" } },
+          { email: { contains: term, mode: "insensitive" } },
+          { customerEmail: { contains: term, mode: "insensitive" } },
+          { customer: { firstName: { contains: term, mode: "insensitive" } } },
+          { customer: { lastName: { contains: term, mode: "insensitive" } } },
+        ];
+      }
+
+      const [drafts, total] = await Promise.all([
+        prisma.order.findMany({
+          where,
+          include: {
+            items: true,
+            shippingAddress: true,
+            customer: { include: { proAccount: true, _count: { select: { orders: true } } } },
+          },
+          orderBy: { updatedAt: "desc" },
+          skip,
+          take: pageSize,
+        }),
+        prisma.order.count({ where }),
+      ]);
+
+      res.json({ drafts, total, page: pageNumber, pages: Math.ceil(total / pageSize) });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur chargement brouillons" });
+    }
+  }
+);
+
+// POST /api/admin/orders/drafts — Créer un brouillon de commande
+adminRouter.post(
+  "/orders/drafts",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const items = normalizeDraftItems(req.body?.items);
+      const requestedB2B = Boolean(req.body?.isB2B);
+      const customerId = typeof req.body?.customerId === "string" && req.body.customerId ? req.body.customerId : null;
+      const customer = customerId
+        ? await prisma.customer.findUnique({ where: { id: customerId }, include: { proAccount: true } })
+        : null;
+      const email = asOptionalString(req.body?.email, customer?.email || "").toLowerCase();
+      if (!email || !email.includes("@")) {
+        res.status(400).json({ error: "Email client requis pour créer un brouillon" });
+        return;
+      }
+
+      const shippingAddress = normalizeDraftAddress(req.body?.shippingAddress) || {
+        firstName: customer?.firstName || "Client",
+        lastName: customer?.lastName || "Barber Paradise",
+        address: "Adresse à compléter",
+        extension: "",
+        city: "Ville à compléter",
+        postalCode: "00000",
+        country: normalizeCountry(req.body?.shippingAddress?.country),
+        phone: "",
+      };
+      const isB2B = requestedB2B;
+      const vatNumber = asOptionalString(req.body?.vatNumber, customer?.proAccount?.vatNumber || "").toUpperCase() || null;
+      const totals = await calculateAdminDraftTotals({
+        items,
+        isB2B,
+        country: shippingAddress.country,
+        vatNumber,
+        shippingOverride: req.body?.shipping,
+        enforceProMinimum: false,
+      });
+      const paymentLater = Boolean(req.body?.paymentLater);
+
+      const order = await prisma.order.create({
+        data: {
+          orderNumber: generateAdminDraftOrderNumber(),
+          email,
+          customerEmail: email,
+          customerId,
+          status: "draft",
+          paymentMethod: paymentLater ? "b2b_deferred" : null,
+          paymentProvider: paymentLater ? "manual" : null,
+          isB2B,
+          subtotal: totals.subtotal,
+          shipping: totals.shipping,
+          total: totals.total,
+          totalHT: totals.totalHT,
+          vatRate: totals.vatRate,
+          vatAmount: totals.vatAmount,
+          totalTTC: totals.totalTTC,
+          currency: CURRENCY,
+          vatNumber,
+          billingAddress: ((req.body?.billingAddress || shippingAddress) as Prisma.InputJsonValue),
+          notes: asOptionalString(req.body?.notes),
+          items: { create: totals.orderItems },
+          shippingAddress: { create: shippingAddress },
+        },
+      });
+
+      const draft = await serializeAdminDraft(order.id);
+      res.status(201).json({ draft });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur création brouillon";
+      res.status(400).json({ error: message });
+    }
+  }
+);
+
+// GET /api/admin/orders/drafts/:id — Détail d'un brouillon
+adminRouter.get(
+  "/orders/drafts/:id",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const draft = await serializeAdminDraft(req.params.id);
+      if (!draft || draft.status !== "draft") {
+        res.status(404).json({ error: "Brouillon non trouvé" });
+        return;
+      }
+      res.json({ draft });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur chargement brouillon" });
+    }
+  }
+);
+
+// PATCH /api/admin/orders/drafts/:id — Modifier un brouillon
+adminRouter.patch(
+  "/orders/drafts/:id",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const current = await prisma.order.findUnique({ where: { id: req.params.id } });
+      if (!current || current.status !== "draft") {
+        res.status(404).json({ error: "Brouillon non trouvé" });
+        return;
+      }
+
+      const items = normalizeDraftItems(req.body?.items);
+      const customerId = typeof req.body?.customerId === "string" && req.body.customerId ? req.body.customerId : null;
+      const customer = customerId
+        ? await prisma.customer.findUnique({ where: { id: customerId }, include: { proAccount: true } })
+        : null;
+      const email = asOptionalString(req.body?.email, customer?.email || current.email).toLowerCase();
+      const shippingAddress = normalizeDraftAddress(req.body?.shippingAddress);
+      if (!shippingAddress) {
+        res.status(400).json({ error: "Adresse de livraison incomplète" });
+        return;
+      }
+
+      const isB2B = Boolean(req.body?.isB2B);
+      const vatNumber = asOptionalString(req.body?.vatNumber, customer?.proAccount?.vatNumber || "").toUpperCase() || null;
+      const totals = await calculateAdminDraftTotals({
+        items,
+        isB2B,
+        country: shippingAddress.country,
+        vatNumber,
+        shippingOverride: req.body?.shipping,
+        enforceProMinimum: false,
+      });
+      const paymentLater = Boolean(req.body?.paymentLater);
+
+      await prisma.$transaction([
+        prisma.orderItem.deleteMany({ where: { orderId: current.id } }),
+        prisma.shippingAddress.deleteMany({ where: { orderId: current.id } }),
+        prisma.order.update({
+          where: { id: current.id },
+          data: {
+            email,
+            customerEmail: email,
+            customerId,
+            paymentMethod: paymentLater ? "b2b_deferred" : null,
+            paymentProvider: paymentLater ? "manual" : null,
+            isB2B,
+            subtotal: totals.subtotal,
+            shipping: totals.shipping,
+            total: totals.total,
+            totalHT: totals.totalHT,
+            vatRate: totals.vatRate,
+            vatAmount: totals.vatAmount,
+            totalTTC: totals.totalTTC,
+            vatNumber,
+            billingAddress: ((req.body?.billingAddress || shippingAddress) as Prisma.InputJsonValue),
+            notes: asOptionalString(req.body?.notes),
+            items: { create: totals.orderItems },
+            shippingAddress: { create: shippingAddress },
+          },
+        }),
+      ]);
+
+      const draft = await serializeAdminDraft(current.id);
+      res.json({ draft });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur mise à jour brouillon";
+      res.status(400).json({ error: message });
+    }
+  }
+);
+
+// POST /api/admin/orders/drafts/:id/confirm — Convertir un brouillon en commande réelle
+adminRouter.post(
+  "/orders/drafts/:id/confirm",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const draft = await prisma.order.findUnique({
+        where: { id: req.params.id },
+        include: { items: true, shippingAddress: true },
+      });
+      if (!draft || draft.status !== "draft") {
+        res.status(404).json({ error: "Brouillon non trouvé" });
+        return;
+      }
+      if (!draft.shippingAddress) {
+        res.status(400).json({ error: "Adresse de livraison requise avant confirmation" });
+        return;
+      }
+      if (draft.isB2B && draft.totalHT < PRO_MINIMUM_ORDER_HT) {
+        res.status(400).json({ error: `Le minimum de commande professionnel est de ${PRO_MINIMUM_ORDER_HT} € HT` });
+        return;
+      }
+
+      const paymentMethod = typeof req.body?.paymentMethod === "string" ? req.body.paymentMethod : draft.paymentMethod;
+      const status = paymentMethod === "b2b_deferred" ? "pending_payment" : "pending";
+      const order = await prisma.order.update({
+        where: { id: draft.id },
+        data: {
+          status,
+          paymentMethod,
+          paymentProvider: paymentMethod === "b2b_deferred" ? "manual" : draft.paymentProvider,
+        },
+        include: { items: true, shippingAddress: true, customer: true },
+      });
+
+      res.json({ order });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur confirmation brouillon";
+      res.status(400).json({ error: message });
+    }
+  }
+);
+
+// POST /api/admin/orders/abandoned-carts/:id/to-draft — Exporter un panier abandonné en brouillon
+adminRouter.post(
+  "/orders/abandoned-carts/:id/to-draft",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const cart = await prisma.abandonedCartSession.findUnique({ where: { id: req.params.id } });
+      if (!cart || cart.convertedAt) {
+        res.status(404).json({ error: "Panier abandonné non trouvé" });
+        return;
+      }
+      const rawItems = Array.isArray(cart.items) ? cart.items : [];
+      const items = normalizeDraftItems(
+        rawItems.map((item) => {
+          if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+          const line = item as { productId?: unknown; id?: unknown; quantity?: unknown };
+          return { productId: line.productId || line.id, quantity: line.quantity };
+        }).filter(Boolean)
+      );
+      const email = (cart.email || asOptionalString(req.body?.email)).toLowerCase();
+      if (!email || !email.includes("@")) {
+        res.status(400).json({ error: "Ce panier ne contient pas d’email client exploitable" });
+        return;
+      }
+      const customer = await prisma.customer.findUnique({ where: { email }, include: { proAccount: true, addresses: true } });
+      const defaultAddress = customer?.addresses.find((address) => address.isDefault) || customer?.addresses[0];
+      const shippingAddress = defaultAddress
+        ? {
+            firstName: defaultAddress.firstName,
+            lastName: defaultAddress.lastName,
+            address: defaultAddress.address,
+            extension: defaultAddress.extension || "",
+            city: defaultAddress.city,
+            postalCode: defaultAddress.postalCode,
+            country: normalizeCountry(defaultAddress.country),
+            phone: customer?.phone || "",
+          }
+        : {
+            firstName: customer?.firstName || "Client",
+            lastName: customer?.lastName || "Barber Paradise",
+            address: "Adresse à compléter",
+            extension: "",
+            city: "Ville à compléter",
+            postalCode: "00000",
+            country: "FR",
+            phone: customer?.phone || "",
+          };
+      const isB2B = Boolean(req.body?.isB2B) && customer?.proAccount?.status === "approved";
+      const vatNumber = customer?.proAccount?.vatNumber || null;
+      const totals = await calculateAdminDraftTotals({
+        items,
+        isB2B,
+        country: shippingAddress.country,
+        vatNumber,
+        shippingOverride: req.body?.shipping,
+        enforceProMinimum: false,
+      });
+
+      const order = await prisma.order.create({
+        data: {
+          orderNumber: generateAdminDraftOrderNumber(),
+          email,
+          customerEmail: email,
+          customerId: customer?.id || null,
+          status: "draft",
+          paymentMethod: null,
+          paymentProvider: null,
+          isB2B,
+          subtotal: totals.subtotal,
+          shipping: totals.shipping,
+          total: totals.total,
+          totalHT: totals.totalHT,
+          vatRate: totals.vatRate,
+          vatAmount: totals.vatAmount,
+          totalTTC: totals.totalTTC,
+          currency: CURRENCY,
+          vatNumber,
+          billingAddress: shippingAddress as Prisma.InputJsonValue,
+          notes: `Brouillon créé depuis le panier abandonné ${cart.id}`,
+          items: { create: totals.orderItems },
+          shippingAddress: { create: shippingAddress },
+        },
+      });
+
+      await prisma.abandonedCartSession.update({
+        where: { id: cart.id },
+        data: { convertedOrderId: order.id, convertedAt: new Date() },
+      });
+      const draft = await serializeAdminDraft(order.id);
+      res.status(201).json({ draft });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur export panier abandonné";
+      res.status(400).json({ error: message });
     }
   }
 );

@@ -390,9 +390,96 @@ export interface AdminAbandonedCartItem {
   products: string[];
 }
 
+export interface AdminDraftAddressPayload {
+  firstName: string;
+  lastName: string;
+  address: string;
+  extension?: string;
+  city: string;
+  postalCode: string;
+  country: string;
+  phone?: string;
+}
+
+export interface AdminOrderDraftPayload {
+  customerId?: string | null;
+  email: string;
+  isB2B: boolean;
+  paymentLater: boolean;
+  vatNumber?: string | null;
+  shipping?: number;
+  notes?: string;
+  items: Array<{ productId: string; quantity: number }>;
+  shippingAddress: AdminDraftAddressPayload;
+  billingAddress?: AdminDraftAddressPayload;
+}
+
+export type AdminOrderDraft = Order & {
+  vatNumber?: string | null;
+  customer?: (Order["customer"] & {
+    proAccount?: { id: string; companyName: string; status: string; vatNumber?: string | null } | null;
+    addresses?: Array<AdminDraftAddressPayload & { id: string; isDefault?: boolean }>;
+  }) | null;
+};
+
 export function getAdminAbandonedCarts() {
   return adminFetch<{ carts: AdminAbandonedCartItem[] }>(
     "/api/admin/orders/abandoned-carts"
+  );
+}
+
+export function getAdminOrderDrafts(params?: {
+  page?: number;
+  limit?: number;
+  search?: string;
+}) {
+  const sp = new URLSearchParams();
+  if (params) {
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") sp.set(k, String(v));
+    });
+  }
+  const q = sp.toString();
+  return adminFetch<{
+    drafts: AdminOrderDraft[];
+    total: number;
+    page: number;
+    pages: number;
+  }>(`/api/admin/orders/drafts${q ? `?${q}` : ""}`);
+}
+
+export function getAdminOrderDraft(id: string) {
+  return adminFetch<{ draft: AdminOrderDraft }>(`/api/admin/orders/drafts/${id}`);
+}
+
+export function createAdminOrderDraft(payload: AdminOrderDraftPayload) {
+  return adminFetch<{ draft: AdminOrderDraft }>("/api/admin/orders/drafts", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateAdminOrderDraft(id: string, payload: AdminOrderDraftPayload) {
+  return adminFetch<{ draft: AdminOrderDraft }>(`/api/admin/orders/drafts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function confirmAdminOrderDraft(id: string, paymentMethod?: string | null) {
+  return adminFetch<{ order: Order }>(`/api/admin/orders/drafts/${id}/confirm`, {
+    method: "POST",
+    body: JSON.stringify({ paymentMethod }),
+  });
+}
+
+export function exportAbandonedCartToDraft(id: string, options?: { isB2B?: boolean; email?: string }) {
+  return adminFetch<{ draft: AdminOrderDraft }>(
+    `/api/admin/orders/abandoned-carts/${id}/to-draft`,
+    {
+      method: "POST",
+      body: JSON.stringify(options || {}),
+    }
   );
 }
 
