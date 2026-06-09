@@ -262,6 +262,7 @@ carouselRouter.post("/upload", async (req: Request, res: Response): Promise<void
     });
 
     const position = await nextCarouselPosition();
+    const metadata = normalizeMetadata(body.metadata);
     const slide = await prisma.carouselSlide.create({
       data: {
         title: normalizeNullableString(body.title),
@@ -284,6 +285,7 @@ carouselRouter.post("/upload", async (req: Request, res: Response): Promise<void
         position,
         category: normalizeCategory(body.category),
         createdBy: normalizeNullableString(body.createdBy) ?? "buzz",
+        ...(metadata !== undefined ? { metadata } : {}),
       },
     });
 

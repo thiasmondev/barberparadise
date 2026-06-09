@@ -100,6 +100,7 @@ export type CarouselSlide = {
   position: number;
   category: string;
   createdBy?: string | null;
+  metadata?: unknown;
   createdAt: string;
   updatedAt: string;
 };

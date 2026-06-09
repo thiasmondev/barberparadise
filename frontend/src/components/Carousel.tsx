@@ -1,14 +1,72 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { getActiveCarouselSlides, type CarouselSlide } from "@/lib/api";
 
 const AUTOPLAY_DELAY_MS = 5000;
 
+type CtaShape = "rounded" | "square";
+
+type CtaMetadata = {
+  x: number;
+  y: number;
+  backgroundColor: string;
+  textColor: string;
+  shadow: boolean;
+  shape: CtaShape;
+};
+
+const defaultCtaMetadata: CtaMetadata = {
+  x: 50,
+  y: 76,
+  backgroundColor: "#E91E63",
+  textColor: "#FFFFFF",
+  shadow: true,
+  shape: "rounded",
+};
+
 function slideLabel(slide: CarouselSlide) {
   return slide.title || slide.imageAlt || "Voir la sélection Barber Paradise";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) return 50;
+  return Math.min(96, Math.max(4, value));
+}
+
+function normalizeHexColor(value: unknown, fallback: string) {
+  return typeof value === "string" && /^#[0-9A-Fa-f]{6}$/.test(value.trim()) ? value.trim() : fallback;
+}
+
+function getCtaMetadata(slide: CarouselSlide): CtaMetadata {
+  if (!isRecord(slide.metadata) || !isRecord(slide.metadata.cta)) return defaultCtaMetadata;
+  const cta = slide.metadata.cta;
+  return {
+    x: clampPercent(Number(cta.x ?? defaultCtaMetadata.x)),
+    y: clampPercent(Number(cta.y ?? defaultCtaMetadata.y)),
+    backgroundColor: normalizeHexColor(cta.backgroundColor, defaultCtaMetadata.backgroundColor),
+    textColor: normalizeHexColor(cta.textColor, defaultCtaMetadata.textColor),
+    shadow: typeof cta.shadow === "boolean" ? cta.shadow : defaultCtaMetadata.shadow,
+    shape: cta.shape === "square" ? "square" : "rounded",
+  };
+}
+
+function ctaInlineStyle(cta: CtaMetadata): CSSProperties {
+  return {
+    left: `${cta.x}%`,
+    top: `${cta.y}%`,
+    backgroundColor: cta.backgroundColor,
+    color: cta.textColor,
+    borderRadius: cta.shape === "rounded" ? "9999px" : "0px",
+    boxShadow: cta.shadow ? "0 18px 40px rgba(0,0,0,0.35)" : "none",
+    transform: "translate(-50%, -50%)",
+  };
 }
 
 function SlideImage({ slide, index }: { slide: CarouselSlide; index: number }) {
@@ -24,6 +82,27 @@ function SlideImage({ slide, index }: { slide: CarouselSlide; index: number }) {
         className="object-cover object-center"
       />
     </picture>
+  );
+}
+
+function SlideContent({ slide, index }: { slide: CarouselSlide; index: number }) {
+  const hasCtaButton = Boolean(slide.ctaText?.trim() && slide.ctaLink?.trim());
+  const cta = getCtaMetadata(slide);
+
+  return (
+    <>
+      <SlideImage slide={slide} index={index} />
+      {hasCtaButton ? (
+        <Link
+          href={slide.ctaLink || "#"}
+          aria-label={slideLabel(slide)}
+          className="absolute z-10 whitespace-nowrap px-5 py-3 text-xs font-black uppercase tracking-wide transition hover:-translate-y-0.5 hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-black sm:px-6 sm:text-sm md:px-8 md:py-4"
+          style={ctaInlineStyle(cta)}
+        >
+          {slide.ctaText}
+        </Link>
+      ) : null}
+    </>
   );
 }
 
@@ -103,9 +182,14 @@ export default function Carousel() {
       <div className="relative aspect-square w-full md:aspect-video">
         {slides.map((slide, index) => {
           const isActive = index === currentIndex;
+          const hasCtaButton = Boolean(slide.ctaText?.trim() && slide.ctaLink?.trim());
           const containerClassName = `absolute inset-0 transition-opacity duration-700 ease-out ${isActive ? "opacity-100" : "pointer-events-none opacity-0"}`;
 
-          return slide.ctaLink ? (
+          return hasCtaButton ? (
+            <div key={slide.id} className={containerClassName} aria-hidden={!isActive}>
+              <SlideContent slide={slide} index={index} />
+            </div>
+          ) : slide.ctaLink ? (
             <Link key={slide.id} href={slide.ctaLink} aria-label={slideLabel(slide)} className={containerClassName} aria-hidden={!isActive} tabIndex={isActive ? 0 : -1}>
               <SlideImage slide={slide} index={index} />
             </Link>

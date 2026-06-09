@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, PointerEvent, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import {
   ArrowDown,
@@ -28,6 +28,16 @@ import {
 } from "@/lib/admin-api";
 
 type FormStatus = { type: "success" | "error" | "info"; message: string } | null;
+type CtaShape = "rounded" | "square";
+
+type CtaMetadata = {
+  x: number;
+  y: number;
+  backgroundColor: string;
+  textColor: string;
+  shadow: boolean;
+  shape: CtaShape;
+};
 
 type SlideFormState = {
   title: string;
@@ -39,6 +49,12 @@ type SlideFormState = {
   ctaText: string;
   ctaLink: string;
   ctaStyle: "primary" | "secondary" | "outline";
+  ctaX: string;
+  ctaY: string;
+  ctaBackgroundColor: string;
+  ctaTextColor: string;
+  ctaShadow: boolean;
+  ctaShape: CtaShape;
   textPosition: "left" | "center" | "right";
   textColor: string;
   overlayOpacity: string;
@@ -46,6 +62,16 @@ type SlideFormState = {
   startDate: string;
   endDate: string;
   isActive: boolean;
+  metadata: unknown;
+};
+
+const defaultCtaMetadata: CtaMetadata = {
+  x: 50,
+  y: 76,
+  backgroundColor: "#E91E63",
+  textColor: "#FFFFFF",
+  shadow: true,
+  shape: "rounded",
 };
 
 const emptyForm: SlideFormState = {
@@ -58,6 +84,12 @@ const emptyForm: SlideFormState = {
   ctaText: "",
   ctaLink: "",
   ctaStyle: "primary",
+  ctaX: String(defaultCtaMetadata.x),
+  ctaY: String(defaultCtaMetadata.y),
+  ctaBackgroundColor: defaultCtaMetadata.backgroundColor,
+  ctaTextColor: defaultCtaMetadata.textColor,
+  ctaShadow: defaultCtaMetadata.shadow,
+  ctaShape: defaultCtaMetadata.shape,
   textPosition: "left",
   textColor: "#FFFFFF",
   overlayOpacity: "0.3",
@@ -65,6 +97,7 @@ const emptyForm: SlideFormState = {
   startDate: "",
   endDate: "",
   isActive: true,
+  metadata: {},
 };
 
 const categories = [
@@ -94,7 +127,49 @@ function toInputDateTime(value?: string | null) {
   return date.toISOString().slice(0, 16);
 }
 
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) return 50;
+  return Math.min(96, Math.max(4, Math.round(value * 10) / 10));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeHexColor(value: unknown, fallback: string) {
+  return typeof value === "string" && /^#[0-9A-Fa-f]{6}$/.test(value.trim()) ? value.trim() : fallback;
+}
+
+function getMetadataCta(metadata: unknown): CtaMetadata {
+  if (!isRecord(metadata) || !isRecord(metadata.cta)) return defaultCtaMetadata;
+  const cta = metadata.cta;
+  return {
+    x: clampPercent(Number(cta.x ?? defaultCtaMetadata.x)),
+    y: clampPercent(Number(cta.y ?? defaultCtaMetadata.y)),
+    backgroundColor: normalizeHexColor(cta.backgroundColor, defaultCtaMetadata.backgroundColor),
+    textColor: normalizeHexColor(cta.textColor, defaultCtaMetadata.textColor),
+    shadow: typeof cta.shadow === "boolean" ? cta.shadow : defaultCtaMetadata.shadow,
+    shape: cta.shape === "square" ? "square" : "rounded",
+  };
+}
+
+function buildMetadata(form: SlideFormState) {
+  const base = isRecord(form.metadata) ? { ...form.metadata } : {};
+  return {
+    ...base,
+    cta: {
+      x: clampPercent(Number(form.ctaX)),
+      y: clampPercent(Number(form.ctaY)),
+      backgroundColor: normalizeHexColor(form.ctaBackgroundColor, defaultCtaMetadata.backgroundColor),
+      textColor: normalizeHexColor(form.ctaTextColor, defaultCtaMetadata.textColor),
+      shadow: form.ctaShadow,
+      shape: form.ctaShape,
+    },
+  };
+}
+
 function fromSlide(slide: AdminCarouselSlide): SlideFormState {
+  const cta = getMetadataCta(slide.metadata);
   return {
     title: slide.title ?? "",
     subtitle: slide.subtitle ?? "",
@@ -105,6 +180,12 @@ function fromSlide(slide: AdminCarouselSlide): SlideFormState {
     ctaText: slide.ctaText ?? "",
     ctaLink: slide.ctaLink ?? "",
     ctaStyle: (slide.ctaStyle as SlideFormState["ctaStyle"]) || "primary",
+    ctaX: String(cta.x),
+    ctaY: String(cta.y),
+    ctaBackgroundColor: cta.backgroundColor,
+    ctaTextColor: cta.textColor,
+    ctaShadow: cta.shadow,
+    ctaShape: cta.shape,
     textPosition: (slide.textPosition as SlideFormState["textPosition"]) || "left",
     textColor: slide.textColor || "#FFFFFF",
     overlayOpacity: String(slide.overlayOpacity ?? 0.3),
@@ -112,6 +193,7 @@ function fromSlide(slide: AdminCarouselSlide): SlideFormState {
     startDate: toInputDateTime(slide.startDate),
     endDate: toInputDateTime(slide.endDate),
     isActive: slide.isActive,
+    metadata: slide.metadata ?? {},
   };
 }
 
@@ -133,6 +215,7 @@ function asPayload(form: SlideFormState): AdminCarouselSlidePayload {
     startDate: form.startDate ? new Date(form.startDate).toISOString() : null,
     endDate: form.endDate ? new Date(form.endDate).toISOString() : null,
     isActive: form.isActive,
+    metadata: buildMetadata(form),
   };
 }
 
@@ -159,19 +242,59 @@ function categoryLabel(value: string) {
   return categories.find((category) => category.value === value)?.label ?? value;
 }
 
-function SlidePreview({ form }: { form: SlideFormState }) {
+function SlidePreview({ form, onPositionChange }: { form: SlideFormState; onPositionChange: (x: number, y: number) => void }) {
   const imageUrl = form.imageUrl || form.imageMobileUrl;
+
+  function updateFromPointer(event: PointerEvent<HTMLElement>) {
+    const canvas = event.currentTarget.closest("[data-cta-canvas]") as HTMLElement | null;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 100;
+    const y = ((event.clientY - rect.top) / rect.height) * 100;
+    onPositionChange(clampPercent(x), clampPercent(y));
+  }
+
+  const ctaStyle = {
+    left: `${clampPercent(Number(form.ctaX))}%`,
+    top: `${clampPercent(Number(form.ctaY))}%`,
+    backgroundColor: form.ctaBackgroundColor,
+    color: form.ctaTextColor,
+    borderRadius: form.ctaShape === "rounded" ? "9999px" : "0px",
+    boxShadow: form.ctaShadow ? "0 18px 40px rgba(0,0,0,0.35)" : "none",
+    transform: "translate(-50%, -50%)",
+  };
+
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-200 bg-black shadow-sm">
-      <div className="relative aspect-[1920/600] min-h-[220px]">
+      <div data-cta-canvas className="relative aspect-video min-h-[220px] select-none">
         {imageUrl ? (
           <Image src={imageUrl} alt={form.imageAlt || form.title || "Aperçu carrousel"} fill sizes="720px" className="object-cover object-center" />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900 text-sm text-gray-400">Aucun visuel sélectionné</div>
         )}
+        {form.ctaText.trim() ? (
+          <button
+            type="button"
+            className="absolute z-10 cursor-grab whitespace-nowrap px-5 py-3 text-sm font-black uppercase tracking-wide transition active:cursor-grabbing"
+            style={ctaStyle}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              updateFromPointer(event);
+            }}
+            onPointerMove={(event) => {
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) updateFromPointer(event);
+            }}
+            onPointerUp={(event) => {
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+            }}
+          >
+            {form.ctaText}
+          </button>
+        ) : null}
       </div>
       <div className="border-t border-gray-200 bg-white px-4 py-3 text-xs leading-5 text-gray-500">
-        Le site affiche uniquement l’image finale. Les champs titre, description et CTA restent conservés pour le SEO, l’accessibilité et le lien de la slide.
+        Fais glisser le bouton dans l’aperçu pour définir sa position. Les coordonnées sont enregistrées en pourcentage pour rester compatibles desktop et mobile.
       </div>
     </div>
   );
@@ -211,6 +334,10 @@ export default function AdminCarouselPage() {
 
   function updateForm<K extends keyof SlideFormState>(key: K, value: SlideFormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function updateCtaPosition(x: number, y: number) {
+    setForm((prev) => ({ ...prev, ctaX: String(x), ctaY: String(y) }));
   }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -311,7 +438,7 @@ export default function AdminCarouselPage() {
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary">Homepage</p>
           <h1 className="mt-2 text-3xl font-black tracking-tight text-gray-950">Carrousel dynamique</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
-            Gérez les bannières de la page d’accueil et les créations envoyées par Buzz. La route publique affiche uniquement les slides actives et planifiées.
+            Gérez les bannières de la page d’accueil, les créations envoyées par Buzz et la position du bouton CTA affiché sur chaque slide.
           </p>
         </div>
         <button type="button" onClick={resetForm} className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-3 text-sm font-bold text-white hover:bg-gray-800">
@@ -326,7 +453,7 @@ export default function AdminCarouselPage() {
           <div className="flex items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-bold text-gray-950">{editingSlide ? "Modifier une slide" : "Créer une slide"}</h2>
-              <p className="text-sm text-gray-500">Upload Cloudinary ou URL existante. Le texte visible doit déjà être intégré dans l’image par Buzz.</p>
+              <p className="text-sm text-gray-500">Upload Cloudinary ou URL existante, puis positionnez le CTA directement dans l’aperçu.</p>
             </div>
             <button disabled={isSaving} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-primary/90 disabled:opacity-60">
               {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -345,7 +472,7 @@ export default function AdminCarouselPage() {
             </label>
             <label className="space-y-1 text-sm font-medium text-gray-700 md:col-span-2">
               Description
-              <textarea value={form.description} onChange={(e) => updateForm("description", e.target.value)} className="min-h-24 w-full rounded-xl border border-gray-200 px-3 py-2" placeholder="Description SEO/accessibilité, non affichée en overlay." />
+              <textarea value={form.description} onChange={(e) => updateForm("description", e.target.value)} className="min-h-24 w-full rounded-xl border border-gray-200 px-3 py-2" placeholder="Description SEO/accessibilité." />
             </label>
           </div>
 
@@ -357,7 +484,7 @@ export default function AdminCarouselPage() {
               <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
             </label>
             <div className="space-y-3">
-              {filePreview ? <div className="relative aspect-[16/6] overflow-hidden rounded-xl border"><Image src={filePreview} alt="Prévisualisation upload" fill className="object-cover" /></div> : null}
+              {filePreview ? <div className="relative aspect-video overflow-hidden rounded-xl border"><Image src={filePreview} alt="Prévisualisation upload" fill className="object-cover" /></div> : null}
               <label className="space-y-1 text-sm font-medium text-gray-700">
                 URL image desktop
                 <input value={form.imageUrl} onChange={(e) => updateForm("imageUrl", e.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2" placeholder="https://..." />
@@ -373,21 +500,57 @@ export default function AdminCarouselPage() {
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-3">
-            <label className="space-y-1 text-sm font-medium text-gray-700">
-              Texte bouton SEO/accessibilité
-              <input value={form.ctaText} onChange={(e) => updateForm("ctaText", e.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2" placeholder="Voir la sélection" />
-            </label>
-            <label className="space-y-1 text-sm font-medium text-gray-700">
-              Lien de la slide
-              <input value={form.ctaLink} onChange={(e) => updateForm("ctaLink", e.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2" placeholder="/catalogue" />
-            </label>
-            <label className="space-y-1 text-sm font-medium text-gray-700">
-              Style bouton
-              <select value={form.ctaStyle} onChange={(e) => updateForm("ctaStyle", e.target.value as SlideFormState["ctaStyle"])} className="w-full rounded-xl border border-gray-200 px-3 py-2">
-                {ctaStyles.map((style) => <option key={style.value} value={style.value}>{style.label}</option>)}
-              </select>
-            </label>
+          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+            <div className="mb-4">
+              <h3 className="text-lg font-bold text-gray-950">Bouton CTA sur la slide</h3>
+              <p className="text-sm text-gray-500">Renseignez le texte, déplacez le bouton dans l’aperçu, puis personnalisez ses couleurs, son ombre et ses angles.</p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="space-y-1 text-sm font-medium text-gray-700">
+                Texte du bouton
+                <input value={form.ctaText} onChange={(e) => updateForm("ctaText", e.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2" placeholder="Voir la sélection" />
+              </label>
+              <label className="space-y-1 text-sm font-medium text-gray-700">
+                Lien du bouton
+                <input value={form.ctaLink} onChange={(e) => updateForm("ctaLink", e.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2" placeholder="/catalogue" />
+              </label>
+            </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-4">
+              <label className="space-y-1 text-sm font-medium text-gray-700">
+                Position X (%)
+                <input type="number" min="4" max="96" step="0.1" value={form.ctaX} onChange={(e) => updateForm("ctaX", String(clampPercent(Number(e.target.value))))} className="w-full rounded-xl border border-gray-200 px-3 py-2" />
+              </label>
+              <label className="space-y-1 text-sm font-medium text-gray-700">
+                Position Y (%)
+                <input type="number" min="4" max="96" step="0.1" value={form.ctaY} onChange={(e) => updateForm("ctaY", String(clampPercent(Number(e.target.value))))} className="w-full rounded-xl border border-gray-200 px-3 py-2" />
+              </label>
+              <label className="space-y-1 text-sm font-medium text-gray-700">
+                Fond du bouton
+                <input type="color" value={form.ctaBackgroundColor} onChange={(e) => updateForm("ctaBackgroundColor", e.target.value)} className="h-10 w-full rounded-xl border border-gray-200 px-2 py-1" />
+              </label>
+              <label className="space-y-1 text-sm font-medium text-gray-700">
+                Texte du bouton
+                <input type="color" value={form.ctaTextColor} onChange={(e) => updateForm("ctaTextColor", e.target.value)} className="h-10 w-full rounded-xl border border-gray-200 px-2 py-1" />
+              </label>
+            </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
+              <label className="space-y-1 text-sm font-medium text-gray-700">
+                Style hérité
+                <select value={form.ctaStyle} onChange={(e) => updateForm("ctaStyle", e.target.value as SlideFormState["ctaStyle"])} className="w-full rounded-xl border border-gray-200 px-3 py-2">
+                  {ctaStyles.map((style) => <option key={style.value} value={style.value}>{style.label}</option>)}
+                </select>
+              </label>
+              <label className="space-y-1 text-sm font-medium text-gray-700">
+                Angles
+                <select value={form.ctaShape} onChange={(e) => updateForm("ctaShape", e.target.value as CtaShape)} className="w-full rounded-xl border border-gray-200 px-3 py-2">
+                  <option value="rounded">Coins arrondis</option>
+                  <option value="square">Angles droits</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700">
+                <input type="checkbox" checked={form.ctaShadow} onChange={(e) => updateForm("ctaShadow", e.target.checked)} /> Ombre portée
+              </label>
+            </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-5">
@@ -431,10 +594,10 @@ export default function AdminCarouselPage() {
         <div className="space-y-4">
           <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
             <h2 className="mb-3 flex items-center gap-2 text-lg font-bold text-gray-950"><ImagePlus size={18} /> Aperçu live</h2>
-            <SlidePreview form={{ ...form, imageUrl: filePreview || form.imageUrl }} />
+            <SlidePreview form={{ ...form, imageUrl: filePreview || form.imageUrl }} onPositionChange={updateCtaPosition} />
           </div>
           <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
-            <strong>Buzz</strong> doit fournir une image finale avec texte, couleurs et CTA intégrés. Le carrousel public n’ajoute plus aucun overlay texte ; les champs titre, description et CTA servent au SEO, à l’accessibilité et au lien cliquable.
+            Le CTA est enregistré dans les métadonnées de la slide. Sa position est stockée en pourcentage pour rester stable sur les différentes tailles d’écran.
           </div>
         </div>
       </div>
@@ -461,9 +624,10 @@ export default function AdminCarouselPage() {
               const now = Date.now();
               const startsInFuture = slide.startDate ? new Date(slide.startDate).getTime() > now : false;
               const isExpired = slide.endDate ? new Date(slide.endDate).getTime() < now : false;
+              const cta = getMetadataCta(slide.metadata);
               return (
                 <div key={slide.id} className="grid gap-4 rounded-2xl border border-gray-100 p-4 md:grid-cols-[120px_minmax(0,1fr)_auto] md:items-center">
-                  <div className="relative aspect-[16/7] overflow-hidden rounded-xl bg-gray-100">
+                  <div className="relative aspect-video overflow-hidden rounded-xl bg-gray-100">
                     <Image src={slide.imageUrl} alt={slide.imageAlt || slide.title || "Slide carrousel"} fill sizes="160px" className="object-cover" />
                   </div>
                   <div className="min-w-0">
@@ -476,7 +640,7 @@ export default function AdminCarouselPage() {
                       {isExpired ? <span className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-700">Expiré</span> : null}
                     </div>
                     <p className="truncate text-sm text-gray-500">{slide.subtitle || slide.description || slide.ctaLink || "Aucun texte secondaire"}</p>
-                    <p className="mt-1 text-xs text-gray-400">Position {slide.position} · {slide.startDate ? `Début ${new Date(slide.startDate).toLocaleString("fr-FR")}` : "Début immédiat"} · {slide.endDate ? `Fin ${new Date(slide.endDate).toLocaleString("fr-FR")}` : "Sans fin"}</p>
+                    <p className="mt-1 text-xs text-gray-400">CTA {Math.round(cta.x)}% / {Math.round(cta.y)}% · Position {slide.position} · {slide.startDate ? `Début ${new Date(slide.startDate).toLocaleString("fr-FR")}` : "Début immédiat"} · {slide.endDate ? `Fin ${new Date(slide.endDate).toLocaleString("fr-FR")}` : "Sans fin"}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 md:justify-end">
                     <button type="button" onClick={() => moveSlide(slide, -1)} disabled={index === 0} className="rounded-lg border border-gray-200 p-2 text-gray-600 hover:bg-gray-50 disabled:opacity-30" aria-label="Monter la slide"><ArrowUp size={16} /></button>
