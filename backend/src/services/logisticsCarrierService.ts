@@ -265,8 +265,7 @@ function calculateBaseAmount(carrier: LogisticsCarrier, totalWeightG: number) {
 function insuranceLevel(carrier: LogisticsCarrier, orderValueCents: number, requestedInsuranceCents?: number) {
   const levels = carrier === "mondial_relay" ? MONDIAL_RELAY_INSURANCE_LEVELS : COLISSIMO_INSURANCE_LEVELS;
   const requested = Math.max(requestedInsuranceCents || 0, 0);
-  const target = carrier === "mondial_relay" ? requested : Math.max(orderValueCents, requested, 0);
-  return levels.find(level => level >= target) ?? levels[levels.length - 1];
+  return levels.find(level => level >= requested) ?? levels[levels.length - 1];
 }
 
 function insuranceSurcharge(carrier: LogisticsCarrier, insuranceValueCents: number) {
@@ -279,14 +278,8 @@ function normalizeColissimoInsuranceValueCents(value: number | null | undefined)
   const numericValue = Number(value || 0);
   if (!Number.isFinite(numericValue) || numericValue <= 0) return 0;
 
-  // L’interface historique et les offerId manipulent des centimes, mais certains appels
-  // d’achat peuvent encore transmettre un montant saisi en euros. Colissimo SLS attend
-  // un entier en centimes dans <insuranceValue>. Une valeur positive inférieure au
-  // premier palier Colissimo est donc traitée comme un montant euros et convertie.
-  if (numericValue < COLISSIMO_MIN_INSURANCE_VALUE_CENTS) {
-    return Math.round(numericValue * 100);
-  }
-
+  // Les routes admin transmettent déjà l’assurance en centimes. On conserve donc
+  // l’entier tel quel afin qu’une saisie 150 € devienne 15000, sans double conversion.
   return Math.round(numericValue);
 }
 
