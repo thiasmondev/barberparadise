@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import AdminShell from "@/components/admin/AdminShell";
 import {
   AdminPromotion,
   AdminPromotionPayload,
@@ -157,6 +156,15 @@ export default function AdminPromotionsPage() {
     const timer = window.setTimeout(refresh, 250);
     return () => window.clearTimeout(timer);
   }, [search, status, method]);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setModalOpen(false);
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [modalOpen]);
 
   useEffect(() => {
     if (!modalOpen) return;
@@ -331,7 +339,7 @@ export default function AdminPromotionsPage() {
   }
 
   return (
-    <AdminShell>
+    <>
       <div className="space-y-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -426,8 +434,15 @@ export default function AdminPromotionsPage() {
       </div>
 
       {modalOpen && (
-        <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
-          <div className="w-full max-w-5xl rounded-xl bg-white shadow-2xl">
+        <div
+          className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8"
+          role="dialog"
+          aria-modal="true"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setModalOpen(false);
+          }}
+        >
+          <div className="w-full max-w-5xl rounded-xl bg-white shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-100 bg-white px-6 py-4">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">{editing ? "Modifier la promotion" : "Nouvelle promotion"}</h2>
@@ -578,7 +593,7 @@ export default function AdminPromotionsPage() {
           </div>
         </div>
       )}
-    </AdminShell>
+    </>
   );
 }
 
