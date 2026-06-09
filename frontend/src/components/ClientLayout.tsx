@@ -6,6 +6,7 @@ import { CustomerAuthProvider } from "@/contexts/CustomerAuthContext";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import CookieConsentBanner from "@/components/CookieConsentBanner";
+import BarbaraChatbot from "@/components/BarbaraChatbot";
 
 export default function ClientLayout({ children }: { children: ReactNode }) {
   return (
@@ -18,6 +19,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
           <main className="flex-1 pt-20 md:pt-0">{children}</main>
         </Suspense>
         <Footer />
+        <BarbaraChatbot />
         <CookieConsentBanner />
       </CustomerAuthProvider>
     </CartProvider>
