@@ -151,6 +151,8 @@ const DEFAULT_TARIFFS: Record<LogisticsCarrier, TariffStep[]> = {
 };
 
 const COLISSIMO_INSURANCE_LEVELS = [0, 15000, 30000, 50000, 100000, 200000, 500000];
+const COLISSIMO_MIN_INSURANCE_VALUE_CENTS = COLISSIMO_INSURANCE_LEVELS[1];
+const COLISSIMO_INSURANCE_COMPATIBLE_PRODUCT_CODES = new Set(["DOM", "COLI"]);
 const MONDIAL_RELAY_INSURANCE_LEVELS = [0, 2500, 5000, 12500, 25000, 50000];
 const DEFAULT_CARRIER_VAT_RATE = 0.2;
 
@@ -273,6 +275,30 @@ function insuranceSurcharge(carrier: LogisticsCarrier, insuranceValueCents: numb
   return Math.ceil(insuranceValueCents * 0.008);
 }
 
+function normalizeColissimoInsuranceValueCents(value: number | null | undefined) {
+  const numericValue = Number(value || 0);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return 0;
+
+  // L’interface historique et les offerId manipulent des centimes, mais certains appels
+  // d’achat peuvent encore transmettre un montant saisi en euros. Colissimo SLS attend
+  // un entier en centimes dans <insuranceValue>. Une valeur positive inférieure au
+  // premier palier Colissimo est donc traitée comme un montant euros et convertie.
+  if (numericValue < COLISSIMO_MIN_INSURANCE_VALUE_CENTS) {
+    return Math.round(numericValue * 100);
+  }
+
+  return Math.round(numericValue);
+}
+
+function assertColissimoInsuranceProductCompatibility(productCode: string, insuranceValueCents: number) {
+  if (insuranceValueCents <= 0) return;
+  if (!COLISSIMO_INSURANCE_COMPATIBLE_PRODUCT_CODES.has(productCode)) {
+    throw new Error(
+      `Le code produit Colissimo ${productCode} ne supporte pas l’option valeur assurée. Sélectionnez un service compatible ou désactivez l’assurance.`
+    );
+  }
+}
+
 function signatureSurcharge(carrier: LogisticsCarrier, signatureRequired?: boolean) {
   if (!signatureRequired) return 0;
   return carrier === "colissimo" || carrier === "colissimo_international" ? 150 : 0;
@@ -370,7 +396,12 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
   const depositDate = now.toISOString().slice(0, 10);
   const productCode = input.carrier === "colissimo_international" ? "COLI" : "DOM";
   const countryCode = normalizeCountryCode(input.recipient.country);
-  const insuranceValue = input.insuranceValueCents || quote.insuranceValueCents;
+  const rawInsuranceValue = input.insuranceValueCents;
+  const insuranceValue = normalizeColissimoInsuranceValueCents(rawInsuranceValue);
+  assertColissimoInsuranceProductCompatibility(productCode, insuranceValue);
+  const insuranceBlock = insuranceValue > 0
+    ? `\n            <insuranceValue>${insuranceValue}</insuranceValue>`
+    : "";
   const signatureRequired = Boolean(input.signatureRequired);
 
   const envelope = `<?xml version="1.0" encoding="UTF-8"?>
@@ -393,8 +424,7 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
             <transportationAmount>${quote.amountCents}</transportationAmount>
             <totalAmount>${quote.amountCents}</totalAmount>
           </service>
-          <parcel>
-            <insuranceValue>${insuranceValue}</insuranceValue>
+          <parcel>${insuranceBlock}
             <weight>${Math.max(input.totalWeightG / 1000, 0.01).toFixed(3)}</weight>
             <nonMachinable>false</nonMachinable>
             <ftd>${signatureRequired ? "true" : "false"}</ftd>
@@ -469,7 +499,7 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
     taxAmountCents: quote.taxAmountCents,
     totalWithTaxCents: quote.totalWithTaxCents,
     signatureRequired,
-    rawResponse: { carrier: "colissimo", offer: quote, signatureRequired, contractNumberApplied: Boolean(contractNumber), contractNumberSuffix: contractNumber ? contractNumber.slice(-4) : null, responseXml: xml.slice(0, 4000) },
+    rawResponse: { carrier: "colissimo", offer: quote, productCode, rawInsuranceValue, insuranceValueCents: insuranceValue, signatureRequired, contractNumberApplied: Boolean(contractNumber), contractNumberSuffix: contractNumber ? contractNumber.slice(-4) : null, responseXml: xml.slice(0, 4000) },
     notice: null,
   };
 }
@@ -589,7 +619,8 @@ export async function createOfficialShipmentLabel(input: ShipmentLabelInput): Pr
     throw new Error(quote.configurationError || "Identifiants transporteur manquants.");
   }
 
-  const normalizedInput = { ...input, insuranceValueCents: input.insuranceValueCents || insuranceValueCents };
+  const normalizedInsuranceValueCents = Number(input.insuranceValueCents || 0) > 0 ? input.insuranceValueCents : 0;
+  const normalizedInput = { ...input, insuranceValueCents: normalizedInsuranceValueCents };
   if (serviceCode === "24R" || carrier === "mondial_relay") {
     return createMondialRelayLabel(normalizedInput, quote);
   }
