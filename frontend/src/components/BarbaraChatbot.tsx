@@ -145,16 +145,22 @@ export default function BarbaraChatbot() {
   return (
     <div className={`fixed right-4 z-[10000] print:hidden sm:right-6 ${closedPositionClass}`}>
       {isOpen ? (
-        <div className="fixed inset-0 z-[10000] flex items-end justify-end bg-black/35 p-0 backdrop-blur-[1px] sm:inset-auto sm:bottom-6 sm:right-6 sm:block sm:bg-transparent sm:p-0 sm:backdrop-blur-0">
-          <section className="flex h-[100svh] max-h-[100svh] w-full flex-col overflow-hidden bg-white text-[#181818] shadow-2xl sm:h-[500px] sm:w-[350px] sm:rounded-3xl sm:border sm:border-white/20">
-            <header className="flex items-center justify-between bg-[#181818] px-4 py-4 text-white">
+        <div
+          className="fixed inset-x-3 z-[10000] flex items-end justify-center bg-transparent p-0 sm:inset-auto sm:bottom-6 sm:right-6 sm:block"
+          style={{ bottom: hasCookieConsent ? "calc(env(safe-area-inset-bottom) + 1rem)" : "calc(env(safe-area-inset-bottom) + 5rem)" }}
+        >
+          <section
+            className="flex w-full max-w-[390px] flex-col overflow-hidden rounded-[1.75rem] border border-black/10 bg-white text-[#181818] shadow-2xl sm:h-[500px] sm:w-[350px] sm:rounded-3xl sm:border-white/20"
+            style={{ height: hasCookieConsent ? "min(72svh, 540px)" : "min(58svh, 420px)", maxHeight: hasCookieConsent ? "540px" : "420px" }}
+          >
+            <header className="flex items-center justify-between bg-[#181818] px-3.5 py-3 text-white sm:px-4 sm:py-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#ff4a8d] text-lg font-black text-white shadow-lg shadow-[#ff4a8d]/30">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#ff4a8d] text-sm font-black text-white shadow-lg shadow-[#ff4a8d]/30 sm:h-11 sm:w-11 sm:text-lg">
                   BP
                 </div>
                 <div>
-                  <p className="font-heading text-base font-black leading-tight">Barbara</p>
-                  <p className="text-xs text-white/70">Assistante Barber Paradise</p>
+                  <p className="font-heading text-sm font-black leading-tight sm:text-base">Barbara</p>
+                  <p className="text-[11px] text-white/70 sm:text-xs">Assistante Barber Paradise</p>
                 </div>
               </div>
               <button
@@ -167,14 +173,14 @@ export default function BarbaraChatbot() {
               </button>
             </header>
 
-            <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto bg-[#f7f7f7] px-4 py-4">
+            <div ref={scrollRef} className="flex-1 space-y-2.5 overflow-y-auto bg-[#f7f7f7] px-3 py-3 sm:space-y-3 sm:px-4 sm:py-4">
               {messages.map((message, index) => (
                 <div
                   key={`${message.role}-${index}`}
                   className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-5 shadow-sm ${
+                    className={`max-w-[82%] break-words rounded-2xl px-3 py-2.5 text-[13px] leading-[1.35] shadow-sm sm:max-w-[85%] sm:px-4 sm:py-3 sm:text-sm sm:leading-5 ${
                       message.role === "user"
                         ? "rounded-br-md bg-[#ff4a8d] text-white"
                         : "rounded-bl-md bg-white text-[#252525]"
@@ -192,7 +198,7 @@ export default function BarbaraChatbot() {
                       key={question}
                       type="button"
                       onClick={() => void sendMessage(question)}
-                      className="w-full rounded-2xl border border-[#ff4a8d]/20 bg-white px-3 py-2 text-left text-xs font-semibold text-[#252525] transition-colors hover:border-[#ff4a8d]/60 hover:bg-[#fff0f6]"
+                      className="w-full rounded-2xl border border-[#ff4a8d]/20 bg-white px-3 py-2 text-left text-[11px] font-semibold text-[#252525] transition-colors hover:border-[#ff4a8d]/60 hover:bg-[#fff0f6] sm:text-xs"
                     >
                       {question}
                     </button>
@@ -211,7 +217,7 @@ export default function BarbaraChatbot() {
               )}
             </div>
 
-            <form onSubmit={handleSubmit} className="border-t border-black/10 bg-white p-3">
+            <form onSubmit={handleSubmit} className="border-t border-black/10 bg-white p-2.5 sm:p-3">
               {error && <p className="mb-2 text-xs font-medium text-[#b42318]">{error}</p>}
               <div className="flex items-end gap-2 rounded-2xl border border-black/10 bg-[#f7f7f7] p-2 focus-within:border-[#ff4a8d]/60">
                 <textarea
@@ -227,12 +233,12 @@ export default function BarbaraChatbot() {
                   rows={1}
                   maxLength={700}
                   placeholder="Écrivez votre question..."
-                  className="max-h-24 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm text-[#181818] outline-none placeholder:text-black/40"
+                  className="max-h-20 min-h-9 flex-1 resize-none bg-transparent px-2 py-2 text-[13px] text-[#181818] outline-none placeholder:text-black/40 sm:max-h-24 sm:min-h-10 sm:text-sm"
                 />
                 <button
                   type="submit"
                   disabled={!canSend}
-                  className="rounded-full bg-[#ff4a8d] px-4 py-2 text-sm font-black text-white transition-colors hover:bg-[#ff1f70] disabled:cursor-not-allowed disabled:bg-black/20"
+                  className="rounded-full bg-[#ff4a8d] px-3 py-2 text-[13px] font-black text-white transition-colors hover:bg-[#ff1f70] disabled:cursor-not-allowed disabled:bg-black/20 sm:px-4 sm:text-sm"
                 >
                   Envoyer
                 </button>
