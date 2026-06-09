@@ -164,7 +164,7 @@ export default function BrandPage() {
 
         {/* Grille produits */}
         {loading ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-px bg-white/5">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-px">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="bg-[#131313] aspect-[3/4] animate-pulse" />
             ))}
@@ -182,7 +182,7 @@ export default function BrandPage() {
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-px bg-white/5">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-px">
             {products.map((product) => (
               <ProductCard key={product.id} product={product} />
             ))}
