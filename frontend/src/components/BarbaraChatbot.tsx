@@ -17,6 +17,7 @@ const QUICK_QUESTIONS = [
   "Comment devenir client pro ?",
   "Quelles marques proposez-vous ?",
 ];
+const BARBARA_PROFILE_IMAGE = "/images/barbara-profile.png";
 
 function createSessionId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -155,8 +156,8 @@ export default function BarbaraChatbot() {
           >
             <header className="flex items-center justify-between bg-[#181818] px-3 py-2.5 text-white sm:px-4 sm:py-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#ff4a8d] text-xs font-black text-white shadow-lg shadow-[#ff4a8d]/30 sm:h-11 sm:w-11 sm:text-lg">
-                  BP
+                <div className="h-8 w-8 overflow-hidden rounded-full border border-white/20 bg-[#ff4a8d] shadow-lg shadow-[#ff4a8d]/30 sm:h-11 sm:w-11">
+                  <img src={BARBARA_PROFILE_IMAGE} alt="Barbara, assistante Barber Paradise" className="h-full w-full object-cover object-center" />
                 </div>
                 <div>
                   <p className="font-heading text-[13px] font-black leading-tight sm:text-base">Barbara</p>
@@ -253,7 +254,7 @@ export default function BarbaraChatbot() {
           className="flex h-12 w-12 items-center justify-center rounded-full bg-[#ff4a8d] text-sm font-black text-white shadow-2xl shadow-[#ff4a8d]/30 transition-transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-[#ff4a8d]/30 sm:h-16 sm:w-16 sm:text-lg"
           aria-label="Ouvrir Barbara, assistante Barber Paradise"
         >
-          BP
+          ?
         </button>
       )}
     </div>
