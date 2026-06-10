@@ -3,6 +3,7 @@
 // ============================================================
 import { PrismaClient } from '@prisma/client';
 import * as crypto from 'crypto';
+import { legalPagesSeed } from './data/legalPagesSeed';
 
 const prisma = new PrismaClient();
 
@@ -96,6 +97,17 @@ async function main() {
     catCreated++;
   }
   console.log(`✅ ${catCreated} catégories créées/vérifiées`);
+
+  let legalPagesUpserted = 0;
+  for (const page of legalPagesSeed) {
+    await prisma.legalPage.upsert({
+      where: { slug: page.slug },
+      update: {},
+      create: page,
+    });
+    legalPagesUpserted++;
+  }
+  console.log(`✅ ${legalPagesUpserted} pages légales créées/vérifiées`);
 
   console.log('🎉 Seed de base terminé!');
   console.log('📦 Les 405 produits seront importés via le script Python seed_products.py');

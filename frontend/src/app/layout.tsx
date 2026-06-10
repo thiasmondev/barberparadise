@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "@uiw/react-md-editor/markdown-editor.css";
+import "@uiw/react-markdown-preview/markdown.css";
 import ClientLayout from "@/components/ClientLayout";
 import { SITE_URL } from "@/lib/site";
 

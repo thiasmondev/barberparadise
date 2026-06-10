@@ -1,11 +1,20 @@
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import LegalPage from "@/components/LegalPage";
-import { legalPages } from "@/lib/legalPages";
+import { getLegalPage } from "@/lib/api";
 
-export const metadata = {
+export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
   title: "Politique de cookies | Barber Paradise",
-  description: "Informations sur les cookies, traceurs et choix de consentement sur Barber Paradise.",
+  description: "Informations relatives aux cookies Barber Paradise.",
 };
 
-export default function CookiesPage() {
-  return <LegalPage content={legalPages.cookies} />;
+export default async function Page() {
+  try {
+    const page = await getLegalPage("cookies");
+    return <LegalPage page={page} />;
+  } catch {
+    notFound();
+  }
 }

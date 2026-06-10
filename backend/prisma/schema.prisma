@@ -150,6 +150,14 @@ model CarouselSlide {
   @@index([category])
 }
 
+model LegalPage {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  content   String   @db.Text
+  updatedAt DateTime @updatedAt
+}
+
 model Packaging {
   id                Int     @id @default(autoincrement())
   name              String // ex: "Carton S", "Enveloppe bulle", "Carton renforcé L"

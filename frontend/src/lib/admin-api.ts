@@ -2622,3 +2622,24 @@ export async function duplicateAdminPromotion(id: string) {
 export function deleteAdminPromotion(id: string) {
   return adminFetch<void>(`/api/promotions/${id}`, { method: "DELETE" });
 }
+
+// ─── Pages légales ────────────────────────────────────────────
+
+export type AdminLegalPage = {
+  id: string;
+  slug: string;
+  title: string;
+  content: string;
+  updatedAt: string;
+};
+
+export function getAdminLegalPages() {
+  return adminFetch<AdminLegalPage[]>("/api/legal-pages");
+}
+
+export function updateAdminLegalPage(slug: string, data: { title: string; content: string }) {
+  return adminFetch<AdminLegalPage>(`/api/legal-pages/${slug}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}

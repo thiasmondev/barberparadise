@@ -1,11 +1,20 @@
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import LegalPage from "@/components/LegalPage";
-import { legalPages } from "@/lib/legalPages";
+import { getLegalPage } from "@/lib/api";
 
-export const metadata = {
+export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
   title: "Conditions générales | Barber Paradise",
-  description: "Conditions d’utilisation, procédure de retour et politique de remboursement de Barber Paradise.",
+  description: "Conditions générales de vente Barber Paradise.",
 };
 
-export default function CgvPage() {
-  return <LegalPage content={legalPages.cgv} />;
+export default async function Page() {
+  try {
+    const page = await getLegalPage("cgv");
+    return <LegalPage page={page} />;
+  } catch {
+    notFound();
+  }
 }

@@ -1,11 +1,20 @@
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import LegalPage from "@/components/LegalPage";
-import { legalPages } from "@/lib/legalPages";
+import { getLegalPage } from "@/lib/api";
 
-export const metadata = {
+export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
   title: "Mentions légales | Barber Paradise",
-  description: "Mentions légales et informations d’édition du site Barber Paradise.",
+  description: "Mentions légales de Barber Paradise.",
 };
 
-export default function MentionsLegalesPage() {
-  return <LegalPage content={legalPages.mentionsLegales} />;
+export default async function Page() {
+  try {
+    const page = await getLegalPage("mentions-legales");
+    return <LegalPage page={page} />;
+  } catch {
+    notFound();
+  }
 }

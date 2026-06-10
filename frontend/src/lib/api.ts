@@ -187,3 +187,20 @@ export async function createStockAlert(payload: CreateStockAlertPayload) {
     body: JSON.stringify(payload),
   });
 }
+
+
+export type LegalPage = {
+  id: string;
+  slug: string;
+  title: string;
+  content: string;
+  updatedAt: string;
+};
+
+export async function getLegalPage(slug: string) {
+  return fetchAPI<LegalPage>(`/api/legal-pages/${slug}`, { cache: "no-store" });
+}
+
+export async function getLegalPages() {
+  return fetchAPI<LegalPage[]>("/api/legal-pages", { cache: "no-store" });
+}
