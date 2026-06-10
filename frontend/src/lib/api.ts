@@ -80,6 +80,21 @@ export async function getBrand(slug: string, params?: { page?: number; limit?: n
   }>(`/api/brands/${slug}${qs ? `?${qs}` : ""}`);
 }
 
+export type CarouselCtaMetadata = {
+  x?: number;
+  y?: number;
+  backgroundColor?: string;
+  textColor?: string;
+  shadow?: boolean;
+  shape?: "rounded" | "square" | string;
+};
+
+export type CarouselSlideMetadata = {
+  cta?: CarouselCtaMetadata;
+  ctaMobile?: CarouselCtaMetadata;
+  [key: string]: unknown;
+};
+
 export type CarouselSlide = {
   id: string;
   title?: string | null;
@@ -100,7 +115,7 @@ export type CarouselSlide = {
   position: number;
   category: string;
   createdBy?: string | null;
-  metadata?: unknown;
+  metadata?: CarouselSlideMetadata | null;
   createdAt: string;
   updatedAt: string;
 };

@@ -44,17 +44,23 @@ function normalizeHexColor(value: unknown, fallback: string) {
   return typeof value === "string" && /^#[0-9A-Fa-f]{6}$/.test(value.trim()) ? value.trim() : fallback;
 }
 
-function getCtaMetadata(slide: CarouselSlide): CtaMetadata {
-  if (!isRecord(slide.metadata) || !isRecord(slide.metadata.cta)) return defaultCtaMetadata;
-  const cta = slide.metadata.cta;
+function normalizeCtaMetadata(value: unknown, fallback: CtaMetadata = defaultCtaMetadata): CtaMetadata {
+  if (!isRecord(value)) return fallback;
   return {
-    x: clampPercent(Number(cta.x ?? defaultCtaMetadata.x)),
-    y: clampPercent(Number(cta.y ?? defaultCtaMetadata.y)),
-    backgroundColor: normalizeHexColor(cta.backgroundColor, defaultCtaMetadata.backgroundColor),
-    textColor: normalizeHexColor(cta.textColor, defaultCtaMetadata.textColor),
-    shadow: typeof cta.shadow === "boolean" ? cta.shadow : defaultCtaMetadata.shadow,
-    shape: cta.shape === "square" ? "square" : "rounded",
+    x: clampPercent(Number(value.x ?? fallback.x)),
+    y: clampPercent(Number(value.y ?? fallback.y)),
+    backgroundColor: normalizeHexColor(value.backgroundColor, fallback.backgroundColor),
+    textColor: normalizeHexColor(value.textColor, fallback.textColor),
+    shadow: typeof value.shadow === "boolean" ? value.shadow : fallback.shadow,
+    shape: value.shape === "square" ? "square" : fallback.shape,
   };
+}
+
+function getCtaMetadata(slide: CarouselSlide, format: "desktop" | "mobile" = "desktop"): CtaMetadata {
+  if (!isRecord(slide.metadata)) return defaultCtaMetadata;
+  const desktopCta = normalizeCtaMetadata(slide.metadata.cta, defaultCtaMetadata);
+  if (format === "mobile") return normalizeCtaMetadata(slide.metadata.ctaMobile, desktopCta);
+  return desktopCta;
 }
 
 function ctaInlineStyle(cta: CtaMetadata): CSSProperties {
@@ -87,20 +93,31 @@ function SlideImage({ slide, index }: { slide: CarouselSlide; index: number }) {
 
 function SlideContent({ slide, index }: { slide: CarouselSlide; index: number }) {
   const hasCtaButton = Boolean(slide.ctaText?.trim() && slide.ctaLink?.trim());
-  const cta = getCtaMetadata(slide);
+  const desktopCta = getCtaMetadata(slide, "desktop");
+  const mobileCta = getCtaMetadata(slide, "mobile");
 
   return (
     <>
       <SlideImage slide={slide} index={index} />
       {hasCtaButton ? (
-        <Link
-          href={slide.ctaLink || "#"}
-          aria-label={slideLabel(slide)}
-          className="absolute z-10 whitespace-nowrap px-5 py-3 text-xs font-black uppercase tracking-wide transition hover:-translate-y-0.5 hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-black sm:px-6 sm:text-sm md:px-8 md:py-4"
-          style={ctaInlineStyle(cta)}
-        >
-          {slide.ctaText}
-        </Link>
+        <>
+          <Link
+            href={slide.ctaLink || "#"}
+            aria-label={slideLabel(slide)}
+            className="absolute z-10 whitespace-nowrap px-5 py-3 text-xs font-black uppercase tracking-wide transition hover:-translate-y-0.5 hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-black sm:px-6 sm:text-sm md:hidden"
+            style={ctaInlineStyle(mobileCta)}
+          >
+            {slide.ctaText}
+          </Link>
+          <Link
+            href={slide.ctaLink || "#"}
+            aria-label={slideLabel(slide)}
+            className="absolute z-10 hidden whitespace-nowrap px-8 py-4 text-sm font-black uppercase tracking-wide transition hover:-translate-y-0.5 hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-black md:inline-flex"
+            style={ctaInlineStyle(desktopCta)}
+          >
+            {slide.ctaText}
+          </Link>
+        </>
       ) : null}
     </>
   );

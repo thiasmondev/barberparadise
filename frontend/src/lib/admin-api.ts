@@ -2352,6 +2352,21 @@ export function collectHermesAnalytics() {
 
 // ─── Carousel ───────────────────────────────────────────────────
 
+export type AdminCarouselCtaMetadata = {
+  x?: number;
+  y?: number;
+  backgroundColor?: string;
+  textColor?: string;
+  shadow?: boolean;
+  shape?: "rounded" | "square" | string;
+};
+
+export type AdminCarouselSlideMetadata = {
+  cta?: AdminCarouselCtaMetadata;
+  ctaMobile?: AdminCarouselCtaMetadata;
+  [key: string]: unknown;
+};
+
 export type AdminCarouselSlide = {
   id: string;
   title?: string | null;
@@ -2374,7 +2389,7 @@ export type AdminCarouselSlide = {
   position: number;
   category: "promo" | "nouveaute" | "event" | "saison" | "general" | string;
   createdBy?: string | null;
-  metadata?: unknown;
+  metadata?: AdminCarouselSlideMetadata | null;
   createdAt: string;
   updatedAt: string;
 };

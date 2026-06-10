@@ -29,6 +29,7 @@ import {
 
 type FormStatus = { type: "success" | "error" | "info"; message: string } | null;
 type CtaShape = "rounded" | "square";
+type CarouselFormat = "desktop" | "mobile";
 
 type CtaMetadata = {
   x: number;
@@ -51,6 +52,8 @@ type SlideFormState = {
   ctaStyle: "primary" | "secondary" | "outline";
   ctaX: string;
   ctaY: string;
+  ctaMobileX: string;
+  ctaMobileY: string;
   ctaBackgroundColor: string;
   ctaTextColor: string;
   ctaShadow: boolean;
@@ -86,6 +89,8 @@ const emptyForm: SlideFormState = {
   ctaStyle: "primary",
   ctaX: String(defaultCtaMetadata.x),
   ctaY: String(defaultCtaMetadata.y),
+  ctaMobileX: String(defaultCtaMetadata.x),
+  ctaMobileY: String(defaultCtaMetadata.y),
   ctaBackgroundColor: defaultCtaMetadata.backgroundColor,
   ctaTextColor: defaultCtaMetadata.textColor,
   ctaShadow: defaultCtaMetadata.shadow,
@@ -140,17 +145,23 @@ function normalizeHexColor(value: unknown, fallback: string) {
   return typeof value === "string" && /^#[0-9A-Fa-f]{6}$/.test(value.trim()) ? value.trim() : fallback;
 }
 
-function getMetadataCta(metadata: unknown): CtaMetadata {
-  if (!isRecord(metadata) || !isRecord(metadata.cta)) return defaultCtaMetadata;
-  const cta = metadata.cta;
+function normalizeCtaMetadata(value: unknown, fallback: CtaMetadata = defaultCtaMetadata): CtaMetadata {
+  if (!isRecord(value)) return fallback;
   return {
-    x: clampPercent(Number(cta.x ?? defaultCtaMetadata.x)),
-    y: clampPercent(Number(cta.y ?? defaultCtaMetadata.y)),
-    backgroundColor: normalizeHexColor(cta.backgroundColor, defaultCtaMetadata.backgroundColor),
-    textColor: normalizeHexColor(cta.textColor, defaultCtaMetadata.textColor),
-    shadow: typeof cta.shadow === "boolean" ? cta.shadow : defaultCtaMetadata.shadow,
-    shape: cta.shape === "square" ? "square" : "rounded",
+    x: clampPercent(Number(value.x ?? fallback.x)),
+    y: clampPercent(Number(value.y ?? fallback.y)),
+    backgroundColor: normalizeHexColor(value.backgroundColor, fallback.backgroundColor),
+    textColor: normalizeHexColor(value.textColor, fallback.textColor),
+    shadow: typeof value.shadow === "boolean" ? value.shadow : fallback.shadow,
+    shape: value.shape === "square" ? "square" : fallback.shape,
   };
+}
+
+function getMetadataCta(metadata: unknown, format: CarouselFormat = "desktop"): CtaMetadata {
+  if (!isRecord(metadata)) return defaultCtaMetadata;
+  const desktopCta = normalizeCtaMetadata(metadata.cta, defaultCtaMetadata);
+  if (format === "mobile") return normalizeCtaMetadata(metadata.ctaMobile, desktopCta);
+  return desktopCta;
 }
 
 function buildMetadata(form: SlideFormState) {
@@ -165,11 +176,20 @@ function buildMetadata(form: SlideFormState) {
       shadow: form.ctaShadow,
       shape: form.ctaShape,
     },
+    ctaMobile: {
+      x: clampPercent(Number(form.ctaMobileX)),
+      y: clampPercent(Number(form.ctaMobileY)),
+      backgroundColor: normalizeHexColor(form.ctaBackgroundColor, defaultCtaMetadata.backgroundColor),
+      textColor: normalizeHexColor(form.ctaTextColor, defaultCtaMetadata.textColor),
+      shadow: form.ctaShadow,
+      shape: form.ctaShape,
+    },
   };
 }
 
 function fromSlide(slide: AdminCarouselSlide): SlideFormState {
-  const cta = getMetadataCta(slide.metadata);
+  const cta = getMetadataCta(slide.metadata, "desktop");
+  const ctaMobile = getMetadataCta(slide.metadata, "mobile");
   return {
     title: slide.title ?? "",
     subtitle: slide.subtitle ?? "",
@@ -182,6 +202,8 @@ function fromSlide(slide: AdminCarouselSlide): SlideFormState {
     ctaStyle: (slide.ctaStyle as SlideFormState["ctaStyle"]) || "primary",
     ctaX: String(cta.x),
     ctaY: String(cta.y),
+    ctaMobileX: String(ctaMobile.x),
+    ctaMobileY: String(ctaMobile.y),
     ctaBackgroundColor: cta.backgroundColor,
     ctaTextColor: cta.textColor,
     ctaShadow: cta.shadow,
@@ -242,8 +264,11 @@ function categoryLabel(value: string) {
   return categories.find((category) => category.value === value)?.label ?? value;
 }
 
-function SlidePreview({ form, onPositionChange }: { form: SlideFormState; onPositionChange: (x: number, y: number) => void }) {
-  const imageUrl = form.imageUrl || form.imageMobileUrl;
+function SlidePreview({ form, activeFormat, onPositionChange }: { form: SlideFormState; activeFormat: CarouselFormat; onPositionChange: (x: number, y: number) => void }) {
+  const imageUrl = activeFormat === "mobile" ? form.imageMobileUrl || form.imageUrl : form.imageUrl || form.imageMobileUrl;
+  const ctaX = activeFormat === "mobile" ? form.ctaMobileX : form.ctaX;
+  const ctaY = activeFormat === "mobile" ? form.ctaMobileY : form.ctaY;
+  const previewScale = activeFormat === "mobile" ? 420 / 1080 : 420 / 1920;
 
   function updateFromPointer(event: PointerEvent<HTMLElement>) {
     const canvas = event.currentTarget.closest("[data-cta-canvas]") as HTMLElement | null;
@@ -255,27 +280,28 @@ function SlidePreview({ form, onPositionChange }: { form: SlideFormState; onPosi
   }
 
   const ctaStyle = {
-    left: `${clampPercent(Number(form.ctaX))}%`,
-    top: `${clampPercent(Number(form.ctaY))}%`,
+    left: `${clampPercent(Number(ctaX))}%`,
+    top: `${clampPercent(Number(ctaY))}%`,
     backgroundColor: form.ctaBackgroundColor,
     color: form.ctaTextColor,
     borderRadius: form.ctaShape === "rounded" ? "9999px" : "0px",
     boxShadow: form.ctaShadow ? "0 18px 40px rgba(0,0,0,0.35)" : "none",
-    transform: "translate(-50%, -50%)",
+    transform: `translate(-50%, -50%) scale(${previewScale})`,
+    transformOrigin: "center",
   };
 
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-200 bg-black shadow-sm">
-      <div data-cta-canvas className="relative aspect-video min-h-[220px] select-none">
+      <div data-cta-canvas className={`relative min-h-[220px] select-none ${activeFormat === "mobile" ? "aspect-square" : "aspect-video"}`}>
         {imageUrl ? (
           <Image src={imageUrl} alt={form.imageAlt || form.title || "Aperçu carrousel"} fill sizes="720px" className="object-cover object-center" />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-900 text-sm text-gray-400">Aucun visuel sélectionné</div>
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-900 px-6 text-center text-sm text-gray-400">Aucun visuel sélectionné</div>
         )}
         {form.ctaText.trim() ? (
           <button
             type="button"
-            className="absolute z-10 cursor-grab whitespace-nowrap px-5 py-3 text-sm font-black uppercase tracking-wide transition active:cursor-grabbing"
+            className="absolute z-10 cursor-grab whitespace-nowrap px-8 py-4 text-sm font-black uppercase tracking-wide transition active:cursor-grabbing"
             style={ctaStyle}
             onPointerDown={(event) => {
               event.preventDefault();
@@ -294,7 +320,7 @@ function SlidePreview({ form, onPositionChange }: { form: SlideFormState; onPosi
         ) : null}
       </div>
       <div className="border-t border-gray-200 bg-white px-4 py-3 text-xs leading-5 text-gray-500">
-        Fais glisser le bouton dans l’aperçu pour définir sa position. Les coordonnées sont enregistrées en pourcentage pour rester compatibles desktop et mobile.
+        Fais glisser le bouton dans l’aperçu {activeFormat === "mobile" ? "mobile carré 1:1" : "desktop 16:9"}. Les coordonnées sont enregistrées en pourcentage et séparées par format.
       </div>
     </div>
   );
@@ -310,6 +336,7 @@ export default function AdminCarouselPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState<FormStatus>(null);
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [activeFormat, setActiveFormat] = useState<CarouselFormat>("desktop");
 
   const filteredSlides = useMemo(() => {
     if (categoryFilter === "all") return slides;
@@ -337,7 +364,22 @@ export default function AdminCarouselPage() {
   }
 
   function updateCtaPosition(x: number, y: number) {
-    setForm((prev) => ({ ...prev, ctaX: String(x), ctaY: String(y) }));
+    setForm((prev) => activeFormat === "mobile"
+      ? { ...prev, ctaMobileX: String(x), ctaMobileY: String(y) }
+      : { ...prev, ctaX: String(x), ctaY: String(y) }
+    );
+  }
+
+  function setActiveCtaPosition(partial: Partial<{ x: number; y: number }>) {
+    setForm((prev) => {
+      const currentX = activeFormat === "mobile" ? Number(prev.ctaMobileX) : Number(prev.ctaX);
+      const currentY = activeFormat === "mobile" ? Number(prev.ctaMobileY) : Number(prev.ctaY);
+      const nextX = clampPercent(partial.x ?? currentX);
+      const nextY = clampPercent(partial.y ?? currentY);
+      return activeFormat === "mobile"
+        ? { ...prev, ctaMobileX: String(nextX), ctaMobileY: String(nextY) }
+        : { ...prev, ctaX: String(nextX), ctaY: String(nextY) };
+    });
   }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -357,6 +399,7 @@ export default function AdminCarouselPage() {
     setForm(fromSlide(slide));
     setSelectedFile(null);
     setFilePreview("");
+    setActiveFormat("desktop");
     setStatus({ type: "info", message: `Modification de la slide « ${slide.title || slide.id} ».` });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -366,6 +409,7 @@ export default function AdminCarouselPage() {
     setForm(emptyForm);
     setSelectedFile(null);
     setFilePreview("");
+    setActiveFormat("desktop");
     setStatus(null);
   }
 
@@ -515,23 +559,35 @@ export default function AdminCarouselPage() {
                 <input value={form.ctaLink} onChange={(e) => updateForm("ctaLink", e.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2" placeholder="/catalogue" />
               </label>
             </div>
-            <div className="mt-4 grid gap-4 md:grid-cols-4">
-              <label className="space-y-1 text-sm font-medium text-gray-700">
-                Position X (%)
-                <input type="number" min="4" max="96" step="0.1" value={form.ctaX} onChange={(e) => updateForm("ctaX", String(clampPercent(Number(e.target.value))))} className="w-full rounded-xl border border-gray-200 px-3 py-2" />
-              </label>
-              <label className="space-y-1 text-sm font-medium text-gray-700">
-                Position Y (%)
-                <input type="number" min="4" max="96" step="0.1" value={form.ctaY} onChange={(e) => updateForm("ctaY", String(clampPercent(Number(e.target.value))))} className="w-full rounded-xl border border-gray-200 px-3 py-2" />
-              </label>
-              <label className="space-y-1 text-sm font-medium text-gray-700">
-                Fond du bouton
-                <input type="color" value={form.ctaBackgroundColor} onChange={(e) => updateForm("ctaBackgroundColor", e.target.value)} className="h-10 w-full rounded-xl border border-gray-200 px-2 py-1" />
-              </label>
-              <label className="space-y-1 text-sm font-medium text-gray-700">
-                Texte du bouton
-                <input type="color" value={form.ctaTextColor} onChange={(e) => updateForm("ctaTextColor", e.target.value)} className="h-10 w-full rounded-xl border border-gray-200 px-2 py-1" />
-              </label>
+            <div className="mt-4 rounded-2xl border border-white/70 bg-white/70 p-4">
+              <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-sm font-bold text-gray-950">Position CTA par format</p>
+                  <p className="text-xs text-gray-500">Desktop et mobile possèdent chacun leurs coordonnées pour éviter les compromis de cadrage.</p>
+                </div>
+                <div className="inline-flex rounded-xl border border-gray-200 bg-white p-1 text-xs font-bold">
+                  <button type="button" onClick={() => setActiveFormat("desktop")} className={`rounded-lg px-3 py-2 transition ${activeFormat === "desktop" ? "bg-gray-950 text-white" : "text-gray-600 hover:bg-gray-50"}`}>Desktop 16:9</button>
+                  <button type="button" onClick={() => setActiveFormat("mobile")} className={`rounded-lg px-3 py-2 transition ${activeFormat === "mobile" ? "bg-gray-950 text-white" : "text-gray-600 hover:bg-gray-50"}`}>Mobile 1:1</button>
+                </div>
+              </div>
+              <div className="grid gap-4 md:grid-cols-4">
+                <label className="space-y-1 text-sm font-medium text-gray-700">
+                  Position X {activeFormat === "mobile" ? "mobile" : "desktop"} (%)
+                  <input type="number" min="4" max="96" step="0.1" value={activeFormat === "mobile" ? form.ctaMobileX : form.ctaX} onChange={(e) => setActiveCtaPosition({ x: Number(e.target.value) })} className="w-full rounded-xl border border-gray-200 px-3 py-2" />
+                </label>
+                <label className="space-y-1 text-sm font-medium text-gray-700">
+                  Position Y {activeFormat === "mobile" ? "mobile" : "desktop"} (%)
+                  <input type="number" min="4" max="96" step="0.1" value={activeFormat === "mobile" ? form.ctaMobileY : form.ctaY} onChange={(e) => setActiveCtaPosition({ y: Number(e.target.value) })} className="w-full rounded-xl border border-gray-200 px-3 py-2" />
+                </label>
+                <label className="space-y-1 text-sm font-medium text-gray-700">
+                  Fond du bouton
+                  <input type="color" value={form.ctaBackgroundColor} onChange={(e) => updateForm("ctaBackgroundColor", e.target.value)} className="h-10 w-full rounded-xl border border-gray-200 px-2 py-1" />
+                </label>
+                <label className="space-y-1 text-sm font-medium text-gray-700">
+                  Texte du bouton
+                  <input type="color" value={form.ctaTextColor} onChange={(e) => updateForm("ctaTextColor", e.target.value)} className="h-10 w-full rounded-xl border border-gray-200 px-2 py-1" />
+                </label>
+              </div>
             </div>
             <div className="mt-4 grid gap-4 md:grid-cols-3">
               <label className="space-y-1 text-sm font-medium text-gray-700">
@@ -593,11 +649,26 @@ export default function AdminCarouselPage() {
 
         <div className="space-y-4">
           <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-            <h2 className="mb-3 flex items-center gap-2 text-lg font-bold text-gray-950"><ImagePlus size={18} /> Aperçu live</h2>
-            <SlidePreview form={{ ...form, imageUrl: filePreview || form.imageUrl }} onPositionChange={updateCtaPosition} />
+            <div className="mb-3 flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="flex items-center gap-2 text-lg font-bold text-gray-950"><ImagePlus size={18} /> Aperçu live</h2>
+                <div className="inline-flex rounded-xl border border-gray-200 bg-gray-50 p-1 text-xs font-bold">
+                  <button type="button" onClick={() => setActiveFormat("desktop")} className={`rounded-lg px-2.5 py-1.5 transition ${activeFormat === "desktop" ? "bg-gray-950 text-white" : "text-gray-600 hover:bg-white"}`}>Desktop</button>
+                  <button type="button" onClick={() => setActiveFormat("mobile")} className={`rounded-lg px-2.5 py-1.5 transition ${activeFormat === "mobile" ? "bg-gray-950 text-white" : "text-gray-600 hover:bg-white"}`}>Mobile</button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs font-bold text-gray-600 sm:grid-cols-5">
+                <button type="button" onClick={() => setActiveCtaPosition({ x: 50 })} className="rounded-lg border border-gray-200 px-2 py-2 hover:bg-gray-50">Centrer H</button>
+                <button type="button" onClick={() => setActiveCtaPosition({ y: 50 })} className="rounded-lg border border-gray-200 px-2 py-2 hover:bg-gray-50">Centrer V</button>
+                <button type="button" onClick={() => setActiveCtaPosition({ x: 50, y: 50 })} className="rounded-lg border border-gray-200 px-2 py-2 hover:bg-gray-50">Centre</button>
+                <button type="button" onClick={() => setActiveCtaPosition({ x: 10 })} className="rounded-lg border border-gray-200 px-2 py-2 hover:bg-gray-50">Gauche 10%</button>
+                <button type="button" onClick={() => setActiveCtaPosition({ x: 90 })} className="rounded-lg border border-gray-200 px-2 py-2 hover:bg-gray-50">Droite 90%</button>
+              </div>
+            </div>
+            <SlidePreview form={{ ...form, imageUrl: filePreview || form.imageUrl }} activeFormat={activeFormat} onPositionChange={updateCtaPosition} />
           </div>
           <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
-            Le CTA est enregistré dans les métadonnées de la slide. Sa position est stockée en pourcentage pour rester stable sur les différentes tailles d’écran.
+            Le CTA est enregistré dans les métadonnées de la slide : <code>metadata.cta</code> pour desktop et <code>metadata.ctaMobile</code> pour mobile. Si aucun visuel mobile n’est fourni, l’aperçu carré utilise l’image desktop en crop centré.
           </div>
         </div>
       </div>
@@ -624,7 +695,8 @@ export default function AdminCarouselPage() {
               const now = Date.now();
               const startsInFuture = slide.startDate ? new Date(slide.startDate).getTime() > now : false;
               const isExpired = slide.endDate ? new Date(slide.endDate).getTime() < now : false;
-              const cta = getMetadataCta(slide.metadata);
+              const cta = getMetadataCta(slide.metadata, "desktop");
+              const ctaMobile = getMetadataCta(slide.metadata, "mobile");
               return (
                 <div key={slide.id} className="grid gap-4 rounded-2xl border border-gray-100 p-4 md:grid-cols-[120px_minmax(0,1fr)_auto] md:items-center">
                   <div className="relative aspect-video overflow-hidden rounded-xl bg-gray-100">
@@ -640,7 +712,7 @@ export default function AdminCarouselPage() {
                       {isExpired ? <span className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-700">Expiré</span> : null}
                     </div>
                     <p className="truncate text-sm text-gray-500">{slide.subtitle || slide.description || slide.ctaLink || "Aucun texte secondaire"}</p>
-                    <p className="mt-1 text-xs text-gray-400">CTA {Math.round(cta.x)}% / {Math.round(cta.y)}% · Position {slide.position} · {slide.startDate ? `Début ${new Date(slide.startDate).toLocaleString("fr-FR")}` : "Début immédiat"} · {slide.endDate ? `Fin ${new Date(slide.endDate).toLocaleString("fr-FR")}` : "Sans fin"}</p>
+                    <p className="mt-1 text-xs text-gray-400">CTA desktop {Math.round(cta.x)}% / {Math.round(cta.y)}% · mobile {Math.round(ctaMobile.x)}% / {Math.round(ctaMobile.y)}% · Position {slide.position} · {slide.startDate ? `Début ${new Date(slide.startDate).toLocaleString("fr-FR")}` : "Début immédiat"} · {slide.endDate ? `Fin ${new Date(slide.endDate).toLocaleString("fr-FR")}` : "Sans fin"}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 md:justify-end">
                     <button type="button" onClick={() => moveSlide(slide, -1)} disabled={index === 0} className="rounded-lg border border-gray-200 p-2 text-gray-600 hover:bg-gray-50 disabled:opacity-30" aria-label="Monter la slide"><ArrowUp size={16} /></button>
