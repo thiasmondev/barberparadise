@@ -203,6 +203,10 @@ export interface Order {
     labelStatus?: string | null;
     labelGeneratedAt?: string | null;
     shippedAt?: string | null;
+    lastTrackingStatus?: string | null;
+    labelSource?: string | null;
+    createdAt?: string | null;
+    updatedAt?: string | null;
     labelPriceCents?: number | null;
     labelCurrency?: string | null;
     serviceCode?: string | null;

@@ -1584,6 +1584,7 @@ export interface ShipmentRecord {
   shippedAt: string | null;
   shippedBy: string | null;
   createdAt: string;
+  updatedAt: string;
   packaging?: Packaging | null;
 }
 
@@ -1687,11 +1688,14 @@ export function purchaseLogisticsLabel(
     signatureRequired?: boolean;
     relayPointId?: string | null;
     packagingId?: number | null;
+    sendTrackingEmail?: boolean;
   }
 ) {
   return adminFetch<{
     success: boolean;
+    order?: Order;
     shipment: ShipmentRecord;
+    trackingEmailSent?: boolean;
     label?: {
       downloadUrl: string;
       source: string;
@@ -1735,6 +1739,20 @@ export function shipLogisticsOrder(
 
 export function getLogisticsLabelUrl(orderId: string) {
   return `${API_URL}/api/admin/logistics/orders/${orderId}/label`;
+}
+
+export function getShipmentLabelPdfUrl(shipmentId: string) {
+  return `${API_URL}/api/admin/shipments/${shipmentId}/label.pdf`;
+}
+
+export function cancelShipmentLabel(shipmentId: string) {
+  return adminFetch<{
+    success: boolean;
+    shipment: ShipmentRecord;
+    message: string;
+  }>(`/api/admin/shipments/${shipmentId}/cancel`, {
+    method: "POST",
+  });
 }
 
 export function syncLogisticsTracking(orderId: string) {

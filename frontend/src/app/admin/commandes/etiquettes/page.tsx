@@ -7,7 +7,7 @@ import AdminOrdersTabs from "@/components/admin/AdminOrdersTabs";
 import {
   getAdminShipmentLabels,
   getAdminToken,
-  getLogisticsLabelUrl,
+  getShipmentLabelPdfUrl,
   type AdminShipmentLabelItem,
 } from "@/lib/admin-api";
 import { Download, FileDown, PackageCheck } from "lucide-react";
@@ -16,6 +16,7 @@ const STATUS_LABELS: Record<string, string> = {
   generated: "Générée",
   printed: "Imprimée",
   shipped: "Expédiée",
+  cancelled: "Annulée",
 };
 
 function formatDate(value: string | null) {
@@ -30,6 +31,7 @@ function formatDate(value: string | null) {
 }
 
 function normalizeStatus(label: AdminShipmentLabelItem) {
+  if (label.labelStatus === "cancelled") return "Annulée";
   if (label.shippedAt) return "Expédiée";
   return STATUS_LABELS[label.labelStatus || ""] || "Générée";
 }
@@ -64,7 +66,7 @@ export default function AdminShipmentLabelsPage() {
     }
     setError("");
     try {
-      const response = await fetch(getLogisticsLabelUrl(label.orderId), {
+      const response = await fetch(getShipmentLabelPdfUrl(label.id), {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) {
@@ -138,7 +140,8 @@ export default function AdminShipmentLabelsPage() {
                       <button
                         type="button"
                         onClick={() => downloadLabel(label)}
-                        className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-dark-700 transition-colors hover:border-primary hover:text-primary"
+                        disabled={label.labelStatus === "cancelled"}
+                        className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-dark-700 transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Download size={15} />
                         Télécharger

@@ -26,9 +26,11 @@ import {
 import {
   getAdminOrder,
   getAdminToken,
+  cancelShipmentLabel,
   getLogisticsCarrierQuotes,
   getLogisticsLabelUrl,
   getLogisticsOrder,
+  getShipmentLabelPdfUrl,
   purchaseLogisticsLabel,
   updateOrderStatus,
   type LogisticsCarrierQuote,
@@ -260,6 +262,12 @@ export default function OrderDetailPage() {
   const hasZeroWeight = packageWeightG <= 0;
   const selectedQuote = quotes.find((quote) => quote.id === selectedQuoteId);
   const activeShipment = shipment || (order?.shipment as ShipmentRecord | null) || null;
+  const hasGeneratedLabel = activeShipment?.labelSource === "carrier_api" && Boolean(activeShipment?.trackingNumber) && activeShipment.labelStatus !== "cancelled";
+  const hasCarrierScan = Boolean(activeShipment?.shippedAt) || ["in_transit", "shipped", "delivered", "scanned"].some((status) =>
+    String(activeShipment?.lastTrackingStatus || "").toLowerCase().includes(status)
+  );
+  const canCancelLabel = hasGeneratedLabel && !hasCarrierScan;
+  const activeLabelUrl = activeShipment?.id ? getShipmentLabelPdfUrl(activeShipment.id) : labelUrl || getLogisticsLabelUrl(order?.id || "");
   const cheapestQuoteId = quotes.reduce<string>((currentId, quote) => {
     if (!quote.purchasable) return currentId;
     const currentQuote = quotes.find((item) => item.id === currentId);
@@ -392,9 +400,11 @@ export default function OrderDetailPage() {
         insuranceValueCents: selectedInsuranceValueCents,
         signatureRequired: selectedQuote.carrier !== "mondial_relay" ? Boolean(carrierSignatureRequired[selectedQuote.id]) : false,
         packagingId: selectedPackagingId,
+        sendTrackingEmail: sendEmailToCustomer,
       });
       setShipment(result.shipment);
-      setLabelUrl(result.label?.downloadUrl || getLogisticsLabelUrl(order.id));
+      setLabelUrl(result.label?.downloadUrl || (result.shipment?.id ? getShipmentLabelPdfUrl(result.shipment.id) : getLogisticsLabelUrl(order.id)));
+      if (result.order) setOrder(result.order);
       setLabelStep("confirmation");
       await loadOrder();
     } catch (err: any) {
@@ -405,9 +415,9 @@ export default function OrderDetailPage() {
   };
 
   const downloadLabel = async (fileNameSuffix = "etiquette") => {
-    if (!order) return;
+    if (!order || !activeLabelUrl) return;
     const token = getAdminToken();
-    const response = await fetch(labelUrl || getLogisticsLabelUrl(order.id), {
+    const response = await fetch(activeLabelUrl, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!response.ok) throw new Error("Téléchargement impossible");
@@ -418,6 +428,30 @@ export default function OrderDetailPage() {
     link.download = `${fileNameSuffix}-${order.orderNumber}.pdf`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const printLabel = () => {
+    if (!activeLabelUrl) return;
+    window.open(activeLabelUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const cancelLabel = async () => {
+    if (!activeShipment?.id) return;
+    const confirmed = window.confirm("Annuler cette étiquette ? Cette action est possible uniquement si le colis n’a pas encore été scanné par le transporteur.");
+    if (!confirmed) return;
+    setDrawerLoading(true);
+    setDrawerError("");
+    try {
+      const result = await cancelShipmentLabel(activeShipment.id);
+      setShipment(result.shipment);
+      setLabelStep("confirmation");
+      alert(result.message || "L’étiquette a été annulée. Le remboursement sera crédité sous 48h.");
+      await loadOrder();
+    } catch (err: any) {
+      setDrawerError(err.message || "Impossible d’annuler l’étiquette.");
+    } finally {
+      setDrawerLoading(false);
+    }
   };
 
   const markAsProcessed = async () => {
@@ -533,7 +567,8 @@ export default function OrderDetailPage() {
                   { label: "Commande créée", date: order.createdAt, icon: CalendarClock },
                   { label: paymentBadge(order).label === "Payée" ? "Paiement confirmé" : "Paiement en attente", date: order.updatedAt, icon: CheckCircle2 },
                   { label: "Email de confirmation envoyé", date: order.createdAt, icon: Mail },
-                  ...(order.shipment?.labelGeneratedAt ? [{ label: "Étiquette d’expédition générée", date: order.shipment.labelGeneratedAt, icon: Truck }] : []),
+                  ...(order.shipment?.labelGeneratedAt ? [{ label: `Étiquette ${carrierLabel(order.shipment.carrier)} achetée${order.shipment.trackingNumber ? ` — Suivi ${order.shipment.trackingNumber}` : ""}`, date: order.shipment.labelGeneratedAt, icon: Truck }] : []),
+                  ...(order.shipment?.labelStatus === "cancelled" ? [{ label: "Étiquette annulée — remboursement sous 48h", date: order.shipment.updatedAt || order.shipment.labelGeneratedAt || order.updatedAt, icon: AlertCircle }] : []),
                   ...(order.shipment?.shippedAt ? [{ label: "Commande expédiée", date: order.shipment.shippedAt, icon: Truck }] : []),
                 ].map((event, index) => {
                   const Icon = event.icon;
@@ -702,8 +737,8 @@ export default function OrderDetailPage() {
                   <section className="rounded-2xl border border-gray-200 bg-white shadow-sm"><div className="border-b border-gray-200 px-5 py-4"><h3 className="font-semibold text-gray-950">Détail du colis</h3></div><div className="divide-y divide-gray-100">{(logistics?.items || []).map((item) => <div key={item.id} className="flex gap-4 px-5 py-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50">{item.image ? <img src={item.image} alt="" className="h-full w-full object-cover" /> : <Package className="h-5 w-5 text-gray-300" />}</div><div className="min-w-0 flex-1"><p className="font-medium text-gray-950">{item.name}</p><p className="text-sm text-gray-500">Quantité {item.quantity} · {formatWeight(parseKgToGrams(itemWeightsKg[item.id]) * item.quantity)}</p></div></div>)}</div><div className="grid gap-3 border-t border-gray-200 px-5 py-4 text-sm sm:grid-cols-3"><div><p className="text-gray-500">Emballage</p><p className="font-medium text-gray-950">{selectedPackaging?.name || activeShipment?.packaging?.name || "—"}</p></div><div><p className="text-gray-500">Poids</p><p className="font-medium text-gray-950">{formatWeight(activeShipment?.totalWeightG || packageWeightG)}</p></div><div><p className="text-gray-500">Services</p><p className="font-medium text-gray-950">Suivi ✓ · Assurance {selectedQuote ? (parseEuroToCents(carrierInsuranceValues[selectedQuote.id]) > 0 ? "✓" : "—") : activeShipment?.insuranceValueCents ? "✓" : "—"}{selectedQuote?.carrier !== "mondial_relay" && (selectedQuote || activeShipment?.carrier !== "mondial_relay") ? ` · Signature ${selectedQuote && carrierSignatureRequired[selectedQuote.id] ? "✓" : "—"}` : ""}</p></div></div></section>
                 </div>
                 <aside className="space-y-5 lg:sticky lg:top-24 lg:self-start">
-                  <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><h3 className="font-semibold text-gray-950">Documents</h3><div className="mt-4 space-y-4"><label className="block text-sm font-medium text-gray-700">Format étiquette<select value={labelPrintFormat} onChange={(event) => setLabelPrintFormat(event.target.value)} className="mt-2 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"><option value="100x150">100×150 mm</option><option value="a4">A4</option></select></label><label className="block text-sm font-medium text-gray-700">Format bordereau<select value={packingSlipFormat} onChange={(event) => setPackingSlipFormat(event.target.value)} className="mt-2 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"><option value="a4">A4</option><option value="compact">Compact</option></select></label><label className="flex items-start gap-2 text-sm text-gray-600"><input type="checkbox" checked={includePackingSlip} onChange={(event) => setIncludePackingSlip(event.target.checked)} className="mt-1 rounded border-gray-300" />Inclure le bordereau dans le colis</label><button onClick={() => downloadLabel("etiquette")} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800"><Download className="h-4 w-4" /> Télécharger PDF étiquette</button><button onClick={() => downloadLabel("bordereau")} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50"><FileText className="h-4 w-4" /> Télécharger le bordereau</button></div></section>
-                  <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><h3 className="font-semibold text-gray-950">Résumé achat</h3><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between"><span className="text-gray-500">Étiquette</span><span>{activeShipmentTax.amountCents ? `${formatPrice(activeShipmentTax.amountCents / 100, activeShipmentTax.currency)} ${activeShipmentTax.label}` : "—"}</span></div>{activeShipmentTax.label === "HT" && activeShipmentTax.amountCents > 0 && <><div className="flex justify-between"><span className="text-gray-500">TVA</span><span>{formatPrice(activeShipmentTax.taxAmountCents / 100, activeShipmentTax.currency)}</span></div><div className="flex justify-between font-semibold text-gray-950"><span>Total TTC</span><span>{formatPrice(activeShipmentTax.totalWithTaxCents / 100, activeShipmentTax.currency)}</span></div></>}<div className="flex justify-between"><span className="text-gray-500">Email client</span><span>{sendEmailToCustomer ? "Activé" : "Désactivé"}</span></div><div className="flex justify-between"><span className="text-gray-500">Format</span><span>{labelPrintFormat === "100x150" ? "100×150 mm" : "A4"}</span></div></div><div className="mt-5 space-y-2"><button type="button" className="inline-flex w-full items-center justify-center rounded-xl border border-rose-200 px-4 py-3 text-sm font-semibold text-rose-700 hover:bg-rose-50">Annuler l’étiquette</button><button onClick={() => setDrawerOpen(false)} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800"><ShieldCheck className="h-4 w-4" /> Terminé</button></div></section>
+                  <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><h3 className="font-semibold text-gray-950">Documents</h3><div className="mt-4 space-y-4"><label className="block text-sm font-medium text-gray-700">Format étiquette<select value={labelPrintFormat} onChange={(event) => setLabelPrintFormat(event.target.value)} className="mt-2 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"><option value="100x150">100×150 mm</option><option value="a4">A4</option></select></label><label className="block text-sm font-medium text-gray-700">Format bordereau<select value={packingSlipFormat} onChange={(event) => setPackingSlipFormat(event.target.value)} className="mt-2 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"><option value="a4">A4</option><option value="compact">Compact</option></select></label><label className="flex items-start gap-2 text-sm text-gray-600"><input type="checkbox" checked={includePackingSlip} onChange={(event) => setIncludePackingSlip(event.target.checked)} className="mt-1 rounded border-gray-300" />Inclure le bordereau dans le colis</label><button onClick={() => downloadLabel("etiquette")} disabled={!hasGeneratedLabel} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"><Download className="h-4 w-4" /> Télécharger l’étiquette</button><button onClick={printLabel} disabled={!hasGeneratedLabel} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"><ExternalLink className="h-4 w-4" /> Imprimer</button><button onClick={() => downloadLabel("bordereau")} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50"><FileText className="h-4 w-4" /> Télécharger le bordereau</button></div></section>
+                  <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><h3 className="font-semibold text-gray-950">Résumé achat</h3><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between"><span className="text-gray-500">Étiquette</span><span>{activeShipmentTax.amountCents ? `${formatPrice(activeShipmentTax.amountCents / 100, activeShipmentTax.currency)} ${activeShipmentTax.label}` : "—"}</span></div>{activeShipmentTax.label === "HT" && activeShipmentTax.amountCents > 0 && <><div className="flex justify-between"><span className="text-gray-500">TVA</span><span>{formatPrice(activeShipmentTax.taxAmountCents / 100, activeShipmentTax.currency)}</span></div><div className="flex justify-between font-semibold text-gray-950"><span>Total TTC</span><span>{formatPrice(activeShipmentTax.totalWithTaxCents / 100, activeShipmentTax.currency)}</span></div></>}<div className="flex justify-between"><span className="text-gray-500">Email client</span><span>{sendEmailToCustomer ? "Activé" : "Désactivé"}</span></div><div className="flex justify-between"><span className="text-gray-500">Format</span><span>{labelPrintFormat === "100x150" ? "100×150 mm" : "A4"}</span></div></div><div className="mt-5 space-y-2"><button type="button" onClick={cancelLabel} disabled={!canCancelLabel || drawerLoading} className="inline-flex w-full items-center justify-center rounded-xl border border-rose-200 px-4 py-3 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50">Annuler l’étiquette</button>{!canCancelLabel && hasGeneratedLabel && <p className="text-xs text-gray-500">Annulation indisponible après scan transporteur.</p>}<button onClick={() => setDrawerOpen(false)} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800"><ShieldCheck className="h-4 w-4" /> Terminé</button></div></section>
                 </aside>
               </div>
             )}

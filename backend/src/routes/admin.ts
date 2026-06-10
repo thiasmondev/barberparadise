@@ -25,6 +25,7 @@ import {
 import {
   buildShipmentQuotes,
   createOfficialShipmentLabel,
+  cancelOfficialShipmentLabel,
   fetchShipmentTracking,
   LOGISTICS_CARRIERS,
   LogisticsCarrier,
@@ -3493,6 +3494,7 @@ adminRouter.post(
       const relayPointId = String(req.body?.relayPointId || "").trim() || null;
       const insuranceValueCents = Math.max(parseInt(String(req.body?.insuranceValueCents || "0"), 10) || 0, 0);
       const signatureRequired = Boolean(req.body?.signatureRequired);
+      const sendTrackingEmail = Boolean(req.body?.sendTrackingEmail);
       const packagingIdRaw = req.body?.packagingId;
       const packagingId =
         packagingIdRaw === undefined || packagingIdRaw === null || packagingIdRaw === ""
@@ -3565,7 +3567,8 @@ adminRouter.post(
           : null,
       });
 
-      const shipment = await prisma.shipment.upsert({
+      const [shipment, updatedOrder] = await prisma.$transaction([
+        prisma.shipment.upsert({
         where: { orderId: order.id },
         create: {
           orderId: order.id,
@@ -3612,18 +3615,38 @@ adminRouter.post(
           labelStatus: labelResult.labelStatus,
           labelGeneratedAt: labelResult.labelGeneratedAt,
           carrierRawResponse: asPrismaJson(labelResult.rawResponse),
-          lastTrackingStatus: "Étiquette officielle achetée",
+          lastTrackingStatus: `Étiquette ${LOGISTICS_CARRIERS[carrier]} achetée — Suivi ${labelResult.trackingNumber}`,
           lastTrackingSyncAt: new Date(),
           shippedBy: req.user?.email || null,
         },
         include: { packaging: true },
-      });
+        }),
+        prisma.order.update({
+          where: { id: order.id },
+          data: { status: "processing" },
+        }),
+      ]);
+
+      let trackingEmailSent = false;
+      if (sendTrackingEmail && labelResult.trackingNumber) {
+        await sendOrderShippedEmail({
+          to: order.email,
+          orderNumber: order.orderNumber,
+          customerName: getCustomerName(order.customer, order.email),
+          carrier: LOGISTICS_CARRIERS[carrier],
+          trackingNumber: labelResult.trackingNumber,
+          trackingUrl: labelResult.trackingUrl || `https://www.laposte.fr/outils/suivre-vos-envois?code=${encodeURIComponent(labelResult.trackingNumber)}`,
+        });
+        trackingEmailSent = true;
+      }
 
       res.json({
         success: true,
+        order: updatedOrder,
         shipment,
+        trackingEmailSent,
         label: {
-          downloadUrl: `/api/admin/logistics/orders/${order.id}/label`,
+          downloadUrl: `/api/admin/shipments/${shipment.id}/label.pdf`,
           source: labelResult.labelSource,
           priceCents: labelResult.priceCents,
           insuranceValueCents: labelResult.insuranceValueCents,
@@ -3874,6 +3897,96 @@ adminRouter.get(
   }
 );
 
+// GET /api/admin/shipments/:shipmentId/label.pdf — Afficher/télécharger l’étiquette PDF par expédition
+adminRouter.get(
+  "/shipments/:shipmentId/label.pdf",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const shipment = await prisma.shipment.findUnique({
+        where: { id: req.params.shipmentId },
+        include: { order: true },
+      });
+
+      if (!shipment || !shipment.labelPdfBase64 || shipment.labelStatus === "cancelled") {
+        res.status(404).json({ error: "Étiquette non disponible" });
+        return;
+      }
+
+      const pdfBuffer = Buffer.from(shipment.labelPdfBase64, "base64");
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename=etiquette-${shipment.order.orderNumber}.pdf`
+      );
+      res.send(pdfBuffer);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur téléchargement étiquette" });
+    }
+  }
+);
+
+// POST /api/admin/shipments/:shipmentId/cancel — Annuler une étiquette transporteur
+adminRouter.post(
+  "/shipments/:shipmentId/cancel",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const shipment = await prisma.shipment.findUnique({
+        where: { id: req.params.shipmentId },
+        include: { packaging: true },
+      });
+
+      if (!shipment) {
+        res.status(404).json({ error: "Expédition non trouvée" });
+        return;
+      }
+      if (!Object.keys(LOGISTICS_CARRIERS).includes(shipment.carrier)) {
+        res.status(400).json({ error: "Transporteur invalide" });
+        return;
+      }
+      if (shipment.labelStatus === "cancelled") {
+        res.status(400).json({ error: "Cette étiquette est déjà annulée" });
+        return;
+      }
+      const scannedStatuses = ["in_transit", "shipped", "delivered", "scanned"];
+      const normalizedTrackingStatus = String(shipment.lastTrackingStatus || "").toLowerCase();
+      const hasCarrierScan = Boolean(shipment.shippedAt) || scannedStatuses.some(status => normalizedTrackingStatus.includes(status));
+      if (hasCarrierScan) {
+        res.status(400).json({ error: "Cette étiquette ne peut plus être annulée car elle a déjà été scannée par le transporteur." });
+        return;
+      }
+      if (!shipment.trackingNumber) {
+        res.status(400).json({ error: "Numéro de suivi absent pour annuler l’étiquette" });
+        return;
+      }
+
+      const cancellation = await cancelOfficialShipmentLabel({
+        carrier: shipment.carrier as LogisticsCarrier,
+        trackingNumber: shipment.trackingNumber,
+        carrierShipmentId: shipment.carrierShipmentId,
+      });
+
+      const updatedShipment = await prisma.shipment.update({
+        where: { id: shipment.id },
+        data: {
+          labelStatus: "cancelled",
+          lastTrackingStatus: cancellation.message,
+          lastTrackingSyncAt: new Date(),
+          carrierRawResponse: asPrismaJson(cancellation.rawResponse || shipment.carrierRawResponse),
+        },
+        include: { packaging: true },
+      });
+
+      res.json({ success: true, shipment: updatedShipment, message: cancellation.message });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: err instanceof Error ? err.message : "Erreur annulation étiquette" });
+    }
+  }
+);
+
 // POST /api/admin/logistics/orders/:orderId/tracking/sync — Synchroniser le suivi
 adminRouter.post(
   "/logistics/orders/:orderId/tracking/sync",
@@ -4015,10 +4128,10 @@ adminRouter.get(
           orderNumber: shipment.order.orderNumber,
           carrier: shipment.carrier,
           trackingNumber: shipment.trackingNumber,
-          labelStatus: shipment.shippedAt ? "shipped" : shipment.labelStatus || "generated",
+          labelStatus: shipment.labelStatus === "cancelled" ? "cancelled" : shipment.shippedAt ? "shipped" : shipment.labelStatus || "generated",
           labelGeneratedAt: shipment.labelGeneratedAt,
           shippedAt: shipment.shippedAt,
-          downloadUrl: `/api/admin/logistics/orders/${shipment.orderId}/label`,
+          downloadUrl: `/api/admin/shipments/${shipment.id}/label.pdf`,
         })),
       });
     } catch (err) {

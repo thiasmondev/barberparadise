@@ -8,6 +8,8 @@ import {
   CheckCircle2,
   Download,
   ExternalLink,
+  Printer,
+  XCircle,
   Loader2,
   Mail,
   MapPin,
@@ -18,8 +20,9 @@ import {
 } from "lucide-react";
 import {
   getAdminToken,
+  cancelShipmentLabel,
   getLogisticsCarrierQuotes,
-  getLogisticsLabelUrl,
+  getShipmentLabelPdfUrl,
   getLogisticsOrder,
   purchaseLogisticsLabel,
   shipLogisticsOrder,
@@ -69,6 +72,8 @@ export default function AdminLogisticsPreparationPage() {
   const [loadingQuotes, setLoadingQuotes] = useState(false);
   const [purchasingLabel, setPurchasingLabel] = useState(false);
   const [syncingTracking, setSyncingTracking] = useState(false);
+  const [cancellingLabel, setCancellingLabel] = useState(false);
+  const [sendTrackingEmail, setSendTrackingEmail] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [checked, setChecked] = useState({
@@ -119,7 +124,11 @@ export default function AdminLogisticsPreparationPage() {
   const totalWeight =
     (detail?.recommendation.totalWeightG || 0) +
     (selectedPackaging?.selfWeightG || 0);
-  const hasGeneratedLabel = detail?.shipment?.labelSource === "carrier_api" && Boolean(detail?.shipment?.trackingNumber);
+  const hasGeneratedLabel = detail?.shipment?.labelSource === "carrier_api" && Boolean(detail?.shipment?.trackingNumber) && detail.shipment.labelStatus !== "cancelled";
+  const hasCarrierScan = Boolean(detail?.shipment?.shippedAt) || ["in_transit", "shipped", "delivered", "scanned"].some(status =>
+    String(detail?.shipment?.lastTrackingStatus || "").toLowerCase().includes(status)
+  );
+  const canCancelLabel = hasGeneratedLabel && !hasCarrierScan;
   const selectedQuote = quotes.find(quote => quote.id === selectedOfferId) || null;
 
   const loadQuotes = async () => {
@@ -157,7 +166,11 @@ export default function AdminLogisticsPreparationPage() {
     }
     setError("");
     try {
-      const response = await fetch(getLogisticsLabelUrl(detail.order.id), {
+      const labelUrl = detail.shipment?.id
+        ? getShipmentLabelPdfUrl(detail.shipment.id)
+        : "";
+      if (!labelUrl) throw new Error("Expédition introuvable pour télécharger l’étiquette");
+      const response = await fetch(labelUrl, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) {
@@ -195,18 +208,48 @@ export default function AdminLogisticsPreparationPage() {
         insuranceValueCents: selectedQuote.insuranceValueCents,
         relayPointId: relayPointId.trim() || null,
         packagingId: packagingId ? Number(packagingId) : null,
+        sendTrackingEmail,
       });
-      setDetail({ ...detail, shipment: result.shipment });
+      setDetail({
+        ...detail,
+        order: result.order
+          ? { ...detail.order, ...result.order, customerName: detail.order.customerName }
+          : detail.order,
+        shipment: result.shipment,
+      });
       setCarrier(result.shipment.carrier as CarrierValue);
       setChecked(current => ({ ...current, label: true }));
       setNotice(
-        `Étiquette officielle achetée : ${formatPrice(result.label?.priceCents || selectedQuote.amountCents)}, assurance ${formatPrice(result.label?.insuranceValueCents || selectedQuote.insuranceValueCents)}.`
+        `Étiquette officielle achetée : ${formatPrice(result.label?.priceCents || selectedQuote.amountCents)}, assurance ${formatPrice(result.label?.insuranceValueCents || selectedQuote.insuranceValueCents)}.${result.trackingEmailSent ? " Email de suivi envoyé au client." : ""}`
       );
-      await downloadLabel();
+      window.open(getShipmentLabelPdfUrl(result.shipment.id), "_blank", "noopener,noreferrer");
     } catch (err: any) {
       setError(err.message || "Erreur lors de l’achat de l’étiquette officielle");
     } finally {
       setPurchasingLabel(false);
+    }
+  };
+
+  const printLabel = () => {
+    if (!detail?.shipment?.id) return;
+    window.open(getShipmentLabelPdfUrl(detail.shipment.id), "_blank", "noopener,noreferrer");
+    setChecked(current => ({ ...current, label: true }));
+  };
+
+  const handleCancelLabel = async () => {
+    if (!detail?.shipment || !canCancelLabel) return;
+    if (!confirm("Annuler cette étiquette transporteur ?")) return;
+    setCancellingLabel(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await cancelShipmentLabel(detail.shipment.id);
+      setDetail({ ...detail, shipment: result.shipment });
+      setNotice(result.message || "L’étiquette a été annulée. Le remboursement sera crédité sous 48h.");
+    } catch (err: any) {
+      setError(err.message || "Erreur lors de l’annulation de l’étiquette");
+    } finally {
+      setCancellingLabel(false);
     }
   };
 
@@ -512,6 +555,17 @@ export default function AdminLogisticsPreparationPage() {
               </p>
             )}
             <div className="grid gap-2">
+              <label className="flex items-start gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={sendTrackingEmail}
+                  onChange={e => setSendTrackingEmail(e.target.checked)}
+                  className="mt-1"
+                />
+                <span>
+                  Envoyer un email de suivi au client après l’achat de l’étiquette.
+                </span>
+              </label>
               <button
                 onClick={handlePurchaseLabel}
                 disabled={!selectedQuote || !selectedQuote.purchasable || purchasingLabel || saving || hasGeneratedLabel}
@@ -525,7 +579,22 @@ export default function AdminLogisticsPreparationPage() {
                 disabled={!hasGeneratedLabel || purchasingLabel}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Download size={17} /> Télécharger l’étiquette achetée
+                <Download size={17} /> Télécharger l’étiquette
+              </button>
+              <button
+                onClick={printLabel}
+                disabled={!hasGeneratedLabel || purchasingLabel}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Printer size={17} /> Imprimer l’étiquette
+              </button>
+              <button
+                onClick={handleCancelLabel}
+                disabled={!canCancelLabel || cancellingLabel}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {cancellingLabel ? <Loader2 className="animate-spin" size={17} /> : <XCircle size={17} />}
+                Annuler l’étiquette
               </button>
               <button
                 onClick={handleSyncTracking}

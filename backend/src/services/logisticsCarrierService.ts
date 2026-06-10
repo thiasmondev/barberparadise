@@ -114,6 +114,19 @@ export type TrackingResult = {
   rawResponse: Record<string, unknown> | null;
 };
 
+export type CancelShipmentLabelInput = {
+  carrier: LogisticsCarrier;
+  trackingNumber: string;
+  carrierShipmentId?: string | null;
+};
+
+export type CancelShipmentLabelResult = {
+  success: boolean;
+  status: "cancelled";
+  message: string;
+  rawResponse: Record<string, unknown> | null;
+};
+
 type TariffStep = {
   maxWeightG: number;
   amountCents: number;
@@ -353,7 +366,13 @@ export function buildShipmentQuotes(input: ShipmentQuoteInput): ShipmentRateQuot
   });
 }
 
-async function postSoap(url: string, action: string, body: string) {
+type SoapBinaryResponse = {
+  text: string;
+  buffer: Buffer;
+  contentType: string;
+};
+
+async function postSoapBinary(url: string, action: string, body: string): Promise<SoapBinaryResponse> {
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -362,11 +381,42 @@ async function postSoap(url: string, action: string, body: string) {
     },
     body,
   });
-  const text = await response.text();
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  const text = buffer.toString("utf8");
   if (!response.ok) {
     throw new Error(`Erreur API transporteur ${response.status}: ${text.slice(0, 400)}`);
   }
-  return text;
+  return {
+    text,
+    buffer,
+    contentType: response.headers.get("content-type") || "",
+  };
+}
+
+async function postSoap(url: string, action: string, body: string) {
+  return (await postSoapBinary(url, action, body)).text;
+}
+
+function extractPdfBase64FromSoapResponse(response: SoapBinaryResponse): string | null {
+  const pdfStart = response.buffer.indexOf(Buffer.from("%PDF"));
+  if (pdfStart >= 0) {
+    const eofMarker = Buffer.from("%%EOF");
+    const pdfEnd = response.buffer.indexOf(eofMarker, pdfStart);
+    const end = pdfEnd >= 0 ? pdfEnd + eofMarker.length : response.buffer.length;
+    return response.buffer.subarray(pdfStart, end).toString("base64");
+  }
+
+  const xmlLabel = getXmlValue(response.text, "label") || getXmlValue(response.text, "labelResponse");
+  if (!xmlLabel) return null;
+  const compact = xmlLabel.replace(/\s+/g, "");
+  if (!compact) return null;
+
+  const decoded = Buffer.from(compact, "base64");
+  if (decoded.indexOf(Buffer.from("%PDF")) >= 0) {
+    return decoded.toString("base64");
+  }
+  return compact;
 }
 
 async function downloadPdfAsBase64(url: string) {
@@ -458,10 +508,11 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
   const endpoint = process.env.COLISSIMO_SLS_ENDPOINT || "https://ws.colissimo.fr/sls-ws/SlsServiceWS/2.0";
   // Le WSDL Colissimo SLS 2.0 expose generateLabel avec un SOAPAction vide.
   // Envoyer "generateLabel" provoque un rejet SOAP côté Colissimo.
-  const xml = await postSoap(endpoint, '""', envelope);
+  const soapResponse = await postSoapBinary(endpoint, '""', envelope);
+  const xml = soapResponse.text;
   const trackingNumber = getXmlValue(xml, "parcelNumber") || getXmlValue(xml, "parcelNumberPartner");
   const pdfUrl = getXmlValue(xml, "pdfUrl");
-  const labelBase64 = getXmlValue(xml, "label") || (pdfUrl ? await downloadPdfAsBase64(pdfUrl) : null);
+  const labelBase64 = extractPdfBase64FromSoapResponse(soapResponse) || (pdfUrl ? await downloadPdfAsBase64(pdfUrl) : null);
 
   if (!trackingNumber) {
     throw new Error(`Colissimo n’a pas retourné de numéro de colis. Réponse: ${xml.slice(0, 600)}`);
@@ -492,7 +543,7 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
     taxAmountCents: quote.taxAmountCents,
     totalWithTaxCents: quote.totalWithTaxCents,
     signatureRequired,
-    rawResponse: { carrier: "colissimo", offer: quote, productCode, rawInsuranceValue, insuranceValueCents: insuranceValue, signatureRequired, contractNumberApplied: Boolean(contractNumber), contractNumberSuffix: contractNumber ? contractNumber.slice(-4) : null, responseXml: xml.slice(0, 4000) },
+    rawResponse: { carrier: "colissimo", offer: quote, productCode, rawInsuranceValue, insuranceValueCents: insuranceValue, signatureRequired, contractNumberApplied: Boolean(contractNumber), contractNumberSuffix: contractNumber ? contractNumber.slice(-4) : null, responseContentType: soapResponse.contentType, pdfExtractedFromMultipart: Boolean(labelBase64 && !getXmlValue(xml, "label") && !pdfUrl), responseXml: xml.slice(0, 4000) },
     notice: null,
   };
 }
@@ -618,6 +669,100 @@ export async function createOfficialShipmentLabel(input: ShipmentLabelInput): Pr
     return createMondialRelayLabel(normalizedInput, quote);
   }
   return createColissimoLabel(normalizedInput, quote);
+}
+
+async function cancelColissimoLabel(input: CancelShipmentLabelInput): Promise<CancelShipmentLabelResult> {
+  const contractNumber = getColissimoContractNumber();
+  const password = getColissimoPassword();
+  if (!contractNumber || !password) {
+    throw new Error(carrierConfigurationError(input.carrier) || "Configuration Colissimo absente.");
+  }
+
+  const parcelNumber = input.trackingNumber || input.carrierShipmentId;
+  if (!parcelNumber) {
+    throw new Error("Numéro de colis Colissimo obligatoire pour annuler l’étiquette.");
+  }
+
+  const envelope = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sls="http://sls.ws.coliposte.fr">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <sls:cancelLabel>
+      <contractNumber>${xmlEscape(contractNumber)}</contractNumber>
+      <password>${xmlEscape(password)}</password>
+      <parcelNumber>${xmlEscape(parcelNumber)}</parcelNumber>
+    </sls:cancelLabel>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+  const endpoint = process.env.COLISSIMO_SLS_ENDPOINT || "https://ws.colissimo.fr/sls-ws/SlsServiceWS/2.0";
+  const soapResponse = await postSoapBinary(endpoint, '""', envelope);
+  const xml = soapResponse.text;
+  const errorCode = getXmlValue(xml, "errorCode") || getXmlValue(xml, "code") || getXmlValue(xml, "faultcode");
+  const errorMessage = getXmlValue(xml, "errorMessage") || getXmlValue(xml, "message") || getXmlValue(xml, "faultstring");
+  if (errorCode && errorCode !== "0") {
+    throw new Error(`Colissimo a refusé l’annulation (code ${errorCode})${errorMessage ? ` : ${errorMessage}` : ""}.`);
+  }
+
+  return {
+    success: true,
+    status: "cancelled",
+    message: "L’étiquette a été annulée. Le remboursement sera crédité sous 48h.",
+    rawResponse: {
+      carrier: input.carrier,
+      trackingNumber: parcelNumber,
+      xml: xml.slice(0, 2000),
+    },
+  };
+}
+
+async function cancelMondialRelayLabel(input: CancelShipmentLabelInput): Promise<CancelShipmentLabelResult> {
+  const enseigne = getMondialRelayEnseigne();
+  if (!enseigne || !getMondialRelayPrivateKey()) {
+    throw new Error(carrierConfigurationError("mondial_relay") || "Configuration Mondial Relay absente.");
+  }
+
+  const expeditionNum = input.carrierShipmentId || input.trackingNumber;
+  if (!expeditionNum) {
+    throw new Error("Numéro d’expédition Mondial Relay obligatoire pour annuler l’étiquette.");
+  }
+
+  const values = [enseigne, expeditionNum];
+  const security = mondialRelaySecurity(values);
+  const envelope = `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <WSI2_AnnulationExpedition xmlns="http://www.mondialrelay.fr/webservice/">
+      <Enseigne>${xmlEscape(enseigne)}</Enseigne>
+      <Expedition>${xmlEscape(expeditionNum)}</Expedition>
+      <Security>${security}</Security>
+    </WSI2_AnnulationExpedition>
+  </soap:Body>
+</soap:Envelope>`;
+
+  const xml = await postSoap("https://api.mondialrelay.com/Web_Services.asmx", "http://www.mondialrelay.fr/webservice/WSI2_AnnulationExpedition", envelope);
+  const status = getXmlValue(xml, "STAT");
+  if (status && status !== "0") {
+    throw new Error(`Mondial Relay a refusé l’annulation (STAT ${status}).`);
+  }
+
+  return {
+    success: true,
+    status: "cancelled",
+    message: "L’étiquette a été annulée. Le remboursement sera crédité sous 48h.",
+    rawResponse: {
+      carrier: "mondial_relay",
+      trackingNumber: expeditionNum,
+      xml: xml.slice(0, 2000),
+    },
+  };
+}
+
+export async function cancelOfficialShipmentLabel(input: CancelShipmentLabelInput): Promise<CancelShipmentLabelResult> {
+  if (input.carrier === "mondial_relay") {
+    return cancelMondialRelayLabel(input);
+  }
+  return cancelColissimoLabel(input);
 }
 
 export async function fetchShipmentTracking(carrier: LogisticsCarrier, trackingNumber: string | null | undefined): Promise<TrackingResult> {
