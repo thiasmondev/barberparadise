@@ -53,6 +53,13 @@ import { scheduleTelegramDailyDigest } from "./services/telegram/telegramDigest"
 import { scheduleHermesAnalyticsCollection } from "./services/hermes/analyticsScheduler";
 
 const app = express();
+app.disable("x-powered-by");
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  next();
+});
 const PORT = process.env.PORT || 4000;
 
 // ─── Middleware ───────────────────────────────────────────────

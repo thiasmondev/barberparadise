@@ -6,7 +6,12 @@
     "dev": "next dev",
     "build": "NODE_ENV=production next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "audit:secrets": "secretlint --secretlintrc ../.secretlintrc.json .",
+    "audit:deps": "npm audit --audit-level=high",
+    "audit:headers": "playwright test e2e/security/headers.spec.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -23,17 +28,23 @@
     "@tiptap/starter-kit": "^3.22.3",
     "@uiw/react-md-editor": "^4.1.1",
     "lucide-react": "^0.460.0",
-    "next": "14.2.10",
+    "next": "^14.2.35",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-markdown": "^10.1.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@secretlint/secretlint-rule-preset-recommend": "^13.0.2",
     "@types/node": "^20.11.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.27",
-    "postcss": "^8.5.9",
+    "dotenv": "^17.4.2",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.35",
+    "postcss": "^8.5.15",
+    "secretlint": "^13.0.2",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.9.3"
   }
