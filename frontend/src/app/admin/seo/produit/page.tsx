@@ -824,6 +824,23 @@ function SeoProductPageContent() {
     }
   };
 
+  const handleSaveUrlAnchor = async () => {
+    if (!productId || !product) return;
+    setApplying(true);
+    setError("");
+    try {
+      const saved = await saveProductSeo(productId, { optimizedSlug: editSlug });
+      const normalizedSlug = (saved.product as any).slug || editSlug;
+      setProduct(saved.product);
+      setEditSlug(normalizedSlug);
+      setApplied(true);
+    } catch (err: any) {
+      setError(err.message || "Erreur lors de la sauvegarde de l’ancre d’URL.");
+    } finally {
+      setApplying(false);
+    }
+  };
+
   const handleApply = async () => {
     if (!productId || !product) return;
     setApplying(true);
@@ -1273,6 +1290,57 @@ function SeoProductPageContent() {
       {applied && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-emerald-700 text-sm flex items-center gap-2">
           <CheckCircle size={15} /> Optimisations appliquées avec succès !
+        </div>
+      )}
+
+      {/* Ancre d'URL globale — visible depuis SEO et GEO */}
+      {product && (
+        <div className="bg-white rounded-xl shadow-sm border border-emerald-100 p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <Globe size={14} className="text-emerald-600" />
+                <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">ANCRE D&apos;URL PRODUIT</span>
+                <span className={`text-xs font-mono ${editSlug.length > 90 ? "text-red-500" : editSlug.length >= 65 ? "text-amber-500" : "text-gray-400"}`}>
+                  {editSlug.length} car. / 90
+                </span>
+              </div>
+              <div className="flex items-center rounded-lg border border-gray-200 focus-within:ring-2 focus-within:ring-emerald-300 overflow-hidden bg-white">
+                <span className="shrink-0 bg-gray-50 text-gray-400 text-xs px-3 py-2 border-r border-gray-200">/produit/</span>
+                <input
+                  type="text"
+                  value={editSlug}
+                  onChange={(e) => { setEditSlug(e.target.value); setApplied(false); }}
+                  className="w-full text-sm text-gray-800 px-3 py-2 focus:outline-none"
+                  placeholder="tondeuse-finition-marque-modele"
+                />
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Modifiable sans quitter la page produit. À la sauvegarde, l’ancre est normalisée et contrôlée contre les doublons.</p>
+              {optimization?.slugSuggestions && optimization.slugSuggestions.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {optimization.slugSuggestions.map((slugOption) => (
+                    <button
+                      key={slugOption}
+                      type="button"
+                      onClick={() => { setEditSlug(slugOption); setApplied(false); }}
+                      className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${editSlug === slugOption ? "bg-emerald-600 text-white border-emerald-600" : "bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100"}`}
+                    >
+                      {slugOption}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleSaveUrlAnchor}
+              disabled={applying || !productId}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-black text-white hover:bg-emerald-700 disabled:opacity-60"
+            >
+              {applying ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              Enregistrer l’ancre
+            </button>
+          </div>
         </div>
       )}
 

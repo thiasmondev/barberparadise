@@ -7,6 +7,7 @@ import { requireAdmin, AuthRequest } from "../middleware/auth";
 import { prisma } from "../utils/prisma";
 import {
   calculateSeoScore,
+  calculateGeoScore,
   optimizeProduct,
   generateBlogArticle,
   generateImageAlts,
@@ -343,6 +344,7 @@ seoRouter.get("/analyze/:id", async (req, res) => {
     const recommendedById = new Map(recommendedProducts.map((item) => [item.id, item]));
 
     const { score, details } = calculateSeoScore(product as ProductData);
+    const { score: geoScore, details: geoDetails } = calculateGeoScore(product as ProductData);
     res.json({
       product: {
         ...serializeSeoProduct(product),
@@ -350,6 +352,8 @@ seoRouter.get("/analyze/:id", async (req, res) => {
       },
       score,
       details,
+      geoScore,
+      geoDetails,
     });
   } catch (err: any) {
     console.error("SEO Analyze error:", err);

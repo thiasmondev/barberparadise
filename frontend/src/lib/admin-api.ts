@@ -824,6 +824,8 @@ export function analyzeSeoProduct(id: string) {
     product: Product;
     score: number;
     details: { criterion: string; score: number; max: number; tip: string }[];
+    geoScore: number;
+    geoDetails: { criterion: string; score: number; max: number; tip: string }[];
   }>(`/api/admin/seo/analyze/${id}`);
 }
 
