@@ -232,7 +232,22 @@ export default function AdminLogisticsPreparationPage() {
 
   const printLabel = () => {
     if (!detail?.shipment?.id) return;
-    window.open(getShipmentLabelPdfUrl(detail.shipment.id), "_blank", "noopener,noreferrer");
+    const printWindow = window.open(getShipmentLabelPdfUrl(detail.shipment.id), "_blank");
+    if (!printWindow) {
+      setError("Veuillez autoriser les pop-ups pour imprimer l'étiquette");
+      return;
+    }
+
+    let hasTriggeredPrint = false;
+    const triggerPrint = () => {
+      if (hasTriggeredPrint || printWindow.closed) return;
+      hasTriggeredPrint = true;
+      printWindow.focus();
+      printWindow.print();
+    };
+
+    printWindow.onload = triggerPrint;
+    window.setTimeout(triggerPrint, 1000);
     setChecked(current => ({ ...current, label: true }));
   };
 

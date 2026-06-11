@@ -2637,6 +2637,10 @@ export function getAdminLegalPages() {
   return adminFetch<AdminLegalPage[]>("/api/legal-pages");
 }
 
+export function getAdminLegalPage(slug: string) {
+  return adminFetch<AdminLegalPage>(`/api/legal-pages/${slug}`);
+}
+
 export function updateAdminLegalPage(slug: string, data: { title: string; content: string }) {
   return adminFetch<AdminLegalPage>(`/api/legal-pages/${slug}`, {
     method: "PUT",

@@ -55,21 +55,21 @@ legalPagesRouter.put("/:slug", requireAdmin, async (req: AuthRequest, res) => {
       return;
     }
 
-    const page = await prisma.legalPage.update({
+    const page = await prisma.legalPage.upsert({
       where: { slug },
-      data: {
+      create: {
+        slug,
+        title: title.trim(),
+        content,
+      },
+      update: {
         title: title.trim(),
         content,
       },
     });
 
     res.json(page);
-  } catch (error: any) {
-    if (error?.code === "P2025") {
-      res.status(404).json({ error: "Page légale introuvable" });
-      return;
-    }
-
+  } catch (error) {
     console.error("Erreur mise à jour page légale:", error);
     res.status(500).json({ error: "Erreur lors de la mise à jour de la page légale" });
   }

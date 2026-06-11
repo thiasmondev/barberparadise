@@ -432,7 +432,22 @@ export default function OrderDetailPage() {
 
   const printLabel = () => {
     if (!activeLabelUrl) return;
-    window.open(activeLabelUrl, "_blank", "noopener,noreferrer");
+    const printWindow = window.open(activeLabelUrl, "_blank");
+    if (!printWindow) {
+      setDrawerError("Veuillez autoriser les pop-ups pour imprimer l'étiquette");
+      return;
+    }
+
+    let hasTriggeredPrint = false;
+    const triggerPrint = () => {
+      if (hasTriggeredPrint || printWindow.closed) return;
+      hasTriggeredPrint = true;
+      printWindow.focus();
+      printWindow.print();
+    };
+
+    printWindow.onload = triggerPrint;
+    window.setTimeout(triggerPrint, 1000);
   };
 
   const cancelLabel = async () => {

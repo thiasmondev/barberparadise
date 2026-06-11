@@ -13,6 +13,7 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:seed": "ts-node src/seed.ts",
+    "db:seed-legal-pages": "ts-node scripts/seedLegalPages.ts",
     "db:studio": "prisma studio",
     "db:seed-brands": "ts-node scripts/seed-brands.ts",
     "update-brand-logo": "npx ts-node scripts/update-brand-logo.ts",
