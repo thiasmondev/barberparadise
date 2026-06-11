@@ -29,6 +29,8 @@ export interface ProductData {
 
 export interface SeoOptimization {
   optimizedTitle: string;
+  optimizedSlug: string;
+  slugSuggestions: string[];
   metaDescription: string;
   seoDescription: string;
   suggestedTags: string[];
@@ -121,6 +123,25 @@ export interface ProductDraftFromUrl {
   logisticNote: string | null;
   confidenceWarnings: string[];
   extractedSource: { title: string; metaDescription: string; imageCount: number; bodyLength: number };
+}
+
+function slugifySeoAnchor(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 90) || "produit-barber-paradise";
+}
+
+function normalizeSlugSuggestions(value: unknown, fallback: string): string[] {
+  const items = Array.isArray(value) ? value : [];
+  const suggestions = items
+    .map((item) => slugifySeoAnchor(String(item || "")))
+    .filter(Boolean);
+  if (fallback && !suggestions.includes(fallback)) suggestions.unshift(fallback);
+  return Array.from(new Set(suggestions)).slice(0, 5);
 }
 
 // ─── SEO Score Calculator ───────────────────────────────────
@@ -707,6 +728,7 @@ PRODUIT ACTUEL :
 - Catégorie : ${product.category} > ${product.subcategory}
 - Prix : ${product.price}€${product.originalPrice ? ` (ancien prix : ${product.originalPrice}€)` : ""}
 - Description actuelle : ${plainDesc.substring(0, 1500)}
+- Ancre d'URL actuelle : /produit/${product.slug || "non-definie"}
 - Nombre d'images : ${images.length}
 
 INSTRUCTIONS CRITIQUES :
@@ -719,9 +741,13 @@ Génère une optimisation SEO complète au format JSON :
 
 1. "optimizedTitle" : Titre optimisé SEO (50-70 caractères). Inclure la marque, le type de produit, et un mot-clé fort.
 
-2. "metaDescription" : Meta description (120-155 caractères). Accroche commerciale + mot-clé principal + appel à l'action.
+2. "optimizedSlug" : Ancre d'URL SEO courte en kebab-case ASCII, sans accents, sans slash, 3 à 7 mots, incluant le type de produit, la marque si pertinente et le mot-clé principal. Exemple : "tondeuse-finition-babylisspro-skeleton".
 
-3. "seoDescription" : Description longue optimisée en HTML (600-1200 mots). Structure OBLIGATOIRE :
+3. "slugSuggestions" : Array de 3 à 5 variantes d'ancres d'URL SEO en kebab-case, toutes différentes, courtes et lisibles.
+
+4. "metaDescription" : Meta description (120-155 caractères). Accroche commerciale + mot-clé principal + appel à l'action.
+
+5. "seoDescription" : Description longue optimisée en HTML (600-1200 mots). Structure OBLIGATOIRE :
    - Paragraphe d'introduction factuel (150 mots max, réponse directe, données chiffrées)
    - <h2>Caractéristiques techniques</h2> avec <ul><li> pour les specs
    - <h2>Idéal pour</h2> avec cas d'usage concrets pour les barbiers/coiffeurs
@@ -730,13 +756,13 @@ Génère une optimisation SEO complète au format JSON :
    - <strong> pour les mots-clés importants
    - Vocabulaire professionnel barbier/coiffure
 
-4. "suggestedTags" : Array de 8-12 tags/mots-clés pertinents en français
+6. "suggestedTags" : Array de 8-12 tags/mots-clés pertinents en français
 
-5. "imageAlts" : Array de textes alt pour ${images.length} image(s). Descriptifs avec marque + type produit.
+7. "imageAlts" : Array de textes alt pour ${images.length} image(s). Descriptifs avec marque + type produit.
 
-6. "seoScore" : Score SEO estimé après optimisation (0-100)
+8. "seoScore" : Score SEO estimé après optimisation (0-100)
 
-7. "suggestions" : Array de 3-5 suggestions d'amélioration supplémentaires
+9. "suggestions" : Array de 3-5 suggestions d'amélioration supplémentaires
 
 Réponds UNIQUEMENT avec le JSON valide, sans markdown ni commentaires.`;
 
@@ -746,6 +772,8 @@ Réponds UNIQUEMENT avec le JSON valide, sans markdown ni commentaires.`;
     const result = parseJsonResponse(raw) as Record<string, unknown>;
     return {
       optimizedTitle: (result.optimizedTitle as string) || product.name,
+      optimizedSlug: slugifySeoAnchor((result.optimizedSlug as string) || product.slug || product.name),
+      slugSuggestions: normalizeSlugSuggestions(result.slugSuggestions, slugifySeoAnchor((result.optimizedSlug as string) || product.slug || product.name)),
       metaDescription: (result.metaDescription as string) || product.shortDescription,
       seoDescription: (result.seoDescription as string) || product.description,
       suggestedTags: (result.suggestedTags as string[]) || [],

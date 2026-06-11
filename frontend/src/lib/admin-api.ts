@@ -741,6 +741,8 @@ export function deleteCategory(id: string) {
 
 export interface SeoOptimization {
   optimizedTitle: string;
+  optimizedSlug: string;
+  slugSuggestions: string[];
   metaDescription: string;
   seoDescription: string;
   suggestedTags: string[];
@@ -838,6 +840,8 @@ export function applySeoOptimization(
   id: string,
   data: {
     optimizedTitle?: string;
+    optimizedSlug?: string;
+    slug?: string;
     metaDescription?: string;
     seoDescription?: string;
     suggestedTags?: string[];
@@ -856,6 +860,8 @@ export function saveProductSeo(
   id: string,
   data: {
     optimizedTitle?: string;
+    optimizedSlug?: string;
+    slug?: string;
     metaDescription?: string;
     seoDescription?: string;
     suggestedTags?: string[];

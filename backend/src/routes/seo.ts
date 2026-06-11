@@ -133,6 +133,26 @@ async function getUniqueProductSlug(base: string): Promise<string> {
   return slug;
 }
 
+async function getAvailableProductSlug(base: string, excludeProductId?: string): Promise<string> {
+  const cleanBase = slugifyProductUrlDraft(base);
+  let slug = cleanBase;
+  let index = 2;
+  while (
+    await prisma.product.findFirst({
+      where: {
+        OR: [{ slug }, { handle: slug }],
+        ...(excludeProductId ? { id: { not: excludeProductId } } : {}),
+      },
+      select: { id: true },
+    })
+  ) {
+    slug = `${cleanBase}-${index}`;
+    index += 1;
+  }
+  return slug;
+}
+
+
 function productDraftToCreateData(draft: ProductDraftFromUrl, slug: string, importedImageUrls: string[] = []) {
   const price = typeof draft.price === "number" && Number.isFinite(draft.price) ? draft.price : 0;
   const fallbackImageUrls = Array.from(new Set((draft.imageUrls || []).filter(isImportableImageUrl))).slice(0, 8);
@@ -359,7 +379,7 @@ seoRouter.post("/optimize/:id", async (req, res) => {
 // ─── Apply Optimization to Product ──────────────────────────
 seoRouter.post("/apply/:id", async (req, res) => {
   try {
-    const { optimizedTitle, metaDescription, seoDescription, suggestedTags } = req.body;
+    const { optimizedTitle, optimizedSlug, slug, metaDescription, seoDescription, suggestedTags } = req.body;
 
     const product = await prisma.product.findUnique({
       where: { id: req.params.id },
@@ -371,6 +391,12 @@ seoRouter.post("/apply/:id", async (req, res) => {
 
     const updateData: Record<string, any> = {};
     if (optimizedTitle) updateData.name = optimizedTitle;
+    const nextSlug = optimizedSlug ?? slug;
+    if (nextSlug) {
+      const cleanSlug = await getAvailableProductSlug(String(nextSlug), product.id);
+      updateData.slug = cleanSlug;
+      updateData.handle = cleanSlug;
+    }
     if (metaDescription) updateData.shortDescription = metaDescription;
     if (seoDescription) updateData.description = seoDescription;
     if (suggestedTags && Array.isArray(suggestedTags)) {
@@ -415,10 +441,13 @@ seoRouter.post("/bulk-optimize", async (req, res) => {
         const optimization = await optimizeProduct(product as ProductData);
 
         if (autoApply) {
+          const cleanSlug = await getAvailableProductSlug(optimization.optimizedSlug || product.slug || product.name, product.id);
           await prisma.product.update({
             where: { id: product.id },
             data: {
               name: optimization.optimizedTitle,
+              slug: cleanSlug,
+              handle: cleanSlug,
               shortDescription: optimization.metaDescription,
               description: optimization.seoDescription,
               tags: JSON.stringify(optimization.suggestedTags),

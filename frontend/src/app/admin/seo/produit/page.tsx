@@ -191,10 +191,10 @@ function TagsEditor({ tags, onChange }: { tags: string[]; onChange: (tags: strin
 
 //// ─── Product Preview (simule la fiche produit publique) ────────────────────
 function ProductPreview({
-  product, title, metaDescription, description, tags, category, subcategory, brand, images: editImages, publicationStatus,
+  product, title, metaDescription, description, tags, category, subcategory, brand, images: editImages, publicationStatus, slug,
 }: {
   product: Product; title: string; metaDescription: string;
-  description: string; tags: string[]; category: string; subcategory: string; brand: string; images: string[]; publicationStatus: string;
+  description: string; tags: string[]; category: string; subcategory: string; brand: string; images: string[]; publicationStatus: string; slug?: string;
 }) {
   const images = editImages.length > 0 ? editImages : parseImages(product.images);
   const compareAtPrice = product.compareAtPrice ?? product.originalPrice;
@@ -211,7 +211,7 @@ function ProductPreview({
           <div className="w-3 h-3 rounded-full bg-green-500" />
         </div>
         <div className="flex-1 bg-gray-700 rounded-md px-3 py-0.5 text-xs text-gray-300 truncate">
-          barberparadise.fr/produit/{(product as any).slug}
+          barberparadise.fr/produit/{slug || (product as any).slug}
         </div>
       </div>
 
@@ -338,7 +338,7 @@ function ProductPreview({
             <p className="text-blue-700 text-sm font-medium hover:underline cursor-pointer truncate">
               {title || product.name}
             </p>
-            <p className="text-xs text-emerald-700">barberparadise.fr › produit › {(product as any).slug}</p>
+            <p className="text-xs text-emerald-700">barberparadise.fr › produit › {slug || (product as any).slug}</p>
             <p className="text-xs text-gray-600 mt-0.5 line-clamp-2">
               {metaDescription || "Meta description non définie"}
             </p>
@@ -375,6 +375,7 @@ function SeoProductPageContent() {
 
   // Champs éditables SEO
   const [editTitle, setEditTitle] = useState("");
+  const [editSlug, setEditSlug] = useState("");
   const [editMeta, setEditMeta] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editTags, setEditTags] = useState<string[]>([]);
@@ -521,6 +522,7 @@ function SeoProductPageContent() {
         setScore(data.score);
         setDetails(data.details);
         setEditTitle(data.product.name || "");
+        setEditSlug((data.product as any).slug || "");
         setEditMeta((data.product as any).metaDescription || "");
         setEditDescription(data.product.description || "");
         setEditCategory(data.product.category || "");
@@ -678,6 +680,7 @@ function SeoProductPageContent() {
   useEffect(() => {
     if (optimization) {
       setEditTitle(optimization.optimizedTitle);
+      setEditSlug(optimization.optimizedSlug || editSlug);
       setEditMeta(optimization.metaDescription);
       setEditDescription(optimization.seoDescription);
       setEditTags(optimization.suggestedTags);
@@ -828,6 +831,7 @@ function SeoProductPageContent() {
     try {
       await saveProductSeo(productId, {
         optimizedTitle: editTitle,
+        optimizedSlug: editSlug,
         metaDescription: editMeta,
         seoDescription: editDescription,
         suggestedTags: editTags,
@@ -863,6 +867,7 @@ function SeoProductPageContent() {
   const handleReset = () => {
     if (optimization) {
       setEditTitle(optimization.optimizedTitle);
+      setEditSlug(optimization.optimizedSlug || editSlug);
       setEditMeta(optimization.metaDescription);
       setEditDescription(optimization.seoDescription);
       setEditTags(optimization.suggestedTags);
@@ -1774,6 +1779,42 @@ function SeoProductPageContent() {
               <EditableField label="TITRE" value={editTitle} onChange={(v) => { setEditTitle(v); setApplied(false); }}
                 maxLength={60} hint="50-60 caractères recommandés. Incluez le nom exact du produit et la marque."
                 badgeColor="violet" />
+
+              {/* Ancre d'URL */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">ANCRE D&apos;URL</span>
+                  <span className={`text-xs font-mono ${editSlug.length > 90 ? "text-red-500" : editSlug.length >= 65 ? "text-amber-500" : "text-gray-400"}`}>
+                    {editSlug.length} car. / 90
+                  </span>
+                  <Globe size={11} className="text-gray-300 ml-auto" />
+                </div>
+                <div className="flex items-center rounded-lg border border-gray-200 focus-within:ring-2 focus-within:ring-emerald-300 overflow-hidden">
+                  <span className="shrink-0 bg-gray-50 text-gray-400 text-xs px-3 py-2 border-r border-gray-200">/produit/</span>
+                  <input
+                    type="text"
+                    value={editSlug}
+                    onChange={(e) => { setEditSlug(e.target.value); setApplied(false); }}
+                    className="w-full text-sm text-gray-800 px-3 py-2 focus:outline-none"
+                    placeholder="tondeuse-finition-marque-modele"
+                  />
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Utilisez une ancre courte, lisible, sans accents, avec le mot-clé principal. Elle sera normalisée automatiquement à la sauvegarde.</p>
+                {optimization?.slugSuggestions && optimization.slugSuggestions.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {optimization.slugSuggestions.map((slugOption) => (
+                      <button
+                        key={slugOption}
+                        type="button"
+                        onClick={() => { setEditSlug(slugOption); setApplied(false); }}
+                        className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${editSlug === slugOption ? "bg-emerald-600 text-white border-emerald-600" : "bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100"}`}
+                      >
+                        {slugOption}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               {/* Meta description */}
               <EditableField label="META DESCRIPTION" value={editMeta} onChange={(v) => { setEditMeta(v); setApplied(false); }}

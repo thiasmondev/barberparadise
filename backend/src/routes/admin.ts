@@ -2640,6 +2640,33 @@ adminRouter.get(
   }
 );
 
+function slugifyProductAnchor(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 90) || "produit-barber-paradise";
+}
+
+async function ensureAvailableProductAnchor(rawSlug: string, productId: string): Promise<string> {
+  const slug = slugifyProductAnchor(rawSlug);
+  const existing = await prisma.product.findFirst({
+    where: {
+      OR: [{ slug }, { handle: slug }],
+      id: { not: productId },
+    },
+    select: { id: true },
+  });
+  if (existing) {
+    const error = new Error("Cette ancre d’URL est déjà utilisée par un autre produit.");
+    (error as any).statusCode = 409;
+    throw error;
+  }
+  return slug;
+}
+
 // PUT /api/admin/products/:id/seo — Sauvegarder les champs SEO/GEO édités dans l'agent SEO
 adminRouter.put(
   "/products/:id/seo",
@@ -2656,6 +2683,9 @@ adminRouter.put(
         optimizedTitle,
         title,
         name,
+        optimizedSlug,
+        slug,
+        urlAnchor,
         metaDescription,
         seoDescription,
         description,
@@ -2705,10 +2735,14 @@ adminRouter.put(
       if (nextEntityKeywords !== undefined) nextFeatures.entityKeywords = nextEntityKeywords;
 
       const nextTags = normalizeStringArray(suggestedTags ?? seoTags ?? tags);
+      const requestedSlug = optimizedSlug ?? slug ?? urlAnchor;
+      const nextSlug = requestedSlug !== undefined ? await ensureAvailableProductAnchor(String(requestedSlug), product.id) : undefined;
       const rawPublicPrice = price !== undefined ? price : priceEur;
       const nextCompareAtPrice = toOptionalFloat((compareAtPrice ?? originalPrice) as NumericInput);
       const updateData: Record<string, any> = {
         name: normalizeNullableString(optimizedTitle ?? title ?? name) || undefined,
+        slug: nextSlug,
+        handle: nextSlug,
         shortDescription: normalizeNullableString(metaDescription) ?? undefined,
         description: normalizeNullableString(seoDescription ?? description) ?? undefined,
         tags: nextTags !== undefined ? JSON.stringify(nextTags) : undefined,
@@ -2725,9 +2759,9 @@ adminRouter.put(
       });
 
       res.json({ success: true, product: serializeProductForAdmin(updated) });
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      res.status(500).json({ error: "Erreur sauvegarde SEO produit" });
+      res.status(err.statusCode || 500).json({ error: err.message || "Erreur sauvegarde SEO produit" });
     }
   }
 );
