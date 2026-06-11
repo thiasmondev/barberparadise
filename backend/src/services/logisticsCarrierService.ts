@@ -672,38 +672,17 @@ export async function createOfficialShipmentLabel(input: ShipmentLabelInput): Pr
 }
 
 async function cancelColissimoLabel(input: CancelShipmentLabelInput): Promise<CancelShipmentLabelResult> {
-  const contractNumber = getColissimoContractNumber();
-  const password = getColissimoPassword();
-  if (!contractNumber || !password) {
-    throw new Error(carrierConfigurationError(input.carrier) || "Configuration Colissimo absente.");
-  }
-
   const parcelNumber = input.trackingNumber || input.carrierShipmentId;
   if (!parcelNumber) {
     throw new Error("Numéro de colis Colissimo obligatoire pour annuler l’étiquette.");
   }
 
-  const envelope = `<?xml version="1.0" encoding="UTF-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sls="http://sls.ws.coliposte.fr">
-  <soapenv:Header/>
-  <soapenv:Body>
-    <sls:cancelLabel>
-      <contractNumber>${xmlEscape(contractNumber)}</contractNumber>
-      <password>${xmlEscape(password)}</password>
-      <parcelNumber>${xmlEscape(parcelNumber)}</parcelNumber>
-    </sls:cancelLabel>
-  </soapenv:Body>
-</soapenv:Envelope>`;
-
-  const endpoint = process.env.COLISSIMO_SLS_ENDPOINT || "https://ws.colissimo.fr/sls-ws/SlsServiceWS/2.0";
-  const soapResponse = await postSoapBinary(endpoint, '""', envelope);
-  const xml = soapResponse.text;
-  const errorCode = getXmlValue(xml, "errorCode") || getXmlValue(xml, "code") || getXmlValue(xml, "faultcode");
-  const errorMessage = getXmlValue(xml, "errorMessage") || getXmlValue(xml, "message") || getXmlValue(xml, "faultstring");
-  if (errorCode && errorCode !== "0") {
-    throw new Error(`Colissimo a refusé l’annulation (code ${errorCode})${errorMessage ? ` : ${errorMessage}` : ""}.`);
-  }
-
+  // Le WSDL Colissimo SLS 2.0 ne publie aucune opération d’annulation
+  // (`cancelLabel`, `deleteLabel` ou équivalent). Appeler une opération non
+  // déclarée renvoie une Fault SOAP 500 du type :
+  // "Message part {http://sls.ws.coliposte.fr}cancelLabel was not recognized".
+  // L’annulation est donc traitée côté Barber Paradise pour les étiquettes non
+  // scannées ; la route admin bloque déjà les colis expédiés, scannés ou livrés.
   return {
     success: true,
     status: "cancelled",
@@ -711,7 +690,8 @@ async function cancelColissimoLabel(input: CancelShipmentLabelInput): Promise<Ca
     rawResponse: {
       carrier: input.carrier,
       trackingNumber: parcelNumber,
-      xml: xml.slice(0, 2000),
+      mode: "administrative_cancellation",
+      reason: "Colissimo SLS 2.0 n’expose pas d’opération SOAP d’annulation d’étiquette.",
     },
   };
 }
