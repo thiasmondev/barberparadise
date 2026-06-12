@@ -46,6 +46,68 @@ function parseJsonArray(value?: string | null): unknown[] {
   }
 }
 
+function normalizeSearchText(value: unknown): string {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function scoreText(value: unknown, query: string, weights: { exact: number; starts: number; contains: number }): number {
+  const text = normalizeSearchText(value);
+  if (!text || !query) return 0;
+  if (text === query) return weights.exact;
+  if (text.startsWith(query)) return weights.starts;
+  if (text.includes(query)) return weights.contains;
+  return 0;
+}
+
+// La recherche rapide privilégie les champs métier visibles et ignore la description longue.
+// Cela évite que « peigne » affiche en priorité des cires/pâtes dont la description mentionne simplement l’usage au peigne.
+function scoreQuickSearchProduct(product: JsonProduct & Record<string, any>, query: string): number {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return 0;
+
+  let score = 0;
+  score += scoreText(product.name, normalizedQuery, { exact: 1000, starts: 850, contains: 700 });
+  score += scoreText(product.slug, normalizedQuery, { exact: 650, starts: 520, contains: 450 });
+  score += scoreText(product.category, normalizedQuery, { exact: 500, starts: 380, contains: 280 });
+  score += scoreText(product.brand, normalizedQuery, { exact: 400, starts: 300, contains: 180 });
+  score += scoreText(product.tags, normalizedQuery, { exact: 360, starts: 260, contains: 220 });
+
+  if (Array.isArray(product.variants)) {
+    score += Math.max(
+      0,
+      ...product.variants.map((variant) =>
+        scoreText((variant as Record<string, any>).name, normalizedQuery, { exact: 450, starts: 350, contains: 260 }) +
+        scoreText((variant as Record<string, any>).sku, normalizedQuery, { exact: 320, starts: 240, contains: 160 }) +
+        scoreText((variant as Record<string, any>).color, normalizedQuery, { exact: 180, starts: 120, contains: 80 }) +
+        scoreText((variant as Record<string, any>).size, normalizedQuery, { exact: 180, starts: 120, contains: 80 })
+      )
+    );
+  }
+
+  return score;
+}
+
+function buildQuickSearchWhere(query: string) {
+  return {
+    OR: [
+      { name: { contains: query, mode: "insensitive" as const } },
+      { brand: { contains: query, mode: "insensitive" as const } },
+      { slug: { contains: query, mode: "insensitive" as const } },
+      { category: { contains: query, mode: "insensitive" as const } },
+      { tags: { contains: query, mode: "insensitive" as const } },
+      { variants: { some: { name: { contains: query, mode: "insensitive" as const } } } },
+      { variants: { some: { sku: { contains: query, mode: "insensitive" as const } } } },
+      { variants: { some: { color: { contains: query, mode: "insensitive" as const } } } },
+      { variants: { some: { size: { contains: query, mode: "insensitive" as const } } } },
+    ],
+  };
+}
+
 function serializeProduct<T extends JsonProduct & { price: number }>(product: T, isApprovedPro: boolean) {
   const parsed = {
     ...product,
@@ -290,20 +352,23 @@ productsRouter.get("/search", async (req: Request, res: Response): Promise<void>
       prisma.product.findMany({
         where: {
           status: "active",
-          OR: [
-            { name: { contains: q, mode: "insensitive" } },
-            { brand: { contains: q, mode: "insensitive" } },
-            { description: { contains: q, mode: "insensitive" } },
-            { slug: { contains: q, mode: "insensitive" } },
-          ],
+          ...buildQuickSearchWhere(q),
         },
         orderBy: { name: "asc" },
-        take: 8,
+        take: 40,
         include: { variants: { orderBy: { order: "asc" } } },
       }),
       isApprovedProRequest(req),
     ]);
-    res.json(products.map((product) => serializeProduct(product, isApprovedPro)));
+
+    const rankedProducts = products
+      .map((product) => ({ product, score: scoreQuickSearchProduct(product, q) }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score || a.product.name.localeCompare(b.product.name, "fr"))
+      .slice(0, 8)
+      .map((item) => item.product);
+
+    res.json(rankedProducts.map((product) => serializeProduct(product, isApprovedPro)));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur recherche produits" });
