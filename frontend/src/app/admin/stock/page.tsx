@@ -95,6 +95,7 @@ export default function AdminStockPage() {
   const [pendingAlertCount, setPendingAlertCount] = useState(0);
   const [loadingAlerts, setLoadingAlerts] = useState(true);
   const [alertActionId, setAlertActionId] = useState<string | null>(null);
+  const [stockSortDirection, setStockSortDirection] = useState<"asc" | "desc" | null>(null);
 
   const selectedBrand = useMemo(
     () => brands.find(brand => (brand.brandId != null ? `id:${brand.brandId}` : `name:${brand.brand}`) === selectedBrandKey) ?? null,
@@ -160,6 +161,17 @@ export default function AdminStockPage() {
     const ruptures = products.filter(product => !productForms[product.id]?.inStock).length;
     return { stock, variants, ruptures };
   }, [products, productForms]);
+
+  const sortedProducts = useMemo(() => {
+    if (!stockSortDirection) return products;
+    return [...products].sort((left, right) => {
+      const leftStock = Number(productForms[left.id]?.stockCount ?? left.stockCount ?? 0);
+      const rightStock = Number(productForms[right.id]?.stockCount ?? right.stockCount ?? 0);
+      const stockDiff = stockSortDirection === "asc" ? leftStock - rightStock : rightStock - leftStock;
+      if (stockDiff !== 0) return stockDiff;
+      return left.name.localeCompare(right.name, "fr", { sensitivity: "base" });
+    });
+  }, [products, productForms, stockSortDirection]);
 
   const saveAllVisibleStock = async () => {
     if (products.length === 0 || bulkSaving) return;
@@ -451,7 +463,16 @@ export default function AdminStockPage() {
                     <th className="px-4 py-3 text-left font-medium text-gray-500">Produit</th>
                     <th className="px-3 py-3 text-right font-medium text-gray-500">Prix TTC</th>
                     <th className="px-3 py-3 text-right font-medium text-gray-500">Prix pro HT</th>
-                    <th className="px-3 py-3 text-center font-medium text-gray-500">Stock</th>
+                    <th className="px-3 py-3 text-center font-medium text-gray-500" aria-sort={stockSortDirection === "asc" ? "ascending" : stockSortDirection === "desc" ? "descending" : "none"}>
+                      <button
+                        type="button"
+                        onClick={() => setStockSortDirection(current => current === "asc" ? "desc" : "asc")}
+                        className="inline-flex items-center justify-center gap-1 rounded-md px-2 py-1 hover:bg-gray-100 hover:text-dark-900 transition-colors"
+                        title="Trier le stock en croissant ou décroissant"
+                      >
+                        Stock <span className="text-[10px] text-gray-400">{stockSortDirection === "asc" ? "↑" : stockSortDirection === "desc" ? "↓" : "↕"}</span>
+                      </button>
+                    </th>
                     <th className="px-3 py-3 text-center font-medium text-gray-500">Disponibilité</th>
                     <th className="px-3 py-3 text-center font-medium text-gray-500">Statut</th>
                   </tr>
@@ -462,7 +483,7 @@ export default function AdminStockPage() {
                   ) : products.length === 0 ? (
                     <tr><td colSpan={6} className="px-4 py-12 text-center text-gray-400"><Boxes size={32} className="mx-auto mb-2 text-gray-300" />Aucun produit trouvé</td></tr>
                   ) : (
-                    products.map(product => {
+                    sortedProducts.map(product => {
                       const form = productForms[product.id] || productDraft(product);
                       const image = parseImages(product.images)[0];
                       return (
