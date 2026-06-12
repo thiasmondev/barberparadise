@@ -509,9 +509,6 @@ export default function ProductDetail({ product }: { product: Product }) {
                 <>
                   <div className="w-1.5 h-1.5 bg-green-400 rounded-full" />
                   <span className="text-xs font-black tracking-widest uppercase text-green-400">En stock</span>
-                  {selectedVariant && (
-                    <span className="text-xs text-gray-600 ml-1">({selectedVariant.stock} disponibles)</span>
-                  )}
                 </>
               ) : (
                 <>
