@@ -2070,16 +2070,15 @@ adminRouter.get(
           ? brandById.get(product.brandId)
           : null;
         const brandName = brandRef?.name || product.brand || "Sans marque";
-        const key = product.brandId
-          ? `id:${product.brandId}`
-          : `name:${brandName.toLowerCase()}`;
+        const normalizedBrandName = normalizeForStockMatch(brandName) || "sans marque";
+        const key = `name:${normalizedBrandName}`;
         if (!grouped.has(key)) {
           grouped.set(key, {
             brandId: product.brandId ?? null,
             brand: brandName,
             slug:
               brandRef?.slug ||
-              normalizeForStockMatch(brandName).replace(/\s+/g, "-") ||
+              normalizedBrandName.replace(/\s+/g, "-") ||
               "sans-marque",
             logo: brandRef?.logo || null,
             productCount: 0,
@@ -2090,6 +2089,8 @@ adminRouter.get(
           });
         }
         const item = grouped.get(key)!;
+        if (!item.brandId && product.brandId) item.brandId = product.brandId;
+        if (!item.logo && brandRef?.logo) item.logo = brandRef.logo;
         item.productCount += 1;
         if (product.status === "active") item.activeCount += 1;
         if (product.inStock) item.inStockCount += 1;
@@ -2119,16 +2120,35 @@ adminRouter.get(
         string
       >;
       const where: Record<string, unknown> = {};
-      if (brandId) where.brandId = parseInt(brandId, 10);
-      else if (brand) where.brand = brand;
+      const andFilters: Record<string, unknown>[] = [];
+      if (brandId) {
+        const parsedBrandId = parseInt(brandId, 10);
+        const brandRef = Number.isFinite(parsedBrandId)
+          ? await prisma.brand.findUnique({
+              where: { id: parsedBrandId },
+              select: { name: true },
+            })
+          : null;
+        andFilters.push({
+          OR: [
+            { brandId: parsedBrandId },
+            ...(brandRef?.name ? [{ brand: brandRef.name }] : []),
+          ],
+        });
+      } else if (brand) {
+        andFilters.push({ brand });
+      }
       if (status) where.status = status;
       if (search) {
-        where.OR = [
-          { name: { contains: search, mode: "insensitive" } },
-          { slug: { contains: search, mode: "insensitive" } },
-          { brand: { contains: search, mode: "insensitive" } },
-        ];
+        andFilters.push({
+          OR: [
+            { name: { contains: search, mode: "insensitive" } },
+            { slug: { contains: search, mode: "insensitive" } },
+            { brand: { contains: search, mode: "insensitive" } },
+          ],
+        });
       }
+      if (andFilters.length > 0) where.AND = andFilters;
       const products = await prisma.product.findMany({
         where,
         select: {
