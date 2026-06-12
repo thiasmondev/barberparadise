@@ -102,7 +102,7 @@ async function importDraftImagesToCloudinary(draft: ProductDraftFromUrl, product
         public_id: `source-${index + 1}`,
         overwrite: true,
         resource_type: "image",
-        transformation: [{ width: 1200, height: 1200, crop: "limit", quality: "auto", fetch_format: "auto" }],
+        transformation: [{ width: 1800, height: 1800, crop: "limit", quality: "auto:best", fetch_format: "auto" }],
       });
       if (result.secure_url) imported.push(result.secure_url);
     } catch (error) {

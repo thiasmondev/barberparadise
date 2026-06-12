@@ -964,6 +964,17 @@ function SeoProductPageContent() {
     }
   };
 
+  const handleRemoveUrlDraftImage = (imageIndex: number) => {
+    setUrlDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        imageUrls: current.imageUrls.filter((_, index) => index !== imageIndex),
+        imageAlts: current.imageAlts.filter((_, index) => index !== imageIndex),
+      };
+    });
+  };
+
   // ─── GEO Handlers ────────────────────────────────────────────
   const handleGeoOptimize = async () => {
     if (!productId) return;
@@ -1175,7 +1186,7 @@ function SeoProductPageContent() {
                 <div className="bg-gray-50 rounded-xl p-3"><span className="text-gray-400">Marque</span><p className="font-semibold text-gray-900">{urlDraft.brand || "À compléter"}</p></div>
                 <div className="bg-gray-50 rounded-xl p-3"><span className="text-gray-400">Prix détecté</span><p className="font-semibold text-gray-900">{urlDraft.price != null ? formatPrice(urlDraft.price) : "À compléter"}</p></div>
                 <div className="bg-gray-50 rounded-xl p-3"><span className="text-gray-400">Catégorie</span><p className="font-semibold text-gray-900">{urlDraft.category} / {urlDraft.subcategory}</p></div>
-                <div className="bg-gray-50 rounded-xl p-3"><span className="text-gray-400">Images trouvées</span><p className="font-semibold text-gray-900">{urlDraft.imageUrls.length} image(s)</p></div>
+                <div className="bg-gray-50 rounded-xl p-3"><span className="text-gray-400">Images conservées</span><p className="font-semibold text-gray-900">{urlDraft.imageUrls.length} image(s)</p></div>
               </div>
 
               {urlDraft.confidenceWarnings.length > 0 && (
@@ -1212,17 +1223,39 @@ function SeoProductPageContent() {
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <p className="text-sm font-semibold text-gray-800 mb-3">Images candidates</p>
-              <div className="grid grid-cols-2 gap-3">
-                {urlDraft.imageUrls.slice(0, 6).map((image, index) => (
-                  <div key={image} className="aspect-square bg-gray-50 rounded-xl border border-gray-100 relative overflow-hidden">
-                    <Image src={image} alt={urlDraft.imageAlts[index] || urlDraft.name} fill className="object-contain p-2" sizes="180px" unoptimized />
-                  </div>
-                ))}
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div>
+                  <p className="text-sm font-semibold text-gray-800">Images candidates</p>
+                  <p className="text-xs text-gray-500 mt-1">Supprime les photos floues, doublons ou non souhaitées avant de créer la fiche.</p>
+                </div>
+                <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">{urlDraft.imageUrls.length} gardée(s)</span>
               </div>
+              {urlDraft.imageUrls.length > 0 ? (
+                <div className="grid grid-cols-2 gap-3">
+                  {urlDraft.imageUrls.map((image, index) => (
+                    <div key={`${image}-${index}`} className="group aspect-square bg-gray-50 rounded-xl border border-gray-100 relative overflow-hidden">
+                      <Image src={image} alt={urlDraft.imageAlts[index] || urlDraft.name} fill className="object-contain p-2" sizes="220px" unoptimized />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveUrlDraftImage(index)}
+                        className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-red-600 shadow-sm border border-red-100 transition hover:bg-red-600 hover:text-white"
+                        title="Retirer cette image de la fiche"
+                        aria-label="Retirer cette image de la fiche"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                      <div className="absolute bottom-2 left-2 rounded-full bg-black/60 px-2 py-0.5 text-[11px] font-semibold text-white">Image {index + 1}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+                  Toutes les images candidates ont été retirées. Le produit sera créé sans image importée.
+                </div>
+              )}
               <div className="mt-5 bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">
                 <p className="font-semibold mb-1">Garde-fou qualité</p>
-                <p>Les images sont d’abord affichées comme candidates, puis importées dans le stockage média lors de la création du brouillon lorsque la configuration Cloudinary est disponible. Après création, tu pourras les remplacer ou les réordonner dans le gestionnaire d’images produit.</p>
+                <p>Les images conservées sont importées en qualité renforcée. Les images retirées ici ne seront pas enregistrées dans la fiche produit.</p>
               </div>
             </div>
           </div>

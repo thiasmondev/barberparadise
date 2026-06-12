@@ -424,25 +424,58 @@ function extractJsonLd(html: string): unknown[] {
   return parsed;
 }
 
+function pickBestSrcsetCandidate(srcset: string): string {
+  const candidates = srcset
+    .split(",")
+    .map((item) => {
+      const [url, descriptor = ""] = item.trim().split(/\s+/);
+      const widthMatch = descriptor.match(/^(\d+)w$/i);
+      const densityMatch = descriptor.match(/^(\d+(?:\.\d+)?)x$/i);
+      return {
+        url,
+        score: widthMatch ? Number(widthMatch[1]) : densityMatch ? Number(densityMatch[1]) * 1000 : 0,
+      };
+    })
+    .filter((item) => item.url);
+
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0]?.url || "";
+}
+
+function scoreImageUrlForQuality(url: string): number {
+  const decoded = decodeURIComponent(url).toLowerCase();
+  let score = 0;
+  if (/original|large|zoom|master|2048|1600|1200|1024|_xl|_large|grande/.test(decoded)) score += 40;
+  if (/thumb|thumbnail|small|mini|icon|sprite|placeholder|loading|_xs|_sm|_small|150x|180x|200x|240x|300x/.test(decoded)) score -= 60;
+  const dimensionMatches = [...decoded.matchAll(/(\d{2,4})x(\d{2,4})/g)];
+  const maxDimension = dimensionMatches.reduce((max, match) => Math.max(max, Number(match[1]), Number(match[2])), 0);
+  if (maxDimension >= 1200) score += 30;
+  else if (maxDimension >= 800) score += 18;
+  else if (maxDimension > 0 && maxDimension < 500) score -= 35;
+  return score;
+}
+
 function extractImages(html: string, baseUrl: string): string[] {
   const candidates: string[] = [];
   for (const key of ["og:image", "og:image:secure_url", "twitter:image"]) {
     const value = extractMetaContent(html, key);
     if (value) candidates.push(value);
   }
-  const srcMatches = [...html.matchAll(/<img[^>]+(?:src|data-src|data-original|data-zoom-image)=["']([^"']+)["'][^>]*>/gi)];
+  const srcMatches = [...html.matchAll(/<img[^>]+(?:data-zoom-image|data-original|data-src|src)=["']([^"']+)["'][^>]*>/gi)];
   for (const match of srcMatches) candidates.push(match[1]);
   const srcsetMatches = [...html.matchAll(/<img[^>]+srcset=["']([^"']+)["'][^>]*>/gi)];
   for (const match of srcsetMatches) {
-    const first = (match[1] || "").split(",")[0]?.trim().split(/\s+/)[0];
-    if (first) candidates.push(first);
+    const best = pickBestSrcsetCandidate(match[1] || "");
+    if (best) candidates.push(best);
   }
+
   return uniqueStrings(
     candidates
       .map((src) => absolutizeUrl(decodeHtmlEntities(src), baseUrl))
       .filter((src): src is string => Boolean(src))
       .filter((src) => /^https?:\/\//i.test(src))
-      .filter((src) => !/sprite|placeholder|favicon|logo|icon|avatar|loading/i.test(src)),
+      .filter((src) => !/sprite|placeholder|favicon|logo|icon|avatar|loading/i.test(src))
+      .sort((a, b) => scoreImageUrlForQuality(b) - scoreImageUrlForQuality(a)),
     12,
   );
 }
