@@ -84,7 +84,7 @@ export default function AdminStockPage() {
   const [status, setStatus] = useState("");
   const [loadingBrands, setLoadingBrands] = useState(true);
   const [loadingProducts, setLoadingProducts] = useState(false);
-  const [savingId, setSavingId] = useState<string | null>(null);
+  const [bulkSaving, setBulkSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -161,53 +161,39 @@ export default function AdminStockPage() {
     return { stock, variants, ruptures };
   }, [products, productForms]);
 
-  const saveProduct = async (product: StockProductRow) => {
-    const draft = productForms[product.id];
-    if (!draft) return;
-    setSavingId(product.id);
+  const saveAllVisibleStock = async () => {
+    if (products.length === 0 || bulkSaving) return;
+    setBulkSaving(true);
     setFeedback(null);
     try {
-      const updated = await updateStockProduct(product.id, {
-        price: Number(draft.price),
-        priceProEur: draft.priceProEur === "" ? null : Number(draft.priceProEur),
-        stockCount: Number(draft.stockCount),
-        inStock: draft.inStock,
-        status: draft.status,
-      } as any);
-      setProducts(current => current.map(item => (item.id === product.id ? { ...item, ...updated } : item)));
-      setProductForms(current => ({ ...current, [product.id]: productDraft({ ...product, ...updated }) }));
-      setFeedback({ type: "success", message: `Stock mis à jour pour ${product.name}` });
-      loadBrands();
-      loadAlerts();
-    } catch (error) {
-      setFeedback({ type: "error", message: error instanceof Error ? error.message : "Erreur sauvegarde produit" });
-    } finally {
-      setSavingId(null);
-    }
-  };
-
-  const saveVariant = async (variant: StockVariantRow) => {
-    const draft = variantForms[variant.id];
-    if (!draft) return;
-    setSavingId(variant.id);
-    setFeedback(null);
-    try {
-      const updated = await updateStockVariant(variant.id, {
-        stock: Number(draft.stock),
-        inStock: draft.inStock,
-        priceProEur: draft.priceProEur === "" ? null : Number(draft.priceProEur),
+      const productUpdates = products.map(product => {
+        const draft = productForms[product.id] || productDraft(product);
+        return updateStockProduct(product.id, {
+          price: Number(draft.price),
+          priceProEur: draft.priceProEur === "" ? null : Number(draft.priceProEur),
+          stockCount: Number(draft.stockCount),
+          inStock: draft.inStock,
+          status: draft.status,
+        } as any);
       });
-      setProducts(current => current.map(product => ({
-        ...product,
-        variants: product.variants?.map(item => (item.id === variant.id ? { ...item, ...updated } : item)),
-      })));
-      setVariantForms(current => ({ ...current, [variant.id]: variantDraft(updated) }));
-      setFeedback({ type: "success", message: `Variante ${variant.name} mise à jour` });
-      loadAlerts();
+
+      const variantUpdates = products.flatMap(product => (product.variants || []).map(variant => {
+        const draft = variantForms[variant.id] || variantDraft(variant);
+        return updateStockVariant(variant.id, {
+          stock: Number(draft.stock),
+          inStock: draft.inStock,
+          priceProEur: draft.priceProEur === "" ? null : Number(draft.priceProEur),
+        });
+      }));
+
+      await Promise.all([...productUpdates, ...variantUpdates]);
+      const savedCount = productUpdates.length + variantUpdates.length;
+      setFeedback({ type: "success", message: `${savedCount} valeur(s) de stock sauvegardée(s) en une fois.` });
+      await Promise.all([loadProducts(), loadBrands(), loadAlerts()]);
     } catch (error) {
-      setFeedback({ type: "error", message: error instanceof Error ? error.message : "Erreur sauvegarde variante" });
+      setFeedback({ type: "error", message: error instanceof Error ? error.message : "Erreur sauvegarde globale du stock" });
     } finally {
-      setSavingId(null);
+      setBulkSaving(false);
     }
   };
 
@@ -287,7 +273,7 @@ export default function AdminStockPage() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 min-w-0 overflow-x-hidden">
       <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-primary font-semibold">Gestion opérationnelle</p>
@@ -322,7 +308,7 @@ export default function AdminStockPage() {
       </div>
 
 
-      <section className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <section className="bg-white rounded-2xl border border-gray-100 overflow-hidden min-w-0">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="font-semibold text-dark-800">Alertes retour en stock</h2>
@@ -332,7 +318,7 @@ export default function AdminStockPage() {
             {loadingAlerts ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />} Rafraîchir
           </button>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-w-full">
           <table className="w-full text-sm min-w-[820px]">
             <thead className="bg-gray-50/80 border-b border-gray-100">
               <tr>
@@ -386,8 +372,8 @@ export default function AdminStockPage() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-5">
-        <aside className="bg-white rounded-2xl border border-gray-100 overflow-hidden h-fit">
+      <div className="grid grid-cols-1 xl:grid-cols-[260px_minmax(0,1fr)] gap-5 min-w-0">
+        <aside className="bg-white rounded-2xl border border-gray-100 overflow-hidden h-fit min-w-0">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
             <div>
               <h2 className="font-semibold text-dark-800">Marques</h2>
@@ -424,7 +410,7 @@ export default function AdminStockPage() {
           </div>
         </aside>
 
-        <section className="space-y-4">
+        <section className="space-y-4 min-w-0">
           <div className="bg-white rounded-2xl border border-gray-100 p-4 flex flex-col lg:flex-row gap-3 lg:items-center">
             <div className="relative flex-1">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -441,15 +427,25 @@ export default function AdminStockPage() {
           </div>
 
           <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <div className="px-4 py-3 border-b border-gray-100 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h2 className="font-semibold text-dark-800">{selectedBrand?.brand || "Sélectionne une marque"}</h2>
-                <p className="text-xs text-gray-400">Ajustements manuels sauvegardés produit par produit.</p>
+                <p className="text-xs text-gray-400">Modifie plusieurs lignes, puis sauvegarde toutes les valeurs visibles en une fois.</p>
               </div>
-              {loadingProducts && <Loader2 size={18} className="animate-spin text-primary" />}
+              <div className="flex items-center gap-2">
+                {loadingProducts && <Loader2 size={18} className="animate-spin text-primary" />}
+                <button
+                  type="button"
+                  onClick={saveAllVisibleStock}
+                  disabled={bulkSaving || loadingProducts || products.length === 0}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-dark-900 text-white text-xs font-semibold hover:bg-dark-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {bulkSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Enregistrer toutes les valeurs
+                </button>
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[980px]">
+            <div className="overflow-x-auto max-w-full">
+              <table className="w-full text-sm min-w-[880px]">
                 <thead className="bg-gray-50/80 border-b border-gray-100">
                   <tr>
                     <th className="px-4 py-3 text-left font-medium text-gray-500">Produit</th>
@@ -458,14 +454,13 @@ export default function AdminStockPage() {
                     <th className="px-3 py-3 text-center font-medium text-gray-500">Stock</th>
                     <th className="px-3 py-3 text-center font-medium text-gray-500">Disponibilité</th>
                     <th className="px-3 py-3 text-center font-medium text-gray-500">Statut</th>
-                    <th className="px-4 py-3 text-right font-medium text-gray-500">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {loadingProducts ? (
                     Array.from({ length: 5 }).map((_, index) => <StockSkeletonRow key={index} />)
                   ) : products.length === 0 ? (
-                    <tr><td colSpan={7} className="px-4 py-12 text-center text-gray-400"><Boxes size={32} className="mx-auto mb-2 text-gray-300" />Aucun produit trouvé</td></tr>
+                    <tr><td colSpan={6} className="px-4 py-12 text-center text-gray-400"><Boxes size={32} className="mx-auto mb-2 text-gray-300" />Aucun produit trouvé</td></tr>
                   ) : (
                     products.map(product => {
                       const form = productForms[product.id] || productDraft(product);
@@ -476,12 +471,9 @@ export default function AdminStockPage() {
                           product={product}
                           image={image}
                           form={form}
-                          savingId={savingId}
                           variantForms={variantForms}
                           setProductForms={setProductForms}
                           setVariantForms={setVariantForms}
-                          saveProduct={saveProduct}
-                          saveVariant={saveVariant}
                         />
                       );
                     })
@@ -587,29 +579,23 @@ function StatCard({ label, value, tone = "default" }: { label: string; value: nu
 }
 
 function StockSkeletonRow() {
-  return <tr><td colSpan={7} className="px-4 py-4"><div className="h-8 bg-gray-100 rounded-xl animate-pulse" /></td></tr>;
+  return <tr><td colSpan={6} className="px-4 py-4"><div className="h-8 bg-gray-100 rounded-xl animate-pulse" /></td></tr>;
 }
 
 function FragmentRows({
   product,
   image,
   form,
-  savingId,
   variantForms,
   setProductForms,
   setVariantForms,
-  saveProduct,
-  saveVariant,
 }: {
   product: StockProductRow;
   image?: string;
   form: ReturnType<typeof productDraft>;
-  savingId: string | null;
   variantForms: Record<string, ReturnType<typeof variantDraft>>;
   setProductForms: Dispatch<SetStateAction<Record<string, ReturnType<typeof productDraft>>>>;
   setVariantForms: Dispatch<SetStateAction<Record<string, ReturnType<typeof variantDraft>>>>;
-  saveProduct: (product: StockProductRow) => void;
-  saveVariant: (variant: StockVariantRow) => void;
 }) {
   return (
     <>
@@ -620,8 +606,8 @@ function FragmentRows({
               {image ? <img src={image} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-gray-300"><Package size={17} /></div>}
             </div>
             <div className="min-w-0">
-              <div className="font-semibold text-dark-900 truncate max-w-[280px]">{product.name}</div>
-              <div className="text-xs text-gray-400">{product.category || "Sans catégorie"} · {product.slug}</div>
+              <div className="font-semibold text-dark-900 truncate max-w-[220px] 2xl:max-w-[280px]">{product.name}</div>
+              <div className="text-xs text-gray-400 truncate max-w-[220px] 2xl:max-w-[280px]">{product.category || "Sans catégorie"} · {product.slug}</div>
             </div>
           </div>
         </td>
@@ -634,11 +620,6 @@ function FragmentRows({
             {STATUSES.filter(item => item.value).map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
           </select>
         </td>
-        <td className="px-4 py-3 text-right">
-          <button onClick={() => saveProduct(product)} disabled={savingId === product.id} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-dark-900 text-white text-xs font-semibold hover:bg-dark-800 disabled:opacity-50">
-            {savingId === product.id ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Enregistrer
-          </button>
-        </td>
       </tr>
       {(product.variants || []).map(variant => {
         const draft = variantForms[variant.id] || variantDraft(variant);
@@ -650,7 +631,6 @@ function FragmentRows({
             <td className="px-3 py-2 text-center"><NumberInput value={draft.stock} integer compact onChange={value => setVariantForms(current => ({ ...current, [variant.id]: { ...draft, stock: value } }))} /></td>
             <td className="px-3 py-2 text-center"><Toggle checked={draft.inStock} onChange={checked => setVariantForms(current => ({ ...current, [variant.id]: { ...draft, inStock: checked } }))} /></td>
             <td className="px-3 py-2 text-center text-gray-400">Hérité</td>
-            <td className="px-4 py-2 text-right"><button onClick={() => saveVariant(variant)} disabled={savingId === variant.id} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-dark-800 hover:bg-gray-50 disabled:opacity-50">{savingId === variant.id ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Variante</button></td>
           </tr>
         );
       })}
