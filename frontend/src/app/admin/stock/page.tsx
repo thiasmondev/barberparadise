@@ -74,6 +74,10 @@ function variantDraft(variant: StockVariantRow) {
   };
 }
 
+function isStockAvailable(value: string | number | null | undefined) {
+  return Number(value ?? 0) > 0;
+}
+
 export default function AdminStockPage() {
   const [brands, setBrands] = useState<StockBrandSummary[]>([]);
   const [selectedBrandKey, setSelectedBrandKey] = useState<string>("");
@@ -158,7 +162,7 @@ export default function AdminStockPage() {
   const totals = useMemo(() => {
     const stock = products.reduce((sum, product) => sum + Number(productForms[product.id]?.stockCount ?? product.stockCount ?? 0), 0);
     const variants = products.reduce((sum, product) => sum + (product.variants?.length || 0), 0);
-    const ruptures = products.filter(product => !productForms[product.id]?.inStock).length;
+    const ruptures = products.filter(product => !isStockAvailable(productForms[product.id]?.stockCount ?? product.stockCount ?? 0)).length;
     return { stock, variants, ruptures };
   }, [products, productForms]);
 
@@ -184,7 +188,7 @@ export default function AdminStockPage() {
           price: Number(draft.price),
           priceProEur: draft.priceProEur === "" ? null : Number(draft.priceProEur),
           stockCount: Number(draft.stockCount),
-          inStock: draft.inStock,
+          inStock: isStockAvailable(draft.stockCount),
           status: draft.status,
         } as any);
       });
@@ -193,7 +197,7 @@ export default function AdminStockPage() {
         const draft = variantForms[variant.id] || variantDraft(variant);
         return updateStockVariant(variant.id, {
           stock: Number(draft.stock),
-          inStock: draft.inStock,
+          inStock: isStockAvailable(draft.stock),
           priceProEur: draft.priceProEur === "" ? null : Number(draft.priceProEur),
         });
       }));
@@ -634,8 +638,8 @@ function FragmentRows({
         </td>
         <td className="px-3 py-3 text-right"><NumberInput value={form.price} onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, price: value } }))} /></td>
         <td className="px-3 py-3 text-right"><NumberInput value={form.priceProEur} placeholder="—" onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, priceProEur: value } }))} /></td>
-        <td className="px-3 py-3 text-center"><NumberInput value={form.stockCount} integer onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, stockCount: value } }))} /></td>
-        <td className="px-3 py-3 text-center"><Toggle checked={form.inStock} onChange={checked => setProductForms(current => ({ ...current, [product.id]: { ...form, inStock: checked } }))} /></td>
+        <td className="px-3 py-3 text-center"><NumberInput value={form.stockCount} integer onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, stockCount: value, inStock: isStockAvailable(value) } }))} /></td>
+        <td className="px-3 py-3 text-center"><AvailabilityBadge inStock={isStockAvailable(form.stockCount)} /></td>
         <td className="px-3 py-3 text-center">
           <select value={form.status} onChange={event => setProductForms(current => ({ ...current, [product.id]: { ...form, status: event.target.value } }))} className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white">
             {STATUSES.filter(item => item.value).map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
@@ -649,8 +653,8 @@ function FragmentRows({
             <td className="px-4 py-2 pl-20 text-gray-600">↳ Variante <strong>{variant.name}</strong>{variant.sku && <span className="ml-2 text-gray-400">SKU {variant.sku}</span>}</td>
             <td className="px-3 py-2 text-right text-gray-400">{formatPrice(variant.price ?? product.price)}</td>
             <td className="px-3 py-2 text-right"><NumberInput value={draft.priceProEur} placeholder="—" compact onChange={value => setVariantForms(current => ({ ...current, [variant.id]: { ...draft, priceProEur: value } }))} /></td>
-            <td className="px-3 py-2 text-center"><NumberInput value={draft.stock} integer compact onChange={value => setVariantForms(current => ({ ...current, [variant.id]: { ...draft, stock: value } }))} /></td>
-            <td className="px-3 py-2 text-center"><Toggle checked={draft.inStock} onChange={checked => setVariantForms(current => ({ ...current, [variant.id]: { ...draft, inStock: checked } }))} /></td>
+            <td className="px-3 py-2 text-center"><NumberInput value={draft.stock} integer compact onChange={value => setVariantForms(current => ({ ...current, [variant.id]: { ...draft, stock: value, inStock: isStockAvailable(value) } }))} /></td>
+            <td className="px-3 py-2 text-center"><AvailabilityBadge inStock={isStockAvailable(draft.stock)} /></td>
             <td className="px-3 py-2 text-center text-gray-400">Hérité</td>
           </tr>
         );
@@ -663,10 +667,10 @@ function NumberInput({ value, onChange, placeholder = "0", integer = false, comp
   return <input type="number" min="0" step={integer ? 1 : 0.01} value={value} placeholder={placeholder} onChange={event => onChange(event.target.value)} className={`${compact ? "w-20" : "w-24"} px-2 py-1.5 border border-gray-200 rounded-lg text-right text-sm tabular-nums focus:outline-none focus:border-primary`} />;
 }
 
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
+function AvailabilityBadge({ inStock }: { inStock: boolean }) {
   return (
-    <button type="button" onClick={() => onChange(!checked)} className={`px-2.5 py-1 rounded-full text-xs font-semibold ${checked ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
-      {checked ? "En stock" : "Rupture"}
-    </button>
+    <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${inStock ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+      {inStock ? "En stock" : "Rupture"}
+    </span>
   );
 }
