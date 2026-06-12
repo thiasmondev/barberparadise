@@ -956,6 +956,7 @@ export interface ProductVariant {
   size: string;
   price: number | null;
   priceProEur?: number | null;
+  purchasePrice?: number | null;
   stock: number;
   inStock: boolean;
   sku: string;
@@ -1387,6 +1388,7 @@ export interface StockVariantRow {
   name: string;
   price: number | null;
   priceProEur: number | null;
+  purchasePrice: number | null;
   stock: number;
   inStock: boolean;
   sku: string;
@@ -1488,7 +1490,7 @@ export function updateStockProduct(
 
 export function updateStockVariant(
   id: string,
-  data: Partial<Pick<StockVariantRow, "stock" | "inStock" | "priceProEur">>
+  data: Partial<Pick<StockVariantRow, "stock" | "inStock" | "priceProEur" | "purchasePrice">>
 ) {
   return adminFetch<StockVariantRow>(`/api/admin/stock/variants/${id}`, {
     method: "PATCH",

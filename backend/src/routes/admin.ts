@@ -2173,6 +2173,7 @@ adminRouter.get(
               name: true,
               price: true,
               priceProEur: true,
+              purchasePrice: true,
               stock: true,
               inStock: true,
               sku: true,
@@ -2306,6 +2307,7 @@ adminRouter.patch(
               ? Boolean(req.body.inStock)
               : undefined,
           priceProEur: nextProPrice,
+          purchasePrice: toOptionalFloat(req.body.purchasePrice as NumericInput),
         },
       });
       if (nextVariantStock !== undefined) {
@@ -4977,6 +4979,7 @@ adminRouter.post(
         colorHex,
         size,
         price,
+        purchasePrice,
         stock,
         inStock,
         sku,
@@ -4992,6 +4995,7 @@ adminRouter.post(
           colorHex: colorHex || "",
           size: size || "",
           price: price != null ? parseFloat(price) : null,
+          purchasePrice: purchasePrice != null && purchasePrice !== "" ? parseFloat(purchasePrice) : null,
           stock: parseInt(stock) || 0,
           inStock: inStock !== false,
           sku: sku || "",
@@ -5020,6 +5024,7 @@ adminRouter.put(
         colorHex,
         size,
         price,
+        purchasePrice,
         stock,
         inStock,
         sku,
@@ -5035,6 +5040,7 @@ adminRouter.put(
           colorHex: colorHex || "",
           size: size || "",
           price: price != null && price !== "" ? parseFloat(price) : null,
+          purchasePrice: purchasePrice != null && purchasePrice !== "" ? parseFloat(purchasePrice) : null,
           stock: parseInt(stock) || 0,
           inStock: inStock !== false,
           sku: sku || "",

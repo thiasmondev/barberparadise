@@ -69,6 +69,7 @@ function productDraft(product: StockProductRow) {
 function variantDraft(variant: StockVariantRow) {
   return {
     priceProEur: variant.priceProEur != null ? String(variant.priceProEur) : "",
+    purchasePrice: variant.purchasePrice != null ? String(variant.purchasePrice) : "",
     stock: String(variant.stock ?? 0),
     inStock: Boolean(variant.inStock),
   };
@@ -199,6 +200,7 @@ export default function AdminStockPage() {
           stock: Number(draft.stock),
           inStock: isStockAvailable(draft.stock),
           priceProEur: draft.priceProEur === "" ? null : Number(draft.priceProEur),
+          purchasePrice: draft.purchasePrice === "" ? null : Number(draft.purchasePrice),
         });
       }));
 
@@ -461,12 +463,13 @@ export default function AdminStockPage() {
               </div>
             </div>
             <div className="overflow-x-auto max-w-full">
-              <table className="w-full text-sm min-w-[880px]">
+              <table className="w-full text-sm min-w-[980px]">
                 <thead className="bg-gray-50/80 border-b border-gray-100">
                   <tr>
                     <th className="px-4 py-3 text-left font-medium text-gray-500">Produit</th>
                     <th className="px-3 py-3 text-right font-medium text-gray-500">Prix TTC</th>
                     <th className="px-3 py-3 text-right font-medium text-gray-500">Prix pro HT</th>
+                    <th className="px-3 py-3 text-right font-medium text-gray-500">Prix revient</th>
                     <th className="px-3 py-3 text-center font-medium text-gray-500" aria-sort={stockSortDirection === "asc" ? "ascending" : stockSortDirection === "desc" ? "descending" : "none"}>
                       <button
                         type="button"
@@ -485,7 +488,7 @@ export default function AdminStockPage() {
                   {loadingProducts ? (
                     Array.from({ length: 5 }).map((_, index) => <StockSkeletonRow key={index} />)
                   ) : products.length === 0 ? (
-                    <tr><td colSpan={6} className="px-4 py-12 text-center text-gray-400"><Boxes size={32} className="mx-auto mb-2 text-gray-300" />Aucun produit trouvé</td></tr>
+                    <tr><td colSpan={7} className="px-4 py-12 text-center text-gray-400"><Boxes size={32} className="mx-auto mb-2 text-gray-300" />Aucun produit trouvé</td></tr>
                   ) : (
                     sortedProducts.map(product => {
                       const form = productForms[product.id] || productDraft(product);
@@ -604,7 +607,7 @@ function StatCard({ label, value, tone = "default" }: { label: string; value: nu
 }
 
 function StockSkeletonRow() {
-  return <tr><td colSpan={6} className="px-4 py-4"><div className="h-8 bg-gray-100 rounded-xl animate-pulse" /></td></tr>;
+  return <tr><td colSpan={7} className="px-4 py-4"><div className="h-8 bg-gray-100 rounded-xl animate-pulse" /></td></tr>;
 }
 
 function FragmentRows({
@@ -638,6 +641,7 @@ function FragmentRows({
         </td>
         <td className="px-3 py-3 text-right"><NumberInput value={form.price} onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, price: value } }))} /></td>
         <td className="px-3 py-3 text-right"><NumberInput value={form.priceProEur} placeholder="—" onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, priceProEur: value } }))} /></td>
+        <td className="px-3 py-3 text-right text-gray-400 text-xs">Produit</td>
         <td className="px-3 py-3 text-center"><NumberInput value={form.stockCount} integer onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, stockCount: value, inStock: isStockAvailable(value) } }))} /></td>
         <td className="px-3 py-3 text-center"><AvailabilityBadge inStock={isStockAvailable(form.stockCount)} /></td>
         <td className="px-3 py-3 text-center">
@@ -653,6 +657,7 @@ function FragmentRows({
             <td className="px-4 py-2 pl-20 text-gray-600">↳ Variante <strong>{variant.name}</strong>{variant.sku && <span className="ml-2 text-gray-400">SKU {variant.sku}</span>}</td>
             <td className="px-3 py-2 text-right text-gray-400">{formatPrice(variant.price ?? product.price)}</td>
             <td className="px-3 py-2 text-right"><NumberInput value={draft.priceProEur} placeholder="—" compact onChange={value => setVariantForms(current => ({ ...current, [variant.id]: { ...draft, priceProEur: value } }))} /></td>
+            <td className="px-3 py-2 text-right"><NumberInput value={draft.purchasePrice} placeholder="—" compact onChange={value => setVariantForms(current => ({ ...current, [variant.id]: { ...draft, purchasePrice: value } }))} /></td>
             <td className="px-3 py-2 text-center"><NumberInput value={draft.stock} integer compact onChange={value => setVariantForms(current => ({ ...current, [variant.id]: { ...draft, stock: value, inStock: isStockAvailable(value) } }))} /></td>
             <td className="px-3 py-2 text-center"><AvailabilityBadge inStock={isStockAvailable(draft.stock)} /></td>
             <td className="px-3 py-2 text-center text-gray-400">Hérité</td>

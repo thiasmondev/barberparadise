@@ -38,6 +38,7 @@ interface VariantFormData {
   colorHex: string;
   size: string;
   price: string;
+  purchasePrice: string;
   stock: string;
   inStock: boolean;
   sku: string;
@@ -46,7 +47,7 @@ interface VariantFormData {
 
 const emptyForm = (): VariantFormData => ({
   name: "", type: "color", color: "", colorHex: "", size: "",
-  price: "", stock: "0", inStock: true, sku: "", image: "",
+  price: "", purchasePrice: "", stock: "0", inStock: true, sku: "", image: "",
 });
 
 interface VariantManagerProps {
@@ -96,6 +97,7 @@ export default function VariantManager({ productId, productPrice, onVariantsChan
       colorHex: v.colorHex,
       size: v.size,
       price: v.price != null ? String(v.price) : "",
+      purchasePrice: v.purchasePrice != null ? String(v.purchasePrice) : "",
       stock: String(v.stock),
       inStock: v.inStock,
       sku: v.sku,
@@ -117,6 +119,7 @@ export default function VariantManager({ productId, productPrice, onVariantsChan
         colorHex: form.colorHex,
         size: form.size,
         price: form.price !== "" ? parseFloat(form.price) : null,
+        purchasePrice: form.purchasePrice !== "" ? parseFloat(form.purchasePrice) : null,
         stock: parseInt(form.stock) || 0,
         inStock: form.inStock,
         sku: form.sku,
@@ -229,6 +232,7 @@ export default function VariantManager({ productId, productPrice, onVariantsChan
                   ) : (
                     <span className="italic">Prix du produit ({productPrice.toFixed(2)} €)</span>
                   )}
+                  {v.purchasePrice != null && <span className="ml-2 text-red-500">Revient : {v.purchasePrice.toFixed(2)} €</span>}
                   {v.sku && <span className="ml-2 font-mono">SKU: {v.sku}</span>}
                 </div>
               </div>
@@ -418,7 +422,7 @@ export default function VariantManager({ productId, productPrice, onVariantsChan
           </div>
 
           {/* Prix et stock */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Prix (€)
@@ -432,6 +436,18 @@ export default function VariantManager({ productId, productPrice, onVariantsChan
                 onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
                 placeholder={productPrice.toFixed(2)}
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-300"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-red-600 mb-1">Prix de revient (€)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.purchasePrice}
+                onChange={(e) => setForm((f) => ({ ...f, purchasePrice: e.target.value }))}
+                placeholder="Confidentiel"
+                className="w-full px-3 py-2 text-sm border border-red-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-200"
               />
             </div>
             <div>

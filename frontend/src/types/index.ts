@@ -80,6 +80,7 @@ export interface ProductVariant {
   size: string;
   price: number | null;
   priceProEur?: number | null;
+  purchasePrice?: number | null;
   pricePublic?: number;
   hasPriceProEur?: boolean;
   stock: number;

@@ -76,6 +76,7 @@ function serializeProduct<T extends JsonProduct & { price: number }>(product: T,
       pricePublic: variantPublicPrice,
       hasPriceProEur: variantHasPriceProEur || (isApprovedPro && hasPriceProEur),
     };
+    delete (serializedVariant as any).purchasePrice;
     if (!isApprovedPro) {
       const { priceProEur: _variantPriceProEur, ...publicVariant } = serializedVariant;
       return publicVariant;
