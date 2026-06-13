@@ -1001,22 +1001,53 @@ seoRouter.post("/geo-category", async (req, res) => {
   }
 });
 
+const WHITE_SQUARE_TRANSFORMATION = "c_pad,w_1800,h_1800,b_white,q_auto:best,f_auto";
+
 function buildWhiteSquareCloudinaryUrl(url: string): string {
   if (!url.includes("res.cloudinary.com") || !url.includes("/image/upload/")) {
     throw new Error("URL non Cloudinary");
   }
 
-  const transformation = "b_white,ar_1:1,c_pad,q_auto,f_auto";
   const marker = "/image/upload/";
-  const [prefix, suffix] = url.split(marker);
+  const markerIndex = url.indexOf(marker);
+  const prefix = url.slice(0, markerIndex);
+  const suffix = url.slice(markerIndex + marker.length);
   if (!prefix || !suffix) throw new Error("URL Cloudinary invalide");
-  if (suffix.startsWith(`${transformation}/`)) return url;
+  if (suffix.startsWith(`${WHITE_SQUARE_TRANSFORMATION}/`)) return url;
 
-  const cleanedSuffix = suffix.replace(/^(b_white,)?ar_1:1,c_pad[^/]*\//, "");
-  return `${prefix}${marker}${transformation}/${cleanedSuffix}`;
+  const cleanedSuffix = suffix.replace(/^(?:c_pad,w_1800,h_1800,b_white|b_white,ar_1:1,c_pad|ar_1:1,c_pad)[^/]*\//, "");
+  return `${prefix}${marker}${WHITE_SQUARE_TRANSFORMATION}/${cleanedSuffix}`;
 }
 
-// ─── POST /api/seo/images/white-square/:id — Appliquer fond blanc 1:1 aux images Cloudinary ─
+async function transformProductImageToWhiteSquare(imageUrl: string, productId: string, index: number): Promise<string> {
+  if (!isImportableImageUrl(imageUrl)) {
+    throw new Error("URL image invalide");
+  }
+
+  if (imageUrl.includes("res.cloudinary.com") && imageUrl.includes("/image/upload/")) {
+    return buildWhiteSquareCloudinaryUrl(imageUrl);
+  }
+
+  if (!hasCloudinaryConfig()) {
+    throw new Error("Image externe non transformable : Cloudinary n’est pas configuré");
+  }
+
+  const result = await cloudinary.uploader.upload(imageUrl, {
+    folder: `barberparadise/products/${productId}`,
+    public_id: `white-square-${index + 1}`,
+    overwrite: true,
+    resource_type: "image",
+    transformation: [{ width: 1800, height: 1800, crop: "pad", background: "white", quality: "auto:best", fetch_format: "auto" }],
+  });
+
+  if (!result.secure_url) {
+    throw new Error("Cloudinary n’a pas retourné d’URL sécurisée");
+  }
+
+  return buildWhiteSquareCloudinaryUrl(result.secure_url);
+}
+
+// ─── POST /api/seo/images/white-square/:id — Appliquer fond blanc 1:1 aux images produit ─
 seoRouter.post("/images/white-square/:id", requireAdmin, async (req: AuthRequest, res): Promise<void> => {
   try {
     const product = await prisma.product.findUnique({ where: { id: req.params.id } });
@@ -1027,16 +1058,16 @@ seoRouter.post("/images/white-square/:id", requireAdmin, async (req: AuthRequest
     const errorDetails: string[] = [];
     let processed = 0;
 
-    images.forEach((imageUrl, index) => {
+    for (const [index, imageUrl] of images.entries()) {
       try {
-        const transformedUrl = buildWhiteSquareCloudinaryUrl(imageUrl);
+        const transformedUrl = await transformProductImageToWhiteSquare(imageUrl, product.id, index);
         transformedImages.push(transformedUrl);
         processed += 1;
       } catch (error: any) {
         transformedImages.push(imageUrl);
         errorDetails.push(`Image ${index + 1}: ${error?.message || "transformation impossible"}`);
       }
-    });
+    }
 
     const updated = await prisma.product.update({
       where: { id: product.id },
