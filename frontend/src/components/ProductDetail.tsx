@@ -46,7 +46,8 @@ export default function ProductDetail({ product }: { product: Product }) {
   const otherVariants = variants.filter((v) => v.type === "other");
 
   const displayPrice = selectedVariant ? selectedVariantProPrice ?? selectedVariant.price ?? product.price : showsProPrice ? proPrice! : product.price;
-  const isInStock = selectedVariant ? selectedVariant.inStock : product.inStock;
+  const hasVariantStock = variants.some((variant) => variant.inStock);
+  const isInStock = selectedVariant ? selectedVariant.inStock : variants.length > 0 ? hasVariantStock : product.inStock;
   const requiresVariantSelection = variants.length > 0 && !selectedVariant;
   const canSubmitCart = isInStock && !requiresVariantSelection;
   const canRequestStockAlert = !isInStock && !requiresVariantSelection;
