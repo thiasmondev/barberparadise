@@ -435,13 +435,19 @@ export default function ProductDetail({ product }: { product: Product }) {
                       key={v.id}
                       onClick={() => handleSelectVariant(v)}
                       title={v.name + (!v.inStock ? " (Rupture)" : "")}
-                      className={`relative w-10 h-10 border-2 transition-all focus:outline-none ${
+                      className={`relative w-10 h-10 overflow-hidden border-2 transition-all focus:outline-none ${
                         selectedVariant?.id === v.id
                           ? "border-[#ff4a8d] scale-110"
                           : "border-white/10 hover:border-white/40"
-                      } ${!v.inStock ? "opacity-50 cursor-pointer grayscale" : "cursor-pointer"}`}
+                      } ${!v.inStock ? "cursor-pointer ring-1 ring-red-400/70" : "cursor-pointer"}`}
                       style={{ backgroundColor: v.colorHex || "#333" }}
                     >
+                      {!v.inStock && (
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute left-1/2 top-1/2 h-[2px] w-[145%] -translate-x-1/2 -translate-y-1/2 rotate-45 bg-red-400 shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
+                        />
+                      )}
                       {selectedVariant?.id === v.id && (
                         <span className="absolute inset-0 flex items-center justify-center">
                           <Check size={14} strokeWidth={3} className="text-white drop-shadow" />
