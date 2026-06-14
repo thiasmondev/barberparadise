@@ -202,7 +202,7 @@ export default function ProductPage() {
 
       {related.length > 0 && (
         <section className="mt-16 pt-12 border-t border-gray-100">
-          <h2 className="section-title mb-8">Ça pourrait te plaire :</h2>
+          <h2 className="mb-8 text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Ça pourrait te plaire :</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
             {related.map((p) => (
               <ProductCard key={p.id} product={p} />

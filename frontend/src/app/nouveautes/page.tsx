@@ -39,9 +39,6 @@ export default function NouveautesPage() {
       <section className="border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(255,74,141,0.18),transparent_34%),linear-gradient(135deg,#181617_0%,#0d0d0d_100%)]">
         <div className="mx-auto max-w-[1440px] px-6 py-20 md:px-8 md:py-28">
           <div className="max-w-3xl">
-            <span className="mb-4 inline-flex rounded-full border border-[#ff4a8d]/30 bg-[#ff4a8d]/10 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.3em] text-[#ffb1c4]">
-              Sélection mise à jour
-            </span>
             <h1 className="text-5xl font-black uppercase italic tracking-tighter md:text-7xl">
               Nouveautés
             </h1>
