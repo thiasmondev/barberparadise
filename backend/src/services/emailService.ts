@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { BrevoClient } from "@getbrevo/brevo";
 import { orderConfirmationEmail } from "../emails/orderConfirmation";
 import { orderShippedEmail } from "../emails/orderShipped";
 import { passwordResetEmail } from "../emails/passwordResetEmail";
@@ -6,7 +7,9 @@ import { welcomeEmail } from "../emails/welcomeEmail";
 import { stockAlertEmail } from "../emails/stockAlert";
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-const fromEmail = process.env.FROM_EMAIL || "noreply@barberparadise.fr";
+const brevo = process.env.BREVO_API_KEY ? new BrevoClient({ apiKey: process.env.BREVO_API_KEY }) : null;
+const fromEmail = process.env.FROM_EMAIL || process.env.RESEND_FROM_EMAIL || process.env.BREVO_SENDER_EMAIL || "contact@barberparadise.fr";
+const fromName = process.env.FROM_NAME || process.env.BREVO_SENDER_NAME || "Barber Paradise";
 
 type SendEmailParams = {
   to: string;
@@ -15,15 +18,19 @@ type SendEmailParams = {
   attachments?: Array<{ filename: string; content: string }>;
 };
 
-export async function sendEmail(params: SendEmailParams): Promise<{ sent: boolean; skipped?: boolean; id?: string }> {
-  if (!resend) {
-    console.warn(`[email] RESEND_API_KEY absente, email non envoyé à ${params.to}: ${params.subject}`);
-    return { sent: false, skipped: true };
-  }
+function getEmailProvidersStatus(): string {
+  const providers: string[] = [];
+  if (resend) providers.push("Resend");
+  if (brevo) providers.push("Brevo");
+  return providers.length ? providers.join(" puis ") : "aucun fournisseur configuré";
+}
+
+async function sendWithResend(params: SendEmailParams): Promise<{ sent: boolean; id?: string }> {
+  if (!resend) return { sent: false };
 
   try {
     const response = await resend.emails.send({
-      from: `Barber Paradise <${fromEmail}>`,
+      from: `${fromName} <${fromEmail}>`,
       to: params.to,
       subject: params.subject,
       html: params.html,
@@ -37,9 +44,49 @@ export async function sendEmail(params: SendEmailParams): Promise<{ sent: boolea
 
     return { sent: true, id: response.data?.id };
   } catch (error) {
-    console.error("[email] Envoi impossible", error);
+    console.error("[email] Envoi Resend impossible", error);
     return { sent: false };
   }
+}
+
+async function sendWithBrevo(params: SendEmailParams): Promise<{ sent: boolean; id?: string }> {
+  if (!brevo) return { sent: false };
+
+  try {
+    const response = await brevo.transactionalEmails.sendTransacEmail({
+      sender: { name: fromName, email: fromEmail },
+      to: [{ email: params.to }],
+      subject: params.subject,
+      htmlContent: params.html,
+      attachment: params.attachments?.map((attachment) => ({
+        name: attachment.filename,
+        content: attachment.content,
+      })),
+      tags: ["barber-paradise", "transactional"],
+    });
+    const data = (response as any).data ?? response;
+    const id = data?.messageId || data?.id;
+    return { sent: true, id: id ? String(id) : undefined };
+  } catch (error) {
+    console.error("[email] Envoi Brevo impossible", error);
+    return { sent: false };
+  }
+}
+
+export async function sendEmail(params: SendEmailParams): Promise<{ sent: boolean; skipped?: boolean; id?: string; provider?: string }> {
+  if (!resend && !brevo) {
+    console.warn(`[email] Aucun fournisseur configuré, email non envoyé à ${params.to}: ${params.subject}`);
+    return { sent: false, skipped: true };
+  }
+
+  const resendResult = await sendWithResend(params);
+  if (resendResult.sent) return { ...resendResult, provider: "resend" };
+
+  const brevoResult = await sendWithBrevo(params);
+  if (brevoResult.sent) return { ...brevoResult, provider: "brevo" };
+
+  console.error(`[email] Aucun envoi réussi pour ${params.to}: ${params.subject}. Fournisseurs disponibles: ${getEmailProvidersStatus()}`);
+  return { sent: false };
 }
 
 export function formatPaymentMethod(method?: string | null): string {

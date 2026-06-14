@@ -19,7 +19,21 @@ services:
       - key: ADMIN_JWT_SECRET
         generateValue: true
       - key: CORS_ORIGIN
-        value: https://barberparadise.vercel.app
+        value: https://barberparadise.fr
+      - key: FRONTEND_URL
+        value: https://barberparadise.fr
+      - key: FROM_EMAIL
+        value: contact@barberparadise.fr
+      - key: FROM_NAME
+        value: Barber Paradise
+      - key: BREVO_SENDER_EMAIL
+        value: contact@barberparadise.fr
+      - key: BREVO_SENDER_NAME
+        value: Barber Paradise
+      - key: RESEND_API_KEY
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
 
 databases:
   - name: barberparadise-db
