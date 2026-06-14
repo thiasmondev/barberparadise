@@ -80,7 +80,7 @@ export default function BarbaraChatbot() {
   useEffect(() => {
     if (!isOpen) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-    inputRef.current?.focus();
+
   }, [messages, isOpen, isTyping]);
 
   useEffect(() => {
@@ -144,15 +144,15 @@ export default function BarbaraChatbot() {
   }
 
   return (
-    <div className={`fixed right-3 z-[10000] print:hidden sm:right-6 ${closedPositionClass}`}>
+    <div className={`fixed right-3 z-[10000] max-w-[calc(100vw-1.5rem)] print:hidden sm:right-6 ${closedPositionClass}`}>
       {isOpen ? (
         <div
-          className="fixed left-3 right-3 z-[10000] flex items-end justify-end bg-transparent p-0 sm:inset-auto sm:bottom-6 sm:right-6 sm:block"
-          style={{ bottom: hasCookieConsent ? "calc(env(safe-area-inset-bottom) + 5.75rem)" : "calc(env(safe-area-inset-bottom) + 8.5rem)" }}
+          className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+1rem)] z-[10000] flex items-end justify-center bg-transparent p-0 sm:inset-auto sm:bottom-6 sm:right-6 sm:block"
+          
         >
           <section
-            className="flex w-full max-w-[330px] flex-col overflow-hidden rounded-[1.35rem] border border-black/10 bg-white text-[#181818] shadow-2xl sm:h-[500px] sm:w-[350px] sm:max-w-none sm:rounded-3xl sm:border-white/20"
-            style={{ height: hasCookieConsent ? "min(56svh, 430px)" : "min(46svh, 360px)", maxHeight: hasCookieConsent ? "430px" : "360px" }}
+            className="flex w-full max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-[1.35rem] border border-black/10 bg-white text-[#181818] shadow-2xl sm:h-[500px] sm:w-[350px] sm:max-w-none sm:rounded-3xl sm:border-white/20"
+            style={{ height: "min(62svh, 460px)", maxHeight: "calc(100svh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 8rem)" }}
           >
             <header className="flex items-center justify-between bg-[#181818] px-3 py-2.5 text-white sm:px-4 sm:py-4">
               <div className="flex items-center gap-3">
@@ -234,7 +234,7 @@ export default function BarbaraChatbot() {
                   rows={1}
                   maxLength={700}
                   placeholder="Écrivez votre question..."
-                  className="max-h-16 min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[12px] text-[#181818] outline-none placeholder:text-black/40 sm:max-h-24 sm:min-h-10 sm:px-2 sm:py-2 sm:text-sm"
+                  className="max-h-16 min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1.5 py-1.5 text-base text-[#181818] outline-none placeholder:text-black/40 sm:max-h-24 sm:min-h-10 sm:px-2 sm:py-2 sm:text-sm"
                 />
                 <button
                   type="submit"

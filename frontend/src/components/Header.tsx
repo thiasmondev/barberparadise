@@ -629,9 +629,9 @@ export default function Header() {
                 <Search size={18} />
               </button>
               {searchOpen && (
-                <div className="fixed left-4 right-4 top-24 z-[130] max-h-[70vh] overflow-y-auto border border-white/10 bg-[#111] p-3 shadow-2xl shadow-black/50 sm:absolute sm:left-auto sm:right-0 sm:top-11 sm:w-[min(20rem,calc(100vw-2rem))]">
+                <div className="fixed left-4 right-4 top-24 z-[130] max-h-[70vh] overflow-y-auto border border-white/10 bg-[#111] p-3 shadow-2xl shadow-black/50 sm:absolute sm:left-auto sm:right-0 sm:top-11 sm:w-[min(20rem,calc(100vw-2rem))]" style={{ maxWidth: "calc(100vw - 2rem)" }}>
                   <form onSubmit={submitSearch} className="flex gap-2">
-                    <input autoFocus value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Rechercher un produit, une marque..." className="min-w-0 flex-1 border border-white/10 bg-black px-3 py-2 text-sm text-white outline-none focus:border-[#ff4a8d]" />
+                    <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Rechercher un produit, une marque..." className="min-w-0 flex-1 border border-white/10 bg-black px-3 py-2 text-base text-white outline-none focus:border-[#ff4a8d] sm:text-sm" />
                     <button className="bg-[#ff4a8d] px-3 text-xs font-black uppercase tracking-widest text-white">OK</button>
                   </form>
                   <div className="mt-3 max-h-80 overflow-y-auto">
@@ -856,7 +856,7 @@ export default function Header() {
 
             {searchOpen && (
               <form onSubmit={submitSearch} className="mb-4 flex min-w-0 gap-2 border border-white/10 bg-black p-2">
-                <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Rechercher" className="min-w-0 flex-1 bg-transparent px-2 text-sm text-white outline-none" />
+                <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Rechercher" className="min-w-0 flex-1 bg-transparent px-2 text-base text-white outline-none sm:text-sm" />
                 <button className="text-[#ff4a8d]" aria-label="Rechercher"><Search size={18} /></button>
               </form>
             )}

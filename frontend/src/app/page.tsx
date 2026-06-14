@@ -34,7 +34,7 @@ export default function HomePage() {
           getBrands(),
         ]);
         setFeatured(productsData.products.slice(0, 8));
-        setBrands(brandsData.filter((brand) => brand.productCount > 0));
+        setBrands(brandsData);
 
         // Avis publics
         try {
@@ -171,7 +171,7 @@ export default function HomePage() {
         <div className="max-w-[1440px] mx-auto px-8 mb-8">
           <p className="text-center text-[10px] font-black tracking-[0.3em] text-gray-600 uppercase">NOS MARQUES</p>
         </div>
-        <div className="relative flex overflow-x-hidden">
+        <div className="relative flex min-h-24 overflow-x-hidden">
           <div className="animate-marquee whitespace-nowrap flex items-center gap-16 py-4">
             {brands.map((brand) => (
               <Link
