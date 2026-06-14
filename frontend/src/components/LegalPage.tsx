@@ -1,18 +1,26 @@
 import ReactMarkdown from "react-markdown";
 import type { LegalPage as LegalPageData } from "@/lib/api";
 
-function formatUpdatedAt(value?: string) {
-  if (!value) return null;
+const LEGAL_INTRO_LINES_TO_HIDE = [
+  "Conditions d’utilisation et procédure de retour de Barber Paradise, reprises depuis les pages légales existantes puis nettoyées des éléments de navigation.",
+  "Informations relatives aux cookies, traceurs, bases légales et choix de consentement, extraites de la politique de confidentialité existante.",
+  "Informations d’édition, d’hébergement, de propriété intellectuelle et de contact relatives au site Barber Paradise.",
+  "Informations relatives à la collecte, au traitement, à la conservation et aux droits liés aux données personnelles.",
+  "Cette page est administrable depuis le back-office Barber Paradise et son contenu est rendu en Markdown.",
+];
 
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  }).format(new Date(value));
+function cleanLegalContent(content: string) {
+  return content
+    .split("\n\n")
+    .filter((block) => {
+      const normalized = block.trim().replace(/\s+/g, " ");
+      return normalized.length > 0 && !LEGAL_INTRO_LINES_TO_HIDE.includes(normalized);
+    })
+    .join("\n\n");
 }
 
 export default function LegalPage({ page }: { page: LegalPageData }) {
-  const updatedAt = formatUpdatedAt(page.updatedAt);
+  const cleanedContent = cleanLegalContent(page.content);
 
   return (
     <main className="min-h-screen bg-[#131313] text-[#e5e2e1] selection:bg-[#ff4a8d] selection:text-white">
@@ -23,12 +31,6 @@ export default function LegalPage({ page }: { page: LegalPageData }) {
           <h1 className="max-w-4xl text-4xl md:text-6xl lg:text-7xl font-black uppercase italic tracking-tighter leading-[0.9] text-white">
             {page.title}
           </h1>
-          <p className="mt-7 max-w-3xl text-base md:text-lg leading-8 text-gray-400">
-            Cette page est administrable depuis le back-office Barber Paradise et son contenu est rendu en Markdown.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3 text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">
-            {updatedAt ? <span className="border border-white/10 px-4 py-2">Mis à jour le {updatedAt}</span> : null}
-          </div>
         </div>
       </section>
 
@@ -63,7 +65,7 @@ export default function LegalPage({ page }: { page: LegalPageData }) {
               ),
             }}
           >
-            {page.content}
+            {cleanedContent}
           </ReactMarkdown>
         </article>
       </section>

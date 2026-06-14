@@ -15,7 +15,7 @@ export interface LegalPageContent {
 export const legalPages = {
   "cgv": {
     "title": "Conditions générales",
-    "intro": "Conditions d’utilisation et procédure de retour de Barber Paradise, reprises depuis les pages légales existantes puis nettoyées des éléments de navigation.",
+    "intro": "",
     "sources": [
       "https://www.barberparadise.fr/policies/terms-of-service",
       "https://www.barberparadise.fr/policies/refund-policy"
@@ -273,7 +273,7 @@ export const legalPages = {
   },
   "mentionsLegales": {
     "title": "Mentions légales",
-    "intro": "Informations d’édition, d’hébergement, de propriété intellectuelle et de contact relatives au site Barber Paradise.",
+    "intro": "",
     "sources": [
       "https://www.barberparadise.fr/policies/legal-notice"
     ],
@@ -418,7 +418,7 @@ export const legalPages = {
   },
   "politiqueConfidentialite": {
     "title": "Politique de confidentialité",
-    "intro": "Informations relatives à la collecte, au traitement, à la conservation et aux droits liés aux données personnelles.",
+    "intro": "",
     "sources": [
       "https://www.barberparadise.fr/policies/privacy-policy"
     ],
@@ -619,7 +619,7 @@ export const legalPages = {
   },
   "cookies": {
     "title": "Politique de cookies",
-    "intro": "Informations relatives aux cookies, traceurs, bases légales et choix de consentement, extraites de la politique de confidentialité existante.",
+    "intro": "",
     "sources": [
       "https://www.barberparadise.fr/policies/privacy-policy"
     ],

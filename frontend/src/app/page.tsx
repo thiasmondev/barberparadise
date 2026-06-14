@@ -11,6 +11,19 @@ import type { Brand, Product } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
 
+const INITIAL_BRANDS: Brand[] = [
+  { id: 1, name: "Andis", slug: "andis", description: null, logo: "https://res.cloudinary.com/dopr7tgf8/image/upload/v1777669821/barberparadise/brands/rqebgd5rwreb7sh5eyms.png", bannerImage: null, website: null, productCount: 1 },
+  { id: 2, name: "Babyliss Pro", slug: "babyliss-pro", description: null, logo: "https://res.cloudinary.com/dopr7tgf8/image/upload/v1777670390/barberparadise/brands/gxgysjymjk351bp33ms4.png", bannerImage: null, website: null, productCount: 1 },
+  { id: 3, name: "Barber paradise", slug: "barber-paradise", description: null, logo: "https://res.cloudinary.com/dopr7tgf8/image/upload/v1777401480/barberparadise/brands/pjyi3vbkihydtsaibbty.png", bannerImage: null, website: null, productCount: 1 },
+  { id: 5, name: "Clubman Pinaud", slug: "clubman-pinaud", description: null, logo: "https://res.cloudinary.com/dopr7tgf8/image/upload/v1777757379/barberparadise/brands/fzvz0ej4lnsdhhgsbjf1.png", bannerImage: null, website: null, productCount: 1 },
+  { id: 15, name: "GAMMA+", slug: "gamma", description: null, logo: "https://res.cloudinary.com/dopr7tgf8/image/upload/v1777841665/barberparadise/brands/el8mok3sfgy9ztsdp4ur.png", bannerImage: null, website: null, productCount: 1 },
+  { id: 20, name: "JRL", slug: "jrl", description: null, logo: "https://res.cloudinary.com/dopr7tgf8/image/upload/v1777842047/barberparadise/brands/gw3vn1cahhorsp2vxcf7.png", bannerImage: null, website: null, productCount: 1 },
+  { id: 25, name: "Osaka", slug: "osaka", description: null, logo: "https://res.cloudinary.com/dopr7tgf8/image/upload/v1777842386/barberparadise/brands/nw76cmvstcr0n0p70idq.png", bannerImage: null, website: null, productCount: 1 },
+  { id: 27, name: "Style Craft", slug: "style-craft", description: null, logo: "https://res.cloudinary.com/dopr7tgf8/image/upload/v1777842466/barberparadise/brands/zchsixasv0zllaasdubp.jpg", bannerImage: null, website: null, productCount: 1 },
+  { id: 30, name: "Wahl", slug: "wahl", description: null, logo: "https://res.cloudinary.com/dopr7tgf8/image/upload/v1777842725/barberparadise/brands/i7xqix1yhnkl0ovaoqsf.png", bannerImage: null, website: null, productCount: 1 },
+  { id: 31, name: "Y/S PARK", slug: "y-s-park", description: null, logo: "https://res.cloudinary.com/dopr7tgf8/image/upload/v1777670459/barberparadise/brands/epl2gvznzrvffzfxcb76.png", bannerImage: null, website: null, productCount: 1 },
+];
+
 interface Review {
   id: string;
   author: string;
@@ -22,7 +35,7 @@ interface Review {
 export default function HomePage() {
   const [featured, setFeatured] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
-  const [brands, setBrands] = useState<Brand[]>([]);
+  const [brands, setBrands] = useState<Brand[]>(INITIAL_BRANDS);
   const [loading, setLoading] = useState(true);
   const [reviewIndex, setReviewIndex] = useState(0);
 
@@ -34,7 +47,7 @@ export default function HomePage() {
           getBrands(),
         ]);
         setFeatured(productsData.products.slice(0, 8));
-        setBrands(brandsData);
+        setBrands(brandsData.length > 0 ? brandsData : INITIAL_BRANDS);
 
         // Avis publics
         try {
@@ -61,6 +74,7 @@ export default function HomePage() {
   const reviewsPerPage = 3;
   const totalReviewPages = Math.max(1, Math.ceil(reviews.length / reviewsPerPage));
   const visibleReviews = reviews.slice(reviewIndex * reviewsPerPage, reviewIndex * reviewsPerPage + reviewsPerPage);
+  const marqueeBrands = brands.length > 0 ? brands : INITIAL_BRANDS;
 
   return (
     <div className="bg-[#131313] text-[#e5e2e1] min-h-screen font-sans selection:bg-[#ff4a8d] selection:text-white">
@@ -173,7 +187,7 @@ export default function HomePage() {
         </div>
         <div className="relative flex min-h-24 overflow-x-hidden">
           <div className="animate-marquee whitespace-nowrap flex items-center gap-16 py-4">
-            {brands.map((brand) => (
+            {marqueeBrands.map((brand) => (
               <Link
                 key={brand.id}
                 href={`/marques/${brand.slug}`}
@@ -186,6 +200,8 @@ export default function HomePage() {
                     width={120}
                     height={60}
                     className="object-contain max-h-16 max-w-[120px]"
+                    loading="eager"
+                    unoptimized
                   />
                 ) : (
                   <span className="text-sm font-black text-white/40 uppercase">{brand.name}</span>
@@ -194,7 +210,7 @@ export default function HomePage() {
             ))}
           </div>
           <div className="absolute top-0 animate-marquee2 whitespace-nowrap flex items-center gap-16 py-4">
-            {brands.map((brand) => (
+            {marqueeBrands.map((brand) => (
               <Link
                 key={`duplicate-${brand.id}`}
                 href={`/marques/${brand.slug}`}
@@ -207,6 +223,8 @@ export default function HomePage() {
                     width={120}
                     height={60}
                     className="object-contain max-h-16 max-w-[120px]"
+                    loading="eager"
+                    unoptimized
                   />
                 ) : (
                   <span className="text-sm font-black text-white/40 uppercase">{brand.name}</span>
