@@ -23,11 +23,11 @@ services:
       - key: FRONTEND_URL
         value: https://barberparadise.fr
       - key: FROM_EMAIL
-        value: contact@barberparadise.fr
+        value: noreply@barberparadise.fr
       - key: FROM_NAME
         value: Barber Paradise
       - key: BREVO_SENDER_EMAIL
-        value: contact@barberparadise.fr
+        value: noreply@barberparadise.fr
       - key: BREVO_SENDER_NAME
         value: Barber Paradise
       - key: RESEND_API_KEY
