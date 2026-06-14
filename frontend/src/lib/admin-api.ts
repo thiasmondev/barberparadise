@@ -363,6 +363,17 @@ export function updateOrderStatus(id: string, status: string) {
   });
 }
 
+export function updateAdminOrder(id: string, payload: Record<string, unknown>) {
+  return adminFetch<Order>(`/api/admin/orders/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteAdminOrder(id: string) {
+  return adminFetch<{ success: boolean }>(`/api/admin/orders/${id}`, { method: "DELETE" });
+}
+
 export interface AdminShipmentLabelItem {
   id: string;
   orderId: string;

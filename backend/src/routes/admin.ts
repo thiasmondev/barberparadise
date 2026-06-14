@@ -241,6 +241,7 @@ async function calculateAdminDraftTotals(params: {
   vatNumber?: string | null;
   shippingOverride?: unknown;
   enforceProMinimum?: boolean;
+  allowInactiveProducts?: boolean;
 }): Promise<DraftCalculationResult> {
   if (params.items.length === 0) throw new Error("Ajoutez au moins un produit au brouillon");
 
@@ -255,7 +256,7 @@ async function calculateAdminDraftTotals(params: {
   for (const item of params.items) {
     const product = productById.get(item.productId);
     if (!product) throw new Error(`Produit introuvable : ${item.productId}`);
-    if (product.status !== "active") throw new Error(`Produit indisponible : ${product.name}`);
+    if (!params.allowInactiveProducts && product.status !== "active") throw new Error(`Produit indisponible : ${product.name}`);
     if (product.stockCount > 0 && product.stockCount < item.quantity) throw new Error(`Stock insuffisant pour ${product.name}`);
 
     const unitHT = params.isB2B
@@ -4620,6 +4621,132 @@ adminRouter.get(
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Erreur serveur" });
+    }
+  }
+);
+
+// PATCH /api/admin/orders/:id — Modifier une commande
+adminRouter.patch(
+  "/orders/:id",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const current = await prisma.order.findUnique({
+        where: { id: req.params.id },
+        include: { items: true, shippingAddress: true, customer: true },
+      });
+      if (!current) {
+        res.status(404).json({ error: "Commande non trouvée" });
+        return;
+      }
+
+      const items = normalizeDraftItems(req.body?.items);
+      const customerId = typeof req.body?.customerId === "string" && req.body.customerId ? req.body.customerId : null;
+      const customer = customerId
+        ? await prisma.customer.findUnique({ where: { id: customerId }, include: { proAccount: true } })
+        : null;
+      const email = asOptionalString(req.body?.email, customer?.email || current.email).toLowerCase();
+      if (!email || !email.includes("@")) {
+        res.status(400).json({ error: "Email client invalide" });
+        return;
+      }
+
+      const shippingAddress = normalizeDraftAddress(req.body?.shippingAddress);
+      if (!shippingAddress) {
+        res.status(400).json({ error: "Adresse de livraison incomplète" });
+        return;
+      }
+
+      const isB2B = Boolean(req.body?.isB2B);
+      const vatNumber = asOptionalString(req.body?.vatNumber, customer?.proAccount?.vatNumber || current.vatNumber || "").toUpperCase() || null;
+      const totals = await calculateAdminDraftTotals({
+        items,
+        isB2B,
+        country: shippingAddress.country,
+        vatNumber,
+        shippingOverride: req.body?.shipping,
+        enforceProMinimum: false,
+        allowInactiveProducts: true,
+      });
+
+      const allowedStatuses = new Set([
+        "draft",
+        "pending",
+        "pending_payment",
+        "paid",
+        "processing",
+        "shipped",
+        "delivered",
+        "cancelled",
+      ]);
+      const requestedStatus = typeof req.body?.status === "string" ? req.body.status : current.status;
+      const status = allowedStatuses.has(requestedStatus) ? requestedStatus : current.status;
+      const paymentMethod = typeof req.body?.paymentMethod === "string" ? req.body.paymentMethod.trim() : current.paymentMethod;
+      const paymentProvider = typeof req.body?.paymentProvider === "string" ? req.body.paymentProvider.trim() : current.paymentProvider;
+
+      await prisma.$transaction([
+        prisma.orderItem.deleteMany({ where: { orderId: current.id } }),
+        prisma.shippingAddress.deleteMany({ where: { orderId: current.id } }),
+        prisma.order.update({
+          where: { id: current.id },
+          data: {
+            email,
+            customerEmail: email,
+            customerId,
+            status,
+            paymentMethod: paymentMethod || null,
+            paymentProvider: paymentProvider || null,
+            isB2B,
+            subtotal: totals.subtotal,
+            shipping: totals.shipping,
+            total: totals.total,
+            totalHT: totals.totalHT,
+            vatRate: totals.vatRate,
+            vatAmount: totals.vatAmount,
+            totalTTC: totals.totalTTC,
+            vatNumber,
+            billingAddress: ((req.body?.billingAddress || shippingAddress) as Prisma.InputJsonValue),
+            notes: asOptionalString(req.body?.notes, current.notes || ""),
+            items: { create: totals.orderItems },
+            shippingAddress: { create: shippingAddress },
+          },
+        }),
+      ]);
+
+      const order = await prisma.order.findUnique({
+        where: { id: current.id },
+        include: {
+          items: true,
+          shippingAddress: true,
+          shipment: true,
+          customer: { include: { _count: { select: { orders: true } } } },
+        },
+      });
+      res.json(order);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur modification commande";
+      res.status(400).json({ error: message });
+    }
+  }
+);
+
+// DELETE /api/admin/orders/:id — Supprimer une commande
+adminRouter.delete(
+  "/orders/:id",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const order = await prisma.order.findUnique({ where: { id: req.params.id } });
+      if (!order) {
+        res.status(404).json({ error: "Commande non trouvée" });
+        return;
+      }
+
+      await prisma.order.delete({ where: { id: order.id } });
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur suppression commande" });
     }
   }
 );

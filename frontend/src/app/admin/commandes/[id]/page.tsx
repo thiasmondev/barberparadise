@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -15,10 +15,13 @@ import {
   Mail,
   MapPin,
   Package,
+  Pencil,
   Phone,
   Scale,
+  Save,
   ShieldCheck,
   StickyNote,
+  Trash2,
   Truck,
   User,
   X,
@@ -27,11 +30,13 @@ import {
   getAdminOrder,
   getAdminToken,
   cancelShipmentLabel,
+  deleteAdminOrder,
   getLogisticsCarrierQuotes,
   getLogisticsLabelUrl,
   getLogisticsOrder,
   getShipmentLabelPdfUrl,
   purchaseLogisticsLabel,
+  updateAdminOrder,
   updateOrderStatus,
   type LogisticsCarrierQuote,
   type LogisticsPreparationDetail,
@@ -159,13 +164,88 @@ function renderBillingAddress(order: Order) {
   return renderAddress(address);
 }
 
+type EditableAddress = Pick<ShippingAddress, "firstName" | "lastName" | "address" | "city" | "postalCode" | "country" | "extension" | "phone">;
+
+type EditOrderForm = {
+  notes: string;
+  shippingAddress: EditableAddress;
+  billingAddress: EditableAddress;
+};
+
+const EMPTY_ADDRESS_FORM: EditableAddress = {
+  firstName: "",
+  lastName: "",
+  address: "",
+  city: "",
+  postalCode: "",
+  country: "France",
+  extension: "",
+  phone: "",
+};
+
+const ADDRESS_FIELDS: { key: keyof EditableAddress; label: string; required?: boolean; placeholder?: string }[] = [
+  { key: "firstName", label: "Prénom", required: true },
+  { key: "lastName", label: "Nom", required: true },
+  { key: "address", label: "Adresse", required: true, placeholder: "Numéro et rue" },
+  { key: "extension", label: "Complément", placeholder: "Bâtiment, étage, société…" },
+  { key: "postalCode", label: "Code postal", required: true },
+  { key: "city", label: "Ville", required: true },
+  { key: "country", label: "Pays", required: true },
+  { key: "phone", label: "Téléphone" },
+];
+
+function normalizeEditableAddress(address?: Partial<ShippingAddress> | null): EditableAddress {
+  return {
+    firstName: address?.firstName || "",
+    lastName: address?.lastName || "",
+    address: address?.address || "",
+    city: address?.city || "",
+    postalCode: address?.postalCode || "",
+    country: address?.country || "France",
+    extension: address?.extension || "",
+    phone: address?.phone || "",
+  };
+}
+
+function buildEditForm(order: Order): EditOrderForm {
+  const shippingAddress = normalizeEditableAddress(order.shippingAddress || null);
+  const billingAddress = normalizeEditableAddress((order.billingAddress as Partial<ShippingAddress> | null) || order.shippingAddress || null);
+  return {
+    notes: order.notes || "",
+    shippingAddress,
+    billingAddress,
+  };
+}
+
+function sanitizeEditableAddress(address: EditableAddress) {
+  return {
+    firstName: address.firstName.trim(),
+    lastName: address.lastName.trim(),
+    address: address.address.trim(),
+    city: address.city.trim(),
+    postalCode: address.postalCode.trim(),
+    country: address.country.trim() || "France",
+    extension: address.extension?.trim() || null,
+    phone: address.phone?.trim() || null,
+  };
+}
+
 export default function OrderDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params?.id as string;
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const [notes, setNotes] = useState("");
+  const [editForm, setEditForm] = useState<EditOrderForm>({
+    notes: "",
+    shippingAddress: { ...EMPTY_ADDRESS_FORM },
+    billingAddress: { ...EMPTY_ADDRESS_FORM },
+  });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [labelStep, setLabelStep] = useState<"form" | "confirmation">("form");
   const [logistics, setLogistics] = useState<LogisticsPreparationDetail | null>(null);
@@ -197,6 +277,7 @@ export default function OrderDetailPage() {
       setOrder(data);
       setShipment((data.shipment as ShipmentRecord | null) || null);
       setNotes(data.notes || "");
+      setEditForm(buildEditForm(data));
     } finally {
       setLoading(false);
     }
@@ -469,6 +550,74 @@ export default function OrderDetailPage() {
     }
   };
 
+  const startEditOrder = () => {
+    if (!order) return;
+    setEditForm(buildEditForm(order));
+    setEditMode(true);
+  };
+
+  const cancelEditOrder = () => {
+    if (!order) return;
+    setEditForm(buildEditForm(order));
+    setNotes(order.notes || "");
+    setEditMode(false);
+  };
+
+  const updateEditAddress = (type: "shippingAddress" | "billingAddress", field: keyof EditableAddress, value: string) => {
+    setEditForm((current) => ({
+      ...current,
+      [type]: {
+        ...current[type],
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleSaveOrder = async () => {
+    if (!order) return;
+    setSaving(true);
+    try {
+      const payload = {
+        customerId: order.customerId,
+        email: order.customer?.email || order.customerEmail || order.email,
+        status: order.status,
+        paymentMethod: order.paymentMethod || null,
+        paymentProvider: order.paymentProvider || null,
+        isB2B: Boolean(order.isB2B),
+        vatNumber: (order as Order & { vatNumber?: string | null }).vatNumber || undefined,
+        shipping: order.shipping,
+        notes: editForm.notes,
+        shippingAddress: sanitizeEditableAddress(editForm.shippingAddress),
+        billingAddress: sanitizeEditableAddress(editForm.billingAddress),
+        items: order.items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+      };
+      const updated = await updateAdminOrder(order.id, payload);
+      setOrder(updated);
+      setShipment((updated.shipment as ShipmentRecord | null) || null);
+      setNotes(updated.notes || "");
+      setEditForm(buildEditForm(updated));
+      setEditMode(false);
+    } catch (err: any) {
+      alert(err.message || "Impossible d’enregistrer la commande.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteOrder = async () => {
+    if (!order) return;
+    const confirmed = window.confirm(`Supprimer définitivement la commande ${order.orderNumber} ? Cette action est irréversible.`);
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      await deleteAdminOrder(order.id);
+      router.push("/admin/commandes");
+    } catch (err: any) {
+      alert(err.message || "Impossible de supprimer la commande.");
+      setDeleting(false);
+    }
+  };
+
   const markAsProcessed = async () => {
     if (!order) return;
     setUpdating(true);
@@ -600,9 +749,90 @@ export default function OrderDetailPage() {
 
           <aside className="space-y-6">
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="mb-3 flex items-center gap-2"><StickyNote className="h-4 w-4 text-gray-500" /><h2 className="font-semibold text-gray-950">Notes</h2></div>
-              <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={5} placeholder="Ajouter une note interne..." className="w-full rounded-xl border border-gray-300 p-3 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10" />
-              <p className="mt-2 text-xs text-gray-500">Note interne affichée dans l’admin.</p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2"><Pencil className="h-4 w-4 text-gray-500" /><h2 className="font-semibold text-gray-950">Gestion de la commande</h2></div>
+                  <p className="mt-1 text-xs text-gray-500">Modifiez les notes et les adresses, puis enregistrez.</p>
+                </div>
+                {!editMode && (
+                  <button onClick={startEditOrder} className="inline-flex items-center gap-2 rounded-xl border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-50">
+                    <Pencil className="h-4 w-4" /> Modifier
+                  </button>
+                )}
+              </div>
+
+              {editMode ? (
+                <div className="mt-5 space-y-5">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Notes internes</label>
+                    <textarea
+                      value={editForm.notes}
+                      onChange={(event) => setEditForm((current) => ({ ...current, notes: event.target.value }))}
+                      rows={4}
+                      placeholder="Ajouter une note interne..."
+                      className="w-full rounded-xl border border-gray-300 p-3 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
+                    />
+                  </div>
+
+                  {(["shippingAddress", "billingAddress"] as const).map((addressType) => (
+                    <div key={addressType} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                      <h3 className="text-sm font-semibold text-gray-950">{addressType === "shippingAddress" ? "Adresse de livraison" : "Adresse de facturation"}</h3>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {ADDRESS_FIELDS.map((field) => (
+                          <label key={`${addressType}-${field.key}`} className={field.key === "address" || field.key === "extension" ? "sm:col-span-2" : ""}>
+                            <span className="mb-1 block text-xs font-medium text-gray-600">{field.label}{field.required ? " *" : ""}</span>
+                            <input
+                              value={editForm[addressType][field.key] || ""}
+                              onChange={(event) => updateEditAddress(addressType, field.key, event.target.value)}
+                              placeholder={field.placeholder}
+                              className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      onClick={handleSaveOrder}
+                      disabled={saving}
+                      className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Enregistrer
+                    </button>
+                    <button
+                      onClick={cancelEditOrder}
+                      disabled={saving}
+                      className="inline-flex flex-1 items-center justify-center rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-5 rounded-xl bg-gray-50 p-3 text-sm text-gray-600">
+                  <div className="mb-2 flex items-center gap-2"><StickyNote className="h-4 w-4 text-gray-500" /><p className="font-medium text-gray-950">Notes internes</p></div>
+                  <p className="whitespace-pre-line">{notes || "Aucune note interne."}</p>
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm">
+              <div className="flex items-start gap-3">
+                <Trash2 className="mt-0.5 h-5 w-5 text-rose-600" />
+                <div className="flex-1">
+                  <h2 className="font-semibold text-rose-950">Zone dangereuse</h2>
+                  <p className="mt-1 text-sm text-rose-700">La suppression d’une commande est définitive. Une confirmation sera demandée avant l’action.</p>
+                  <button
+                    onClick={handleDeleteOrder}
+                    disabled={deleting}
+                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Supprimer la commande
+                  </button>
+                </div>
+              </div>
             </section>
 
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
