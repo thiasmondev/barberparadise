@@ -35,6 +35,8 @@ export interface Product {
   reviewCount: number;
   isNew: boolean;
   isPromo: boolean;
+  automaticPromotionName?: string;
+  automaticPromotionDiscountPercent?: number;
   tags: string | string[];
   status: string;
   categoryOrder?: number;
@@ -82,6 +84,11 @@ export interface ProductVariant {
   priceProEur?: number | null;
   purchasePrice?: number | null;
   pricePublic?: number;
+  compareAtPrice?: number | null;
+  originalPrice?: number | null;
+  isPromo?: boolean;
+  automaticPromotionName?: string;
+  automaticPromotionDiscountPercent?: number;
   hasPriceProEur?: boolean;
   stock: number;
   inStock: boolean;

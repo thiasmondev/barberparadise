@@ -37,8 +37,10 @@ export default function ProductDetail({ product }: { product: Product }) {
   const selectedVariantProPrice = selectedVariant && product.isPro && typeof selectedVariant.priceProEur === "number" ? selectedVariant.priceProEur : null;
   const showsProPrice = Boolean(product.isPro && (selectedVariant ? selectedVariantProPrice !== null : proPrice !== null));
   const referencePublicPrice = selectedVariant ? selectedVariantPublicPrice : publicPrice;
-  const compareAtPrice = product.compareAtPrice ?? product.originalPrice;
-  const discount = getDiscount(referencePublicPrice, compareAtPrice ?? null);
+  const selectedVariantCompareAtPrice = selectedVariant
+    ? selectedVariant.compareAtPrice ?? selectedVariant.originalPrice ?? null
+    : null;
+  const compareAtPrice = selectedVariantCompareAtPrice ?? product.compareAtPrice ?? product.originalPrice;
 
   const variants = product.variants ?? [];
   const colorVariants = variants.filter((v) => v.type === "color");
@@ -46,6 +48,12 @@ export default function ProductDetail({ product }: { product: Product }) {
   const otherVariants = variants.filter((v) => v.type === "other");
 
   const displayPrice = selectedVariant ? selectedVariantProPrice ?? selectedVariant.price ?? product.price : showsProPrice ? proPrice! : product.price;
+  const hasDiscount = !showsProPrice && Boolean(compareAtPrice && compareAtPrice > displayPrice);
+  const discount = typeof (selectedVariant ?? product).automaticPromotionDiscountPercent === "number"
+    ? (selectedVariant ?? product).automaticPromotionDiscountPercent
+    : hasDiscount && compareAtPrice
+      ? getDiscount(displayPrice, compareAtPrice)
+      : 0;
   const hasVariantStock = variants.some((variant) => variant.inStock);
   const isInStock = selectedVariant ? selectedVariant.inStock : variants.length > 0 ? hasVariantStock : product.inStock;
   const requiresVariantSelection = variants.length > 0 && !selectedVariant;
@@ -397,7 +405,7 @@ export default function ProductDetail({ product }: { product: Product }) {
                   <span className="text-xl text-gray-600 line-through">
                     Public {formatPrice(referencePublicPrice)} TTC
                   </span>
-                ) : compareAtPrice && compareAtPrice > referencePublicPrice ? (
+                ) : hasDiscount && compareAtPrice ? (
                   <span className="text-xl text-gray-600 line-through">
                     {formatPrice(compareAtPrice)}
                   </span>

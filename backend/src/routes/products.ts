@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import jwt from "jsonwebtoken";
+import type { Promotion } from "@prisma/client";
 import { prisma } from "../utils/prisma";
 import { requireAdmin } from "../middleware/auth";
 import { buildCategorySlugFilter, collectChildSlugs } from "../utils/categoryFilters";
@@ -14,11 +15,43 @@ type JsonProductVariant = {
 };
 
 type JsonProduct = {
+  id?: string;
+  category?: string | null;
+  subcategory?: string | null;
+  subsubcategory?: string | null;
   images?: string | null;
   features?: string | null;
   tags?: string | null;
   priceProEur?: number | null;
   variants?: JsonProductVariant[];
+};
+
+type ProductAutomaticPromotion = Pick<
+  Promotion,
+  | "id"
+  | "name"
+  | "type"
+  | "value"
+  | "appliesTo"
+  | "productIds"
+  | "categoryIds"
+  | "customerType"
+  | "usageLimit"
+  | "usageCount"
+  | "minOrderAmount"
+  | "minQuantity"
+>;
+
+type CategoryPromotionTargets = {
+  categoryIds: Set<string>;
+  categorySlugs: Set<string>;
+};
+
+type AppliedProductPromotion = {
+  price: number;
+  compareAtPrice: number;
+  discountPercent: number;
+  promotionName: string;
 };
 
 async function isApprovedProRequest(req: Request): Promise<boolean> {
@@ -92,6 +125,140 @@ function scoreQuickSearchProduct(product: JsonProduct & Record<string, any>, que
   return score;
 }
 
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function normalizeCategoryValue(value: unknown): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isCustomerEligibleForPromotion(promotion: ProductAutomaticPromotion, isApprovedPro: boolean): boolean {
+  if (promotion.customerType === "all") return true;
+  return isApprovedPro ? promotion.customerType === "b2b" : promotion.customerType === "b2c";
+}
+
+function isProductTargetedByPromotion(
+  promotion: ProductAutomaticPromotion,
+  product: JsonProduct,
+  categoryTargets: CategoryPromotionTargets,
+): boolean {
+  if (promotion.appliesTo === "all") return true;
+
+  if (promotion.appliesTo === "products") {
+    return Boolean(product.id && promotion.productIds.includes(product.id));
+  }
+
+  if (promotion.appliesTo === "categories") {
+    const productCategoryValues = [product.category, product.subcategory, product.subsubcategory]
+      .map(normalizeCategoryValue)
+      .filter(Boolean);
+
+    return productCategoryValues.some(
+      (value) => categoryTargets.categoryIds.has(value) || categoryTargets.categorySlugs.has(value),
+    );
+  }
+
+  return false;
+}
+
+function getBestAutomaticPromotionForProduct(
+  product: JsonProduct,
+  publicPrice: number,
+  promotions: ProductAutomaticPromotion[],
+  categoryTargets: CategoryPromotionTargets,
+  isApprovedPro: boolean,
+): AppliedProductPromotion | null {
+  if (!Number.isFinite(publicPrice) || publicPrice <= 0) return null;
+
+  let best: AppliedProductPromotion | null = null;
+
+  for (const promotion of promotions) {
+    if (!isCustomerEligibleForPromotion(promotion, isApprovedPro)) continue;
+    if (promotion.usageLimit !== null && promotion.usageCount >= promotion.usageLimit) continue;
+    if (promotion.minOrderAmount !== null || (promotion.minQuantity !== null && promotion.minQuantity > 1)) continue;
+    if (!isProductTargetedByPromotion(promotion, product, categoryTargets)) continue;
+
+    let discountedPrice: number | null = null;
+    if (promotion.type === "percentage" && promotion.value && promotion.value > 0) {
+      discountedPrice = publicPrice * (1 - Math.min(promotion.value, 100) / 100);
+    } else if (promotion.type === "fixed_amount" && promotion.value && promotion.value > 0 && promotion.appliesTo !== "all") {
+      discountedPrice = Math.max(0, publicPrice - promotion.value);
+    }
+
+    if (discountedPrice === null) continue;
+
+    const roundedDiscountedPrice = roundMoney(discountedPrice);
+    if (roundedDiscountedPrice >= publicPrice) continue;
+
+    const discountPercent = Math.max(1, Math.round(((publicPrice - roundedDiscountedPrice) / publicPrice) * 100));
+    const candidate = {
+      price: roundedDiscountedPrice,
+      compareAtPrice: publicPrice,
+      discountPercent,
+      promotionName: promotion.name,
+    };
+
+    if (!best || best.price > candidate.price) best = candidate;
+  }
+
+  return best;
+}
+
+async function getActiveAutomaticProductPromotions(): Promise<{
+  promotions: ProductAutomaticPromotion[];
+  categoryTargets: CategoryPromotionTargets;
+}> {
+  const now = new Date();
+  const promotions = await prisma.promotion.findMany({
+    where: {
+      method: "automatic",
+      isActive: true,
+      type: { in: ["percentage", "fixed_amount"] },
+      OR: [{ startsAt: null }, { startsAt: { lte: now } }],
+      AND: [{ OR: [{ endsAt: null }, { endsAt: { gte: now } }] }],
+    },
+    select: {
+      id: true,
+      name: true,
+      type: true,
+      value: true,
+      appliesTo: true,
+      productIds: true,
+      categoryIds: true,
+      customerType: true,
+      usageLimit: true,
+      usageCount: true,
+      minOrderAmount: true,
+      minQuantity: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const rawCategoryIds = Array.from(new Set(promotions.flatMap((promotion) => promotion.categoryIds)));
+  const categoryTargets: CategoryPromotionTargets = {
+    categoryIds: new Set(rawCategoryIds.map(normalizeCategoryValue)),
+    categorySlugs: new Set(),
+  };
+
+  if (rawCategoryIds.length > 0) {
+    const categories = await prisma.category.findMany({
+      where: { id: { in: rawCategoryIds } },
+      select: { id: true, slug: true },
+    });
+
+    categories.forEach((category) => {
+      categoryTargets.categoryIds.add(normalizeCategoryValue(category.id));
+      categoryTargets.categorySlugs.add(normalizeCategoryValue(category.slug));
+    });
+
+    rawCategoryIds.forEach((value) => categoryTargets.categorySlugs.add(normalizeCategoryValue(value)));
+  }
+
+  return { promotions, categoryTargets };
+}
+
+
 function buildQuickSearchWhere(query: string) {
   return {
     OR: [
@@ -108,7 +275,12 @@ function buildQuickSearchWhere(query: string) {
   };
 }
 
-function serializeProduct<T extends JsonProduct & { price: number }>(product: T, isApprovedPro: boolean) {
+function serializeProduct<T extends JsonProduct & { price: number }>(
+  product: T,
+  isApprovedPro: boolean,
+  promotions: ProductAutomaticPromotion[] = [],
+  categoryTargets: CategoryPromotionTargets = { categoryIds: new Set(), categorySlugs: new Set() },
+) {
   const parsed = {
     ...product,
     images: parseJsonArray(product.images),
@@ -123,19 +295,31 @@ function serializeProduct<T extends JsonProduct & { price: number }>(product: T,
     variants?: JsonProductVariant[];
   };
 
+  const productForPromotion: JsonProduct = product;
   const hasPriceProEur = typeof parsed.priceProEur === "number" && parsed.priceProEur > 0;
   const pricePublic = parsed.price;
   const price = isApprovedPro && hasPriceProEur ? parsed.priceProEur! : pricePublic;
+  const automaticPromotion = getBestAutomaticPromotionForProduct(productForPromotion, pricePublic, promotions, categoryTargets, isApprovedPro);
   const variants = parsed.variants?.map((variant) => {
     const variantPublicPrice = variant.price ?? pricePublic;
     const variantHasPriceProEur = typeof variant.priceProEur === "number" && variant.priceProEur > 0;
+    const variantAutomaticPromotion = !isApprovedPro
+      ? getBestAutomaticPromotionForProduct(productForPromotion, variantPublicPrice, promotions, categoryTargets, isApprovedPro)
+      : null;
     const variantPrice = isApprovedPro
       ? (variantHasPriceProEur ? variant.priceProEur! : (hasPriceProEur ? parsed.priceProEur! : variantPublicPrice))
-      : variantPublicPrice;
+      : (variantAutomaticPromotion ? variantAutomaticPromotion.price : variantPublicPrice);
     const serializedVariant = {
       ...variant,
       price: variantPrice,
       pricePublic: variantPublicPrice,
+      compareAtPrice: variantAutomaticPromotion ? variantAutomaticPromotion.compareAtPrice : null,
+      originalPrice: variantAutomaticPromotion ? variantAutomaticPromotion.compareAtPrice : null,
+      isPromo: Boolean(variantAutomaticPromotion),
+      ...(variantAutomaticPromotion ? {
+        automaticPromotionName: variantAutomaticPromotion.promotionName,
+        automaticPromotionDiscountPercent: variantAutomaticPromotion.discountPercent,
+      } : {}),
       hasPriceProEur: variantHasPriceProEur || (isApprovedPro && hasPriceProEur),
     };
     delete (serializedVariant as any).purchasePrice;
@@ -146,14 +330,23 @@ function serializeProduct<T extends JsonProduct & { price: number }>(product: T,
     return serializedVariant;
   });
 
-  const compareAtPrice = (parsed as any).compareAtPrice ?? (parsed as any).originalPrice ?? null;
+  const existingCompareAtPrice = (parsed as any).compareAtPrice ?? (parsed as any).originalPrice ?? null;
+  const salePrice = automaticPromotion && !isApprovedPro ? automaticPromotion.price : price;
+  const compareAtPrice = automaticPromotion && !isApprovedPro
+    ? automaticPromotion.compareAtPrice
+    : existingCompareAtPrice;
   const serialized = {
     ...parsed,
     ...(variants ? { variants } : {}),
-    price,
+    price: salePrice,
     pricePublic,
     compareAtPrice,
     originalPrice: compareAtPrice,
+    isPromo: Boolean((parsed as any).isPromo || (compareAtPrice && compareAtPrice > salePrice)),
+    ...(automaticPromotion && !isApprovedPro ? {
+      automaticPromotionName: automaticPromotion.promotionName,
+      automaticPromotionDiscountPercent: automaticPromotion.discountPercent,
+    } : {}),
     isPro: isApprovedPro,
     hasPriceProEur,
   };
@@ -244,14 +437,15 @@ productsRouter.get("/", async (req: Request, res: Response): Promise<void> => {
     else if (sort === "updated_desc") orderBy = { updatedAt: "desc" };
     else if (sort === "newest") orderBy = { createdAt: "desc" };
 
-    const [products, total, isApprovedPro] = await Promise.all([
+    const [products, total, isApprovedPro, promotionData] = await Promise.all([
       prisma.product.findMany({ where, orderBy, skip, take, include: { variants: { orderBy: { order: "asc" } } } }),
       prisma.product.count({ where }),
       isApprovedProRequest(req),
+      getActiveAutomaticProductPromotions(),
     ]);
 
     res.json({
-      products: products.map((product) => serializeProduct(product, isApprovedPro)),
+      products: products.map((product) => serializeProduct(product, isApprovedPro, promotionData.promotions, promotionData.categoryTargets)),
       pagination: {
         page: parseInt(page),
         limit: take,
@@ -268,7 +462,7 @@ productsRouter.get("/", async (req: Request, res: Response): Promise<void> => {
 // GET /api/products/featured — Produits mis en avant
 productsRouter.get("/featured", async (req: Request, res: Response): Promise<void> => {
   try {
-    const [products, isApprovedPro] = await Promise.all([
+    const [products, isApprovedPro, promotionData] = await Promise.all([
       prisma.product.findMany({
         where: { status: "active", rating: { gte: 4.5 } },
         orderBy: { rating: "desc" },
@@ -276,8 +470,9 @@ productsRouter.get("/featured", async (req: Request, res: Response): Promise<voi
         include: { variants: { orderBy: { order: "asc" } } },
       }),
       isApprovedProRequest(req),
+      getActiveAutomaticProductPromotions(),
     ]);
-    res.json(products.map((product) => serializeProduct(product, isApprovedPro)));
+    res.json(products.map((product) => serializeProduct(product, isApprovedPro, promotionData.promotions, promotionData.categoryTargets)));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur serveur" });
@@ -287,7 +482,7 @@ productsRouter.get("/featured", async (req: Request, res: Response): Promise<voi
 // GET /api/products/promo — Produits en promotion
 productsRouter.get("/promo", async (req: Request, res: Response): Promise<void> => {
   try {
-    const [products, isApprovedPro] = await Promise.all([
+    const [products, isApprovedPro, promotionData] = await Promise.all([
       prisma.product.findMany({
         where: { status: "active", isPromo: true },
         orderBy: { rating: "desc" },
@@ -295,8 +490,9 @@ productsRouter.get("/promo", async (req: Request, res: Response): Promise<void> 
         include: { variants: { orderBy: { order: "asc" } } },
       }),
       isApprovedProRequest(req),
+      getActiveAutomaticProductPromotions(),
     ]);
-    res.json(products.map((product) => serializeProduct(product, isApprovedPro)));
+    res.json(products.map((product) => serializeProduct(product, isApprovedPro, promotionData.promotions, promotionData.categoryTargets)));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur serveur" });
@@ -306,7 +502,7 @@ productsRouter.get("/promo", async (req: Request, res: Response): Promise<void> 
 // GET /api/products/nouveautes — Nouveautés avec prix professionnel cohérent
 productsRouter.get("/nouveautes", async (req: Request, res: Response): Promise<void> => {
   try {
-    const [products, isApprovedPro] = await Promise.all([
+    const [products, isApprovedPro, promotionData] = await Promise.all([
       prisma.product.findMany({
         where: { status: "active", isNew: true },
         orderBy: { createdAt: "desc" },
@@ -314,8 +510,9 @@ productsRouter.get("/nouveautes", async (req: Request, res: Response): Promise<v
         include: { variants: { orderBy: { order: "asc" } } },
       }),
       isApprovedProRequest(req),
+      getActiveAutomaticProductPromotions(),
     ]);
-    res.json(products.map((product) => serializeProduct(product, isApprovedPro)));
+    res.json(products.map((product) => serializeProduct(product, isApprovedPro, promotionData.promotions, promotionData.categoryTargets)));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur serveur" });
@@ -348,7 +545,7 @@ productsRouter.get("/search", async (req: Request, res: Response): Promise<void>
       res.json([]);
       return;
     }
-    const [products, isApprovedPro] = await Promise.all([
+    const [products, isApprovedPro, promotionData] = await Promise.all([
       prisma.product.findMany({
         where: {
           status: "active",
@@ -359,6 +556,7 @@ productsRouter.get("/search", async (req: Request, res: Response): Promise<void>
         include: { variants: { orderBy: { order: "asc" } } },
       }),
       isApprovedProRequest(req),
+      getActiveAutomaticProductPromotions(),
     ]);
 
     const rankedProducts = products
@@ -368,7 +566,7 @@ productsRouter.get("/search", async (req: Request, res: Response): Promise<void>
       .slice(0, 8)
       .map((item) => item.product);
 
-    res.json(rankedProducts.map((product) => serializeProduct(product, isApprovedPro)));
+    res.json(rankedProducts.map((product) => serializeProduct(product, isApprovedPro, promotionData.promotions, promotionData.categoryTargets)));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur recherche produits" });
@@ -378,7 +576,7 @@ productsRouter.get("/search", async (req: Request, res: Response): Promise<void>
 // GET /api/products/:slug — Détail d'un produit
 productsRouter.get("/:slug", async (req: Request, res: Response): Promise<void> => {
   try {
-    const [product, isApprovedPro] = await Promise.all([
+    const [product, isApprovedPro, promotionData] = await Promise.all([
       prisma.product.findUnique({
         where: { slug: req.params.slug },
         include: {
@@ -387,6 +585,7 @@ productsRouter.get("/:slug", async (req: Request, res: Response): Promise<void> 
         },
       }),
       isApprovedProRequest(req),
+      getActiveAutomaticProductPromotions(),
     ]);
 
     if (!product) {
@@ -409,8 +608,8 @@ productsRouter.get("/:slug", async (req: Request, res: Response): Promise<void> 
       .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
     res.json({
-      ...serializeProduct(product, isApprovedPro),
-      recommendedProducts: orderedRecommendedProducts.map((item) => serializeProduct(item, isApprovedPro)),
+      ...serializeProduct(product, isApprovedPro, promotionData.promotions, promotionData.categoryTargets),
+      recommendedProducts: orderedRecommendedProducts.map((item) => serializeProduct(item, isApprovedPro, promotionData.promotions, promotionData.categoryTargets)),
     });
   } catch (err) {
     console.error(err);
