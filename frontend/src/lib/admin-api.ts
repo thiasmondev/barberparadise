@@ -509,6 +509,23 @@ export function getAdminCustomer(id: string) {
   return adminFetch<Customer>(`/api/admin/customers/${id}`);
 }
 
+
+export interface AdminCustomerProAccountPayload {
+  enabled: boolean;
+  companyName?: string;
+  activity?: string;
+  phone?: string;
+  siret?: string;
+  vatNumber?: string;
+}
+
+export function updateAdminCustomerProAccount(id: string, data: AdminCustomerProAccountPayload) {
+  return adminFetch<Customer>(`/api/admin/customers/${id}/pro-account`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 //// ─── Brands ────────────────────────────────────────────────────
 
 export interface AdminBrand {

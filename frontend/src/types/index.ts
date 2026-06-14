@@ -257,6 +257,13 @@ export interface Customer {
     id: string;
     companyName: string;
     status: string;
+    activity?: string | null;
+    phone?: string | null;
+    siret?: string | null;
+    vatNumber?: string | null;
+    approvedAt?: string | null;
+    approvedBy?: string | null;
+    rejectionReason?: string | null;
   } | null;
   _count?: {
     orders: number;

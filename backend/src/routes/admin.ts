@@ -4697,7 +4697,7 @@ adminRouter.get(
             createdAt: true,
             orders: { select: { total: true } },
             proAccount: {
-              select: { id: true, companyName: true, status: true },
+              select: { id: true, companyName: true, status: true, activity: true, phone: true, siret: true, vatNumber: true, approvedAt: true },
             },
             _count: { select: { orders: true } },
           },
@@ -4739,7 +4739,7 @@ adminRouter.get(
             orderBy: { createdAt: "desc" },
           },
           addresses: true,
-          proAccount: { select: { id: true, companyName: true, status: true } },
+          proAccount: { select: { id: true, companyName: true, status: true, activity: true, phone: true, siret: true, vatNumber: true, approvedAt: true, approvedBy: true, rejectionReason: true } },
           _count: { select: { orders: true, wishlist: true } },
         },
       });
@@ -4752,6 +4752,93 @@ adminRouter.get(
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Erreur serveur" });
+    }
+  }
+);
+
+
+// PATCH /api/admin/customers/:id/pro-account — activation ou suspension manuelle du statut B2B d'un client
+adminRouter.patch(
+  "/customers/:id/pro-account",
+  requireAdmin,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const customer = await prisma.customer.findUnique({
+        where: { id: req.params.id },
+        include: { proAccount: true },
+      });
+      if (!customer) {
+        res.status(404).json({ error: "Client non trouvé" });
+        return;
+      }
+
+      const enabled = Boolean(req.body?.enabled);
+      const normalize = (value: unknown): string | null => {
+        if (typeof value !== "string") return null;
+        const trimmed = value.trim();
+        return trimmed || null;
+      };
+      const normalizeVat = (value: unknown): string | null => normalize(value)?.toUpperCase() || null;
+
+      if (enabled) {
+        const companyName = normalize(req.body?.companyName) || `${customer.firstName} ${customer.lastName}`.trim() || customer.email;
+        const activity = normalize(req.body?.activity) || customer.proAccount?.activity || "Professionnel de la coiffure / barber";
+        const phone = normalize(req.body?.phone) || customer.phone || customer.proAccount?.phone || "Non renseigné";
+        const siret = normalize(req.body?.siret) || null;
+        const vatNumber = normalizeVat(req.body?.vatNumber) || null;
+
+        await prisma.proAccount.upsert({
+          where: { customerId: customer.id },
+          create: {
+            customerId: customer.id,
+            companyName,
+            activity,
+            phone,
+            siret,
+            vatNumber,
+            status: "approved",
+            approvedAt: new Date(),
+            approvedBy: req.user?.email || req.user?.id || "admin",
+          },
+          update: {
+            companyName,
+            activity,
+            phone,
+            siret,
+            vatNumber,
+            status: "approved",
+            rejectionReason: null,
+            approvedAt: new Date(),
+            approvedBy: req.user?.email || req.user?.id || "admin",
+          },
+        });
+      } else if (customer.proAccount) {
+        await prisma.proAccount.update({
+          where: { customerId: customer.id },
+          data: {
+            status: "suspended",
+            rejectionReason: "Statut B2B désactivé manuellement depuis l'administration.",
+            approvedAt: null,
+            approvedBy: null,
+          },
+        });
+      }
+
+      const updated = await prisma.customer.findUnique({
+        where: { id: customer.id },
+        include: {
+          orders: { include: { items: true, shippingAddress: true }, orderBy: { createdAt: "desc" } },
+          addresses: true,
+          proAccount: { select: { id: true, companyName: true, status: true, activity: true, phone: true, siret: true, vatNumber: true, approvedAt: true, approvedBy: true, rejectionReason: true } },
+          _count: { select: { orders: true, wishlist: true } },
+        },
+      });
+
+      const { password: _, ...safeCustomer } = updated!;
+      res.json(safeCustomer);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur mise à jour du statut B2B" });
     }
   }
 );

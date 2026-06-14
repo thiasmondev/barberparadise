@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { getAdminCustomer } from "@/lib/admin-api";
+import { getAdminCustomer, updateAdminCustomerProAccount } from "@/lib/admin-api";
 import type { Customer } from "@/types";
 import Link from "next/link";
 import {
@@ -17,6 +17,7 @@ import {
   Truck,
   XCircle,
   AlertCircle,
+  Building2,
 } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Clock }> = {
@@ -40,14 +41,52 @@ export default function CustomerDetailPage() {
   const id = params?.id as string;
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [loading, setLoading] = useState(true);
+  const [savingPro, setSavingPro] = useState(false);
+  const [proMessage, setProMessage] = useState("");
+  const [proForm, setProForm] = useState({ companyName: "", activity: "", phone: "", siret: "", vatNumber: "" });
 
   useEffect(() => {
     if (!id) return;
     getAdminCustomer(id)
-      .then(setCustomer)
+      .then((data) => {
+        setCustomer(data);
+        setProForm({
+          companyName: data.proAccount?.companyName || `${data.firstName || ""} ${data.lastName || ""}`.trim(),
+          activity: data.proAccount?.activity || "Professionnel de la coiffure / barber",
+          phone: data.proAccount?.phone || data.phone || "",
+          siret: data.proAccount?.siret || "",
+          vatNumber: data.proAccount?.vatNumber || "",
+        });
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [id]);
+
+  const setProField = (field: keyof typeof proForm, value: string) => {
+    setProForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleProUpdate = async (enabled: boolean) => {
+    if (!customer || savingPro) return;
+    setSavingPro(true);
+    setProMessage("");
+    try {
+      const updated = await updateAdminCustomerProAccount(customer.id, { enabled, ...proForm });
+      setCustomer(updated);
+      setProForm({
+        companyName: updated.proAccount?.companyName || `${updated.firstName || ""} ${updated.lastName || ""}`.trim(),
+        activity: updated.proAccount?.activity || "Professionnel de la coiffure / barber",
+        phone: updated.proAccount?.phone || updated.phone || "",
+        siret: updated.proAccount?.siret || "",
+        vatNumber: updated.proAccount?.vatNumber || "",
+      });
+      setProMessage(enabled ? "Compte B2B activé ou mis à jour." : "Compte B2B suspendu pour ce client.");
+    } catch (err) {
+      setProMessage(err instanceof Error ? err.message : "Impossible de modifier le compte B2B.");
+    } finally {
+      setSavingPro(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -116,6 +155,59 @@ export default function CustomerDetailPage() {
                 <Calendar size={14} className="text-gray-400" />
                 Inscrit le {formatDate(customer.createdAt)}
               </div>
+            </div>
+          </div>
+
+          {/* B2B account */}
+          <div className="bg-white rounded-xl border border-gray-100 p-5">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 className="font-heading font-semibold text-sm text-dark-800 flex items-center gap-2">
+                  <Building2 size={16} className="text-primary" /> Compte B2B
+                </h3>
+                <p className="mt-1 text-xs text-gray-500">Activez ou modifiez manuellement l’accès aux tarifs professionnels.</p>
+              </div>
+              <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${customer.proAccount?.status === "approved" ? "bg-green-50 text-green-700" : customer.proAccount ? "bg-yellow-50 text-yellow-700" : "bg-gray-100 text-gray-500"}`}>
+                {customer.proAccount?.status === "approved" ? "B2B actif" : customer.proAccount ? customer.proAccount.status : "B2C"}
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              <label className="block text-xs font-semibold text-gray-500">
+                Entreprise / raison sociale
+                <input value={proForm.companyName} onChange={(e) => setProField("companyName", e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-dark-800 focus:border-primary focus:outline-none" />
+              </label>
+              <label className="block text-xs font-semibold text-gray-500">
+                Activité
+                <input value={proForm.activity} onChange={(e) => setProField("activity", e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-dark-800 focus:border-primary focus:outline-none" />
+              </label>
+              <label className="block text-xs font-semibold text-gray-500">
+                Téléphone pro
+                <input value={proForm.phone} onChange={(e) => setProField("phone", e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-dark-800 focus:border-primary focus:outline-none" />
+              </label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="block text-xs font-semibold text-gray-500">
+                  SIRET
+                  <input value={proForm.siret} onChange={(e) => setProField("siret", e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-dark-800 focus:border-primary focus:outline-none" />
+                </label>
+                <label className="block text-xs font-semibold text-gray-500">
+                  TVA intracom.
+                  <input value={proForm.vatNumber} onChange={(e) => setProField("vatNumber", e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm uppercase text-dark-800 focus:border-primary focus:outline-none" />
+                </label>
+              </div>
+            </div>
+
+            {proMessage && <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-dark-700">{proMessage}</div>}
+
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <button type="button" disabled={savingPro} onClick={() => handleProUpdate(true)} className="flex-1 rounded-lg bg-dark-800 px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-white hover:bg-primary disabled:opacity-50">
+                {savingPro ? "Mise à jour..." : customer.proAccount?.status === "approved" ? "Mettre à jour B2B" : "Passer en B2B"}
+              </button>
+              {customer.proAccount && (
+                <button type="button" disabled={savingPro} onClick={() => handleProUpdate(false)} className="rounded-lg border border-gray-200 px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-gray-500 hover:border-red-200 hover:text-red-600 disabled:opacity-50">
+                  Suspendre B2B
+                </button>
+              )}
             </div>
           </div>
 

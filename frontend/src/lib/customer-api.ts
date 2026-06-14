@@ -111,6 +111,20 @@ export async function customerRegister(data: RegisterData): Promise<CustomerAuth
   }, null);
 }
 
+export async function requestPasswordReset(email: string): Promise<{ message: string }> {
+  return customerFetch<{ message: string }>("/api/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  }, null);
+}
+
+export async function resetCustomerPassword(token: string, password: string): Promise<{ message: string }> {
+  return customerFetch<{ message: string }>("/api/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ token, password }),
+  }, null);
+}
+
 export async function getCustomerMe(token?: string | null): Promise<Customer> {
   return customerFetch<Customer>("/api/customers/me", {}, token);
 }

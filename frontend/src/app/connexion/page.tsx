@@ -107,6 +107,11 @@ export default function ConnexionPage() {
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
+              <div className="mt-3 text-right">
+                <Link href="/mot-de-passe-oublie" className="text-xs font-bold uppercase tracking-[0.16em] text-white/45 hover:text-[#E91E8C]">
+                  Mot de passe oublié ?
+                </Link>
+              </div>
             </div>
 
             <button
