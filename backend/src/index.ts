@@ -64,8 +64,10 @@ const PORT = process.env.PORT || 4000;
 
 // ─── Middleware ───────────────────────────────────────────────
 // CORS strict — process.env.CORS_ORIGIN est garanti défini (validé ci-dessus)
+const allowedOrigins = process.env.CORS_ORIGIN?.split(",").map((origin) => origin.trim()) || [];
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN as string,
+  origin: allowedOrigins,
   credentials: true,
 }));
 app.use(express.json({ limit: "10mb" }));
@@ -159,7 +161,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 app.listen(PORT, () => {
   console.log(`✅ Barber Paradise API démarrée sur http://localhost:${PORT}`);
   console.log(`📊 Panel Admin: http://localhost:${PORT}/api/admin`);
-  console.log(`🔒 CORS autorisé pour : ${process.env.CORS_ORIGIN}`);
+  console.log(`🔒 CORS autorisé pour : ${allowedOrigins.join(", ")}`);
 
   telegramBotService.initialize();
   registerTelegramHandlers();
