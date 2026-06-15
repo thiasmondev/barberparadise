@@ -54,6 +54,7 @@ export default function ProductDetail({ product }: { product: Product }) {
     : hasDiscount && compareAtPrice
       ? getDiscount(displayPrice, compareAtPrice)
       : 0;
+  const discountPercent = discount ?? 0;
   const hasVariantStock = variants.some((variant) => variant.inStock);
   const isInStock = selectedVariant ? selectedVariant.inStock : variants.length > 0 ? hasVariantStock : product.inStock;
   const requiresVariantSelection = variants.length > 0 && !selectedVariant;
@@ -281,9 +282,9 @@ export default function ProductDetail({ product }: { product: Product }) {
                     NOUVEAU
                   </span>
                 )}
-                {discount && (
+                {discountPercent > 0 && (
                   <span className="bg-[#ff4a8d] px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white shadow-sm">
-                    -{discount}%
+                    -{discountPercent}%
                   </span>
                 )}
               </div>
@@ -410,9 +411,9 @@ export default function ProductDetail({ product }: { product: Product }) {
                     {formatPrice(compareAtPrice)}
                   </span>
                 ) : null}
-                {discount && !showsProPrice && (
+                {discountPercent > 0 && !showsProPrice && (
                   <span className="text-sm font-black text-[#ff4a8d] bg-[#ff4a8d]/10 px-3 py-1">
-                    -{discount}%
+                    -{discountPercent}%
                   </span>
                 )}
               </div>
