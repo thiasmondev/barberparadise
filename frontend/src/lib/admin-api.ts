@@ -330,6 +330,7 @@ export function getAdminOrders(params?: {
   limit?: number;
   status?: string;
   search?: string;
+  channel?: string;
 }) {
   const sp = new URLSearchParams();
   if (params) {
@@ -2684,4 +2685,171 @@ export function updateAdminLegalPage(slug: string, data: { title: string; conten
     method: "PUT",
     body: JSON.stringify(data),
   });
+}
+
+// ─── POS / Caisse ──────────────────────────────────────────────
+
+export interface PosVariant {
+  id: string;
+  name: string;
+  label: string | null;
+  sku: string;
+  price: number;
+  stock: number;
+  inStock: boolean;
+  image: string;
+}
+
+export interface PosProduct {
+  id: string;
+  name: string;
+  brand: string;
+  category: string;
+  price: number;
+  image: string;
+  inStock: boolean;
+  stockCount: number;
+  hasVariants: boolean;
+  variants: PosVariant[];
+}
+
+export interface PosTerminal {
+  id: string;
+  description: string;
+  status: string;
+  brand?: string;
+  model?: string;
+  serialNumber?: string | null;
+}
+
+export interface PosOrderItem {
+  id: string;
+  productId?: string | null;
+  variantId?: string | null;
+  variantLabel?: string | null;
+  name: string;
+  price: number;
+  quantity: number;
+  image: string;
+  discountAmount: number;
+  isCustomSale: boolean;
+}
+
+export interface PosOrder {
+  id: string;
+  orderNumber: string;
+  channel: string;
+  status: string;
+  posPaymentStatus?: string | null;
+  providerPaymentId?: string | null;
+  terminalId?: string | null;
+  posSessionId?: string | null;
+  subtotal: number;
+  discountAmount: number;
+  totalHT: number;
+  vatAmount: number;
+  totalTTC: number;
+  total: number;
+  currency: string;
+  notes?: string | null;
+  createdAt: string;
+  posPaidAt?: string | null;
+  customer?: { id: string; email: string; firstName?: string | null; lastName?: string | null; phone?: string | null } | null;
+  items: PosOrderItem[];
+}
+
+export interface PosStats {
+  period: string;
+  start: string;
+  salesCount: number;
+  revenue: number;
+  averageOrder: number;
+  topProducts: { name: string; quantity: number; revenue: number }[];
+  latestOrder: PosOrder | null;
+}
+
+export interface PosCartItemPayload {
+  productId: string;
+  variantId?: string | null;
+  quantity: number;
+  discountAmount?: number;
+}
+
+export function getPosTerminals() {
+  return adminFetch<{ terminals: PosTerminal[] }>("/api/pos/terminals");
+}
+
+export function getPosCatalog(params: { q?: string; category?: string; limit?: number } = {}) {
+  const search = new URLSearchParams();
+  if (params.q) search.set("q", params.q);
+  if (params.category) search.set("category", params.category);
+  if (params.limit) search.set("limit", String(params.limit));
+  const suffix = search.toString() ? `?${search.toString()}` : "";
+  return adminFetch<{ products: PosProduct[]; categories: string[] }>(`/api/pos/catalog${suffix}`);
+}
+
+export function openPosSession(payload: { terminalId: string; notes?: string }) {
+  return adminFetch<{ session: { id: string; terminalId: string; openedAt: string; closedAt?: string | null } }>("/api/pos/sessions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function closePosSession(sessionId: string) {
+  return adminFetch<{ session: { id: string; closedAt?: string | null } }>(`/api/pos/sessions/${sessionId}/close`, { method: "POST" });
+}
+
+export function createPosPayment(payload: {
+  terminalId: string;
+  posSessionId?: string | null;
+  customerId?: string | null;
+  items: PosCartItemPayload[];
+  globalDiscount?: number;
+  notes?: string | null;
+}) {
+  return adminFetch<{ order: PosOrder; paymentId: string; status: string; changePaymentStateUrl?: string | null }>("/api/pos/payments", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function createPosQuickSale(payload: {
+  terminalId: string;
+  posSessionId?: string | null;
+  customerId?: string | null;
+  amount: number;
+  description?: string;
+  notes?: string | null;
+}) {
+  return adminFetch<{ order: PosOrder; paymentId: string; status: string; changePaymentStateUrl?: string | null }>("/api/pos/quick-sale", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getPosPaymentStatus(paymentId: string) {
+  return adminFetch<{ status: string; paymentId: string; order: PosOrder | null; changePaymentStateUrl?: string | null }>(`/api/pos/payments/${paymentId}/status`);
+}
+
+export function cancelPosPayment(paymentId: string) {
+  return adminFetch<{ ok: boolean }>(`/api/pos/payments/${paymentId}/cancel`, { method: "POST" });
+}
+
+export function getPosHistory(params: { page?: number; limit?: number; period?: string; status?: string; search?: string } = {}) {
+  const search = new URLSearchParams();
+  if (params.page) search.set("page", String(params.page));
+  if (params.limit) search.set("limit", String(params.limit));
+  if (params.period) search.set("period", params.period);
+  if (params.status) search.set("status", params.status);
+  if (params.search) search.set("search", params.search);
+  const suffix = search.toString() ? `?${search.toString()}` : "";
+  return adminFetch<{ orders: PosOrder[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(`/api/pos/history${suffix}`);
+}
+
+export function getPosOrder(orderId: string) {
+  return adminFetch<{ order: PosOrder }>(`/api/pos/history/${orderId}`);
+}
+
+export function getPosStats(period = "today") {
+  return adminFetch<PosStats>(`/api/pos/stats?period=${encodeURIComponent(period)}`);
 }

@@ -46,7 +46,8 @@ import apiKeysRouter from "./routes/apiKeys";
 import { chatRouter } from "./routes/chat";
 import { stockAlertsRouter } from "./routes/stock-alerts";
 import { legalPagesRouter } from "./routes/legalPages";
-import { requireJwtAdmin } from "./middleware/auth";
+import { posRouter } from "./routes/pos";
+import { requireAdmin, requireJwtAdmin } from "./middleware/auth";
 import telegramBotService from "./services/telegram/telegramBot";
 import { registerTelegramHandlers } from "./services/telegram/telegramHandlers";
 import { scheduleTelegramDailyDigest } from "./services/telegram/telegramDigest";
@@ -102,6 +103,7 @@ app.use("/api/promotions", promotionsRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/stock-alerts", stockAlertsRouter);
 app.use("/api/legal-pages", legalPagesRouter);
+app.use("/api/pos", requireAdmin, posRouter);
 
 // ─── Root & Health Check ─────────────────────────────────────
 app.get("/", (_req, res) => {
@@ -133,6 +135,7 @@ app.get("/", (_req, res) => {
               chat: "/api/chat/barbara",
               stockAlerts: "/api/stock-alerts",
               legalPages: "/api/legal-pages",
+              pos: "/api/pos",
               apiKeys: "/api/admin/api-keys",
 
     },

@@ -26,11 +26,13 @@ import {
   Sparkles,
   Images,
   KeyRound,
+  Store,
 } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/stock", label: "Stock", icon: Package },
+  { href: "/admin/caisse", label: "Caisse", icon: Store },
   { href: "/admin/commandes", label: "Commandes", icon: ShoppingCart },
   { href: "/admin/clients", label: "Clients", icon: Users },
   { href: "/admin/pro", label: "Comptes pro", icon: Users },

@@ -185,6 +185,14 @@ export interface Order {
   isB2B?: boolean;
   proInvoiceNumber?: string | null;
   proInvoiceUrl?: string | null;
+  channel?: "online" | "pos" | string;
+  terminalId?: string | null;
+  posSessionId?: string | null;
+  posPaymentStatus?: string | null;
+  posPaidAt?: string | null;
+  posCashierId?: string | null;
+  posCashierEmail?: string | null;
+  discountAmount?: number;
   customerEmail?: string | null;
   billingAddress?: unknown;
   notes: string | null;
@@ -225,10 +233,14 @@ export interface OrderItem {
   id: string;
   orderId: string;
   productId: string;
+  variantId?: string | null;
   name: string;
+  variantLabel?: string | null;
   price: number;
   quantity: number;
   image: string;
+  discountAmount?: number;
+  isCustomSale?: boolean;
 }
 
 export interface ShippingAddress {

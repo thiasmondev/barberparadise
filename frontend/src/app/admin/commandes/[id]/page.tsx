@@ -101,10 +101,19 @@ function paymentBadge(order: Order) {
 }
 
 function fulfillmentBadge(order: Order) {
+  if (order.channel === "pos") {
+    return { label: "Remise immédiate", className: "bg-violet-50 text-violet-700 ring-violet-200" };
+  }
   const treated = ["processing", "shipped", "delivered"].includes(order.status);
   return treated
     ? { label: "Traité", className: "bg-sky-50 text-sky-700 ring-sky-200" }
     : { label: "Non traité", className: "bg-gray-100 text-gray-700 ring-gray-200" };
+}
+
+function channelBadge(order: Order) {
+  if (order.channel === "pos") return { label: "Caisse POS", className: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200" };
+  if (order.isB2B) return { label: "B2B", className: "bg-indigo-50 text-indigo-700 ring-indigo-200" };
+  return { label: "Boutique web", className: "bg-gray-100 text-gray-700 ring-gray-200" };
 }
 
 function carrierLabel(carrier?: string | null) {
@@ -654,6 +663,8 @@ export default function OrderDetailPage() {
 
   const pay = paymentBadge(order);
   const fulfillment = fulfillmentBadge(order);
+  const channelInfo = channelBadge(order);
+  const isPosOrder = order.channel === "pos";
   const labelBlockerMessage = hasZeroWeight ? "Veuillez renseigner le poids des articles" : "";
   const totalItemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -670,6 +681,7 @@ export default function OrderDetailPage() {
                 <h1 className="text-2xl font-semibold tracking-tight text-gray-950 sm:text-3xl">{order.orderNumber}</h1>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${pay.className}`}>{pay.label}</span>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${fulfillment.className}`}>{fulfillment.label}</span>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${channelInfo.className}`}>{channelInfo.label}</span>
               </div>
               <p className="mt-1 text-sm text-gray-500">Créée le {formatDate(order.createdAt)}</p>
             </div>
@@ -690,26 +702,39 @@ export default function OrderDetailPage() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-gray-950">{item.name}</p>
-                      <p className="mt-1 text-sm text-gray-500">{formatPrice(item.price, order.currency)} × {item.quantity}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
+                        <span>{formatPrice(item.price, order.currency)} × {item.quantity}</span>
+                        {item.variantLabel && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{item.variantLabel}</span>}
+                        {item.isCustomSale && <span className="rounded-full bg-fuchsia-50 px-2 py-0.5 text-xs font-semibold text-fuchsia-700">Vente rapide</span>}
+                        {item.discountAmount ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Remise {formatPrice(item.discountAmount, order.currency)}</span> : null}
+                      </div>
                     </div>
                     <div className="font-semibold text-gray-950">{formatPrice(item.price * item.quantity, order.currency)}</div>
                   </div>
                 ))}
               </div>
               <div className="flex flex-col gap-2 border-t border-gray-200 px-5 py-4 sm:flex-row">
-                <button
-                  onClick={markAsProcessed}
-                  disabled={updating || ["processing", "shipped", "delivered"].includes(order.status)}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {updating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Marquer comme traité
-                </button>
-                <button
-                  onClick={openLabelDrawer}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800"
-                >
-                  <Truck className="h-4 w-4" /> Créer une étiquette d'expédition
-                </button>
+                {isPosOrder ? (
+                  <div className="rounded-xl bg-fuchsia-50 px-4 py-3 text-sm text-fuchsia-800">
+                    Cette vente a été encaissée en caisse. Elle ne nécessite ni traitement logistique, ni étiquette d’expédition.
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      onClick={markAsProcessed}
+                      disabled={updating || ["processing", "shipped", "delivered"].includes(order.status)}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {updating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Marquer comme traité
+                    </button>
+                    <button
+                      onClick={openLabelDrawer}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800"
+                    >
+                      <Truck className="h-4 w-4" /> Créer une étiquette d'expédition
+                    </button>
+                  </>
+                )}
               </div>
             </section>
 
@@ -717,7 +742,8 @@ export default function OrderDetailPage() {
               <h2 className="mb-4 font-semibold text-gray-950">Récapitulatif financier</h2>
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between"><span className="text-gray-500">Sous-total</span><span>{formatPrice(order.subtotal, order.currency)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Expédition ({carrierLabel(order.shipment?.carrier)} · {order.shipment?.totalWeightG || "—"} g)</span><span>{order.shipping === 0 ? "Gratuite" : formatPrice(order.shipping, order.currency)}</span></div>
+                {order.discountAmount ? <div className="flex justify-between text-emerald-700"><span>Remise caisse</span><span>-{formatPrice(order.discountAmount, order.currency)}</span></div> : null}
+                <div className="flex justify-between"><span className="text-gray-500">{isPosOrder ? "Expédition" : `Expédition (${carrierLabel(order.shipment?.carrier)} · ${order.shipment?.totalWeightG || "—"} g)`}</span><span>{isPosOrder ? "Non applicable" : order.shipping === 0 ? "Gratuite" : formatPrice(order.shipping, order.currency)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Taxes</span><span>{formatPrice(totals.taxes, order.currency)}</span></div>
                 <div className="flex justify-between border-t border-gray-200 pt-3 text-base font-semibold text-gray-950"><span>Total</span><span>{formatPrice(order.total, order.currency)}</span></div>
                 <div className="flex justify-between text-sm font-medium text-emerald-700"><span>Payé</span><span>{paymentBadge(order).label === "Payée" ? formatPrice(order.total, order.currency) : formatPrice(0, order.currency)}</span></div>
@@ -728,12 +754,12 @@ export default function OrderDetailPage() {
               <h2 className="mb-4 font-semibold text-gray-950">Calendrier</h2>
               <div className="space-y-4">
                 {[
-                  { label: "Commande créée", date: order.createdAt, icon: CalendarClock },
-                  { label: paymentBadge(order).label === "Payée" ? "Paiement confirmé" : "Paiement en attente", date: order.updatedAt, icon: CheckCircle2 },
-                  { label: "Email de confirmation envoyé", date: order.createdAt, icon: Mail },
-                  ...(order.shipment?.labelGeneratedAt ? [{ label: `Étiquette ${carrierLabel(order.shipment.carrier)} achetée${order.shipment.trackingNumber ? ` — Suivi ${order.shipment.trackingNumber}` : ""}`, date: order.shipment.labelGeneratedAt, icon: Truck }] : []),
-                  ...(order.shipment?.labelStatus === "cancelled" ? [{ label: "Étiquette annulée — remboursement sous 48h", date: order.shipment.updatedAt || order.shipment.labelGeneratedAt || order.updatedAt, icon: AlertCircle }] : []),
-                  ...(order.shipment?.shippedAt ? [{ label: "Commande expédiée", date: order.shipment.shippedAt, icon: Truck }] : []),
+                  { label: isPosOrder ? "Vente caisse créée" : "Commande créée", date: order.createdAt, icon: CalendarClock },
+                  { label: paymentBadge(order).label === "Payée" ? (isPosOrder ? "Paiement terminal confirmé" : "Paiement confirmé") : "Paiement en attente", date: order.posPaidAt || order.updatedAt, icon: CheckCircle2 },
+                  ...(!isPosOrder ? [{ label: "Email de confirmation envoyé", date: order.createdAt, icon: Mail }] : []),
+                  ...(!isPosOrder && order.shipment?.labelGeneratedAt ? [{ label: `Étiquette ${carrierLabel(order.shipment.carrier)} achetée${order.shipment.trackingNumber ? ` — Suivi ${order.shipment.trackingNumber}` : ""}`, date: order.shipment.labelGeneratedAt, icon: Truck }] : []),
+                  ...(!isPosOrder && order.shipment?.labelStatus === "cancelled" ? [{ label: "Étiquette annulée — remboursement sous 48h", date: order.shipment.updatedAt || order.shipment.labelGeneratedAt || order.updatedAt, icon: AlertCircle }] : []),
+                  ...(!isPosOrder && order.shipment?.shippedAt ? [{ label: "Commande expédiée", date: order.shipment.shippedAt, icon: Truck }] : []),
                 ].map((event, index) => {
                   const Icon = event.icon;
                   return (
@@ -752,9 +778,9 @@ export default function OrderDetailPage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2"><Pencil className="h-4 w-4 text-gray-500" /><h2 className="font-semibold text-gray-950">Gestion de la commande</h2></div>
-                  <p className="mt-1 text-xs text-gray-500">Modifiez les notes et les adresses, puis enregistrez.</p>
+                  <p className="mt-1 text-xs text-gray-500">{isPosOrder ? "Les ventes caisse sont pilotées depuis le module POS." : "Modifiez les notes et les adresses, puis enregistrez."}</p>
                 </div>
-                {!editMode && (
+                {!editMode && !isPosOrder && (
                   <button onClick={startEditOrder} className="inline-flex items-center gap-2 rounded-xl border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-50">
                     <Pencil className="h-4 w-4" /> Modifier
                   </button>
@@ -845,20 +871,34 @@ export default function OrderDetailPage() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="mb-3 flex items-center gap-2"><MapPin className="h-4 w-4 text-gray-500" /><h2 className="font-semibold text-gray-950">Adresse de livraison</h2></div>
-              {order.shipment?.carrier === "mondial_relay" && (
-                <div className="mb-3 inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">
-                  <span className="rounded bg-red-600 px-1.5 py-0.5 text-white">MR</span> Mondial Relay {order.shipment.relayPointId ? `· ${order.shipment.relayPointId}` : ""}
+            {isPosOrder ? (
+              <section className="rounded-2xl border border-fuchsia-200 bg-fuchsia-50 p-5 shadow-sm">
+                <div className="mb-3 flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-fuchsia-600" /><h2 className="font-semibold text-fuchsia-950">Encaissement caisse</h2></div>
+                <div className="space-y-2 text-sm text-fuchsia-800">
+                  <p><span className="font-semibold">Statut POS :</span> {order.posPaymentStatus || "—"}</p>
+                  <p><span className="font-semibold">Terminal :</span> {order.terminalId || "Terminal non renseigné"}</p>
+                  <p><span className="font-semibold">Session :</span> {order.posSessionId || "Session non renseignée"}</p>
+                  <p><span className="font-semibold">Caissier :</span> {order.posCashierEmail || "Non renseigné"}</p>
                 </div>
-              )}
-              {renderAddress(order.shippingAddress)}
-            </section>
+              </section>
+            ) : (
+              <>
+                <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                  <div className="mb-3 flex items-center gap-2"><MapPin className="h-4 w-4 text-gray-500" /><h2 className="font-semibold text-gray-950">Adresse de livraison</h2></div>
+                  {order.shipment?.carrier === "mondial_relay" && (
+                    <div className="mb-3 inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">
+                      <span className="rounded bg-red-600 px-1.5 py-0.5 text-white">MR</span> Mondial Relay {order.shipment.relayPointId ? `· ${order.shipment.relayPointId}` : ""}
+                    </div>
+                  )}
+                  {renderAddress(order.shippingAddress)}
+                </section>
 
-            <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h2 className="mb-3 font-semibold text-gray-950">Adresse de facturation</h2>
-              {renderBillingAddress(order)}
-            </section>
+                <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                  <h2 className="mb-3 font-semibold text-gray-950">Adresse de facturation</h2>
+                  {renderBillingAddress(order)}
+                </section>
+              </>
+            )}
           </aside>
         </div>
       </div>

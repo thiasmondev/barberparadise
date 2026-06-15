@@ -209,6 +209,7 @@ model ProductVariant {
   order       Int     @default(0)
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
   stockAlerts StockAlert[]
 
   @@index([productId])
@@ -313,6 +314,13 @@ model Order {
   vatNumber         String?
   proInvoiceNumber  String?
   proInvoiceUrl     String?
+  channel           String   @default("online")
+  terminalId        String?
+  posSessionId      String?
+  posPaymentStatus  String?
+  posPaidAt         DateTime?
+  posCashierId      String?
+  posCashierEmail   String?
   promoCodeId       String?
   promotionId       String?
   discountAmount    Float    @default(0)
@@ -326,24 +334,36 @@ model Order {
   shipment        Shipment?
   promoCode       PromoCode?       @relation(fields: [promoCodeId], references: [id])
   promotion       Promotion?      @relation(fields: [promotionId], references: [id])
+  posSession     PosSession?     @relation(fields: [posSessionId], references: [id])
 
   @@index([status])
   @@index([customerId])
+  @@index([channel])
+  @@index([terminalId])
+  @@index([posSessionId])
   @@index([promoCodeId])
   @@index([promotionId])
 }
 
 model OrderItem {
-  id        String @id @default(cuid())
-  orderId   String
-  productId String
-  name      String
-  price     Float
-  quantity  Int
-  image     String @default("")
+  id             String  @id @default(cuid())
+  orderId        String
+  productId      String?
+  variantId      String?
+  variantLabel   String?
+  name           String
+  price          Float
+  quantity       Int
+  image          String  @default("")
+  discountAmount Float   @default(0)
+  isCustomSale   Boolean @default(false)
 
-  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id])
+  order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product?        @relation(fields: [productId], references: [id])
+  variant ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@index([productId])
+  @@index([variantId])
 }
 
 model Shipment {
@@ -445,9 +465,31 @@ model Admin {
   email     String   @unique
   password  String
   name      String
-  role      String   @default("admin") // admin, superadmin
-  createdAt DateTime @default(now())
+  role        String       @default("admin") // admin, superadmin
+  posSessions PosSession[]
+  createdAt   DateTime     @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model PosSession {
+  id          String    @id @default(cuid())
+  adminId     String
+  admin       Admin     @relation(fields: [adminId], references: [id])
+  openedAt    DateTime  @default(now())
+  closedAt    DateTime?
+  terminalId  String
+  totalSales  Float     @default(0)
+  totalOrders Int       @default(0)
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  orders Order[]
+
+  @@index([adminId])
+  @@index([terminalId])
+  @@index([openedAt])
+  @@index([closedAt])
 }
 
 model ApiKey {

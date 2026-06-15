@@ -4099,6 +4099,7 @@ adminRouter.get(
         limit = "20",
         status,
         search,
+        channel,
       } = req.query as Record<string, string>;
       const pageNumber = Math.max(1, parseInt(page) || 1);
       const pageSize = Math.max(1, Math.min(100, parseInt(limit) || 20));
@@ -4108,6 +4109,8 @@ adminRouter.get(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const where: any = {};
       if (status) where.status = status;
+      if (channel && ["online", "pos"].includes(channel)) where.channel = channel;
+      const summaryWhere = channel && ["online", "pos"].includes(channel) ? { channel } : {};
       if (search?.trim()) {
         const term = search.trim();
         where.OR = [
@@ -4134,13 +4137,13 @@ adminRouter.get(
           take: pageSize,
         }),
         prisma.order.count({ where }),
-        prisma.order.count({ where: { createdAt: { gte: startOfToday } } }),
+        prisma.order.count({ where: { ...summaryWhere, createdAt: { gte: startOfToday } } }),
         prisma.orderItem.aggregate({
-          where: { order: { createdAt: { gte: startOfToday } } },
+          where: { order: { ...summaryWhere, createdAt: { gte: startOfToday } } },
           _sum: { quantity: true },
         }),
-        prisma.order.count({ where: { status: { in: ["processing", "shipped", "delivered"] } } }),
-        prisma.order.count({ where: { status: "delivered" } }),
+        prisma.order.count({ where: { ...summaryWhere, status: { in: ["processing", "shipped", "delivered"] } } }),
+        prisma.order.count({ where: { ...summaryWhere, status: "delivered" } }),
       ]);
       res.json({
         orders,

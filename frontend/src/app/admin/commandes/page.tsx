@@ -59,13 +59,23 @@ function paymentBadge(order: Order) {
 }
 
 function fulfillmentBadge(order: Order) {
+  if (order.channel === "pos") {
+    return { label: "Remise immédiate", className: "bg-violet-50 text-violet-700 ring-violet-200" };
+  }
   const treated = ["processing", "shipped", "delivered"].includes(order.status);
   return treated
     ? { label: "Traité", className: "bg-sky-50 text-sky-700 ring-sky-200" }
     : { label: "Non traité", className: "bg-gray-100 text-gray-700 ring-gray-200" };
 }
 
+function channelBadge(order: Order) {
+  if (order.channel === "pos") return { label: "Caisse POS", className: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200" };
+  if (order.isB2B) return { label: "B2B", className: "bg-indigo-50 text-indigo-700 ring-indigo-200" };
+  return { label: "Boutique web", className: "bg-gray-100 text-gray-700 ring-gray-200" };
+}
+
 function shippingMode(order: Order) {
+  if (order.channel === "pos") return "Vente en caisse";
   const carrier = order.shipment?.carrier;
   if (carrier === "mondial_relay") return "Mondial Relay";
   if (carrier === "colissimo" || carrier === "colissimo_international") return "Colissimo";
@@ -78,6 +88,7 @@ export default function AdminOrdersPage() {
   const [summary, setSummary] = useState<OrdersSummary>(DEFAULT_SUMMARY);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [channel, setChannel] = useState("");
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -93,6 +104,7 @@ export default function AdminOrdersPage() {
         limit: 20,
         status: status || undefined,
         search: search.trim() || undefined,
+        channel: channel || undefined,
       });
       setOrders(result.orders);
       setTotal(result.total);
@@ -107,7 +119,7 @@ export default function AdminOrdersPage() {
 
   useEffect(() => {
     loadOrders();
-  }, [page, status]);
+  }, [page, status, channel]);
 
   const kpis = useMemo(
     () => [
@@ -177,6 +189,18 @@ export default function AdminOrdersPage() {
                   <option value="delivered">Livrée</option>
                   <option value="cancelled">Remboursée / annulée</option>
                 </select>
+                <select
+                  value={channel}
+                  onChange={(event) => {
+                    setChannel(event.target.value);
+                    setPage(1);
+                  }}
+                  className="rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
+                >
+                  <option value="">Tous les canaux</option>
+                  <option value="online">Boutique web</option>
+                  <option value="pos">Caisse POS</option>
+                </select>
                 <button className="rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800">
                   Filtrer
                 </button>
@@ -216,6 +240,7 @@ export default function AdminOrdersPage() {
                   orders.map((order) => {
                     const pay = paymentBadge(order);
                     const fulfillment = fulfillmentBadge(order);
+                    const channelInfo = channelBadge(order);
                     const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
                     return (
                       <tr key={order.id} className="hover:bg-gray-50">
@@ -229,7 +254,9 @@ export default function AdminOrdersPage() {
                           <div className="font-medium text-gray-900">{customerName(order)}</div>
                           <div className="text-xs text-gray-500">{order.customer?.email || order.customerEmail || order.email}</div>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-4 text-gray-600">{order.isB2B ? "B2B" : "Online Store"}</td>
+                        <td className="whitespace-nowrap px-4 py-4">
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${channelInfo.className}`}>{channelInfo.label}</span>
+                        </td>
                         <td className="whitespace-nowrap px-4 py-4 text-right font-medium text-gray-950">{formatPrice(order.total, order.currency)}</td>
                         <td className="whitespace-nowrap px-4 py-4">
                           <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${pay.className}`}>{pay.label}</span>

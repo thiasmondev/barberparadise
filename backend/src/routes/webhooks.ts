@@ -87,7 +87,7 @@ async function verifyPaypalSignature(req: Request): Promise<boolean> {
 async function markOrderCanceled(orderId: string, providerPaymentId?: string): Promise<void> {
   await prisma.order.update({
     where: { id: orderId },
-    data: { status: "canceled", providerPaymentId },
+    data: { status: "cancelled", providerPaymentId, posPaymentStatus: "canceled" },
   });
 }
 
@@ -106,7 +106,7 @@ async function recordPromotionUsageForPaidOrder(orderId: string): Promise<void> 
   });
 }
 
-async function markOrderPaid(orderId: string, provider: WebhookProvider, providerPaymentId?: string): Promise<boolean> {
+async function markOrderPaid(orderId: string, provider: WebhookProvider, providerPaymentId?: string): Promise<{ changed: boolean; channel: string | null }> {
   return prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
       where: { id: orderId },
@@ -114,9 +114,31 @@ async function markOrderPaid(orderId: string, provider: WebhookProvider, provide
     });
 
     if (!order) throw new Error(`Commande introuvable : ${orderId}`);
-    if (order.status === "paid" || order.status === "processing") return false;
+    if (order.status === "paid" || order.status === "processing") return { changed: false, channel: order.channel };
 
     for (const item of order.items) {
+      if (!item.productId) continue;
+
+      if (item.variantId) {
+        const variant = await tx.productVariant.findUnique({ where: { id: item.variantId } });
+        if (!variant) continue;
+        const nextVariantStock = Math.max(0, variant.stock - item.quantity);
+        await tx.productVariant.update({
+          where: { id: item.variantId },
+          data: { stock: nextVariantStock, inStock: nextVariantStock > 0 },
+        });
+
+        const remainingActiveVariants = await tx.productVariant.count({
+          where: { productId: item.productId, inStock: true, stock: { gt: 0 } },
+        });
+        const product = await tx.product.findUnique({ where: { id: item.productId }, select: { stockCount: true } });
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { inStock: Boolean((product?.stockCount || 0) > 0 || remainingActiveVariants > 0) },
+        });
+        continue;
+      }
+
       const product = await tx.product.findUnique({ where: { id: item.productId } });
       if (!product) continue;
       const nextStock = Math.max(0, product.stockCount - item.quantity);
@@ -135,10 +157,12 @@ async function markOrderPaid(orderId: string, provider: WebhookProvider, provide
         status: "paid",
         paymentProvider: provider,
         providerPaymentId: providerPaymentId || order.providerPaymentId,
+        posPaymentStatus: order.channel === "pos" ? "paid" : order.posPaymentStatus,
+        posPaidAt: order.channel === "pos" ? new Date() : order.posPaidAt,
       },
     });
 
-    return true;
+    return { changed: true, channel: order.channel };
   });
 }
 
@@ -195,13 +219,13 @@ webhooksRouter.post("/mollie", async (req: Request, res: Response): Promise<void
 
     const orderId = payment.metadata?.orderId || (await findOrderIdByProviderPaymentId(payment.id));
     if (payment.status === "paid" && orderId) {
-      const changed = await markOrderPaid(orderId, "mollie", payment.id);
-      if (changed) {
+      const result = await markOrderPaid(orderId, "mollie", payment.id);
+      if (result.changed && result.channel !== "pos") {
         await recordPromotionUsageForPaidOrder(orderId);
         await sendOrderPaidEmail(orderId);
         await ensureProInvoiceForOrder(orderId);
       }
-      console.log("Webhook Mollie paid", { orderId, paymentId: payment.id, changed });
+      console.log("Webhook Mollie paid", { orderId, paymentId: payment.id, changed: result.changed, channel: result.channel });
     }
     if (["failed", "canceled", "expired"].includes(payment.status || "") && orderId) {
       await markOrderCanceled(orderId, payment.id);
@@ -227,13 +251,13 @@ webhooksRouter.post("/paypal", async (req: Request, res: Response): Promise<void
       : resource?.custom_id || resource?.invoice_id || resource?.purchase_units?.[0]?.reference_id;
 
     if (eventType === "PAYMENT.CAPTURE.COMPLETED" && orderId) {
-      const changed = await markOrderPaid(orderId, "paypal", resource?.id || resource?.supplementary_data?.related_ids?.order_id);
-      if (changed) {
+      const result = await markOrderPaid(orderId, "paypal", resource?.id || resource?.supplementary_data?.related_ids?.order_id);
+      if (result.changed && result.channel !== "pos") {
         await recordPromotionUsageForPaidOrder(orderId);
         await sendOrderPaidEmail(orderId);
         await ensureProInvoiceForOrder(orderId);
       }
-      console.log("Webhook PayPal paid", { orderId, eventType, changed });
+      console.log("Webhook PayPal paid", { orderId, eventType, changed: result.changed, channel: result.channel });
     }
     res.json({ received: true });
   } catch (err) {
@@ -253,13 +277,13 @@ webhooksRouter.post("/checkout", async (req: Request, res: Response): Promise<vo
     const type = req.body?.type || req.body?.event_type;
     const orderId = req.body?.data?.reference || req.body?.reference;
     if (["payment_approved", "payment_captured", "payment_capture_pending"].includes(type) && orderId) {
-      const changed = await markOrderPaid(orderId, "checkout", req.body?.data?.id || req.body?.id);
-      if (changed) {
+      const result = await markOrderPaid(orderId, "checkout", req.body?.data?.id || req.body?.id);
+      if (result.changed && result.channel !== "pos") {
         await recordPromotionUsageForPaidOrder(orderId);
         await sendOrderPaidEmail(orderId);
         await ensureProInvoiceForOrder(orderId);
       }
-      console.log("Webhook Checkout.com paid", { orderId, type, changed });
+      console.log("Webhook Checkout.com paid", { orderId, type, changed: result.changed, channel: result.channel });
     }
     res.json({ received: true });
   } catch (err) {
