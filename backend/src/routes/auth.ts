@@ -4,15 +4,12 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import rateLimit from "express-rate-limit";
 import { prisma } from "../utils/prisma";
+import { getFrontendUrl } from "../utils/frontendUrl";
 import { getCustomerName, sendPasswordResetEmail, sendWelcomeEmail } from "../services/emailService";
 
 export const authRouter = Router();
 
 const PASSWORD_RESET_TOKEN_MINUTES = 60;
-
-function getFrontendUrl(): string {
-  return (process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "https://barberparadise.fr").replace(/\/$/, "");
-}
 
 function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");

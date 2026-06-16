@@ -573,6 +573,30 @@ export function getAdminCustomer(id: string) {
   return adminFetch<Customer>(`/api/admin/customers/${id}`);
 }
 
+export interface AdminCreateCustomerPayload {
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  accountType: "b2c" | "b2b";
+  sendInvitation?: boolean;
+  acceptsEmailMarketing?: boolean;
+  companyName?: string;
+  activity?: string;
+  proPhone?: string;
+  siret?: string;
+  vatNumber?: string;
+}
+
+export function createAdminCustomer(payload: AdminCreateCustomerPayload) {
+  return adminFetch<{
+    customer: Customer;
+    invitation: { sent: boolean; skipped?: boolean; id?: string; provider?: string } | null;
+  }>("/api/admin/customers", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
 
 export interface AdminCustomerProAccountPayload {
   enabled: boolean;

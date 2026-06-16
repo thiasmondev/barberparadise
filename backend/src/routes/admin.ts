@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../utils/prisma";
+import { getFrontendUrl } from "../utils/frontendUrl";
 import {
   getCustomerName,
   sendDraftOrderEmail,
@@ -94,10 +95,6 @@ export const adminRouter = Router();
 
 const PASSWORD_RESET_TOKEN_MINUTES = 60;
 const DRAFT_SHARE_EXPIRY_DAYS = Math.max(1, parseInt(process.env.DRAFT_SHARE_EXPIRY_DAYS || "7", 10) || 7);
-
-function getFrontendUrl(): string {
-  return (process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "https://barberparadise.fr").replace(/\/$/, "");
-}
 
 function hashPasswordResetToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
@@ -5090,6 +5087,126 @@ adminRouter.patch(
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Erreur mise à jour statut" });
+    }
+  }
+);
+
+// POST /api/admin/customers — Création manuelle d'un client B2C ou B2B depuis l'admin
+adminRouter.post(
+  "/customers",
+  requireAdmin,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const normalizeString = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+      const normalizeOptionalString = (value: unknown): string | null => {
+        const normalized = normalizeString(value);
+        return normalized || null;
+      };
+      const normalizeEmail = (value: unknown): string => normalizeString(value).toLowerCase();
+      const normalizeVatNumber = (value: unknown): string | null => normalizeOptionalString(value)?.toUpperCase() || null;
+
+      const email = normalizeEmail(req.body?.email);
+      const firstName = normalizeString(req.body?.firstName);
+      const lastName = normalizeString(req.body?.lastName);
+      const phone = normalizeOptionalString(req.body?.phone);
+      const accountType = normalizeString(req.body?.accountType).toLowerCase() === "b2b" ? "b2b" : "b2c";
+      const sendInvitation = req.body?.sendInvitation !== false;
+
+      if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+        res.status(400).json({ error: "Email client invalide" });
+        return;
+      }
+      if (!firstName || !lastName) {
+        res.status(400).json({ error: "Prénom et nom client requis" });
+        return;
+      }
+
+      const existing = await prisma.customer.findUnique({ where: { email }, select: { id: true } });
+      if (existing) {
+        res.status(409).json({ error: "Un client existe déjà avec cet email" });
+        return;
+      }
+
+      const companyName = normalizeOptionalString(req.body?.companyName);
+      const activity = normalizeOptionalString(req.body?.activity);
+      const proPhone = normalizeOptionalString(req.body?.proPhone) || phone;
+      const siret = normalizeOptionalString(req.body?.siret);
+      const vatNumber = normalizeVatNumber(req.body?.vatNumber);
+
+      if (accountType === "b2b" && (!companyName || !activity || !proPhone)) {
+        res.status(400).json({ error: "Entreprise, activité et téléphone professionnel requis pour un compte B2B" });
+        return;
+      }
+
+      const temporaryPasswordHash = await bcrypt.hash(crypto.randomBytes(24).toString("base64url"), 12);
+      const now = new Date();
+      const adminIdentity = req.user?.email || req.user?.id || "admin";
+
+      const customer = await prisma.customer.create({
+        data: {
+          email,
+          password: temporaryPasswordHash,
+          firstName,
+          lastName,
+          phone,
+          mustResetPassword: true,
+          acceptsEmailMarketing: Boolean(req.body?.acceptsEmailMarketing),
+          ...(accountType === "b2b" && companyName && activity && proPhone
+            ? {
+                proAccount: {
+                  create: {
+                    companyName,
+                    activity,
+                    phone: proPhone,
+                    siret,
+                    vatNumber,
+                    status: "approved",
+                    rejectionReason: null,
+                    approvedAt: now,
+                    approvedBy: adminIdentity,
+                  },
+                },
+              }
+            : {}),
+        },
+        include: {
+          orders: { select: { total: true } },
+          proAccount: { select: { id: true, companyName: true, status: true, activity: true, phone: true, siret: true, vatNumber: true, approvedAt: true } },
+          _count: { select: { orders: true } },
+        },
+      });
+
+      let invitation: { sent: boolean; skipped?: boolean; id?: string; provider?: string } | null = null;
+      if (sendInvitation) {
+        const rawToken = crypto.randomBytes(32).toString("hex");
+        const expiresAt = new Date(Date.now() + PASSWORD_RESET_TOKEN_MINUTES * 60 * 1000);
+        await prisma.passwordResetToken.create({
+          data: {
+            customerId: customer.id,
+            tokenHash: hashPasswordResetToken(rawToken),
+            expiresAt,
+          },
+        });
+
+        invitation = await sendPasswordResetEmail({
+          to: customer.email,
+          customerName: getCustomerName(customer, customer.email),
+          resetUrl: `${getFrontendUrl()}/reinitialiser-mot-de-passe?token=${rawToken}`,
+          expiresInMinutes: PASSWORD_RESET_TOKEN_MINUTES,
+        });
+      }
+
+      const { orders, password: _password, ...safeCustomer } = customer as typeof customer & { password?: string };
+      res.status(201).json({
+        customer: {
+          ...safeCustomer,
+          totalSpent: orders.reduce((sum, order) => sum + order.total, 0),
+        },
+        invitation,
+      });
+    } catch (err) {
+      console.error("[admin] Erreur création client", err);
+      res.status(500).json({ error: "Erreur création client" });
     }
   }
 );

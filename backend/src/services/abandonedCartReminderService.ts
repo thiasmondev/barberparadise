@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import cron from "node-cron";
 import { prisma } from "../utils/prisma";
+import { getFrontendUrl } from "../utils/frontendUrl";
 import { sendAbandonedCartReminderEmail } from "./emailService";
 import type { AbandonedCartReminderItem, AbandonedCartReminderStage } from "../emails/abandonedCartReminderEmail";
 
@@ -18,10 +19,6 @@ type ReminderTokenPayload = {
 };
 
 let scheduled = false;
-
-function getFrontendUrl(): string {
-  return (process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "https://barberparadise.fr").replace(/\/$/, "");
-}
 
 function getTokenSecret(): string {
   return process.env.ABANDONED_CART_TOKEN_SECRET || process.env.JWT_SECRET || process.env.SESSION_SECRET || "barber-paradise-abandoned-cart-dev-secret";

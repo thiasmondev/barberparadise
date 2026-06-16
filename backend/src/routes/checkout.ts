@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import crypto from "crypto";
 import { prisma } from "../utils/prisma";
+import { getFrontendUrl } from "../utils/frontendUrl";
 import {
   assertSupportedPaymentMethod,
   getAvailableMethods,
@@ -134,10 +135,6 @@ async function resolveCheckoutPromotion(params: {
   } catch (error) {
     throw new Error(promotion.message || (error instanceof Error ? error.message : "Code promo invalide"));
   }
-}
-
-function getFrontendUrl(): string {
-  return (process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "https://barberparadise.fr").replace(/\/$/, "");
 }
 
 function hashDraftShareToken(token: string): string {

@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { prisma as defaultPrisma } from "../utils/prisma";
+import { getFrontendUrl } from "../utils/frontendUrl";
 import { sendStockAlertEmail } from "./emailService";
 
 const EMAIL_RATE_LIMIT_PER_MINUTE = 50;
@@ -19,10 +20,6 @@ type StockAlertResult = {
   skipped: number;
   failed: number;
 };
-
-function getFrontendUrl(): string {
-  return (process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "https://barberparadise.fr").replace(/\/$/, "");
-}
 
 function parseImages(images: string | null | undefined): string[] {
   try {
