@@ -5116,10 +5116,6 @@ adminRouter.post(
         res.status(400).json({ error: "Email client invalide" });
         return;
       }
-      if (!firstName || !lastName) {
-        res.status(400).json({ error: "Prénom et nom client requis" });
-        return;
-      }
 
       const existing = await prisma.customer.findUnique({ where: { email }, select: { id: true } });
       if (existing) {
@@ -5133,10 +5129,7 @@ adminRouter.post(
       const siret = normalizeOptionalString(req.body?.siret);
       const vatNumber = normalizeVatNumber(req.body?.vatNumber);
 
-      if (accountType === "b2b" && (!companyName || !activity || !proPhone)) {
-        res.status(400).json({ error: "Entreprise, activité et téléphone professionnel requis pour un compte B2B" });
-        return;
-      }
+      const shouldCreateProAccount = accountType === "b2b" && Boolean(companyName && activity && proPhone);
 
       const temporaryPasswordHash = await bcrypt.hash(crypto.randomBytes(24).toString("base64url"), 12);
       const now = new Date();
@@ -5151,13 +5144,13 @@ adminRouter.post(
           phone,
           mustResetPassword: true,
           acceptsEmailMarketing: Boolean(req.body?.acceptsEmailMarketing),
-          ...(accountType === "b2b" && companyName && activity && proPhone
+          ...(shouldCreateProAccount
             ? {
                 proAccount: {
                   create: {
-                    companyName,
-                    activity,
-                    phone: proPhone,
+                    companyName: companyName!,
+                    activity: activity!,
+                    phone: proPhone!,
                     siret,
                     vatNumber,
                     status: "approved",

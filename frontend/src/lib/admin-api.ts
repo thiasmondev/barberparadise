@@ -575,8 +575,8 @@ export function getAdminCustomer(id: string) {
 
 export interface AdminCreateCustomerPayload {
   email: string;
-  firstName: string;
-  lastName: string;
+  firstName?: string;
+  lastName?: string;
   phone?: string;
   accountType: "b2c" | "b2b";
   sendInvitation?: boolean;

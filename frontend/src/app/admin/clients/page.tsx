@@ -27,6 +27,19 @@ function formatPrice(n: number) {
   return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(n);
 }
 
+function formatCustomerName(customer: Pick<Customer, "firstName" | "lastName" | "email">) {
+  const fullName = [customer.firstName, customer.lastName]
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join(" ");
+  return fullName || "Informations à compléter";
+}
+
+function getCustomerInitials(customer: Pick<Customer, "firstName" | "lastName" | "email">) {
+  const initials = `${customer.firstName?.charAt(0) || ""}${customer.lastName?.charAt(0) || ""}`.trim();
+  return initials || customer.email.charAt(0).toUpperCase();
+}
+
 type CreateCustomerForm = AdminCreateCustomerPayload;
 
 const initialCreateCustomerForm: CreateCustomerForm = {
@@ -104,8 +117,8 @@ export default function AdminClientsPage() {
     try {
       const payload: AdminCreateCustomerPayload = {
         email: createForm.email.trim(),
-        firstName: createForm.firstName.trim(),
-        lastName: createForm.lastName.trim(),
+        firstName: cleanOptional(createForm.firstName),
+        lastName: cleanOptional(createForm.lastName),
         phone: cleanOptional(createForm.phone),
         accountType: createForm.accountType,
         sendInvitation: createForm.sendInvitation,
@@ -126,7 +139,7 @@ export default function AdminClientsPage() {
         : createForm.sendInvitation
           ? " Le client a été créé, mais l’email d’invitation n’a pas été envoyé."
           : " Aucun email d’invitation n’a été envoyé.";
-      setCreateSuccess(`Client ${result.customer.firstName} ${result.customer.lastName} créé avec succès.${invitationLabel}`);
+      setCreateSuccess(`Client ${formatCustomerName(result.customer)} créé avec succès.${invitationLabel}`);
       setCreateForm(initialCreateCustomerForm);
       setPage(1);
       await load();
@@ -206,10 +219,10 @@ export default function AdminClientsPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 bg-primary/10 rounded-full flex items-center justify-center text-primary text-xs font-bold shrink-0">
-                          {c.firstName?.charAt(0)}{c.lastName?.charAt(0)}
+                          {getCustomerInitials(c)}
                         </div>
                         <div className="min-w-0">
-                          <div className="font-medium text-dark-800 truncate">{c.firstName} {c.lastName}</div>
+                          <div className="font-medium text-dark-800 truncate">{formatCustomerName(c)}</div>
                           {c.proAccount && (
                             <span className="inline-flex mt-1 px-2 py-0.5 rounded-full bg-dark-800 text-white text-[10px] font-bold uppercase tracking-wide">
                               B2B
@@ -268,7 +281,7 @@ export default function AdminClientsPage() {
             <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-gray-100">
               <div>
                 <h2 className="font-heading text-lg font-bold text-dark-800">Créer un client</h2>
-                <p className="mt-1 text-sm text-gray-500">Ajoutez un compte B2C ou B2B et envoyez une invitation de mot de passe au client.</p>
+                <p className="mt-1 text-sm text-gray-500">Seul l’email est obligatoire. Vous pouvez envoyer une invitation pour que le client crée son mot de passe puis complète ses informations.</p>
               </div>
               <button
                 type="button"
@@ -302,9 +315,8 @@ export default function AdminClientsPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <label className="space-y-1.5 text-sm font-medium text-dark-800">
-                  Prénom <span className="text-primary">*</span>
+                  Prénom
                   <input
-                    required
                     type="text"
                     value={createForm.firstName}
                     onChange={(e) => updateCreateForm("firstName", e.target.value)}
@@ -313,9 +325,8 @@ export default function AdminClientsPage() {
                   />
                 </label>
                 <label className="space-y-1.5 text-sm font-medium text-dark-800">
-                  Nom <span className="text-primary">*</span>
+                  Nom
                   <input
-                    required
                     type="text"
                     value={createForm.lastName}
                     onChange={(e) => updateCreateForm("lastName", e.target.value)}
@@ -354,9 +365,8 @@ export default function AdminClientsPage() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <label className="space-y-1.5 text-sm font-medium text-dark-800">
-                      Entreprise <span className="text-primary">*</span>
+                      Entreprise
                       <input
-                        required={createForm.accountType === "b2b"}
                         type="text"
                         value={createForm.companyName || ""}
                         onChange={(e) => updateCreateForm("companyName", e.target.value)}
@@ -365,9 +375,8 @@ export default function AdminClientsPage() {
                       />
                     </label>
                     <label className="space-y-1.5 text-sm font-medium text-dark-800">
-                      Activité <span className="text-primary">*</span>
+                      Activité
                       <input
-                        required={createForm.accountType === "b2b"}
                         type="text"
                         value={createForm.activity || ""}
                         onChange={(e) => updateCreateForm("activity", e.target.value)}
@@ -376,9 +385,8 @@ export default function AdminClientsPage() {
                       />
                     </label>
                     <label className="space-y-1.5 text-sm font-medium text-dark-800">
-                      Téléphone pro <span className="text-primary">*</span>
+                      Téléphone pro
                       <input
-                        required={createForm.accountType === "b2b" && !createForm.phone}
                         type="tel"
                         value={createForm.proPhone || ""}
                         onChange={(e) => updateCreateForm("proPhone", e.target.value)}
@@ -407,7 +415,7 @@ export default function AdminClientsPage() {
                       />
                     </label>
                   </div>
-                  <p className="text-xs text-gray-500">Le compte professionnel sera approuvé immédiatement et pourra bénéficier du parcours B2B.</p>
+                  <p className="text-xs text-gray-500">Si les informations professionnelles sont complètes, le compte B2B sera approuvé immédiatement. Sinon, le client pourra compléter ses informations après invitation.</p>
                 </div>
               )}
 
