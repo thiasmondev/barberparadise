@@ -99,6 +99,8 @@ export default function AdminCaissePage() {
   const [cashReceived, setCashReceived] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerSearch, setCustomerSearch] = useState("");
+  const [customerLoading, setCustomerLoading] = useState(false);
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [quickAmount, setQuickAmount] = useState("");
@@ -132,8 +134,13 @@ export default function AdminCaissePage() {
   }, [category, query]);
 
   const loadCustomers = useCallback(async () => {
-    const data = await getAdminCustomers({ search: customerSearch, limit: 8 });
-    setCustomers(data.customers);
+    setCustomerLoading(true);
+    try {
+      const data = await getAdminCustomers({ search: customerSearch, limit: 8 });
+      setCustomers(data.customers);
+    } finally {
+      setCustomerLoading(false);
+    }
   }, [customerSearch]);
 
   useEffect(() => {
@@ -189,6 +196,8 @@ export default function AdminCaissePage() {
   }, [loadCatalog, paymentId, paymentStatus]);
 
   const selectedCustomer = useMemo(() => customers.find((customer) => customer.id === selectedCustomerId) || null, [customers, selectedCustomerId]);
+  const trimmedCustomerSearch = customerSearch.trim();
+  const showCustomerResults = customerPickerOpen && trimmedCustomerSearch.length > 0;
   const subtotal = useMemo(() => cart.reduce((sum, line) => sum + line.price * line.quantity, 0), [cart]);
   const lineDiscount = useMemo(() => cart.reduce((sum, line) => sum + lineDiscountAmount(line), 0), [cart]);
   const subtotalAfterLineDiscount = Math.max(0, subtotal - lineDiscount);
@@ -546,13 +555,78 @@ export default function AdminCaissePage() {
               <label className="block text-xs font-bold uppercase tracking-[0.2em] text-gray-400">Client facultatif</label>
               <div className="relative">
                 <UserRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <input value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Rechercher un client" className="w-full rounded-xl border border-gray-200 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-primary" />
+                <input
+                  value={customerSearch}
+                  onChange={(event) => {
+                    setCustomerSearch(event.target.value);
+                    setCustomerPickerOpen(true);
+                  }}
+                  onFocus={() => setCustomerPickerOpen(true)}
+                  placeholder="Rechercher un client"
+                  className="w-full rounded-xl border border-gray-200 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-primary"
+                />
               </div>
-              <select value={selectedCustomerId || ""} onChange={(event) => setSelectedCustomerId(event.target.value || null)} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary">
+              {showCustomerResults ? (
+                <div className="max-h-56 overflow-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
+                  {customerLoading ? (
+                    <div className="flex items-center gap-2 px-3 py-2 text-sm text-gray-500">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Recherche des clients…
+                    </div>
+                  ) : customers.length ? (
+                    customers.map((customer) => (
+                      <button
+                        key={customer.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedCustomerId(customer.id);
+                          setCustomerSearch(customerName(customer));
+                          setCustomerPickerOpen(false);
+                        }}
+                        className={`flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left transition ${selectedCustomerId === customer.id ? "bg-primary/10 text-gray-950" : "hover:bg-gray-50"}`}
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-black uppercase text-gray-600">
+                          {customerName(customer).charAt(0)}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-bold text-gray-950">{customerName(customer)}</span>
+                          <span className="block truncate text-xs text-gray-500">{customer.email}{customer.phone ? ` · ${customer.phone}` : ""}</span>
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <p className="px-3 py-2 text-sm text-gray-500">Aucun client trouvé pour « {trimmedCustomerSearch} ».</p>
+                  )}
+                </div>
+              ) : null}
+              <select
+                value={selectedCustomerId || ""}
+                onChange={(event) => {
+                  const nextId = event.target.value || null;
+                  setSelectedCustomerId(nextId);
+                  const nextCustomer = customers.find((customer) => customer.id === nextId);
+                  if (nextCustomer) setCustomerSearch(customerName(nextCustomer));
+                }}
+                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary"
+              >
                 <option value="">Client comptoir</option>
                 {customers.map((customer) => <option key={customer.id} value={customer.id}>{customerName(customer)} · {customer.email}</option>)}
               </select>
-              {selectedCustomer && <p className="text-xs text-emerald-700">Vente rattachée à {customerName(selectedCustomer)}.</p>}
+              {selectedCustomer && (
+                <div className="flex items-center justify-between rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                  <span>Vente rattachée à <strong>{customerName(selectedCustomer)}</strong>.</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCustomerId(null);
+                      setCustomerSearch("");
+                      setCustomerPickerOpen(false);
+                    }}
+                    className="font-bold text-emerald-900 underline-offset-2 hover:underline"
+                  >
+                    Retirer
+                  </button>
+                </div>
+              )}
               <div className="grid grid-cols-[96px_1fr] gap-2">
                 <select value={orderDiscountType} onChange={(event) => updateOrderDiscount(event.target.value as DiscountType, orderDiscountValue)} className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary">
                   <option value="fixed">€ fixe</option>
