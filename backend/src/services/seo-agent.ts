@@ -1,10 +1,10 @@
 // ============================================================
-// BARBER PARADISE — Agent SEO + GEO (Anthropic Claude Sonnet 4)
+// BARBER PARADISE — Agent SEO + GEO (Anthropic Claude Sonnet)
 // ============================================================
 import Anthropic from "@anthropic-ai/sdk";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = process.env.SEO_AGENT_MODEL || "claude-sonnet-4-6";
 
 // ─── Types ──────────────────────────────────────────────────
 
