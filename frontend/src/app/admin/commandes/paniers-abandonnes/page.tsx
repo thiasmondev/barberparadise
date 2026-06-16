@@ -29,6 +29,13 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+function getReminderBadgeClass(status: AdminAbandonedCartItem["reminderStatus"]) {
+  if (status === "Converti") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status === "Désinscrit") return "border-gray-200 bg-gray-50 text-gray-500";
+  if (status === "Aucune") return "border-amber-200 bg-amber-50 text-amber-700";
+  return "border-pink-200 bg-pink-50 text-pink-700";
+}
+
 export default function AdminAbandonedCartsPage() {
   const router = useRouter();
   const [carts, setCarts] = useState<AdminAbandonedCartItem[]>([]);
@@ -108,6 +115,7 @@ export default function AdminAbandonedCartsPage() {
                   <th className="px-4 py-3 text-left font-medium text-gray-500">Articles</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-500">Montant</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-500">Date d’abandon</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500">Statut relance</th>
                   <th className="px-4 py-3 text-right font-medium text-gray-500">Action</th>
                 </tr>
               </thead>
@@ -123,6 +131,14 @@ export default function AdminAbandonedCartsPage() {
                     <td className="px-4 py-3 text-gray-600">{cart.itemCount}</td>
                     <td className="px-4 py-3 font-medium text-dark-800">{formatMoney(cart.total)}</td>
                     <td className="px-4 py-3 text-gray-500">{formatDate(cart.abandonedAt)}</td>
+                    <td className="px-4 py-3 text-gray-600">
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getReminderBadgeClass(cart.reminderStatus)}`}>
+                        {cart.reminderStatus}
+                      </span>
+                      {cart.lastReminderAt && (
+                        <p className="mt-1 text-[11px] text-gray-400">Dernier email : {formatDate(cart.lastReminderAt)}</p>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"

@@ -4326,6 +4326,21 @@ adminRouter.get(
             itemCount: cart.itemCount,
             total: cart.total,
             abandonedAt: cart.lastSeenAt,
+            reminderStage: cart.reminderStage,
+            lastReminderAt: cart.lastReminderAt,
+            convertedAt: cart.convertedAt,
+            unsubscribed: cart.unsubscribed,
+            reminderStatus: cart.convertedAt
+              ? "Converti"
+              : cart.unsubscribed
+                ? "Désinscrit"
+                : cart.reminderStage === 1
+                  ? "Email 1 envoyé"
+                  : cart.reminderStage === 2
+                    ? "Email 2 envoyé"
+                    : cart.reminderStage >= 3
+                      ? "Email 3 envoyé"
+                      : "Aucune",
             products: items
               .map((item) => {
                 if (!item || typeof item !== "object" || Array.isArray(item)) return null;

@@ -426,6 +426,11 @@ export interface AdminAbandonedCartItem {
   itemCount: number;
   total: number;
   abandonedAt: string;
+  reminderStage: number;
+  lastReminderAt: string | null;
+  convertedAt: string | null;
+  unsubscribed: boolean;
+  reminderStatus: "Aucune" | "Email 1 envoyé" | "Email 2 envoyé" | "Email 3 envoyé" | "Converti" | "Désinscrit";
   products: string[];
 }
 

@@ -6,6 +6,12 @@ import { passwordResetEmail } from "../emails/passwordResetEmail";
 import { welcomeEmail } from "../emails/welcomeEmail";
 import { stockAlertEmail } from "../emails/stockAlert";
 import { draftOrderEmail } from "../emails/draftOrderEmail";
+import {
+  abandonedCartReminderEmail,
+  getAbandonedCartReminderSubject,
+  type AbandonedCartReminderStage,
+  type AbandonedCartReminderItem,
+} from "../emails/abandonedCartReminderEmail";
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const brevo = process.env.BREVO_API_KEY ? new BrevoClient({ apiKey: process.env.BREVO_API_KEY }) : null;
@@ -48,6 +54,16 @@ async function sendWithResend(params: SendEmailParams): Promise<{ sent: boolean;
     console.error("[email] Envoi Resend impossible", error);
     return { sent: false };
   }
+}
+
+export async function sendResendEmailOnly(params: SendEmailParams): Promise<{ sent: boolean; skipped?: boolean; id?: string; provider?: string }> {
+  if (!resend) {
+    console.warn(`[email] Resend non configuré, email non envoyé à ${params.to}: ${params.subject}`);
+    return { sent: false, skipped: true, provider: "resend" };
+  }
+
+  const result = await sendWithResend(params);
+  return { ...result, provider: "resend" };
 }
 
 async function sendWithBrevo(params: SendEmailParams): Promise<{ sent: boolean; id?: string }> {
@@ -127,6 +143,28 @@ export async function sendDraftOrderEmail(params: {
     to: params.to,
     subject: `Votre commande Barber Paradise ${params.orderNumber} est prête`,
     html: draftOrderEmail(params),
+  });
+}
+
+export async function sendAbandonedCartReminderEmail(params: {
+  to: string;
+  stage: AbandonedCartReminderStage;
+  restoreUrl: string;
+  unsubscribeUrl: string;
+  items: AbandonedCartReminderItem[];
+  total: number;
+}) {
+  return sendResendEmailOnly({
+    to: params.to,
+    subject: getAbandonedCartReminderSubject(params.stage),
+    html: abandonedCartReminderEmail({
+      stage: params.stage,
+      customerEmail: params.to,
+      restoreUrl: params.restoreUrl,
+      unsubscribeUrl: params.unsubscribeUrl,
+      items: params.items,
+      total: params.total,
+    }),
   });
 }
 

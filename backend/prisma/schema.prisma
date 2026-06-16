@@ -78,12 +78,17 @@ model AbandonedCartSession {
   total            Float     @default(0)
   convertedOrderId String?
   convertedAt      DateTime?
+  reminderStage    Int       @default(0)
+  lastReminderAt   DateTime?
+  unsubscribed     Boolean   @default(false)
   lastSeenAt       DateTime  @default(now())
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
   @@index([lastSeenAt])
   @@index([convertedAt])
+  @@index([reminderStage])
+  @@index([unsubscribed])
 }
 
 model ShippingZone {

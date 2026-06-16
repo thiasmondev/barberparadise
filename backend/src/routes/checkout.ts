@@ -15,6 +15,10 @@ import { calculateFreeShippingRemaining, calculateShippingOptions, getFreeShippi
 import { getVatRate } from "../services/vatCalculator";
 import { calculateDiscountAmount } from "../services/marketingAgentService";
 import promotionService, { PromotionValidationResult } from "../services/promotionService";
+import {
+  normalizeAbandonedCartItems,
+  verifyAbandonedCartToken,
+} from "../services/abandonedCartReminderService";
 
 export const checkoutRouter = Router();
 
@@ -147,6 +151,16 @@ function parseProductImages(images: string | null | undefined): string[] {
     return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
   } catch {
     return images ? [images] : [];
+  }
+}
+
+function parseProductStringArray(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return value ? [value] : [];
   }
 }
 
@@ -408,6 +422,110 @@ checkoutRouter.get("/draft/:token", async (req: Request, res: Response): Promise
   } catch (err) {
     console.error("Erreur chargement brouillon client", err);
     res.status(500).json({ error: "Erreur chargement brouillon" });
+  }
+});
+
+checkoutRouter.get("/abandoned-cart/restore", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const token = typeof req.query.token === "string" ? req.query.token.trim() : "";
+    const payload = verifyAbandonedCartToken(token, "restore");
+    if (!payload) {
+      res.status(400).json({ error: "Lien de panier invalide ou expiré" });
+      return;
+    }
+
+    const cart = await prisma.abandonedCartSession.findUnique({ where: { id: payload.sid } });
+    if (!cart || cart.convertedAt || cart.unsubscribed || cart.itemCount <= 0) {
+      res.status(404).json({ error: "Panier introuvable, converti ou indisponible" });
+      return;
+    }
+
+    const normalizedItems = normalizeAbandonedCartItems(cart.items);
+    const productIds = Array.isArray(cart.items)
+      ? cart.items
+          .map((item) => {
+            if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+            const productId = (item as { productId?: unknown; id?: unknown }).productId || (item as { productId?: unknown; id?: unknown }).id;
+            return typeof productId === "string" ? productId : null;
+          })
+          .filter((id): id is string => Boolean(id))
+      : [];
+
+    const products = productIds.length
+      ? await prisma.product.findMany({ where: { id: { in: productIds } } })
+      : [];
+    const productById = new Map(products.map((product) => [product.id, product]));
+
+    res.json({
+      cart: {
+        id: cart.id,
+        email: cart.email,
+        total: cart.total,
+        expiresAt: new Date(payload.exp).toISOString(),
+        items: normalizedItems.map((item, index) => {
+          const productId = productIds[index];
+          const product = productId ? productById.get(productId) : null;
+          const images = parseProductImages(product?.images);
+          return {
+            quantity: item.quantity,
+            product: {
+              id: product?.id || productId || `restored-${index}`,
+              handle: product?.handle || product?.slug || "",
+              name: product?.name || item.name,
+              slug: product?.slug || "",
+              brand: product?.brand || "",
+              brandId: product?.brandId || null,
+              category: product?.category || "",
+              subcategory: product?.subcategory || "",
+              subsubcategory: product?.subsubcategory || "",
+              price: product?.price ?? item.price,
+              pricePublic: product?.price || item.price,
+              priceProEur: product?.priceProEur ?? null,
+              originalPrice: product?.originalPrice ?? null,
+              compareAtPrice: product?.compareAtPrice ?? null,
+              images: images.length ? images : item.image ? [item.image] : [],
+              description: product?.description || "",
+              shortDescription: product?.shortDescription || "",
+              features: parseProductStringArray(product?.features),
+              inStock: product?.inStock ?? true,
+              stockCount: product?.stockCount ?? 0,
+              rating: product?.rating || 0,
+              reviewCount: product?.reviewCount || 0,
+              isNew: product?.isNew || false,
+              isPromo: product?.isPromo || false,
+              tags: parseProductStringArray(product?.tags),
+              status: product?.status || "active",
+              createdAt: product?.createdAt?.toISOString?.() || new Date().toISOString(),
+              updatedAt: product?.updatedAt?.toISOString?.() || new Date().toISOString(),
+            },
+          };
+        }),
+      },
+    });
+  } catch (err) {
+    console.error("Erreur restauration panier abandonné", err);
+    res.status(500).json({ error: "Erreur restauration panier" });
+  }
+});
+
+checkoutRouter.post("/abandoned-cart/unsubscribe", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+    const payload = verifyAbandonedCartToken(token, "unsubscribe");
+    if (!payload) {
+      res.status(400).json({ error: "Lien de désinscription invalide ou expiré" });
+      return;
+    }
+
+    await prisma.abandonedCartSession.updateMany({
+      where: { id: payload.sid },
+      data: { unsubscribed: true },
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Erreur désinscription relance panier", err);
+    res.status(500).json({ error: "Erreur désinscription" });
   }
 });
 

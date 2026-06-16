@@ -52,6 +52,7 @@ import telegramBotService from "./services/telegram/telegramBot";
 import { registerTelegramHandlers } from "./services/telegram/telegramHandlers";
 import { scheduleTelegramDailyDigest } from "./services/telegram/telegramDigest";
 import { scheduleHermesAnalyticsCollection } from "./services/hermes/analyticsScheduler";
+import { scheduleAbandonedCartReminderJob } from "./services/abandonedCartReminderService";
 
 const app = express();
 app.disable("x-powered-by");
@@ -170,6 +171,7 @@ app.listen(PORT, () => {
   registerTelegramHandlers();
   scheduleTelegramDailyDigest();
   scheduleHermesAnalyticsCollection();
+  scheduleAbandonedCartReminderJob();
 
   const publicUrl = process.env.RENDER_EXTERNAL_URL || process.env.BACKEND_URL;
   if (publicUrl) {

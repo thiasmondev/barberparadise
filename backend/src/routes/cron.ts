@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { sendEmail } from "../services/emailService";
+import { runAbandonedCartReminderJob } from "../services/abandonedCartReminderService";
 import {
   buildIndyCsv,
   buildIndyEmailHtml,
@@ -52,6 +53,21 @@ async function generateIndyCfoAnalysis(report: IndyReport): Promise<string> {
     return "Analyse CFO indisponible : génération Claude en échec. Vérifier manuellement le CA, la TVA, les PSP et les remboursements avant clôture Indy.";
   }
 }
+
+cronRouter.post("/abandoned-cart-reminders", async (req: Request, res: Response): Promise<void> => {
+  if (!isCronAuthorized(req)) {
+    res.status(401).json({ error: "Cron non autorisé" });
+    return;
+  }
+
+  try {
+    const result = await runAbandonedCartReminderJob();
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    console.error("[cron-abandoned-cart-reminders] Exécution impossible", error);
+    res.status(500).json({ error: error instanceof Error ? error.message : "Relance paniers abandonnés impossible" });
+  }
+});
 
 cronRouter.post("/indy-report", async (req: Request, res: Response): Promise<void> => {
   if (!isCronAuthorized(req)) {
