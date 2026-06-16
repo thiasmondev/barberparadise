@@ -110,7 +110,10 @@ export function formatPaymentMethod(method?: string | null): string {
   switch ((method || "").toLowerCase()) {
     case "card":
     case "stripe":
+    case "pointofsale":
       return "Carte bancaire";
+    case "cash":
+      return "Espèces";
     case "paypal":
     case "paypal_4x":
       return "PayPal 4x sans frais";

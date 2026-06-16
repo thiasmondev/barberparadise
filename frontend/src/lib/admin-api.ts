@@ -2822,6 +2822,7 @@ export interface PosOrder {
   providerPaymentId?: string | null;
   terminalId?: string | null;
   posSessionId?: string | null;
+  paymentMethod?: PosPaymentMethod | string | null;
   subtotal: number;
   discountAmount: number;
   orderDiscountType?: DiscountType | null;
@@ -2839,12 +2840,18 @@ export interface PosOrder {
   items: PosOrderItem[];
 }
 
+export type PosPaymentMethod = "card" | "cash";
+
 export interface PosStats {
   period: string;
   start: string;
   salesCount: number;
   revenue: number;
   averageOrder: number;
+  paymentBreakdown?: {
+    card: { revenue: number; count: number };
+    cash: { revenue: number; count: number };
+  };
   topProducts: { name: string; quantity: number; revenue: number }[];
   latestOrder: PosOrder | null;
 }
@@ -2884,25 +2891,27 @@ export function closePosSession(sessionId: string) {
 }
 
 export function createPosPayment(payload: {
-  terminalId: string;
+  terminalId?: string | null;
   posSessionId?: string | null;
   customerId?: string | null;
+  paymentMethod?: PosPaymentMethod;
   items: PosCartItemPayload[];
   globalDiscount?: number;
   orderDiscountType?: DiscountType | null;
   orderDiscountValue?: number | null;
   notes?: string | null;
 }) {
-  return adminFetch<{ order: PosOrder; paymentId: string; status: string; changePaymentStateUrl?: string | null }>("/api/pos/payments", {
+  return adminFetch<{ order: PosOrder; paymentId: string | null; status: string; changePaymentStateUrl?: string | null }>("/api/pos/payments", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 export function createPosQuickSale(payload: {
-  terminalId: string;
+  terminalId?: string | null;
   posSessionId?: string | null;
   customerId?: string | null;
+  paymentMethod?: PosPaymentMethod;
   amount: number;
   description?: string;
   orderDiscountType?: DiscountType | null;
@@ -2910,7 +2919,7 @@ export function createPosQuickSale(payload: {
   globalDiscount?: number;
   notes?: string | null;
 }) {
-  return adminFetch<{ order: PosOrder; paymentId: string; status: string; changePaymentStateUrl?: string | null }>("/api/pos/quick-sale", {
+  return adminFetch<{ order: PosOrder; paymentId: string | null; status: string; changePaymentStateUrl?: string | null }>("/api/pos/quick-sale", {
     method: "POST",
     body: JSON.stringify(payload),
   });

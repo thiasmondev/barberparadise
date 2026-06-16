@@ -31,6 +31,7 @@ import {
   openPosSession,
   type DiscountType,
   type PosOrder,
+  type PosPaymentMethod,
   type PosProduct,
   type PosTerminal,
   type PosVariant,
@@ -94,6 +95,8 @@ export default function AdminCaissePage() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [orderDiscountType, setOrderDiscountType] = useState<DiscountType>("fixed");
   const [orderDiscountValue, setOrderDiscountValue] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PosPaymentMethod>("card");
+  const [cashReceived, setCashReceived] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerSearch, setCustomerSearch] = useState("");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
@@ -193,6 +196,8 @@ export default function AdminCaissePage() {
   const discount = Math.max(0, Math.min(subtotal, lineDiscount + orderDiscount));
   const total = Math.max(0, subtotalAfterLineDiscount - orderDiscount);
   const vat = total - total / 1.2;
+  const receivedAmount = numericValue(cashReceived);
+  const changeDue = paymentMethod === "cash" && receivedAmount > 0 ? Math.max(0, receivedAmount - total) : 0;
 
   function addToCart(product: PosProduct, variant?: PosVariant | null) {
     const price = variant?.price ?? product.price;
@@ -279,14 +284,19 @@ export default function AdminCaissePage() {
       setError("Ajoutez au moins un article au panier.");
       return;
     }
+    if (paymentMethod === "cash" && cashReceived && receivedAmount < total) {
+      setError("Le montant reçu est inférieur au total du panier.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     setMessage(null);
     try {
-      const activeSessionId = await ensureSession();
+      const activeSessionId = paymentMethod === "card" ? await ensureSession() : sessionId;
       const data = await createPosPayment({
-        terminalId,
+        terminalId: paymentMethod === "card" ? terminalId : null,
         posSessionId: activeSessionId,
+        paymentMethod,
         customerId: selectedCustomerId,
         items: cart.map((line) => ({
           productId: line.productId,
@@ -302,7 +312,17 @@ export default function AdminCaissePage() {
       setCurrentOrder(data.order);
       setPaymentId(data.paymentId);
       setPaymentStatus(data.status);
-      setMessage(`Paiement envoyé au terminal pour ${formatPrice(data.order.totalTTC || data.order.total)}.`);
+      if (paymentMethod === "cash") {
+        setCart([]);
+        setOrderDiscountType("fixed");
+        setOrderDiscountValue("");
+        setCashReceived("");
+        setNotes("");
+        setMessage(`Encaissement espèces validé pour ${formatPrice(data.order.totalTTC || data.order.total)}.`);
+        await loadCatalog();
+      } else {
+        setMessage(`Paiement envoyé au terminal pour ${formatPrice(data.order.totalTTC || data.order.total)}.`);
+      }
     } catch (err: any) {
       setError(err.message || "Impossible de créer le paiement POS.");
     } finally {
@@ -321,10 +341,15 @@ export default function AdminCaissePage() {
     setError(null);
     setMessage(null);
     try {
-      const activeSessionId = await ensureSession();
+      if (paymentMethod === "cash" && cashReceived && receivedAmount < amount) {
+        setError("Le montant reçu est inférieur au montant de la vente rapide.");
+        return;
+      }
+      const activeSessionId = paymentMethod === "card" ? await ensureSession() : sessionId;
       const data = await createPosQuickSale({
-        terminalId,
+        terminalId: paymentMethod === "card" ? terminalId : null,
         posSessionId: activeSessionId,
+        paymentMethod,
         customerId: selectedCustomerId,
         amount,
         description: quickDescription || "Vente comptoir",
@@ -335,7 +360,13 @@ export default function AdminCaissePage() {
       setCurrentOrder(data.order);
       setPaymentId(data.paymentId);
       setPaymentStatus(data.status);
-      setMessage(`Vente rapide envoyée au terminal pour ${formatPrice(data.order.totalTTC || data.order.total)}.`);
+      if (paymentMethod === "cash") {
+        setMessage(`Vente rapide espèces validée pour ${formatPrice(data.order.totalTTC || data.order.total)}.`);
+        setCashReceived("");
+        await loadCatalog();
+      } else {
+        setMessage(`Vente rapide envoyée au terminal pour ${formatPrice(data.order.totalTTC || data.order.total)}.`);
+      }
       setQuickAmount("");
       setOrderDiscountType("fixed");
       setOrderDiscountValue("");
@@ -532,6 +563,26 @@ export default function AdminCaissePage() {
               <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary" placeholder="Notes internes de vente" />
             </div>
 
+            <div className="mt-4 space-y-3 rounded-2xl border border-gray-100 bg-gray-50 p-3">
+              <label className="block text-xs font-bold uppercase tracking-[0.2em] text-gray-400">Moyen de paiement</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setPaymentMethod("card")} className={`rounded-xl border px-3 py-2 text-sm font-black ${paymentMethod === "card" ? "border-primary bg-primary text-white" : "border-gray-200 bg-white text-gray-700 hover:border-primary/40"}`}>Carte · Tap to Pay</button>
+                <button type="button" onClick={() => setPaymentMethod("cash")} className={`rounded-xl border px-3 py-2 text-sm font-black ${paymentMethod === "cash" ? "border-emerald-600 bg-emerald-600 text-white" : "border-gray-200 bg-white text-gray-700 hover:border-emerald-300"}`}>Espèces</button>
+              </div>
+              {paymentMethod === "cash" ? (
+                <div className="grid gap-2 sm:grid-cols-[1fr_1fr]">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-gray-500">Montant reçu</label>
+                    <input value={cashReceived} onChange={(event) => setCashReceived(event.target.value)} inputMode="decimal" className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500" placeholder={formatPrice(total)} />
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2.5">
+                    <p className="text-xs font-semibold text-gray-500">Monnaie à rendre</p>
+                    <p className="mt-1 text-lg font-black text-emerald-700">{formatPrice(changeDue)}</p>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
             <div className="mt-4 rounded-2xl bg-gray-950 p-4 text-white">
               <div className="space-y-1 text-sm text-gray-300">
                 <div className="flex justify-between"><span>Sous-total</span><span>{formatPrice(subtotal)}</span></div>
@@ -543,8 +594,8 @@ export default function AdminCaissePage() {
               <div className="mt-3 flex justify-between text-xl font-black"><span>Total</span><span>{formatPrice(total)}</span></div>
             </div>
 
-            <button type="submit" disabled={submitting || !terminalId || !cart.length || Boolean(paymentId)} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-black uppercase tracking-[0.18em] text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50">
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard size={16} />} Encaisser sur terminal
+            <button type="submit" disabled={submitting || (paymentMethod === "card" && !terminalId) || !cart.length || Boolean(paymentId)} className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-black uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-50 ${paymentMethod === "cash" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-primary hover:bg-primary/90"}`}>
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : paymentMethod === "cash" ? <Banknote size={16} /> : <CreditCard size={16} />} {paymentMethod === "cash" ? "Valider l’encaissement espèces" : "Encaisser sur terminal"}
             </button>
           </form>
 
@@ -555,8 +606,8 @@ export default function AdminCaissePage() {
               <input value={quickAmount} onChange={(event) => setQuickAmount(event.target.value)} inputMode="decimal" className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary" placeholder="Montant" />
               <input value={quickDescription} onChange={(event) => setQuickDescription(event.target.value)} className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary" placeholder="Libellé" />
             </div>
-            <button type="submit" disabled={submitting || !terminalId || Boolean(paymentId)} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-bold text-gray-800 hover:border-primary/40 hover:text-primary disabled:opacity-40">
-              <Banknote size={16} /> Encaisser une vente rapide
+            <button type="submit" disabled={submitting || (paymentMethod === "card" && !terminalId) || Boolean(paymentId)} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-bold text-gray-800 hover:border-primary/40 hover:text-primary disabled:opacity-40">
+              <Banknote size={16} /> {paymentMethod === "cash" ? "Valider la vente rapide espèces" : "Encaisser une vente rapide"}
             </button>
           </form>
 

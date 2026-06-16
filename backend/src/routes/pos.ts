@@ -40,11 +40,14 @@ type PosPaymentItemInput = {
   lineDiscountValue?: number | null;
 };
 
+type PosPaymentMethod = "card" | "cash";
+
 type PosPaymentBody = {
   items?: PosPaymentItemInput[];
   customerId?: string | null;
   terminalId?: string;
   posSessionId?: string | null;
+  paymentMethod?: PosPaymentMethod;
   globalDiscount?: number; // compatibilité ancien payload : remise fixe TTC globale
   orderDiscountType?: DiscountType | null;
   orderDiscountValue?: number | null;
@@ -59,6 +62,10 @@ function money(value: number): number {
 
 function normalizeDiscountType(value: unknown): DiscountType | null {
   return value === "percent" || value === "fixed" ? value : null;
+}
+
+function normalizePaymentMethod(value: unknown): PosPaymentMethod {
+  return value === "cash" ? "cash" : "card";
 }
 
 function normalizeDiscount(typeValue: unknown, valueValue: unknown): NormalizedDiscount {
@@ -210,6 +217,75 @@ function buildOrderTotals(subtotal: number, discountAmount: number) {
   return { totalTTC, totalHT, vatAmount };
 }
 
+async function applyPaidPosSideEffects(orderId: string) {
+  return prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: { items: true },
+    });
+
+    if (!order) throw new Error("Vente POS introuvable.");
+    if (order.status === "paid") return order;
+
+    for (const item of order.items) {
+      if (!item.productId) continue;
+
+      if (item.variantId) {
+        const variant = await tx.productVariant.findUnique({ where: { id: item.variantId } });
+        if (!variant) continue;
+
+        const nextVariantStock = Math.max(0, variant.stock - item.quantity);
+        await tx.productVariant.update({
+          where: { id: item.variantId },
+          data: { stock: nextVariantStock, inStock: nextVariantStock > 0 },
+        });
+
+        const remainingActiveVariants = await tx.productVariant.count({
+          where: { productId: item.productId, inStock: true, stock: { gt: 0 } },
+        });
+        const product = await tx.product.findUnique({ where: { id: item.productId }, select: { stockCount: true } });
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { inStock: Boolean((product?.stockCount || 0) > 0 || remainingActiveVariants > 0) },
+        });
+        continue;
+      }
+
+      const product = await tx.product.findUnique({ where: { id: item.productId } });
+      if (!product) continue;
+
+      const nextStock = Math.max(0, product.stockCount - item.quantity);
+      await tx.product.update({
+        where: { id: item.productId },
+        data: { stockCount: nextStock, inStock: nextStock > 0 },
+      });
+    }
+
+    const paidAt = order.posPaidAt || new Date();
+    const updated = await tx.order.update({
+      where: { id: orderId },
+      data: {
+        status: "paid",
+        posPaymentStatus: "paid",
+        posPaidAt: paidAt,
+      },
+      include: { customer: true, items: true },
+    });
+
+    if (order.posSessionId) {
+      await tx.posSession.update({
+        where: { id: order.posSessionId },
+        data: {
+          totalSales: { increment: order.totalTTC || order.total || 0 },
+          totalOrders: { increment: 1 },
+        },
+      });
+    }
+
+    return updated;
+  });
+}
+
 async function createMolliePosPayment(params: {
   req: AuthRequest;
   orderId: string;
@@ -246,6 +322,7 @@ function serializeOrder(order: any) {
     providerPaymentId: order.providerPaymentId,
     terminalId: order.terminalId,
     posSessionId: order.posSessionId,
+    paymentMethod: order.paymentMethod,
     subtotal: order.subtotal,
     discountAmount: order.discountAmount,
     orderDiscountType: order.orderDiscountType,
@@ -402,9 +479,10 @@ posRouter.post("/payments", async (req: AuthRequest, res: Response) => {
   let createdOrderId: string | null = null;
   try {
     const body = req.body as PosPaymentBody;
+    const paymentMethod = normalizePaymentMethod(body.paymentMethod);
     const terminalId = typeof body.terminalId === "string" ? body.terminalId.trim() : "";
-    if (!terminalId) {
-      res.status(400).json({ error: "terminalId est requis." });
+    if (paymentMethod === "card" && !terminalId) {
+      res.status(400).json({ error: "terminalId est requis pour un paiement carte." });
       return;
     }
 
@@ -435,8 +513,8 @@ posRouter.post("/payments", async (req: AuthRequest, res: Response) => {
         email: customer?.email || POS_EMAIL_FALLBACK,
         customerEmail: customer?.email || null,
         status: "pending_payment",
-        paymentMethod: "pointofsale",
-        paymentProvider: "mollie",
+        paymentMethod,
+        paymentProvider: paymentMethod === "cash" ? "cash" : "mollie",
         subtotal,
         shipping: 0,
         total: totalTTC,
@@ -446,7 +524,7 @@ posRouter.post("/payments", async (req: AuthRequest, res: Response) => {
         totalTTC,
         currency: CURRENCY,
         channel: "pos",
-        terminalId,
+        terminalId: paymentMethod === "card" ? terminalId : null,
         posSessionId: body.posSessionId || null,
         posPaymentStatus: "pending",
         posCashierId: req.user?.id || null,
@@ -475,6 +553,12 @@ posRouter.post("/payments", async (req: AuthRequest, res: Response) => {
     });
     createdOrderId = order.id;
 
+    if (paymentMethod === "cash") {
+      const paidOrder = await applyPaidPosSideEffects(order.id);
+      res.status(201).json({ order: serializeOrder(paidOrder), paymentId: null, status: "paid", changePaymentStateUrl: null });
+      return;
+    }
+
     const payment = await createMolliePosPayment({ req, orderId: order.id, orderNumber, totalTTC, terminalId });
     const updated = await prisma.order.update({
       where: { id: order.id },
@@ -501,8 +585,9 @@ posRouter.get("/payments/:paymentId/status", async (req: AuthRequest, res: Respo
     if (order) {
       const statusUpdate: Prisma.OrderUpdateInput = { posPaymentStatus: payment.status };
       if (payment.status === "paid") {
-        statusUpdate.status = "paid";
-        statusUpdate.posPaidAt = order.posPaidAt || new Date();
+        const updated = await applyPaidPosSideEffects(order.id);
+        res.json({ status: payment.status, paymentId: payment.id, order: serializeOrder(updated), changePaymentStateUrl: payment._links?.changePaymentState?.href || null });
+        return;
       } else if (["failed", "canceled", "expired"].includes(payment.status)) {
         statusUpdate.status = "cancelled";
       }
@@ -531,10 +616,11 @@ posRouter.post("/quick-sale", async (req: AuthRequest, res: Response) => {
   let createdOrderId: string | null = null;
   try {
     const amount = money(Number(req.body.amount || 0));
+    const paymentMethod = normalizePaymentMethod(req.body.paymentMethod);
     const terminalId = typeof req.body.terminalId === "string" ? req.body.terminalId.trim() : "";
     const description = typeof req.body.description === "string" && req.body.description.trim() ? req.body.description.trim().slice(0, 120) : "Vente personnalisée";
-    if (!terminalId) {
-      res.status(400).json({ error: "terminalId est requis." });
+    if (paymentMethod === "card" && !terminalId) {
+      res.status(400).json({ error: "terminalId est requis pour un paiement carte." });
       return;
     }
     if (amount <= 0) {
@@ -559,8 +645,8 @@ posRouter.post("/quick-sale", async (req: AuthRequest, res: Response) => {
         email: customer?.email || POS_EMAIL_FALLBACK,
         customerEmail: customer?.email || null,
         status: "pending_payment",
-        paymentMethod: "pointofsale",
-        paymentProvider: "mollie",
+        paymentMethod,
+        paymentProvider: paymentMethod === "cash" ? "cash" : "mollie",
         subtotal: amount,
         shipping: 0,
         total: totalTTC,
@@ -570,7 +656,7 @@ posRouter.post("/quick-sale", async (req: AuthRequest, res: Response) => {
         totalTTC,
         currency: CURRENCY,
         channel: "pos",
-        terminalId,
+        terminalId: paymentMethod === "card" ? terminalId : null,
         posSessionId: req.body.posSessionId || null,
         posPaymentStatus: "pending",
         posCashierId: req.user?.id || null,
@@ -585,6 +671,12 @@ posRouter.post("/quick-sale", async (req: AuthRequest, res: Response) => {
       include: { customer: true, items: true },
     });
     createdOrderId = order.id;
+
+    if (paymentMethod === "cash") {
+      const paidOrder = await applyPaidPosSideEffects(order.id);
+      res.status(201).json({ order: serializeOrder(paidOrder), paymentId: null, status: "paid", changePaymentStateUrl: null });
+      return;
+    }
 
     const payment = await createMolliePosPayment({ req, orderId: order.id, orderNumber, totalTTC, terminalId, description: `Barber Paradise POS - ${description}` });
     const updated = await prisma.order.update({ where: { id: order.id }, data: { providerPaymentId: payment.id, posPaymentStatus: payment.status }, include: { customer: true, items: true } });
@@ -675,6 +767,20 @@ posRouter.get("/stats", async (req: AuthRequest, res: Response) => {
     const revenue = money(orders.reduce((sum, order) => sum + (order.totalTTC || order.total || 0), 0));
     const salesCount = orders.length;
     const averageOrder = salesCount > 0 ? money(revenue / salesCount) : 0;
+    const paymentBreakdown = orders.reduce(
+      (acc, order) => {
+        const amount = order.totalTTC || order.total || 0;
+        if (order.paymentMethod === "cash") {
+          acc.cash.revenue = money(acc.cash.revenue + amount);
+          acc.cash.count += 1;
+        } else {
+          acc.card.revenue = money(acc.card.revenue + amount);
+          acc.card.count += 1;
+        }
+        return acc;
+      },
+      { card: { revenue: 0, count: 0 }, cash: { revenue: 0, count: 0 } }
+    );
     const productTotals = new Map<string, { name: string; quantity: number; revenue: number }>();
     for (const order of orders) {
       for (const item of order.items) {
@@ -687,7 +793,7 @@ posRouter.get("/stats", async (req: AuthRequest, res: Response) => {
     }
     const topProducts = Array.from(productTotals.values()).sort((a, b) => b.quantity - a.quantity).slice(0, 5);
 
-    res.json({ period, start, salesCount, revenue, averageOrder, topProducts, latestOrder: orders[0] ? serializeOrder(orders[0]) : null });
+    res.json({ period, start, salesCount, revenue, averageOrder, paymentBreakdown, topProducts, latestOrder: orders[0] ? serializeOrder(orders[0]) : null });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Impossible de charger les statistiques POS." });
   }

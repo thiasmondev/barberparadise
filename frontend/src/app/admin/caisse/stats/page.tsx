@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, BarChart3, Loader2, RefreshCw, ShoppingBag, TrendingUp } from "lucide-react";
+import { ArrowLeft, Banknote, BarChart3, CreditCard, Loader2, RefreshCw, ShoppingBag, TrendingUp } from "lucide-react";
 import { getPosStats, type PosStats } from "@/lib/admin-api";
 
 const currency = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
@@ -92,6 +92,19 @@ export default function PosStatsPage() {
             </div>
           </div>
 
+          <section className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="flex items-center gap-2 text-lg font-black text-gray-950"><CreditCard size={18} /> Ventilation Carte</h2>
+              <p className="mt-3 text-3xl font-black text-gray-950">{formatPrice(stats.paymentBreakdown?.card.revenue || 0)}</p>
+              <p className="mt-2 text-sm text-gray-500">{stats.paymentBreakdown?.card.count || 0} vente(s) Tap to Pay.</p>
+            </div>
+            <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="flex items-center gap-2 text-lg font-black text-gray-950"><Banknote size={18} /> Ventilation Espèces</h2>
+              <p className="mt-3 text-3xl font-black text-gray-950">{formatPrice(stats.paymentBreakdown?.cash.revenue || 0)}</p>
+              <p className="mt-2 text-sm text-gray-500">{stats.paymentBreakdown?.cash.count || 0} vente(s) encaissée(s) en espèces.</p>
+            </div>
+          </section>
+
           <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
             <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
               <div className="mb-5 flex items-center justify-between">
@@ -127,7 +140,7 @@ export default function PosStatsPage() {
                 <div className="mt-4 space-y-4">
                   <div>
                     <p className="text-xl font-black text-gray-950">{stats.latestOrder.orderNumber}</p>
-                    <p className="mt-1 text-sm text-gray-500">{dateFormatter.format(new Date(stats.latestOrder.createdAt))}</p>
+                    <p className="mt-1 text-sm text-gray-500">{dateFormatter.format(new Date(stats.latestOrder.createdAt))} · {stats.latestOrder.paymentMethod === "cash" ? "Espèces" : "Carte"}</p>
                   </div>
                   <div className="rounded-2xl bg-gray-950 p-4 text-white">
                     <p className="text-sm text-gray-300">Total encaissé</p>

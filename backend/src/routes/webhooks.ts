@@ -163,6 +163,16 @@ async function markOrderPaid(orderId: string, provider: WebhookProvider, provide
       },
     });
 
+    if (order.channel === "pos" && order.posSessionId) {
+      await tx.posSession.update({
+        where: { id: order.posSessionId },
+        data: {
+          totalSales: { increment: order.totalTTC || order.total || 0 },
+          totalOrders: { increment: 1 },
+        },
+      });
+    }
+
     return { changed: true, channel: order.channel };
   });
 }

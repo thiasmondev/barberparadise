@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, RefreshCw, Search, ShoppingBag } from "lucide-react";
+import { ArrowLeft, Banknote, ChevronLeft, ChevronRight, CreditCard, Loader2, RefreshCw, Search, ShoppingBag } from "lucide-react";
 import { getPosHistory, type PosOrder } from "@/lib/admin-api";
 
 const currency = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
@@ -27,6 +27,14 @@ function statusClass(status: string) {
   if (status === "pending_payment") return "bg-amber-50 text-amber-700 border-amber-100";
   if (status === "cancelled") return "bg-red-50 text-red-700 border-red-100";
   return "bg-gray-50 text-gray-700 border-gray-100";
+}
+
+function paymentMethodLabel(method?: string | null) {
+  return method === "cash" ? "Espèces" : "Carte";
+}
+
+function paymentMethodClass(method?: string | null) {
+  return method === "cash" ? "bg-emerald-50 text-emerald-700 border-emerald-100" : "bg-blue-50 text-blue-700 border-blue-100";
 }
 
 function customerLabel(order: PosOrder) {
@@ -139,10 +147,13 @@ export default function PosHistoryPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-base font-black text-gray-950">{formatPrice(order.totalTTC || order.total)}</p>
-                      <span className={`mt-1 inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${statusClass(order.status)}`}>{statusLabel(order.status)}</span>
+                      <div className="mt-1 flex flex-wrap justify-end gap-1.5">
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${statusClass(order.status)}`}>{statusLabel(order.status)}</span>
+                        <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold ${paymentMethodClass(order.paymentMethod)}`}>{order.paymentMethod === "cash" ? <Banknote size={12} /> : <CreditCard size={12} />} {paymentMethodLabel(order.paymentMethod)}</span>
+                      </div>
                     </div>
                   </div>
-                  <p className="text-xs text-gray-500">{order.items.length} ligne(s) · Terminal {order.terminalId || "—"}</p>
+                  <p className="text-xs text-gray-500">{order.items.length} ligne(s) · {order.paymentMethod === "cash" ? "Encaissement espèces" : `Terminal ${order.terminalId || "—"}`}</p>
                 </button>
               ))}
             </div>
@@ -166,7 +177,7 @@ export default function PosHistoryPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl bg-gray-50 p-3"><p className="text-xs text-gray-500">Client</p><p className="mt-1 text-sm font-bold text-gray-950">{customerLabel(selected)}</p></div>
-                <div className="rounded-xl bg-gray-50 p-3"><p className="text-xs text-gray-500">Paiement</p><p className="mt-1 text-sm font-bold text-gray-950">{selected.posPaymentStatus || selected.status}</p></div>
+                <div className="rounded-xl bg-gray-50 p-3"><p className="text-xs text-gray-500">Paiement</p><p className="mt-1 text-sm font-bold text-gray-950">{selected.posPaymentStatus || selected.status} · {paymentMethodLabel(selected.paymentMethod)}</p></div>
               </div>
               <div className="space-y-2">
                 {selected.items.map((item) => (

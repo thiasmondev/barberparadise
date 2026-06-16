@@ -302,7 +302,7 @@ model Order {
   customerId        String?
   email             String
   status            String   @default("pending") // draft, pending, pending_payment, paid, processing, shipped, delivered, cancelled
-  paymentMethod     String?
+  paymentMethod     String   @default("card")
   paymentProvider   String?
   providerPaymentId String?
   subtotal          Float
