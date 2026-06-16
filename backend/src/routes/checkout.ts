@@ -395,7 +395,7 @@ checkoutRouter.get("/draft/:token", async (req: Request, res: Response): Promise
         draftShareTokenHash: tokenHash,
       },
       include: {
-        items: { include: { product: true } },
+        items: { include: { product: { include: { variants: { orderBy: { order: "asc" } } } } } },
         shippingAddress: true,
       },
     });
@@ -446,6 +446,23 @@ checkoutRouter.get("/draft/:token", async (req: Request, res: Response): Promise
             slug: item.product?.slug || "",
             brand: item.product?.brand || "",
             images: images.length ? images : item.image ? [item.image] : [],
+            variants: item.product?.variants?.map((variant) => ({
+              id: variant.id,
+              productId: variant.productId,
+              name: variant.name,
+              type: variant.type,
+              color: variant.color || "",
+              colorHex: variant.colorHex || "",
+              size: variant.size || "",
+              price: variant.price,
+              priceProEur: variant.priceProEur,
+              pricePublic: variant.price ?? item.product?.price ?? item.price,
+              stock: variant.stock,
+              inStock: variant.inStock,
+              sku: variant.sku || "",
+              image: variant.image || "",
+              order: variant.order,
+            })) || [],
           };
         }),
       },
@@ -483,7 +500,7 @@ checkoutRouter.get("/abandoned-cart/restore", async (req: Request, res: Response
       : [];
 
     const products = productIds.length
-      ? await prisma.product.findMany({ where: { id: { in: productIds } } })
+      ? await prisma.product.findMany({ where: { id: { in: productIds } }, include: { variants: { orderBy: { order: "asc" } } } })
       : [];
     const productById = new Map(products.map((product) => [product.id, product]));
 
@@ -530,6 +547,23 @@ checkoutRouter.get("/abandoned-cart/restore", async (req: Request, res: Response
               status: product?.status || "active",
               createdAt: product?.createdAt?.toISOString?.() || new Date().toISOString(),
               updatedAt: product?.updatedAt?.toISOString?.() || new Date().toISOString(),
+              variants: product?.variants?.map((variant) => ({
+                id: variant.id,
+                productId: variant.productId,
+                name: variant.name,
+                type: variant.type,
+                color: variant.color || "",
+                colorHex: variant.colorHex || "",
+                size: variant.size || "",
+                price: variant.price,
+                priceProEur: variant.priceProEur,
+                pricePublic: variant.price ?? product.price,
+                stock: variant.stock,
+                inStock: variant.inStock,
+                sku: variant.sku || "",
+                image: variant.image || "",
+                order: variant.order,
+              })) || [],
             },
           };
         }),
@@ -813,7 +847,13 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       const hasVariants = product.variants.length > 0;
       const selectedVariant = variantId ? product.variants.find((variant) => variant.id === variantId) : null;
       if (hasVariants && !selectedVariant) {
-        res.status(400).json({ error: `Sélectionnez une variante disponible pour ${product.name}` });
+        res.status(400).json({
+          error: `Sélectionnez une variante disponible pour ${product.name}`,
+          code: "VARIANT_SELECTION_REQUIRED",
+          productId: product.id,
+          productName: product.name,
+          productSlug: product.slug,
+        });
         return;
       }
       if (selectedVariant) {

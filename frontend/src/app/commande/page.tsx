@@ -43,6 +43,7 @@ type DraftCheckoutItem = {
   slug?: string;
   brand?: string;
   images?: string[];
+  variants?: Product["variants"];
 };
 
 type DraftPricingSnapshot = {
@@ -304,8 +305,10 @@ export default function CheckoutPage() {
             status: "active",
             createdAt: "",
             updatedAt: "",
+            variants: item.variants || [],
           };
-          return { product, quantity: item.quantity, variantId: item.variantId ?? null };
+          const variant = item.variantId ? product.variants?.find((candidate) => candidate.id === item.variantId) || null : null;
+          return { product, quantity: item.quantity, variantId: item.variantId ?? null, variant };
         });
 
         replaceItems(nextItems);
@@ -572,7 +575,13 @@ export default function CheckoutPage() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Impossible d'initialiser le paiement");
+      if (!res.ok) {
+        if (data?.code === "VARIANT_SELECTION_REQUIRED" && data?.productSlug) {
+          setPaymentError(`${data.error || "Une variante doit être sélectionnée."} Retournez au panier pour choisir une variante ou retirer l’article.`);
+          return;
+        }
+        throw new Error(data?.error || "Impossible d'initialiser le paiement");
+      }
       if (!data.checkoutUrl) throw new Error("URL de paiement indisponible");
 
       window.location.href = data.checkoutUrl;

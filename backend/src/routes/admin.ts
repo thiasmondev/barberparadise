@@ -137,6 +137,7 @@ type DiscountType = "percent" | "fixed";
 
 type AdminDraftLineInput = {
   productId?: unknown;
+  variantId?: unknown;
   quantity?: unknown;
   lineDiscountType?: unknown;
   lineDiscountValue?: unknown;
@@ -144,6 +145,7 @@ type AdminDraftLineInput = {
 
 type NormalizedDraftItem = {
   productId: string;
+  variantId: string | null;
   quantity: number;
   lineDiscountType: DiscountType | null;
   lineDiscountValue: number;
@@ -179,6 +181,8 @@ type NormalizedDraftAddress = {
 type DraftCalculationResult = {
   orderItems: Array<{
     productId: string;
+    variantId: string | null;
+    variantLabel: string | null;
     name: string;
     price: number;
     quantity: number;
@@ -278,10 +282,12 @@ function normalizeDraftItems(items: unknown): NormalizedDraftItem[] {
   return items
     .map((item: AdminDraftLineInput) => {
       const productId = typeof item?.productId === "string" ? item.productId.trim() : "";
+      const variantId = typeof item?.variantId === "string" && item.variantId.trim() ? item.variantId.trim() : null;
       const quantity = Number(item?.quantity);
       const lineDiscount = normalizeDiscount(item?.lineDiscountType, item?.lineDiscountValue);
       return {
         productId,
+        variantId,
         quantity: Number.isInteger(quantity) && quantity > 0 ? quantity : 0,
         lineDiscountType: lineDiscount.type,
         lineDiscountValue: lineDiscount.type ? lineDiscount.value : 0,
@@ -311,6 +317,7 @@ async function calculateAdminDraftTotals(params: {
 
   const products = await prisma.product.findMany({
     where: { id: { in: params.items.map((item) => item.productId) } },
+    include: { variants: { orderBy: { order: "asc" } } },
   });
   const productById = new Map(products.map((product) => [product.id, product]));
   const orderItems: DraftCalculationResult["orderItems"] = [];
@@ -324,12 +331,21 @@ async function calculateAdminDraftTotals(params: {
     const product = productById.get(item.productId);
     if (!product) throw new Error(`Produit introuvable : ${item.productId}`);
     if (!params.allowInactiveProducts && product.status !== "active") throw new Error(`Produit indisponible : ${product.name}`);
-    if (product.stockCount > 0 && product.stockCount < item.quantity) throw new Error(`Stock insuffisant pour ${product.name}`);
+    const selectedVariant = item.variantId ? product.variants.find((variant) => variant.id === item.variantId) : null;
+    if (product.variants.length > 0 && !selectedVariant) throw new Error(`Sélectionnez une variante disponible pour ${product.name}`);
+    if (selectedVariant) {
+      if (!selectedVariant.inStock || selectedVariant.stock <= 0) throw new Error(`Variante indisponible : ${product.name} - ${selectedVariant.name}`);
+      if (selectedVariant.stock < item.quantity) throw new Error(`Stock insuffisant pour ${product.name} - ${selectedVariant.name}`);
+    } else if (product.stockCount > 0 && product.stockCount < item.quantity) {
+      throw new Error(`Stock insuffisant pour ${product.name}`);
+    }
 
+    const publicTtcPrice = selectedVariant?.price ?? product.price;
+    const proHtPrice = selectedVariant?.priceProEur ?? product.priceProEur ?? publicTtcPrice / (1 + STANDARD_VAT_RATE / 100);
     const unitHT = params.isB2B
-      ? money(product.priceProEur ?? product.price / (1 + STANDARD_VAT_RATE / 100))
-      : money(product.price / (1 + STANDARD_VAT_RATE / 100));
-    const unitTTC = params.isB2B ? money(unitHT * vatMultiplier) : product.price;
+      ? money(proHtPrice)
+      : money(publicTtcPrice / (1 + STANDARD_VAT_RATE / 100));
+    const unitTTC = params.isB2B ? money(unitHT * vatMultiplier) : publicTtcPrice;
     const lineBaseHT = money(unitHT * item.quantity);
     const lineBaseTTC = money(unitTTC * item.quantity);
     const lineDiscountDisplay = calculateDiscountAmount(
@@ -345,10 +361,12 @@ async function calculateAdminDraftTotals(params: {
     lineDiscountTotal += lineDiscountDisplay;
     orderItems.push({
       productId: product.id,
-      name: product.name,
-      price: params.isB2B ? unitHT : product.price,
+      variantId: selectedVariant?.id || null,
+      variantLabel: selectedVariant?.name || null,
+      name: selectedVariant ? `${product.name} - ${selectedVariant.name}` : product.name,
+      price: params.isB2B ? unitHT : publicTtcPrice,
       quantity: item.quantity,
-      image: firstProductImage(product.images),
+      image: selectedVariant?.image || firstProductImage(product.images),
       discountAmount: lineDiscountDisplay,
       lineDiscountType: item.lineDiscountType,
       lineDiscountValue: item.lineDiscountType ? item.lineDiscountValue : null,

@@ -71,6 +71,8 @@ export default function CartPage() {
   const minimumProOrder = 200;
   const proRemaining = Math.max(0, minimumProOrder - subtotalHT);
   const isProMinimumBlocked = isApprovedPro && subtotalHT < minimumProOrder;
+  const itemsRequiringVariantSelection = useMemo(() => items.filter((item) => Boolean(item.product.variants?.length) && !item.variantId && !item.variant?.id), [items]);
+  const hasVariantSelectionBlocker = itemsRequiringVariantSelection.length > 0;
   const paymentMethods = ([
     { id: "card", label: "CARTE BANCAIRE", icon: CreditCard },
     { id: "paypal_4x", label: "PAYPAL 4X SANS FRAIS", icon: WalletCards },
@@ -217,6 +219,8 @@ export default function CartPage() {
               const images = parseImages(item.product.images);
               const img = images[0] || "";
               const lineTotal = item.product.price * item.quantity;
+              const selectedVariantId = item.variantId || item.variant?.id || null;
+              const requiresVariantSelection = Boolean(item.product.variants?.length) && !selectedVariantId;
 
               return (
                 <div key={`${item.product.id}-${item.variantId || item.variant?.id || "product"}`} className="grid grid-cols-12 gap-4 py-6 border-b border-white/5 items-center">
@@ -243,13 +247,28 @@ export default function CartPage() {
                       <h3 className="font-black text-sm tracking-tight leading-tight mb-2">
                         {item.product.name}
                       </h3>
-                      <button
-                        onClick={() => removeItem(item.product.id, item.variantId || item.variant?.id || null)}
-                        className="flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase text-gray-600 hover:text-red-400 transition-colors"
-                      >
-                        <Trash2 size={10} />
-                        RETIRER
-                      </button>
+                      {requiresVariantSelection && (
+                        <div className="mb-3 rounded border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-amber-100">
+                          Variante à choisir avant paiement
+                        </div>
+                      )}
+                      <div className="flex flex-wrap items-center gap-3">
+                        {requiresVariantSelection && (
+                          <Link
+                            href={`/produit/${item.product.slug || item.product.handle || item.product.id}`}
+                            className="text-[10px] font-black tracking-widest uppercase text-[#ff4a8d] hover:text-[#ff8fba] transition-colors"
+                          >
+                            CHOISIR UNE VARIANTE
+                          </Link>
+                        )}
+                        <button
+                          onClick={() => removeItem(item.product.id, selectedVariantId)}
+                          className="flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase text-gray-600 hover:text-red-400 transition-colors"
+                        >
+                          <Trash2 size={10} />
+                          RETIRER
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -260,7 +279,7 @@ export default function CartPage() {
                   <div className="col-span-4 md:col-span-2 flex items-center justify-center">
                     <div className="flex items-center border border-white/10">
                       <button
-                        onClick={() => updateQuantity(item.product.id, item.quantity - 1, item.variantId || item.variant?.id || null)}
+                        onClick={() => updateQuantity(item.product.id, item.quantity - 1, selectedVariantId)}
                         className="px-3 py-2 text-gray-500 hover:text-white transition-colors"
                       >
                         <Minus size={12} />
@@ -273,18 +292,18 @@ export default function CartPage() {
                         onChange={(e) => {
                           const val = parseInt(e.target.value);
                           if (!isNaN(val) && val >= 1 && val <= 999) {
-                            updateQuantity(item.product.id, val, item.variantId || item.variant?.id || null);
+                            updateQuantity(item.product.id, val, selectedVariantId);
                           }
                         }}
                         onBlur={(e) => {
                           if (!e.target.value || parseInt(e.target.value) < 1) {
-                            updateQuantity(item.product.id, 1, item.variantId || item.variant?.id || null);
+                            updateQuantity(item.product.id, 1, selectedVariantId);
                           }
                         }}
                         className="w-16 text-center bg-white border border-bp-border rounded text-black focus:border-bp-pink outline-none px-2 py-1"
                       />
                       <button
-                        onClick={() => updateQuantity(item.product.id, Math.min(999, item.quantity + 1), item.variantId || item.variant?.id || null)}
+                        onClick={() => updateQuantity(item.product.id, Math.min(999, item.quantity + 1), selectedVariantId)}
                         className="px-3 py-2 text-gray-500 hover:text-white transition-colors"
                       >
                         <Plus size={12} />
@@ -414,7 +433,16 @@ export default function CartPage() {
                 </div>
               </div>
 
-              {isProMinimumBlocked ? (
+              {hasVariantSelectionBlocker ? (
+                <button
+                  type="button"
+                  disabled
+                  className="w-full flex items-center justify-center gap-3 bg-amber-500/40 text-white/70 py-5 text-xs font-black tracking-widest uppercase cursor-not-allowed"
+                >
+                  CHOISISSEZ UNE VARIANTE
+                  <ArrowRight size={14} />
+                </button>
+              ) : isProMinimumBlocked ? (
                 <button
                   type="button"
                   disabled
