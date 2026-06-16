@@ -5223,15 +5223,25 @@ adminRouter.get(
         search,
       } = req.query as Record<string, string>;
       const skip = (parseInt(page) - 1) * parseInt(limit);
+      const searchTerms = String(search || "")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const where: any = {};
-      if (search) {
-        where.OR = [
-          { email: { contains: search, mode: "insensitive" } },
-          { firstName: { contains: search, mode: "insensitive" } },
-          { lastName: { contains: search, mode: "insensitive" } },
-        ];
-      }
+      const where: any = searchTerms.length
+        ? {
+            AND: searchTerms.map((term) => ({
+              OR: [
+                { email: { contains: term, mode: "insensitive" } },
+                { firstName: { contains: term, mode: "insensitive" } },
+                { lastName: { contains: term, mode: "insensitive" } },
+                { phone: { contains: term, mode: "insensitive" } },
+                { proAccount: { is: { companyName: { contains: term, mode: "insensitive" } } } },
+                { proAccount: { is: { phone: { contains: term, mode: "insensitive" } } } },
+              ],
+            })),
+          }
+        : {};
       const [customers, total] = await Promise.all([
         prisma.customer.findMany({
           where,
