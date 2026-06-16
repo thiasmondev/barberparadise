@@ -69,8 +69,8 @@ hermesDraftsRouter.patch("/:id", async (req, res) => {
 
 hermesDraftsRouter.post("/:id/publish", async (req, res) => {
   try {
-    const draft = await contentEngine.updateDraftStatus(req.params.id, "published");
-    res.json(draft);
+    const result = await contentEngine.publishDraft(req.params.id);
+    res.json(result);
   } catch (error) {
     console.error("Erreur publication brouillon:", error);
     res.status(500).json({ error: error instanceof Error ? error.message : "Erreur serveur" });

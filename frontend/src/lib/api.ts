@@ -204,3 +204,63 @@ export async function getLegalPage(slug: string) {
 export async function getLegalPages() {
   return fetchAPI<LegalPage[]>("/api/legal-pages", { cache: "no-store" });
 }
+
+export type BlogArticle = {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  content: string;
+  coverImage?: string | null;
+  category: string;
+  tags: string[];
+  readTime: number;
+  seoMetaTitle?: string | null;
+  seoMetaDescription?: string | null;
+  seoKeywords: string[];
+  status: string;
+  publishedAt?: string | null;
+  viewCount: number;
+  linkedProductIds: string[];
+  sourceDraftId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BlogListResponse = {
+  articles: BlogArticle[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+};
+
+export type BlogCategory = {
+  name: string;
+  count: number;
+};
+
+export type BlogDetailResponse = {
+  article: BlogArticle;
+  linkedProducts: import("@/types").Product[];
+  relatedArticles: BlogArticle[];
+};
+
+export async function getBlogArticles(params?: { page?: number; limit?: number; category?: string; tag?: string }) {
+  const searchParams = new URLSearchParams();
+  if (params) {
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") searchParams.set(key, String(value));
+    });
+  }
+  const query = searchParams.toString();
+  return fetchAPI<BlogListResponse>(`/api/blog${query ? `?${query}` : ""}`, { next: { revalidate: 300 } });
+}
+
+export async function getBlogCategories() {
+  return fetchAPI<{ categories: BlogCategory[] }>("/api/blog/categories", { next: { revalidate: 600 } });
+}
+
+export async function getBlogArticle(slug: string) {
+  return fetchAPI<BlogDetailResponse>(`/api/blog/${slug}`, { next: { revalidate: 300 } });
+}

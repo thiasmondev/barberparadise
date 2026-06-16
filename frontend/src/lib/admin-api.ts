@@ -2224,6 +2224,33 @@ export interface HermesDraftsResponse {
   totalPages: number;
 }
 
+export interface BlogArticle {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  content: string;
+  coverImage?: string | null;
+  category: string;
+  tags: string[];
+  readTime: number;
+  seoMetaTitle?: string | null;
+  seoMetaDescription?: string | null;
+  seoKeywords: string[];
+  status: "draft" | "published" | string;
+  publishedAt?: string | null;
+  viewCount: number;
+  linkedProductIds: string[];
+  sourceDraftId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PublishHermesDraftResponse {
+  draft: HermesContentDraft;
+  article?: BlogArticle;
+}
+
 export interface HermesCampaignPlan {
   id: string;
   name: string;
@@ -2282,7 +2309,39 @@ export function updateHermesDraft(id: string, data: Partial<HermesContentDraft>)
 }
 
 export function publishHermesDraft(id: string) {
-  return adminFetch<HermesContentDraft>(`/api/hermes/drafts/${id}/publish`, { method: "POST" });
+  return adminFetch<PublishHermesDraftResponse>(`/api/hermes/drafts/${id}/publish`, { method: "POST" });
+}
+
+export function getAdminBlogArticles(params?: { status?: string; category?: string; page?: number; limit?: number }) {
+  return adminFetch<{ articles: BlogArticle[]; total: number; page: number; limit: number; totalPages: number }>(
+    `/api/admin/blog/articles${toQuery(params)}`
+  );
+}
+
+export function createAdminBlogArticle(data: Partial<BlogArticle>) {
+  return adminFetch<BlogArticle>("/api/admin/blog/articles", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateAdminBlogArticle(id: string, data: Partial<BlogArticle>) {
+  return adminFetch<BlogArticle>(`/api/admin/blog/articles/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function publishAdminBlogArticle(id: string) {
+  return adminFetch<BlogArticle>(`/api/admin/blog/articles/${id}/publish`, { method: "POST" });
+}
+
+export function unpublishAdminBlogArticle(id: string) {
+  return adminFetch<BlogArticle>(`/api/admin/blog/articles/${id}/unpublish`, { method: "POST" });
+}
+
+export function deleteAdminBlogArticle(id: string) {
+  return adminFetch<{ success: boolean }>(`/api/admin/blog/articles/${id}`, { method: "DELETE" });
 }
 
 export function updateHermesDraftStatus(id: string, status: string) {

@@ -27,6 +27,48 @@ interface DraftUpdateInput {
   campaignPlanId?: string | null;
 }
 
+interface PublishDraftResult {
+  draft: Awaited<ReturnType<typeof prisma.contentDraft.update>>;
+  article?: Awaited<ReturnType<typeof prisma.blogArticle.create>> | Awaited<ReturnType<typeof prisma.blogArticle.update>>;
+}
+
+function slugify(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .substring(0, 90) || "article-blog";
+}
+
+function stripMarkdown(content: string): string {
+  return content
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^\s*(Meta Title|Meta Description|Keywords?|Slug)\s*:.+$/gim, " ")
+    .replace(/[#>*_~\-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function estimateReadTime(content: string): number {
+  const words = stripMarkdown(content).split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.ceil(words / 220));
+}
+
+function getRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function toStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
+  if (typeof value === "string") return value.split(",").map((item) => item.trim()).filter(Boolean);
+  return [];
+}
+
 class ContentEngine {
   /**
    * Parse les blocs [DRAFT:type]...[/DRAFT] dans une réponse Hermes
@@ -99,19 +141,84 @@ class ContentEngine {
     };
   }
 
+  private async ensureUniqueBlogSlug(baseSlug: string, currentId?: string): Promise<string> {
+    const base = slugify(baseSlug);
+    let candidate = base;
+    let suffix = 2;
+
+    while (true) {
+      const existing = await prisma.blogArticle.findUnique({ where: { slug: candidate } });
+      if (!existing || existing.id === currentId) return candidate;
+      candidate = `${base}-${suffix}`;
+      suffix += 1;
+    }
+  }
+
+  private buildBlogArticleData(draft: Awaited<ReturnType<typeof prisma.contentDraft.findUnique>>, slug: string) {
+    if (!draft) throw new Error("Brouillon introuvable");
+    const metadata = getRecord(draft.metadata);
+    const category = typeof metadata.category === "string" && metadata.category.trim() ? metadata.category.trim() : "Conseils barbier";
+    const linkedProductIds = toStringArray(metadata.linkedProductIds ?? metadata.productIds ?? metadata.products);
+    const excerpt =
+      typeof metadata.excerpt === "string" && metadata.excerpt.trim()
+        ? metadata.excerpt.trim()
+        : stripMarkdown(draft.content).substring(0, 220);
+
+    return {
+      slug,
+      title: draft.title,
+      excerpt,
+      content: draft.content,
+      coverImage: typeof metadata.coverImage === "string" && metadata.coverImage.trim() ? metadata.coverImage.trim() : null,
+      category,
+      tags: draft.seoKeywords,
+      readTime: estimateReadTime(draft.content),
+      seoMetaTitle: draft.seoMetaTitle || draft.title,
+      seoMetaDescription: draft.seoMetaDescription || excerpt.substring(0, 160),
+      seoKeywords: draft.seoKeywords,
+      status: "published",
+      publishedAt: new Date(),
+      linkedProductIds,
+      sourceDraftId: draft.id,
+    };
+  }
+
+  private async createOrUpdateBlogArticleFromDraft(draftId: string) {
+    const draft = await prisma.contentDraft.findUnique({ where: { id: draftId } });
+    if (!draft) throw new Error("Brouillon introuvable");
+    if (draft.type !== "blog") return undefined;
+
+    const existing = await prisma.blogArticle.findUnique({ where: { sourceDraftId: draft.id } });
+    const slug = await this.ensureUniqueBlogSlug(draft.seoSlug || draft.title, existing?.id);
+    const data = this.buildBlogArticleData(draft, slug);
+
+    if (existing) return prisma.blogArticle.update({ where: { id: existing.id }, data });
+    return prisma.blogArticle.create({ data });
+  }
+
+  async publishDraft(draftId: string): Promise<PublishDraftResult> {
+    const article = await this.createOrUpdateBlogArticleFromDraft(draftId);
+    const draft = await prisma.contentDraft.update({
+      where: { id: draftId },
+      data: { status: "published", publishedAt: new Date() },
+    });
+    return { draft, article };
+  }
+
   async updateDraftStatus(draftId: string, status: string) {
     const validStatuses = ["draft", "review", "approved", "published", "rejected"];
     if (!validStatuses.includes(status)) {
       throw new Error(`Statut invalide: ${status}`);
     }
 
-    const data: { status: string; publishedAt?: Date | null } = { status };
-    if (status === "published") data.publishedAt = new Date();
-    if (status !== "published") data.publishedAt = null;
+    if (status === "published") {
+      const { draft } = await this.publishDraft(draftId);
+      return draft;
+    }
 
     return prisma.contentDraft.update({
       where: { id: draftId },
-      data,
+      data: { status, publishedAt: null },
     });
   }
 

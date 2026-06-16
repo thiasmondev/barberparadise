@@ -3,6 +3,12 @@ import { API_URL } from "@/lib/api";
 import { absoluteUrl } from "@/lib/site";
 import type { Brand, Category, Product } from "@/types";
 
+type SitemapBlogArticle = {
+  slug: string;
+  updatedAt?: string;
+  publishedAt?: string | null;
+};
+
 const now = new Date();
 
 async function safeFetch<T>(endpoint: string): Promise<T | null> {
@@ -36,13 +42,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority,
   }));
 
-  const [productsResponse, categories, brands] = await Promise.all([
+  const [productsResponse, categories, brands, blogResponse] = await Promise.all([
     safeFetch<{
       products: Product[];
       pagination?: { total: number; page: number; pages: number; limit: number };
     }>("/api/products?limit=500&sort=updated_desc"),
     safeFetch<Category[]>("/api/categories"),
     safeFetch<Brand[]>("/api/brands"),
+    safeFetch<{ articles: SitemapBlogArticle[] }>("/api/blog?limit=500"),
   ]);
 
   const productRoutes: MetadataRoute.Sitemap = (productsResponse?.products || [])
@@ -72,5 +79,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.7,
     }));
 
-  return [...staticRoutes, ...productRoutes, ...categoryRoutes, ...brandRoutes];
+  const blogRoutes: MetadataRoute.Sitemap = (blogResponse?.articles || [])
+    .filter((article) => article.slug)
+    .map((article) => ({
+      url: absoluteUrl(`/blog/${article.slug}`),
+      lastModified: article.updatedAt ? new Date(article.updatedAt) : article.publishedAt ? new Date(article.publishedAt) : now,
+      changeFrequency: "weekly",
+      priority: 0.7,
+    }));
+
+  return [...staticRoutes, ...productRoutes, ...categoryRoutes, ...brandRoutes, ...blogRoutes];
 }

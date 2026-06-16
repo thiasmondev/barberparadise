@@ -677,6 +677,35 @@ model BlogPost {
   @@index([campaignId])
 }
 
+model BlogArticle {
+  id                 String        @id @default(cuid())
+  slug               String        @unique
+  title              String
+  excerpt            String        @db.Text
+  content            String        @db.Text
+  coverImage         String?
+  category           String
+  tags               String[]      @default([])
+  readTime           Int           @default(1)
+  seoMetaTitle       String?
+  seoMetaDescription String?
+  seoKeywords        String[]      @default([])
+  status             String        @default("draft")
+  publishedAt        DateTime?
+  viewCount          Int           @default(0)
+  linkedProductIds   String[]      @default([])
+  sourceDraftId      String?       @unique
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  sourceDraft ContentDraft? @relation(fields: [sourceDraftId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([category])
+  @@index([publishedAt])
+  @@index([createdAt])
+}
+
 model MarketingSetting {
   id        String   @id @default(cuid())
   key       String   @unique
@@ -787,6 +816,7 @@ model ContentDraft {
   conversation HermesConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   message      HermesMessage?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
   campaignPlan CampaignPlan?       @relation(fields: [campaignPlanId], references: [id], onDelete: SetNull)
+  blogArticle  BlogArticle?
 
   @@index([type])
   @@index([status])

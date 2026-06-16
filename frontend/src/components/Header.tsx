@@ -39,6 +39,7 @@ const NAV_MAIN: NavItem[] = [
   { label: "MATÉRIEL", href: "/catalogue?category=materiel", megaMenu: "materiel" },
   { label: "MARQUES", href: "/marques", megaMenu: "marques" },
   { label: "NOUVEAUTÉS", href: "/nouveautes" },
+  { label: "BLOG", href: "/blog" },
   { label: "PRO", href: "/pro" },
 ];
 

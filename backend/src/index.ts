@@ -24,7 +24,7 @@ import { ordersRouter } from "./routes/orders";
 import { customersRouter } from "./routes/customers";
 import { adminRouter } from "./routes/admin";
 import { authRouter } from "./routes/auth";
-import { blogRouter } from "./routes/blog";
+import { adminBlogRouter, blogRouter } from "./routes/blog";
 import { seoRouter } from "./routes/seo";
 import { adminMarketingRouter } from "./routes/admin-marketing";
 import importReviewsRouter from "./routes/import-reviews";
@@ -84,6 +84,7 @@ app.use("/api/admin/api-keys", requireJwtAdmin, apiKeysRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/blog", blogRouter);
+app.use("/api/admin/blog/articles", requireAdmin, adminBlogRouter);
 app.use("/api/admin/seo", seoRouter);
 app.use("/api/admin/marketing", adminMarketingRouter);
 app.use("/api/admin/import-reviews", importReviewsRouter);
@@ -123,6 +124,7 @@ app.get("/", (_req, res) => {
       cron: "/api/cron/indy-report",
       auth: "/api/auth",
       blog: "/api/blog",
+      adminBlogArticles: "/api/admin/blog/articles",
       admin: "/api/admin",
       marketing: "/api/admin/marketing",
               hermes: "/api/hermes",
