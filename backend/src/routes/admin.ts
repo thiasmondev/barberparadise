@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../utils/prisma";
 import {
   getCustomerName,
+  sendDraftOrderEmail,
   sendEmail,
   sendOrderShippedEmail,
   sendPasswordResetEmail,
@@ -92,7 +93,7 @@ const pdfUpload = multer({
 export const adminRouter = Router();
 
 const PASSWORD_RESET_TOKEN_MINUTES = 60;
-
+const DRAFT_SHARE_EXPIRY_DAYS = Math.max(1, parseInt(process.env.DRAFT_SHARE_EXPIRY_DAYS || "7", 10) || 7);
 
 function getFrontendUrl(): string {
   return (process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "https://barberparadise.fr").replace(/\/$/, "");
@@ -100,6 +101,21 @@ function getFrontendUrl(): string {
 
 function hashPasswordResetToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function hashDraftShareToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function getDraftShareExpiresAt(from: Date = new Date()): Date {
+  return new Date(from.getTime() + DRAFT_SHARE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+}
+
+function createDraftShareRawToken(orderId: string, expiresAt: Date): string {
+  const payload = `${orderId}.${expiresAt.getTime()}`;
+  const secret = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET || "barber-paradise-draft-share";
+  const signature = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+  return Buffer.from(`${payload}.${signature}`).toString("base64url");
 }
 
 function wait(ms: number): Promise<void> {
@@ -4451,6 +4467,81 @@ adminRouter.post(
       res.status(201).json({ draft });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erreur création brouillon";
+      res.status(400).json({ error: message });
+    }
+  }
+);
+
+// POST /api/admin/orders/drafts/:id/send — Envoyer un brouillon au client par email
+adminRouter.post(
+  "/orders/drafts/:id/send",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const draft = await prisma.order.findUnique({
+        where: { id: req.params.id },
+        include: { items: true, customer: true },
+      });
+      if (!draft || draft.status !== "draft") {
+        res.status(404).json({ error: "Brouillon non trouvé" });
+        return;
+      }
+
+      const email = (draft.email || draft.customerEmail || draft.customer?.email || "").trim().toLowerCase();
+      if (!email || !email.includes("@")) {
+        res.status(400).json({ error: "Email client requis pour envoyer le brouillon" });
+        return;
+      }
+      if (!draft.items.length) {
+        res.status(400).json({ error: "Le brouillon doit contenir au moins un article" });
+        return;
+      }
+
+      const now = new Date();
+      const existingExpiresAt = draft.draftShareExpiresAt && draft.draftShareExpiresAt > now ? draft.draftShareExpiresAt : null;
+      const expiresAt = existingExpiresAt || getDraftShareExpiresAt(now);
+      const rawToken = createDraftShareRawToken(draft.id, expiresAt);
+      const tokenHash = hashDraftShareToken(rawToken);
+      const resumeUrl = `${getFrontendUrl()}/commande?draftToken=${encodeURIComponent(rawToken)}`;
+
+      const updatedDraft = await prisma.order.update({
+        where: { id: draft.id },
+        data: {
+          draftShareTokenHash: tokenHash,
+          draftShareSentAt: now,
+          draftShareExpiresAt: expiresAt,
+          draftShareConvertedAt: null,
+        },
+        include: { items: true, customer: true },
+      });
+
+      const emailResult = await sendDraftOrderEmail({
+        to: email,
+        customerName: getCustomerName(updatedDraft.customer, email),
+        orderNumber: updatedDraft.orderNumber,
+        resumeUrl,
+        expiresAt,
+        items: updatedDraft.items.map((item) => ({ name: item.name, quantity: item.quantity, price: item.price })),
+        total: updatedDraft.totalTTC || updatedDraft.total,
+      });
+
+      if (!emailResult.sent && !emailResult.skipped) {
+        res.status(502).json({ error: "L’email n’a pas pu être envoyé" });
+        return;
+      }
+
+      const serializedDraft = await serializeAdminDraft(updatedDraft.id);
+
+      res.json({
+        ok: true,
+        draft: serializedDraft || updatedDraft,
+        shareUrl: resumeUrl,
+        sentAt: updatedDraft.draftShareSentAt,
+        expiresAt: updatedDraft.draftShareExpiresAt,
+        skippedEmail: Boolean(emailResult.skipped),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur envoi brouillon";
       res.status(400).json({ error: message });
     }
   }

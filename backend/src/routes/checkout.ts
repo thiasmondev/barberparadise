@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import crypto from "crypto";
 import { prisma } from "../utils/prisma";
 import {
   assertSupportedPaymentMethod,
@@ -46,6 +47,7 @@ type CheckoutRequestBody = {
   vatNumber?: string;
   promoCode?: string;
   cartSessionId?: string;
+  draftToken?: string;
 };
 
 const CURRENCY = "EUR";
@@ -132,6 +134,20 @@ async function resolveCheckoutPromotion(params: {
 
 function getFrontendUrl(): string {
   return (process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "https://barberparadise.fr").replace(/\/$/, "");
+}
+
+function hashDraftShareToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function parseProductImages(images: string | null | undefined): string[] {
+  if (!images) return [];
+  try {
+    const parsed = JSON.parse(images);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return images ? [images] : [];
+  }
 }
 
 function getBackendUrl(req: Request): string {
@@ -333,6 +349,67 @@ checkoutRouter.post("/promo/validate", async (req: Request, res: Response): Prom
   }
 });
 
+
+checkoutRouter.get("/draft/:token", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const token = String(req.params.token || "").trim();
+    if (!token || token.length < 32) {
+      res.status(400).json({ error: "Lien de brouillon invalide" });
+      return;
+    }
+
+    const tokenHash = hashDraftShareToken(token);
+    const draft = await prisma.order.findFirst({
+      where: {
+        status: "draft",
+        draftShareTokenHash: tokenHash,
+      },
+      include: {
+        items: { include: { product: true } },
+        shippingAddress: true,
+      },
+    });
+
+    if (!draft || !draft.draftShareExpiresAt || draft.draftShareExpiresAt <= new Date() || draft.draftShareConvertedAt) {
+      res.status(404).json({ error: "Lien de brouillon expiré ou introuvable" });
+      return;
+    }
+
+    await prisma.order.update({
+      where: { id: draft.id },
+      data: { draftShareLastAccessedAt: new Date() },
+    });
+
+    res.json({
+      draft: {
+        orderNumber: draft.orderNumber,
+        email: draft.email || draft.customerEmail,
+        expiresAt: draft.draftShareExpiresAt,
+        subtotal: draft.subtotal,
+        shipping: draft.shipping,
+        total: draft.totalTTC || draft.total,
+        shippingAddress: draft.shippingAddress,
+        items: draft.items.map((item) => {
+          const images = parseProductImages(item.product?.images);
+          return {
+            id: item.productId || item.id,
+            productId: item.productId,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            image: item.image || images[0] || "",
+            slug: item.product?.slug || "",
+            brand: item.product?.brand || "",
+            images: images.length ? images : item.image ? [item.image] : [],
+          };
+        }),
+      },
+    });
+  } catch (err) {
+    console.error("Erreur chargement brouillon client", err);
+    res.status(500).json({ error: "Erreur chargement brouillon" });
+  }
+});
 
 checkoutRouter.post("/cart-session", async (req: Request, res: Response): Promise<void> => {
   try {
@@ -559,6 +636,19 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       await prisma.abandonedCartSession.updateMany({
         where: { id: body.cartSessionId },
         data: { convertedOrderId: order.id, convertedAt: new Date(), itemCount: 0 },
+      });
+    }
+
+    if (body.draftToken) {
+      const draftTokenHash = hashDraftShareToken(String(body.draftToken).trim());
+      await prisma.order.updateMany({
+        where: {
+          status: "draft",
+          draftShareTokenHash: draftTokenHash,
+          draftShareExpiresAt: { gt: new Date() },
+          draftShareConvertedAt: null,
+        },
+        data: { draftShareConvertedAt: new Date() },
       });
     }
 

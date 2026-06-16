@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, FileText, Loader2, PackagePlus, Plus, Save, Search, Trash2, UserPlus } from "lucide-react";
+import { CheckCircle2, FileText, Loader2, Mail, PackagePlus, Plus, Save, Search, Trash2, UserPlus } from "lucide-react";
 
 import AdminOrdersTabs from "@/components/admin/AdminOrdersTabs";
 import {
@@ -14,6 +14,7 @@ import {
   getAdminCustomers,
   getAdminOrderDrafts,
   getAdminProducts,
+  sendAdminOrderDraftEmail,
   updateAdminOrderDraft,
 } from "@/lib/admin-api";
 import type { Customer, OrderItem, Product } from "@/types";
@@ -178,6 +179,7 @@ export default function AdminOrderDraftsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [saving, setSaving] = useState(false);
+  const [sendingDraftEmailId, setSendingDraftEmailId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -326,6 +328,23 @@ export default function AdminOrderDraftsPage() {
     }
   }
 
+  async function sendDraftEmail(draftId = editingId) {
+    if (!draftId) return;
+    setSendingDraftEmailId(draftId);
+    setError(null);
+    setMessage(null);
+    try {
+      const data = await sendAdminOrderDraftEmail(draftId);
+      setDrafts((current) => current.map((draft) => (draft.id === draftId ? data.draft : draft)));
+      if (editingId === draftId) setForm(draftToForm(data.draft));
+      setMessage(`Email envoyé au client. Lien valable jusqu’au ${new Date(data.expiresAt).toLocaleString("fr-FR")}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur envoi email brouillon");
+    } finally {
+      setSendingDraftEmailId(null);
+    }
+  }
+
   async function confirmDraft() {
     if (!editingId) return;
     setSaving(true);
@@ -399,9 +418,8 @@ export default function AdminOrderDraftsPage() {
               <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-500">Aucun brouillon pour le moment.</div>
             ) : (
               drafts.map((draft) => (
-                <button
+                <div
                   key={draft.id}
-                  type="button"
                   onClick={() => {
                     setEditingId(draft.id);
                     setForm(draftToForm(draft));
@@ -409,7 +427,7 @@ export default function AdminOrderDraftsPage() {
                     setError(null);
                     setMessage(null);
                   }}
-                  className={`w-full rounded-xl border p-3 text-left transition ${editingId === draft.id ? "border-dark-800 bg-gray-50" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"}`}
+                  className={`w-full cursor-pointer rounded-xl border p-3 text-left transition ${editingId === draft.id ? "border-dark-800 bg-gray-50" : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -419,7 +437,22 @@ export default function AdminOrderDraftsPage() {
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Draft</span>
                   </div>
                   <div className="mt-2 flex justify-between text-sm"><span className="text-gray-500">{draft.items?.length || 0} ligne(s)</span><strong>{eur(draft.total)}</strong></div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      sendDraftEmail(draft.id);
+                    }}
+                    disabled={sendingDraftEmailId === draft.id || !draft.email}
+                    className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-dark-800 hover:border-dark-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {sendingDraftEmailId === draft.id ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
+                    Envoyer au client
+                  </button>
+                  {draft.draftShareSentAt && (
+                    <p className="mt-2 text-xs text-emerald-700">Dernier email : {new Date(draft.draftShareSentAt).toLocaleString("fr-FR")}</p>
+                  )}
+                </div>
               ))
             )}
           </div>
@@ -504,6 +537,7 @@ export default function AdminOrderDraftsPage() {
             <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Notes internes" rows={4} className="mt-4 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-dark-800" />
             <div className="mt-5 space-y-3 border-t border-gray-100 pt-4 text-sm"><div className="flex justify-between"><span>Sous-total {form.isB2B ? "HT" : "TTC"}</span><strong>{eur(totals.subtotal)}</strong></div>{totals.lineDiscount > 0 ? <div className="flex justify-between text-emerald-700"><span>Remises articles</span><strong>- {eur(totals.lineDiscount)}</strong></div> : null}{totals.orderDiscount > 0 ? <div className="flex justify-between text-emerald-700"><span>Remise commande</span><strong>- {eur(totals.orderDiscount)}</strong></div> : null}<div className="flex justify-between"><span>TVA estimée</span><strong>{eur(totals.vat)}</strong></div><div className="flex justify-between"><span>Livraison</span><strong>{form.shipping === "" ? "Auto" : eur(totals.shipping)}</strong></div><div className="flex justify-between border-t border-gray-100 pt-3 text-base"><span>Total</span><strong>{eur(totals.total)}</strong></div></div>
             <button type="button" onClick={saveDraft} disabled={saving} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-dark-800 px-4 py-3 text-sm font-semibold text-white hover:bg-dark-900 disabled:opacity-60">{saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Enregistrer</button>
+            <button type="button" onClick={() => sendDraftEmail()} disabled={!editingId || sendingDraftEmailId === editingId || !form.email} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-dark-800 px-4 py-3 text-sm font-semibold text-dark-800 hover:bg-gray-50 disabled:opacity-50">{sendingDraftEmailId === editingId ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />} Envoyer au client</button>
             <button type="button" onClick={confirmDraft} disabled={!editingId || saving} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"><CheckCircle2 size={16} /> Créer la commande</button>
             <p className="mt-3 text-xs text-gray-500">Le minimum professionnel de 200 € HT est appliqué au moment de créer la commande.</p>
           </aside>

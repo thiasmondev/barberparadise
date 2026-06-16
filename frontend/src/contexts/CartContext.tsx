@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { Product, CartItem } from "@/types";
 
 interface CartContextType {
@@ -9,6 +9,7 @@ interface CartContextType {
   addItem: (product: Product, quantity?: number) => void;
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
+  replaceItems: (items: CartItem[]) => void;
   clearCart: () => void;
   itemCount: number;
   total: number;
@@ -75,7 +76,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     return () => controller.abort();
   }, [cartSessionId, items]);
 
-  const addItem = (product: Product, quantity = 1) => {
+  const addItem = useCallback((product: Product, quantity = 1) => {
     setItems((prev) => {
       const existing = prev.find((item) => item.product.id === product.id);
       if (existing) {
@@ -87,13 +88,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }
       return [...prev, { product, quantity }];
     });
-  };
+  }, []);
 
-  const removeItem = (productId: string) => {
+  const removeItem = useCallback((productId: string) => {
     setItems((prev) => prev.filter((item) => item.product.id !== productId));
-  };
+  }, []);
 
-  const updateQuantity = (productId: string, quantity: number) => {
+  const updateQuantity = useCallback((productId: string, quantity: number) => {
     if (quantity <= 0) {
       removeItem(productId);
       return;
@@ -103,14 +104,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
         item.product.id === productId ? { ...item, quantity } : item
       )
     );
-  };
+  }, [removeItem]);
 
-  const clearCart = () => {
+  const replaceItems = useCallback((nextItems: CartItem[]) => {
+    setItems(nextItems);
+  }, []);
+
+  const clearCart = useCallback(() => {
     setItems([]);
     const nextSessionId = createCartSessionId();
     localStorage.setItem(CART_SESSION_KEY, nextSessionId);
     setCartSessionId(nextSessionId);
-  };
+  }, []);
 
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const total = items.reduce(
@@ -120,7 +125,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   return (
     <CartContext.Provider
-      value={{ items, cartSessionId, addItem, removeItem, updateQuantity, clearCart, itemCount, total }}
+      value={{ items, cartSessionId, addItem, removeItem, updateQuantity, replaceItems, clearCart, itemCount, total }}
     >
       {children}
     </CartContext.Provider>

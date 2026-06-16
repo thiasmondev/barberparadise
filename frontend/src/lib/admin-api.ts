@@ -464,6 +464,11 @@ export interface AdminOrderDraftPayload {
 
 export type AdminOrderDraft = Order & {
   vatNumber?: string | null;
+  draftShareUrl?: string | null;
+  draftShareExpiresAt?: string | null;
+  draftShareSentAt?: string | null;
+  draftShareLastAccessedAt?: string | null;
+  draftShareConvertedAt?: string | null;
   customer?: (Order["customer"] & {
     proAccount?: { id: string; companyName: string; status: string; vatNumber?: string | null } | null;
     addresses?: Array<AdminDraftAddressPayload & { id: string; isDefault?: boolean }>;
@@ -518,6 +523,12 @@ export function confirmAdminOrderDraft(id: string, paymentMethod?: string | null
   return adminFetch<{ order: Order }>(`/api/admin/orders/drafts/${id}/confirm`, {
     method: "POST",
     body: JSON.stringify({ paymentMethod }),
+  });
+}
+
+export function sendAdminOrderDraftEmail(id: string) {
+  return adminFetch<{ ok: boolean; draft: AdminOrderDraft; shareUrl: string; expiresAt: string; sentAt: string; skippedEmail?: boolean }>(`/api/admin/orders/drafts/${id}/send-email`, {
+    method: "POST",
   });
 }
 

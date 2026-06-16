@@ -3,12 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Lock, ChevronDown, ShoppingBag, CreditCard, Landmark, WalletCards, ReceiptText, AlertCircle, Smartphone } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
 import { getCustomerAddresses, type CustomerAddress } from "@/lib/customer-api";
 import { parseImages, formatPrice } from "@/lib/utils";
 import { validatePromotionCode, type PromotionValidationResult } from "@/lib/api";
+import type { CartItem, Product } from "@/types";
 
 type Step = "contact" | "livraison" | "paiement";
 type PaymentMethod =
@@ -24,6 +26,28 @@ type PaymentMethod =
   | "mb_way"
   | "multibanco"
   | "card_international";
+
+type DraftCheckoutItem = {
+  id: string;
+  productId?: string | null;
+  name: string;
+  price: number;
+  quantity: number;
+  image?: string;
+  slug?: string;
+  brand?: string;
+  images?: string[];
+};
+
+type DraftCheckoutResponse = {
+  draft?: {
+    orderNumber: string;
+    email?: string | null;
+    expiresAt?: string;
+    items: DraftCheckoutItem[];
+  };
+  error?: string;
+};
 
 type ShippingOption = {
   id: string;
@@ -91,7 +115,8 @@ function supportsApplePay(): boolean {
 }
 
 export default function CheckoutPage() {
-  const { items, total, cartSessionId } = useCart();
+  const searchParams = useSearchParams();
+  const { items, total, cartSessionId, replaceItems } = useCart();
   const { customer, isAuthenticated, isLoading: customerLoading, isApprovedPro } = useCustomerAuth();
   const [step, setStep] = useState<Step>("contact");
   const [guestCheckout, setGuestCheckout] = useState(false);
@@ -111,6 +136,10 @@ export default function CheckoutPage() {
   const [promoResult, setPromoResult] = useState<PromotionValidationResult | null>(null);
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoError, setPromoError] = useState("");
+  const [draftToken, setDraftToken] = useState("");
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [draftError, setDraftError] = useState("");
+  const [draftNotice, setDraftNotice] = useState("");
 
   const [form, setForm] = useState({
     email: "",
@@ -167,6 +196,76 @@ export default function CheckoutPage() {
   );
 
   const checkoutSteps: Step[] = isAuthenticated ? ["livraison", "paiement"] : ["contact", "livraison", "paiement"];
+
+  useEffect(() => {
+    const token = searchParams.get("draftToken")?.trim() || "";
+    if (!token) return;
+
+    const controller = new AbortController();
+    setDraftToken(token);
+    setDraftLoading(true);
+    setDraftError("");
+    setDraftNotice("");
+
+    async function loadSharedDraft() {
+      try {
+        const res = await fetch(`${API_URL}/api/checkout/draft/${encodeURIComponent(token)}`, {
+          signal: controller.signal,
+        });
+        const data = (await res.json()) as DraftCheckoutResponse;
+        if (!res.ok || !data.draft) throw new Error(data.error || "Impossible de charger la commande préparée");
+
+        const nextItems: CartItem[] = data.draft.items.map((item) => {
+          const images = item.images?.length ? item.images : item.image ? [item.image] : [];
+          const product: Product = {
+            id: item.productId || item.id,
+            handle: item.slug || item.productId || item.id,
+            name: item.name,
+            slug: item.slug || item.productId || item.id,
+            brand: item.brand || "Barber Paradise",
+            category: "",
+            subcategory: "",
+            subsubcategory: "",
+            price: item.price,
+            pricePublic: item.price,
+            originalPrice: null,
+            images,
+            description: "",
+            shortDescription: "",
+            features: [],
+            inStock: true,
+            stockCount: item.quantity,
+            rating: 0,
+            reviewCount: 0,
+            isNew: false,
+            isPromo: false,
+            tags: [],
+            status: "active",
+            createdAt: "",
+            updatedAt: "",
+          };
+          return { product, quantity: item.quantity };
+        });
+
+        replaceItems(nextItems);
+        if (data.draft.email) {
+          setForm((prev) => ({ ...prev, email: data.draft?.email || prev.email }));
+          setGuestCheckout(true);
+        }
+        setDraftNotice(`Commande préparée ${data.draft.orderNumber} chargée dans votre panier. Vous pouvez la modifier avant paiement.`);
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") {
+          setDraftToken("");
+          setDraftError(err instanceof Error ? err.message : "Lien de brouillon invalide ou expiré");
+        }
+      } finally {
+        if (!controller.signal.aborted) setDraftLoading(false);
+      }
+    }
+
+    loadSharedDraft();
+    return () => controller.abort();
+  }, [replaceItems, searchParams]);
 
   useEffect(() => {
     if (customerLoading) return;
@@ -363,6 +462,7 @@ export default function CheckoutPage() {
           customerEmail: form.email,
           customerId: isAuthenticated && customer ? customer.id : undefined,
           cartSessionId,
+          draftToken: draftToken || undefined,
           shippingAddress: {
             firstName: form.prenom,
             lastName: form.nom,
@@ -392,11 +492,22 @@ export default function CheckoutPage() {
     }
   };
 
+  if (draftLoading) {
+    return (
+      <div className="bg-[#131313] min-h-screen text-[#e5e2e1] flex flex-col items-center justify-center px-4 py-32">
+        <ShoppingBag size={48} className="text-[#ff4a8d] mb-8 animate-pulse" />
+        <h1 className="text-3xl font-black tracking-tighter italic uppercase mb-4">Chargement de votre commande</h1>
+        <p className="text-sm text-gray-500 text-center max-w-md">Nous récupérons le brouillon préparé par Barber Paradise pour remplir votre panier.</p>
+      </div>
+    );
+  }
+
   if (items.length === 0) {
     return (
       <div className="bg-[#131313] min-h-screen text-[#e5e2e1] flex flex-col items-center justify-center px-4 py-32">
         <ShoppingBag size={48} className="text-gray-700 mb-8" />
         <h1 className="text-3xl font-black tracking-tighter italic uppercase mb-4">Votre panier est vide</h1>
+        {draftError && <p className="text-sm text-red-300 text-center max-w-md mb-6">{draftError}</p>}
         <Link href="/catalogue" className="bg-[#ff4a8d] text-white px-8 py-4 text-xs font-black tracking-widest uppercase hover:bg-[#ff1f70] transition-colors">
           EXPLORER LE CATALOGUE
         </Link>
@@ -417,6 +528,17 @@ export default function CheckoutPage() {
               <ArrowLeft size={12} />PANIER
             </Link>
           </div>
+
+          {draftNotice && (
+            <div className="mb-8 border border-emerald-400/20 bg-emerald-400/10 px-5 py-4 text-sm text-emerald-100">
+              {draftNotice}
+            </div>
+          )}
+          {draftError && (
+            <div className="mb-8 border border-red-400/20 bg-red-400/10 px-5 py-4 text-sm text-red-100">
+              {draftError}
+            </div>
+          )}
 
           <button onClick={() => setOrderSummaryOpen(!orderSummaryOpen)} className="lg:hidden w-full flex items-center justify-between bg-[#1c1b1b] px-5 py-4 mb-8">
             <div className="flex items-center gap-3"><ShoppingBag size={16} className="text-[#ff4a8d]" /><span className="text-xs font-black tracking-widest uppercase">{orderSummaryOpen ? "MASQUER" : "VOIR"} LE RÉCAPITULATIF</span></div>

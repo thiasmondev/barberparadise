@@ -5,6 +5,7 @@ import { orderShippedEmail } from "../emails/orderShipped";
 import { passwordResetEmail } from "../emails/passwordResetEmail";
 import { welcomeEmail } from "../emails/welcomeEmail";
 import { stockAlertEmail } from "../emails/stockAlert";
+import { draftOrderEmail } from "../emails/draftOrderEmail";
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const brevo = process.env.BREVO_API_KEY ? new BrevoClient({ apiKey: process.env.BREVO_API_KEY }) : null;
@@ -111,6 +112,22 @@ export function formatPaymentMethod(method?: string | null): string {
 export function getCustomerName(customer?: { firstName?: string | null; lastName?: string | null } | null, fallbackEmail?: string | null): string {
   const fullName = `${customer?.firstName ?? ""} ${customer?.lastName ?? ""}`.trim();
   return fullName || fallbackEmail || "client";
+}
+
+export async function sendDraftOrderEmail(params: {
+  to: string;
+  customerName: string;
+  orderNumber: string;
+  resumeUrl: string;
+  expiresAt: Date;
+  items: Array<{ name: string; quantity: number; price: number }>;
+  total: number;
+}) {
+  return sendEmail({
+    to: params.to,
+    subject: `Votre commande Barber Paradise ${params.orderNumber} est prête`,
+    html: draftOrderEmail(params),
+  });
 }
 
 export async function sendWelcomeEmail(params: { to: string; customerName: string; catalogueUrl?: string }) {

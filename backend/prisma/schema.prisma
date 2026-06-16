@@ -316,6 +316,11 @@ model Order {
   proInvoiceUrl     String?
   invoiceNumber     String?
   invoiceUrl        String?
+  draftShareTokenHash String? @unique
+  draftShareSentAt DateTime?
+  draftShareExpiresAt DateTime?
+  draftShareLastAccessedAt DateTime?
+  draftShareConvertedAt DateTime?
   channel           String   @default("online")
   terminalId        String?
   posSessionId      String?
@@ -345,6 +350,7 @@ model Order {
   @@index([customerId])
   @@index([channel])
   @@index([invoiceNumber])
+  @@index([draftShareSentAt])
   @@index([terminalId])
   @@index([posSessionId])
   @@index([promoCodeId])
