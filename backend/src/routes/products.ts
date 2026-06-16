@@ -88,6 +88,36 @@ function normalizeSearchText(value: unknown): string {
     .trim();
 }
 
+function buildSearchTermVariants(query: string): string[] {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const variants = new Set<string>([trimmed]);
+  const apostropheChars = /['’‘`´]/g;
+  const normalizedApostrophe = trimmed.replace(apostropheChars, "'");
+  variants.add(normalizedApostrophe);
+  variants.add(normalizedApostrophe.replace(/'/g, "’"));
+  variants.add(normalizedApostrophe.replace(/'/g, "‘"));
+
+  return Array.from(variants).filter(Boolean);
+}
+
+function buildProductSearchConditions(query: string, includeDescription: boolean) {
+  const variants = buildSearchTermVariants(query);
+  return variants.flatMap((term) => [
+    { name: { contains: term, mode: "insensitive" as const } },
+    ...(includeDescription ? [{ description: { contains: term, mode: "insensitive" as const } }] : []),
+    { brand: { contains: term, mode: "insensitive" as const } },
+    { slug: { contains: term, mode: "insensitive" as const } },
+    { category: { contains: term, mode: "insensitive" as const } },
+    { tags: { contains: term, mode: "insensitive" as const } },
+    { variants: { some: { name: { contains: term, mode: "insensitive" as const } } } },
+    { variants: { some: { sku: { contains: term, mode: "insensitive" as const } } } },
+    { variants: { some: { color: { contains: term, mode: "insensitive" as const } } } },
+    { variants: { some: { size: { contains: term, mode: "insensitive" as const } } } },
+  ]);
+}
+
 function scoreText(value: unknown, query: string, weights: { exact: number; starts: number; contains: number }): number {
   const text = normalizeSearchText(value);
   if (!text || !query) return 0;
@@ -261,17 +291,7 @@ async function getActiveAutomaticProductPromotions(): Promise<{
 
 function buildQuickSearchWhere(query: string) {
   return {
-    OR: [
-      { name: { contains: query, mode: "insensitive" as const } },
-      { brand: { contains: query, mode: "insensitive" as const } },
-      { slug: { contains: query, mode: "insensitive" as const } },
-      { category: { contains: query, mode: "insensitive" as const } },
-      { tags: { contains: query, mode: "insensitive" as const } },
-      { variants: { some: { name: { contains: query, mode: "insensitive" as const } } } },
-      { variants: { some: { sku: { contains: query, mode: "insensitive" as const } } } },
-      { variants: { some: { color: { contains: query, mode: "insensitive" as const } } } },
-      { variants: { some: { size: { contains: query, mode: "insensitive" as const } } } },
-    ],
+    OR: buildProductSearchConditions(query, false),
   };
 }
 
@@ -405,12 +425,7 @@ productsRouter.get("/", async (req: Request, res: Response): Promise<void> => {
     }
     if (search) {
       // Utiliser AND pour combiner avec un éventuel OR de catégorie
-      const searchOr = [
-        { name: { contains: search, mode: "insensitive" } },
-        { description: { contains: search, mode: "insensitive" } },
-        { brand: { contains: search, mode: "insensitive" } },
-        { slug: { contains: search, mode: "insensitive" } },
-      ];
+      const searchOr = buildProductSearchConditions(search, true);
       if (where.OR) {
         // Combiner : catégorie AND search
         where.AND = [{ OR: where.OR }, { OR: searchOr }];
