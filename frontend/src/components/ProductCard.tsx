@@ -22,6 +22,7 @@ export default function ProductCard({ product }: { product: Product }) {
     : hasDiscount && compareAtPrice
       ? Math.round(((compareAtPrice - displayedPrice) / compareAtPrice) * 100)
       : null;
+  const hasVariants = Boolean(product.variants?.length);
 
   return (
     <div className="group bg-white rounded-xl border border-gray-100 overflow-hidden hover:shadow-lg hover:border-primary-100 transition-all duration-300">
@@ -95,13 +96,23 @@ export default function ProductCard({ product }: { product: Product }) {
               </span>
             ) : null}
           </div>
-          <button
-            onClick={() => addItem(product)}
-            className="w-9 h-9 bg-primary hover:bg-primary-600 text-white rounded-lg flex items-center justify-center transition-colors shrink-0"
-            aria-label="Ajouter au panier"
-          >
-            <ShoppingCart size={16} />
-          </button>
+          {hasVariants ? (
+            <Link
+              href={`/produit/${product.slug}`}
+              className="w-9 h-9 bg-primary hover:bg-primary-600 text-white rounded-lg flex items-center justify-center transition-colors shrink-0"
+              aria-label="Choisir une variante"
+            >
+              <ShoppingCart size={16} />
+            </Link>
+          ) : (
+            <button
+              onClick={() => addItem(product)}
+              className="w-9 h-9 bg-primary hover:bg-primary-600 text-white rounded-lg flex items-center justify-center transition-colors shrink-0"
+              aria-label="Ajouter au panier"
+            >
+              <ShoppingCart size={16} />
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -7,6 +7,8 @@ export type AbandonedCartReminderItem = {
   quantity: number;
   price: number;
   image?: string | null;
+  variantId?: string | null;
+  variantLabel?: string | null;
 };
 
 const NAVY = "#0f056b";
@@ -55,6 +57,7 @@ function renderItems(items: AbandonedCartReminderItem[]): string {
           <td style="padding:14px 0;border-bottom:1px solid rgba(15,5,107,0.10);width:78px;">${image}</td>
           <td style="padding:14px 12px;border-bottom:1px solid rgba(15,5,107,0.10);">
             <p style="margin:0;color:${NAVY};font-family:'Fractul Variable',Arial,sans-serif;font-size:15px;line-height:1.35;font-weight:700;">${escapeHtml(item.name)}</p>
+            ${item.variantLabel ? `<p style="margin:5px 0 0;color:#6f6a8e;font-family:'Fractul Variable',Arial,sans-serif;font-size:13px;line-height:1.35;">Variante : ${escapeHtml(item.variantLabel)}</p>` : ""}
             <p style="margin:5px 0 0;color:#6f6a8e;font-family:'Fractul Variable',Arial,sans-serif;font-size:13px;line-height:1.35;">Quantité : ${escapeHtml(item.quantity)}</p>
           </td>
           <td style="padding:14px 0;border-bottom:1px solid rgba(15,5,107,0.10);text-align:right;color:${NAVY};font-family:'Fractul Variable',Arial,sans-serif;font-size:15px;font-weight:700;white-space:nowrap;">${formatCurrency(item.price * item.quantity)}</td>

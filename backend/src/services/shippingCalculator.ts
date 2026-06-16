@@ -17,6 +17,11 @@ export interface ShippingOption {
 export const FALLBACK_FREE_SHIPPING_THRESHOLD = 49;
 export const PRO_FREE_SHIPPING_THRESHOLD = 500;
 
+const FRANCE_PRO_SHIPPING_RATES = [
+  { id: "b2b-colissimo-pro", label: "Colissimo Pro", carrier: "Colissimo Pro", price: 12.99, days: "2 à 4 jours ouvrés" },
+  { id: "b2b-mondial-relay-pro", label: "Mondial Relay Pro", carrier: "Mondial Relay Pro", price: 6.99, days: "3 à 5 jours ouvrés" },
+];
+
 const DEFAULT_SHIPPING_ZONES = [
   {
     name: "France",
@@ -112,6 +117,23 @@ export async function calculateShippingOptions(country: string | undefined, orde
   if (!zone) return [];
 
   const proFreeShipping = isPro && safeTotal >= PRO_FREE_SHIPPING_THRESHOLD;
+
+  if (isPro && c === "FR") {
+    return FRANCE_PRO_SHIPPING_RATES.map((rate) => ({
+      id: rate.id,
+      label: rate.label,
+      price: proFreeShipping ? 0 : rate.price,
+      carrier: rate.carrier,
+      days: rate.days,
+      isFree: proFreeShipping,
+      zoneId: zone.id,
+      zoneName: zone.name,
+      minAmount: 0,
+      maxAmount: null,
+      freeThreshold: PRO_FREE_SHIPPING_THRESHOLD,
+    }));
+  }
+
   const eligibleRates = proFreeShipping
     ? zone.rates.filter((rate) => rateMatchesAmount(rate, safeTotal))
     : isPro

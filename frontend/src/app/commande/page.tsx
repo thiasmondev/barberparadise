@@ -30,6 +30,8 @@ type PaymentMethod =
 type DraftCheckoutItem = {
   id: string;
   productId?: string | null;
+  variantId?: string | null;
+  variantLabel?: string | null;
   name: string;
   price: number;
   quantity: number;
@@ -151,12 +153,12 @@ function money(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-function getCartSignature(items: Array<{ product: { id: string }; quantity: number }>): string {
+function getCartSignature(items: Array<{ product: { id: string }; quantity: number; variantId?: string | null; variant?: { id: string } | null }>): string {
   return items
-    .map((item) => ({ productId: item.product.id, quantity: item.quantity }))
+    .map((item) => ({ productId: item.product.id, variantId: item.variantId || item.variant?.id || "product", quantity: item.quantity }))
     .filter((item) => item.productId && item.quantity > 0)
-    .sort((a, b) => a.productId.localeCompare(b.productId))
-    .map((item) => `${item.productId}:${item.quantity}`)
+    .sort((a, b) => `${a.productId}:${a.variantId}`.localeCompare(`${b.productId}:${b.variantId}`))
+    .map((item) => `${item.productId}:${item.variantId}:${item.quantity}`)
     .join("|");
 }
 
@@ -303,7 +305,7 @@ export default function CheckoutPage() {
             createdAt: "",
             updatedAt: "",
           };
-          return { product, quantity: item.quantity };
+          return { product, quantity: item.quantity, variantId: item.variantId ?? null };
         });
 
         replaceItems(nextItems);
@@ -546,7 +548,7 @@ export default function CheckoutPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          cartItems: items.map((item) => ({ productId: item.product.id, quantity: item.quantity })),
+          cartItems: items.map((item) => ({ productId: item.product.id, variantId: item.variantId || item.variant?.id || null, quantity: item.quantity })),
           customerEmail: form.email,
           customerId: isAuthenticated && customer ? customer.id : undefined,
           cartSessionId,
@@ -638,7 +640,7 @@ export default function CheckoutPage() {
               {items.map((item) => {
                 const img = parseImages(item.product.images)[0] || "";
                 return (
-                  <div key={item.product.id} className="flex items-center gap-4">
+                  <div key={`${item.product.id}-${item.variantId || item.variant?.id || "product"}`} className="flex items-center gap-4">
                     <div className="w-14 h-14 bg-[#2a2a2a] flex-shrink-0 relative">{img && <Image src={img} alt={item.product.name} fill className="object-contain p-1" />}<span className="absolute -top-2 -right-2 w-5 h-5 bg-[#ff4a8d] text-white text-[10px] font-black flex items-center justify-center">{item.quantity}</span></div>
                     <div className="flex-1 min-w-0"><p className="text-xs font-black truncate">{item.product.name}</p></div>
                     <span className="text-xs font-black">{formatPrice(item.product.price * item.quantity)}</span>
@@ -805,7 +807,7 @@ export default function CheckoutPage() {
               {items.map((item) => {
                 const img = parseImages(item.product.images)[0] || "";
                 return (
-                  <div key={item.product.id} className="flex items-center gap-4">
+                  <div key={`${item.product.id}-${item.variantId || item.variant?.id || "product"}`} className="flex items-center gap-4">
                     <div className="w-16 h-16 bg-[#2a2a2a] flex-shrink-0 relative overflow-hidden">{img && <Image src={img} alt={item.product.name} fill className="object-contain p-2 opacity-90" />}<span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#ff4a8d] text-white text-[10px] font-black flex items-center justify-center">{item.quantity}</span></div>
                     <div className="flex-1 min-w-0"><p className="text-[10px] font-black tracking-widest uppercase text-[#ff4a8d] mb-0.5">{item.product.brand}</p><p className="text-xs font-black truncate">{item.product.name}</p></div>
                     <span className="text-sm font-black">{formatPrice(item.product.price * item.quantity)}</span>

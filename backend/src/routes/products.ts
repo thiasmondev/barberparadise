@@ -12,6 +12,8 @@ type CustomerToken = { id: string; email: string };
 type JsonProductVariant = {
   price?: number | null;
   priceProEur?: number | null;
+  stock?: number;
+  inStock?: boolean;
 };
 
 type JsonProduct = {
@@ -355,9 +357,15 @@ function serializeProduct<T extends JsonProduct & { price: number }>(
   const compareAtPrice = automaticPromotion && !isApprovedPro
     ? automaticPromotion.compareAtPrice
     : existingCompareAtPrice;
+  const hasVariants = Boolean(variants?.length);
+  const variantStockCount = variants?.reduce((sum, variant) => sum + Math.max(0, variant.stock || 0), 0) ?? 0;
+  const variantInStock = variants?.some((variant) => variant.inStock && (variant.stock || 0) > 0) ?? false;
+
   const serialized = {
     ...parsed,
     ...(variants ? { variants } : {}),
+    inStock: hasVariants ? variantInStock : (parsed as any).inStock,
+    stockCount: hasVariants ? variantStockCount : (parsed as any).stockCount,
     price: salePrice,
     pricePublic,
     compareAtPrice,

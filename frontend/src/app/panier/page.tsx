@@ -219,7 +219,7 @@ export default function CartPage() {
               const lineTotal = item.product.price * item.quantity;
 
               return (
-                <div key={item.product.id} className="grid grid-cols-12 gap-4 py-6 border-b border-white/5 items-center">
+                <div key={`${item.product.id}-${item.variantId || item.variant?.id || "product"}`} className="grid grid-cols-12 gap-4 py-6 border-b border-white/5 items-center">
                   <div className="col-span-12 md:col-span-6 flex items-center gap-4">
                     <div className="w-20 h-20 bg-[#1c1b1b] flex-shrink-0 overflow-hidden">
                       {img ? (
@@ -244,7 +244,7 @@ export default function CartPage() {
                         {item.product.name}
                       </h3>
                       <button
-                        onClick={() => removeItem(item.product.id)}
+                        onClick={() => removeItem(item.product.id, item.variantId || item.variant?.id || null)}
                         className="flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase text-gray-600 hover:text-red-400 transition-colors"
                       >
                         <Trash2 size={10} />
@@ -260,7 +260,7 @@ export default function CartPage() {
                   <div className="col-span-4 md:col-span-2 flex items-center justify-center">
                     <div className="flex items-center border border-white/10">
                       <button
-                        onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                        onClick={() => updateQuantity(item.product.id, item.quantity - 1, item.variantId || item.variant?.id || null)}
                         className="px-3 py-2 text-gray-500 hover:text-white transition-colors"
                       >
                         <Minus size={12} />
@@ -273,18 +273,18 @@ export default function CartPage() {
                         onChange={(e) => {
                           const val = parseInt(e.target.value);
                           if (!isNaN(val) && val >= 1 && val <= 999) {
-                            updateQuantity(item.product.id, val);
+                            updateQuantity(item.product.id, val, item.variantId || item.variant?.id || null);
                           }
                         }}
                         onBlur={(e) => {
                           if (!e.target.value || parseInt(e.target.value) < 1) {
-                            updateQuantity(item.product.id, 1);
+                            updateQuantity(item.product.id, 1, item.variantId || item.variant?.id || null);
                           }
                         }}
                         className="w-16 text-center bg-white border border-bp-border rounded text-black focus:border-bp-pink outline-none px-2 py-1"
                       />
                       <button
-                        onClick={() => updateQuantity(item.product.id, Math.min(999, item.quantity + 1))}
+                        onClick={() => updateQuantity(item.product.id, Math.min(999, item.quantity + 1), item.variantId || item.variant?.id || null)}
                         className="px-3 py-2 text-gray-500 hover:text-white transition-colors"
                       >
                         <Plus size={12} />

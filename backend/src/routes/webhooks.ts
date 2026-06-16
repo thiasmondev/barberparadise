@@ -132,10 +132,9 @@ async function markOrderPaid(orderId: string, provider: WebhookProvider, provide
         const remainingActiveVariants = await tx.productVariant.count({
           where: { productId: item.productId, inStock: true, stock: { gt: 0 } },
         });
-        const product = await tx.product.findUnique({ where: { id: item.productId }, select: { stockCount: true } });
         await tx.product.update({
           where: { id: item.productId },
-          data: { inStock: Boolean((product?.stockCount || 0) > 0 || remainingActiveVariants > 0) },
+          data: { inStock: remainingActiveVariants > 0 },
         });
         continue;
       }

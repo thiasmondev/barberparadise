@@ -87,7 +87,9 @@ export function normalizeAbandonedCartItems(items: unknown): AbandonedCartRemind
     const quantity = Number.isFinite(Number(source.quantity)) ? Math.max(1, Math.floor(Number(source.quantity))) : 1;
     const price = Number.isFinite(Number(source.price)) ? Number(source.price) : 0;
     const image = typeof source.image === "string" ? source.image : typeof source.imageUrl === "string" ? source.imageUrl : undefined;
-    normalized.push({ name, quantity, price, image });
+    const variantId = typeof source.variantId === "string" && source.variantId.trim() ? source.variantId.trim() : null;
+    const variantLabel = typeof source.variantLabel === "string" && source.variantLabel.trim() ? source.variantLabel.trim() : null;
+    normalized.push({ name, quantity, price, image, variantId, variantLabel });
   }
   return normalized;
 }

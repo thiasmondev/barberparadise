@@ -55,8 +55,9 @@ export default function ProductDetail({ product }: { product: Product }) {
       ? getDiscount(displayPrice, compareAtPrice)
       : 0;
   const discountPercent = discount ?? 0;
-  const hasVariantStock = variants.some((variant) => variant.inStock);
-  const isInStock = selectedVariant ? selectedVariant.inStock : variants.length > 0 ? hasVariantStock : product.inStock;
+  const hasVariantStock = variants.some((variant) => variant.inStock && variant.stock > 0);
+  const isSelectedVariantInStock = selectedVariant ? selectedVariant.inStock && selectedVariant.stock > 0 : false;
+  const isInStock = selectedVariant ? isSelectedVariantInStock : variants.length > 0 ? hasVariantStock : product.inStock;
   const requiresVariantSelection = variants.length > 0 && !selectedVariant;
   const canSubmitCart = isInStock && !requiresVariantSelection;
   const canRequestStockAlert = !isInStock && !requiresVariantSelection;
@@ -141,10 +142,20 @@ export default function ProductDetail({ product }: { product: Product }) {
   }, [authLoading, isAuthenticated, product.id]);
 
   const handleAddToCart = () => {
-    const productToAdd = selectedVariant?.price != null
-      ? { ...product, price: selectedVariant.price, name: `${product.name} - ${selectedVariant.name}` }
+    const productToAdd = selectedVariant
+      ? {
+          ...product,
+          price: selectedVariant.price ?? product.price,
+          pricePublic: selectedVariant.pricePublic ?? selectedVariant.price ?? product.pricePublic,
+          priceProEur: selectedVariant.priceProEur ?? product.priceProEur,
+          hasPriceProEur: selectedVariant.hasPriceProEur ?? product.hasPriceProEur,
+          name: `${product.name} - ${selectedVariant.name}`,
+          images: selectedVariant.image ? [selectedVariant.image, ...images.filter((img) => img !== selectedVariant.image)] : product.images,
+          stockCount: selectedVariant.stock,
+          inStock: selectedVariant.inStock && selectedVariant.stock > 0,
+        }
       : product;
-    addItem(productToAdd, quantity);
+    addItem(productToAdd, quantity, selectedVariant ?? null);
     setAdded(true);
     setTimeout(() => setAdded(false), 2000);
   };
@@ -443,15 +454,15 @@ export default function ProductDetail({ product }: { product: Product }) {
                     <button
                       key={v.id}
                       onClick={() => handleSelectVariant(v)}
-                      title={v.name + (!v.inStock ? " (Rupture)" : "")}
+                      title={v.name + (!(v.inStock && v.stock > 0) ? " (Rupture)" : "")}
                       className={`relative w-10 h-10 overflow-hidden border-2 transition-all focus:outline-none ${
                         selectedVariant?.id === v.id
                           ? "border-[#ff4a8d] scale-110"
                           : "border-white/10 hover:border-white/40"
-                      } ${!v.inStock ? "cursor-pointer ring-1 ring-red-400/70" : "cursor-pointer"}`}
+                      } ${!(v.inStock && v.stock > 0) ? "cursor-pointer ring-1 ring-red-400/70" : "cursor-pointer"}`}
                       style={{ backgroundColor: v.colorHex || "#333" }}
                     >
-                      {!v.inStock && (
+                      {!(v.inStock && v.stock > 0) && (
                         <span
                           aria-hidden="true"
                           className="pointer-events-none absolute left-1/2 top-1/2 h-[2px] w-[145%] -translate-x-1/2 -translate-y-1/2 rotate-45 bg-red-400 shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
@@ -483,7 +494,7 @@ export default function ProductDetail({ product }: { product: Product }) {
                         selectedVariant?.id === v.id
                           ? "border-[#ff4a8d] bg-[#ff4a8d] text-white"
                           : "border-white/10 text-gray-400 hover:border-white/40 hover:text-white"
-                      } ${!v.inStock ? "opacity-50 cursor-pointer line-through" : "cursor-pointer"}`}
+                      } ${!(v.inStock && v.stock > 0) ? "opacity-50 cursor-pointer line-through" : "cursor-pointer"}`}
                     >
                       {v.size || v.name}
                     </button>
@@ -507,7 +518,7 @@ export default function ProductDetail({ product }: { product: Product }) {
                         selectedVariant?.id === v.id
                           ? "border-[#ff4a8d] bg-[#ff4a8d] text-white"
                           : "border-white/10 text-gray-400 hover:border-white/40 hover:text-white"
-                      } ${!v.inStock ? "opacity-50 cursor-pointer grayscale" : "cursor-pointer"}`}
+                      } ${!(v.inStock && v.stock > 0) ? "opacity-50 cursor-pointer grayscale" : "cursor-pointer"}`}
                     >
                       {v.name}
                       {v.price != null && v.price !== product.price && (

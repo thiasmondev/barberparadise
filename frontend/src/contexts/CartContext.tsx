@@ -1,14 +1,14 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
-import { Product, CartItem } from "@/types";
+import { Product, CartItem, ProductVariant } from "@/types";
 
 interface CartContextType {
   items: CartItem[];
   cartSessionId: string;
-  addItem: (product: Product, quantity?: number) => void;
-  removeItem: (productId: string) => void;
-  updateQuantity: (productId: string, quantity: number) => void;
+  addItem: (product: Product, quantity?: number, variant?: ProductVariant | null) => void;
+  removeItem: (productId: string, variantId?: string | null) => void;
+  updateQuantity: (productId: string, quantity: number, variantId?: string | null) => void;
   replaceItems: (items: CartItem[]) => void;
   clearCart: () => void;
   itemCount: number;
@@ -26,6 +26,10 @@ function createCartSessionId() {
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
+
+function getCartLineKey(productId: string, variantId?: string | null) {
+  return `${productId}::${variantId || 'product'}`;
+}
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
@@ -65,6 +69,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         sessionId: cartSessionId,
         cartItems: items.map((item) => ({
           productId: item.product.id,
+          variantId: item.variantId || item.variant?.id || null,
           quantity: item.quantity,
         })),
       }),
@@ -76,32 +81,36 @@ export function CartProvider({ children }: { children: ReactNode }) {
     return () => controller.abort();
   }, [cartSessionId, items]);
 
-  const addItem = useCallback((product: Product, quantity = 1) => {
+  const addItem = useCallback((product: Product, quantity = 1, variant: ProductVariant | null = null) => {
     setItems((prev) => {
-      const existing = prev.find((item) => item.product.id === product.id);
+      const variantId = variant?.id ?? null;
+      const lineKey = getCartLineKey(product.id, variantId);
+      const existing = prev.find((item) => getCartLineKey(item.product.id, item.variantId || item.variant?.id || null) === lineKey);
       if (existing) {
         return prev.map((item) =>
-          item.product.id === product.id
-            ? { ...item, quantity: item.quantity + quantity }
+          getCartLineKey(item.product.id, item.variantId || item.variant?.id || null) === lineKey
+            ? { ...item, quantity: item.quantity + quantity, variantId, variant }
             : item
         );
       }
-      return [...prev, { product, quantity }];
+      return [...prev, { product, quantity, variantId, variant }];
     });
   }, []);
 
-  const removeItem = useCallback((productId: string) => {
-    setItems((prev) => prev.filter((item) => item.product.id !== productId));
+  const removeItem = useCallback((productId: string, variantId: string | null = null) => {
+    const lineKey = getCartLineKey(productId, variantId);
+    setItems((prev) => prev.filter((item) => getCartLineKey(item.product.id, item.variantId || item.variant?.id || null) !== lineKey));
   }, []);
 
-  const updateQuantity = useCallback((productId: string, quantity: number) => {
+  const updateQuantity = useCallback((productId: string, quantity: number, variantId: string | null = null) => {
     if (quantity <= 0) {
-      removeItem(productId);
+      removeItem(productId, variantId);
       return;
     }
+    const lineKey = getCartLineKey(productId, variantId);
     setItems((prev) =>
       prev.map((item) =>
-        item.product.id === productId ? { ...item, quantity } : item
+        getCartLineKey(item.product.id, item.variantId || item.variant?.id || null) === lineKey ? { ...item, quantity } : item
       )
     );
   }, [removeItem]);

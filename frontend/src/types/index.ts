@@ -100,6 +100,8 @@ export interface ProductVariant {
 export interface CartItem {
   product: Product;
   quantity: number;
+  variantId?: string | null;
+  variant?: ProductVariant | null;
 }
 
 export interface Category {

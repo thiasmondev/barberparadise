@@ -26,6 +26,7 @@ export const checkoutRouter = Router();
 type CheckoutCartItem = {
   productId?: string;
   id?: string;
+  variantId?: string | null;
   quantity: number;
 };
 
@@ -163,19 +164,19 @@ function parseProductStringArray(value: string | null | undefined): string[] {
 
 function normalizeCheckoutItemsSignature(items: CheckoutCartItem[]): string {
   return items
-    .map((item) => ({ productId: item.productId || item.id || "", quantity: item.quantity }))
+    .map((item) => ({ productId: item.productId || item.id || "", variantId: item.variantId || "product", quantity: item.quantity }))
     .filter((item) => item.productId && Number.isInteger(item.quantity) && item.quantity > 0)
-    .sort((a, b) => a.productId.localeCompare(b.productId))
-    .map((item) => `${item.productId}:${item.quantity}`)
+    .sort((a, b) => `${a.productId}:${a.variantId}`.localeCompare(`${b.productId}:${b.variantId}`))
+    .map((item) => `${item.productId}:${item.variantId}:${item.quantity}`)
     .join("|");
 }
 
-function normalizeDraftItemsSignature(items: Array<{ productId: string | null; quantity: number }>): string {
+function normalizeDraftItemsSignature(items: Array<{ productId: string | null; variantId?: string | null; quantity: number }>): string {
   return items
-    .map((item) => ({ productId: item.productId || "", quantity: item.quantity }))
+    .map((item) => ({ productId: item.productId || "", variantId: item.variantId || "product", quantity: item.quantity }))
     .filter((item) => item.productId && Number.isInteger(item.quantity) && item.quantity > 0)
-    .sort((a, b) => a.productId.localeCompare(b.productId))
-    .map((item) => `${item.productId}:${item.quantity}`)
+    .sort((a, b) => `${a.productId}:${a.variantId}`.localeCompare(`${b.productId}:${b.variantId}`))
+    .map((item) => `${item.productId}:${item.variantId}:${item.quantity}`)
     .join("|");
 }
 
@@ -432,6 +433,8 @@ checkoutRouter.get("/draft/:token", async (req: Request, res: Response): Promise
           return {
             id: item.productId || item.id,
             productId: item.productId,
+            variantId: item.variantId,
+            variantLabel: item.variantLabel,
             name: item.name,
             price: item.price,
             quantity: item.quantity,
@@ -496,6 +499,8 @@ checkoutRouter.get("/abandoned-cart/restore", async (req: Request, res: Response
           const images = parseProductImages(product?.images);
           return {
             quantity: item.quantity,
+            variantId: item.variantId || null,
+            variantLabel: item.variantLabel || null,
             product: {
               id: product?.id || productId || `restored-${index}`,
               handle: product?.handle || product?.slug || "",
@@ -575,6 +580,7 @@ checkoutRouter.post("/cart-session", async (req: Request, res: Response): Promis
       ? body.cartItems
           .map((item) => ({
             productId: item.productId || item.id,
+            variantId: typeof item.variantId === "string" && item.variantId.trim() ? item.variantId.trim() : null,
             quantity: Number.isInteger(item.quantity) && item.quantity > 0 ? item.quantity : 0,
           }))
           .filter((item) => item.productId && item.quantity > 0)
@@ -583,7 +589,7 @@ checkoutRouter.post("/cart-session", async (req: Request, res: Response): Promis
     const products = normalizedItems.length
       ? await prisma.product.findMany({
           where: { id: { in: normalizedItems.map((item) => item.productId as string) } },
-          select: { id: true, name: true, price: true },
+          select: { id: true, name: true, price: true, variants: { select: { id: true, name: true, price: true, image: true } } },
         })
       : [];
     const productById = new Map(products.map((product) => [product.id, product]));
@@ -594,7 +600,9 @@ checkoutRouter.post("/cart-session", async (req: Request, res: Response): Promis
         return {
           productId: product.id,
           name: product.name,
-          price: product.price,
+          variantId: item.variantId,
+          variantLabel: item.variantId ? product.variants.find((variant) => variant.id === item.variantId)?.name || null : null,
+          price: item.variantId ? product.variants.find((variant) => variant.id === item.variantId)?.price ?? product.price : product.price,
           quantity: item.quantity,
         };
       })
@@ -788,37 +796,68 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
     let subtotalHT = 0;
     for (const item of body.cartItems) {
       const productId = item.productId || item.id;
+      const variantId = typeof item.variantId === "string" && item.variantId.trim() ? item.variantId.trim() : null;
       if (!productId || !Number.isInteger(item.quantity) || item.quantity <= 0) {
         res.status(400).json({ error: "Article de panier invalide" });
         return;
       }
-      const product = await prisma.product.findUnique({ where: { id: productId } });
-      if (!product || product.status !== "active" || !product.inStock) {
+      const product = await prisma.product.findUnique({
+        where: { id: productId },
+        include: { variants: { orderBy: { order: "asc" } } },
+      });
+      if (!product || product.status !== "active") {
         res.status(400).json({ error: `Produit indisponible : ${productId}` });
         return;
       }
-      if (product.stockCount > 0 && product.stockCount < item.quantity) {
-        res.status(400).json({ error: `Stock insuffisant pour ${product.name}` });
+
+      const hasVariants = product.variants.length > 0;
+      const selectedVariant = variantId ? product.variants.find((variant) => variant.id === variantId) : null;
+      if (hasVariants && !selectedVariant) {
+        res.status(400).json({ error: `Sélectionnez une variante disponible pour ${product.name}` });
         return;
       }
+      if (selectedVariant) {
+        if (!selectedVariant.inStock || selectedVariant.stock <= 0) {
+          res.status(400).json({ error: `Variante indisponible : ${product.name} - ${selectedVariant.name}` });
+          return;
+        }
+        if (selectedVariant.stock < item.quantity) {
+          res.status(400).json({ error: `Stock insuffisant pour ${product.name} - ${selectedVariant.name}` });
+          return;
+        }
+      } else {
+        if (!product.inStock) {
+          res.status(400).json({ error: `Produit indisponible : ${product.name}` });
+          return;
+        }
+        if (product.stockCount > 0 && product.stockCount < item.quantity) {
+          res.status(400).json({ error: `Stock insuffisant pour ${product.name}` });
+          return;
+        }
+      }
 
-      const unitHT = isB2B ? money(product.priceProEur ?? product.price / (1 + STANDARD_VAT_RATE / 100)) : money(product.price / (1 + STANDARD_VAT_RATE / 100));
-      const unitTTC = isB2B ? money(unitHT * (1 + getVatRate(country, true, vatNumber) / 100)) : product.price;
+      const publicTtcPrice = selectedVariant?.price ?? product.price;
+      const proHtPrice = selectedVariant?.priceProEur ?? product.priceProEur ?? publicTtcPrice / (1 + STANDARD_VAT_RATE / 100);
+      const unitHT = isB2B ? money(proHtPrice) : money(publicTtcPrice / (1 + STANDARD_VAT_RATE / 100));
+      const unitTTC = isB2B ? money(unitHT * (1 + getVatRate(country, true, vatNumber) / 100)) : publicTtcPrice;
       subtotalHT += unitHT * item.quantity;
       subtotalTTC += unitTTC * item.quantity;
 
+      const productImages = JSON.parse(product.images || "[]");
       orderItems.push({
         productId: product.id,
-        name: product.name,
-        price: isB2B ? unitHT : product.price,
+        variantId: selectedVariant?.id || null,
+        variantLabel: selectedVariant?.name || null,
+        name: selectedVariant ? `${product.name} - ${selectedVariant.name}` : product.name,
+        price: isB2B ? unitHT : publicTtcPrice,
         quantity: item.quantity,
-        image: JSON.parse(product.images || "[]")[0] || "",
+        image: selectedVariant?.image || productImages[0] || "",
       });
       promotionCartItems.push({
         productId: product.id,
         categoryId: product.category || null,
         quantity: item.quantity,
-        price: isB2B ? unitHT : product.price,
+        price: isB2B ? unitHT : publicTtcPrice,
       });
     }
 
