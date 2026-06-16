@@ -532,7 +532,7 @@ export function confirmAdminOrderDraft(id: string, paymentMethod?: string | null
 }
 
 export function sendAdminOrderDraftEmail(id: string) {
-  return adminFetch<{ ok: boolean; draft: AdminOrderDraft; shareUrl: string; expiresAt: string; sentAt: string; skippedEmail?: boolean }>(`/api/admin/orders/drafts/${id}/send-email`, {
+  return adminFetch<{ ok: boolean; draft: AdminOrderDraft; shareUrl: string; expiresAt: string; sentAt: string; skippedEmail?: boolean }>(`/api/admin/orders/drafts/${id}/send`, {
     method: "POST",
   });
 }
