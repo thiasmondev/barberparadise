@@ -413,6 +413,8 @@ export interface AdminDraftAddressPayload {
   phone?: string;
 }
 
+export type DiscountType = "percent" | "fixed";
+
 export interface AdminOrderDraftPayload {
   customerId?: string | null;
   email: string;
@@ -421,7 +423,14 @@ export interface AdminOrderDraftPayload {
   vatNumber?: string | null;
   shipping?: number;
   notes?: string;
-  items: Array<{ productId: string; quantity: number }>;
+  orderDiscountType?: DiscountType | null;
+  orderDiscountValue?: number | null;
+  items: Array<{
+    productId: string;
+    quantity: number;
+    lineDiscountType?: DiscountType | null;
+    lineDiscountValue?: number | null;
+  }>;
   shippingAddress: AdminDraftAddressPayload;
   billingAddress?: AdminDraftAddressPayload;
 }
@@ -2732,6 +2741,8 @@ export interface PosOrderItem {
   quantity: number;
   image: string;
   discountAmount: number;
+  lineDiscountType?: DiscountType | null;
+  lineDiscountValue?: number | null;
   isCustomSale: boolean;
 }
 
@@ -2746,6 +2757,9 @@ export interface PosOrder {
   posSessionId?: string | null;
   subtotal: number;
   discountAmount: number;
+  orderDiscountType?: DiscountType | null;
+  orderDiscountValue?: number | null;
+  discountTotal?: number | null;
   totalHT: number;
   vatAmount: number;
   totalTTC: number;
@@ -2773,7 +2787,10 @@ export interface PosCartItemPayload {
   variantId?: string | null;
   quantity: number;
   discountAmount?: number;
+  lineDiscountType?: DiscountType | null;
+  lineDiscountValue?: number | null;
 }
+
 
 export function getPosTerminals() {
   return adminFetch<{ terminals: PosTerminal[] }>("/api/pos/terminals");
@@ -2805,6 +2822,8 @@ export function createPosPayment(payload: {
   customerId?: string | null;
   items: PosCartItemPayload[];
   globalDiscount?: number;
+  orderDiscountType?: DiscountType | null;
+  orderDiscountValue?: number | null;
   notes?: string | null;
 }) {
   return adminFetch<{ order: PosOrder; paymentId: string; status: string; changePaymentStateUrl?: string | null }>("/api/pos/payments", {
@@ -2819,6 +2838,9 @@ export function createPosQuickSale(payload: {
   customerId?: string | null;
   amount: number;
   description?: string;
+  orderDiscountType?: DiscountType | null;
+  orderDiscountValue?: number | null;
+  globalDiscount?: number;
   notes?: string | null;
 }) {
   return adminFetch<{ order: PosOrder; paymentId: string; status: string; changePaymentStateUrl?: string | null }>("/api/pos/quick-sale", {

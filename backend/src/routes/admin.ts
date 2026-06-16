@@ -120,9 +120,25 @@ const STANDARD_VAT_RATE = 20;
 const PRO_MINIMUM_ORDER_HT = 200;
 const CURRENCY = "EUR";
 
+type DiscountType = "percent" | "fixed";
+
 type AdminDraftLineInput = {
   productId?: unknown;
   quantity?: unknown;
+  lineDiscountType?: unknown;
+  lineDiscountValue?: unknown;
+};
+
+type NormalizedDraftItem = {
+  productId: string;
+  quantity: number;
+  lineDiscountType: DiscountType | null;
+  lineDiscountValue: number;
+};
+
+type NormalizedDiscount = {
+  type: DiscountType | null;
+  value: number;
 };
 
 type AdminDraftAddressInput = {
@@ -154,6 +170,9 @@ type DraftCalculationResult = {
     price: number;
     quantity: number;
     image: string;
+    discountAmount: number;
+    lineDiscountType: DiscountType | null;
+    lineDiscountValue: number | null;
   }>;
   subtotalHT: number;
   subtotalTTC: number;
@@ -164,6 +183,10 @@ type DraftCalculationResult = {
   vatAmount: number;
   totalTTC: number;
   total: number;
+  orderDiscountType: DiscountType | null;
+  orderDiscountValue: number | null;
+  orderDiscountAmount: number;
+  discountTotal: number;
 };
 
 function money(value: number): number {
@@ -214,15 +237,41 @@ function normalizeDraftAddress(input?: AdminDraftAddressInput | null): Normalize
   return address;
 }
 
-function normalizeDraftItems(items: unknown): Array<{ productId: string; quantity: number }> {
+function normalizeDiscountType(value: unknown): DiscountType | null {
+  if (value === "percent" || value === "fixed") return value;
+  return null;
+}
+
+function normalizeDiscountValue(value: unknown): number {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? money(numeric) : 0;
+}
+
+function normalizeDiscount(typeValue: unknown, valueValue: unknown): NormalizedDiscount {
+  const type = normalizeDiscountType(typeValue);
+  const value = normalizeDiscountValue(valueValue);
+  if (!type || value <= 0) return { type: null, value: 0 };
+  return { type, value };
+}
+
+function calculateDiscountAmount(type: DiscountType | null, value: number, baseAmount: number): number {
+  if (!type || value <= 0 || baseAmount <= 0) return 0;
+  const rawAmount = type === "percent" ? baseAmount * (Math.min(value, 100) / 100) : value;
+  return money(Math.min(baseAmount, Math.max(0, rawAmount)));
+}
+
+function normalizeDraftItems(items: unknown): NormalizedDraftItem[] {
   if (!Array.isArray(items)) return [];
   return items
     .map((item: AdminDraftLineInput) => {
       const productId = typeof item?.productId === "string" ? item.productId.trim() : "";
       const quantity = Number(item?.quantity);
+      const lineDiscount = normalizeDiscount(item?.lineDiscountType, item?.lineDiscountValue);
       return {
         productId,
         quantity: Number.isInteger(quantity) && quantity > 0 ? quantity : 0,
+        lineDiscountType: lineDiscount.type,
+        lineDiscountValue: lineDiscount.type ? lineDiscount.value : 0,
       };
     })
     .filter((item) => item.productId && item.quantity > 0);
@@ -235,13 +284,15 @@ function firstProductImage(images: string | null | undefined): string {
 }
 
 async function calculateAdminDraftTotals(params: {
-  items: Array<{ productId: string; quantity: number }>;
+  items: NormalizedDraftItem[];
   isB2B: boolean;
   country: string;
   vatNumber?: string | null;
   shippingOverride?: unknown;
   enforceProMinimum?: boolean;
   allowInactiveProducts?: boolean;
+  orderDiscountType?: unknown;
+  orderDiscountValue?: unknown;
 }): Promise<DraftCalculationResult> {
   if (params.items.length === 0) throw new Error("Ajoutez au moins un produit au brouillon");
 
@@ -250,8 +301,11 @@ async function calculateAdminDraftTotals(params: {
   });
   const productById = new Map(products.map((product) => [product.id, product]));
   const orderItems: DraftCalculationResult["orderItems"] = [];
+  const vatRate = getVatRate(params.country, params.isB2B, params.vatNumber);
+  const vatMultiplier = 1 + vatRate / 100;
   let subtotalHT = 0;
   let subtotalTTC = 0;
+  let lineDiscountTotal = 0;
 
   for (const item of params.items) {
     const product = productById.get(item.productId);
@@ -262,21 +316,46 @@ async function calculateAdminDraftTotals(params: {
     const unitHT = params.isB2B
       ? money(product.priceProEur ?? product.price / (1 + STANDARD_VAT_RATE / 100))
       : money(product.price / (1 + STANDARD_VAT_RATE / 100));
-    const unitTTC = params.isB2B ? money(unitHT * (1 + getVatRate(params.country, true, params.vatNumber) / 100)) : product.price;
+    const unitTTC = params.isB2B ? money(unitHT * vatMultiplier) : product.price;
+    const lineBaseHT = money(unitHT * item.quantity);
+    const lineBaseTTC = money(unitTTC * item.quantity);
+    const lineDiscountDisplay = calculateDiscountAmount(
+      item.lineDiscountType,
+      item.lineDiscountValue,
+      params.isB2B ? lineBaseHT : lineBaseTTC
+    );
+    const lineDiscountHT = params.isB2B ? lineDiscountDisplay : money(lineDiscountDisplay / vatMultiplier);
+    const lineDiscountTTC = params.isB2B ? money(lineDiscountDisplay * vatMultiplier) : lineDiscountDisplay;
 
-    subtotalHT += unitHT * item.quantity;
-    subtotalTTC += unitTTC * item.quantity;
+    subtotalHT += Math.max(0, lineBaseHT - lineDiscountHT);
+    subtotalTTC += Math.max(0, lineBaseTTC - lineDiscountTTC);
+    lineDiscountTotal += lineDiscountDisplay;
     orderItems.push({
       productId: product.id,
       name: product.name,
       price: params.isB2B ? unitHT : product.price,
       quantity: item.quantity,
       image: firstProductImage(product.images),
+      discountAmount: lineDiscountDisplay,
+      lineDiscountType: item.lineDiscountType,
+      lineDiscountValue: item.lineDiscountType ? item.lineDiscountValue : null,
     });
   }
 
   subtotalHT = money(subtotalHT);
   subtotalTTC = money(subtotalTTC);
+
+  const orderDiscount = normalizeDiscount(params.orderDiscountType, params.orderDiscountValue);
+  const orderDiscountAmount = calculateDiscountAmount(
+    orderDiscount.type,
+    orderDiscount.value,
+    params.isB2B ? subtotalHT : subtotalTTC
+  );
+  const orderDiscountHT = params.isB2B ? orderDiscountAmount : money(orderDiscountAmount / vatMultiplier);
+  const orderDiscountTTC = params.isB2B ? money(orderDiscountAmount * vatMultiplier) : orderDiscountAmount;
+  subtotalHT = money(Math.max(0, subtotalHT - orderDiscountHT));
+  subtotalTTC = money(Math.max(0, subtotalTTC - orderDiscountTTC));
+
   if (params.enforceProMinimum !== false && params.isB2B && subtotalHT < PRO_MINIMUM_ORDER_HT) {
     throw new Error(`Le minimum de commande professionnel est de ${PRO_MINIMUM_ORDER_HT} € HT`);
   }
@@ -288,11 +367,11 @@ async function calculateAdminDraftTotals(params: {
     shipping = money(shippingOptions[0]?.price ?? 0);
   }
 
-  const vatRate = getVatRate(params.country, params.isB2B, params.vatNumber);
   const totalHT = subtotalHT;
   const vatAmount = money(totalHT * (vatRate / 100));
   const totalTTC = money(totalHT + vatAmount + shipping);
   const subtotal = params.isB2B ? subtotalHT : subtotalTTC;
+  const discountTotal = money(lineDiscountTotal + orderDiscountAmount);
 
   return {
     orderItems,
@@ -305,6 +384,10 @@ async function calculateAdminDraftTotals(params: {
     vatAmount,
     totalTTC,
     total: totalTTC,
+    orderDiscountType: orderDiscount.type,
+    orderDiscountValue: orderDiscount.type ? orderDiscount.value : null,
+    orderDiscountAmount,
+    discountTotal,
   };
 }
 
@@ -4328,6 +4411,8 @@ adminRouter.post(
         country: shippingAddress.country,
         vatNumber,
         shippingOverride: req.body?.shipping,
+        orderDiscountType: req.body?.orderDiscountType,
+        orderDiscountValue: req.body?.orderDiscountValue,
         enforceProMinimum: false,
       });
       const paymentLater = Boolean(req.body?.paymentLater);
@@ -4349,6 +4434,10 @@ adminRouter.post(
           vatRate: totals.vatRate,
           vatAmount: totals.vatAmount,
           totalTTC: totals.totalTTC,
+          discountAmount: totals.discountTotal,
+          orderDiscountType: totals.orderDiscountType,
+          orderDiscountValue: totals.orderDiscountValue,
+          discountTotal: totals.discountTotal,
           currency: CURRENCY,
           vatNumber,
           billingAddress: ((req.body?.billingAddress || shippingAddress) as Prisma.InputJsonValue),
@@ -4418,6 +4507,8 @@ adminRouter.patch(
         country: shippingAddress.country,
         vatNumber,
         shippingOverride: req.body?.shipping,
+        orderDiscountType: req.body?.orderDiscountType,
+        orderDiscountValue: req.body?.orderDiscountValue,
         enforceProMinimum: false,
       });
       const paymentLater = Boolean(req.body?.paymentLater);
@@ -4441,6 +4532,10 @@ adminRouter.patch(
             vatRate: totals.vatRate,
             vatAmount: totals.vatAmount,
             totalTTC: totals.totalTTC,
+            discountAmount: totals.discountTotal,
+            orderDiscountType: totals.orderDiscountType,
+            orderDiscountValue: totals.orderDiscountValue,
+            discountTotal: totals.discountTotal,
             vatNumber,
             billingAddress: ((req.body?.billingAddress || shippingAddress) as Prisma.InputJsonValue),
             notes: asOptionalString(req.body?.notes),
@@ -4557,6 +4652,8 @@ adminRouter.post(
         country: shippingAddress.country,
         vatNumber,
         shippingOverride: req.body?.shipping,
+        orderDiscountType: req.body?.orderDiscountType,
+        orderDiscountValue: req.body?.orderDiscountValue,
         enforceProMinimum: false,
       });
 
@@ -4577,6 +4674,10 @@ adminRouter.post(
           vatRate: totals.vatRate,
           vatAmount: totals.vatAmount,
           totalTTC: totals.totalTTC,
+          discountAmount: totals.discountTotal,
+          orderDiscountType: totals.orderDiscountType,
+          orderDiscountValue: totals.orderDiscountValue,
+          discountTotal: totals.discountTotal,
           currency: CURRENCY,
           vatNumber,
           billingAddress: shippingAddress as Prisma.InputJsonValue,
@@ -4668,6 +4769,8 @@ adminRouter.patch(
         country: shippingAddress.country,
         vatNumber,
         shippingOverride: req.body?.shipping,
+        orderDiscountType: req.body?.orderDiscountType,
+        orderDiscountValue: req.body?.orderDiscountValue,
         enforceProMinimum: false,
         allowInactiveProducts: true,
       });
@@ -4707,6 +4810,10 @@ adminRouter.patch(
             vatRate: totals.vatRate,
             vatAmount: totals.vatAmount,
             totalTTC: totals.totalTTC,
+            discountAmount: totals.discountTotal,
+            orderDiscountType: totals.orderDiscountType,
+            orderDiscountValue: totals.orderDiscountValue,
+            discountTotal: totals.discountTotal,
             vatNumber,
             billingAddress: ((req.body?.billingAddress || shippingAddress) as Prisma.InputJsonValue),
             notes: asOptionalString(req.body?.notes, current.notes || ""),

@@ -324,6 +324,9 @@ model Order {
   promoCodeId       String?
   promotionId       String?
   discountAmount    Float    @default(0)
+  orderDiscountType String?
+  orderDiscountValue Float?
+  discountTotal     Float    @default(0)
   notes             String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -355,8 +358,10 @@ model OrderItem {
   price          Float
   quantity       Int
   image          String  @default("")
-  discountAmount Float   @default(0)
-  isCustomSale   Boolean @default(false)
+  discountAmount    Float   @default(0)
+  lineDiscountType  String?
+  lineDiscountValue Float?
+  isCustomSale      Boolean @default(false)
 
   order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product?        @relation(fields: [productId], references: [id])

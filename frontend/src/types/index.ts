@@ -165,6 +165,8 @@ export interface DashboardStats {
   }[];
 }
 
+export type DiscountType = "percent" | "fixed";
+
 export interface Order {
   id: string;
   orderNumber: string;
@@ -193,6 +195,9 @@ export interface Order {
   posCashierId?: string | null;
   posCashierEmail?: string | null;
   discountAmount?: number;
+  orderDiscountType?: DiscountType | null;
+  orderDiscountValue?: number | null;
+  discountTotal?: number | null;
   customerEmail?: string | null;
   billingAddress?: unknown;
   notes: string | null;
@@ -240,6 +245,8 @@ export interface OrderItem {
   quantity: number;
   image: string;
   discountAmount?: number;
+  lineDiscountType?: DiscountType | null;
+  lineDiscountValue?: number | null;
   isCustomSale?: boolean;
 }
 

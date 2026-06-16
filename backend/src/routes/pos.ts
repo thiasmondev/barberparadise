@@ -29,11 +29,15 @@ type MolliePayment = {
   };
 };
 
+type DiscountType = "percent" | "fixed";
+
 type PosPaymentItemInput = {
   productId: string;
   variantId?: string | null;
   quantity: number;
-  discountAmount?: number;
+  discountAmount?: number; // compatibilité ancien payload : remise fixe TTC de ligne
+  lineDiscountType?: DiscountType | null;
+  lineDiscountValue?: number | null;
 };
 
 type PosPaymentBody = {
@@ -41,12 +45,33 @@ type PosPaymentBody = {
   customerId?: string | null;
   terminalId?: string;
   posSessionId?: string | null;
-  globalDiscount?: number;
+  globalDiscount?: number; // compatibilité ancien payload : remise fixe TTC globale
+  orderDiscountType?: DiscountType | null;
+  orderDiscountValue?: number | null;
   notes?: string | null;
 };
 
+type NormalizedDiscount = { type: DiscountType | null; value: number };
+
 function money(value: number): number {
   return Math.max(0, Math.round((value + Number.EPSILON) * 100) / 100);
+}
+
+function normalizeDiscountType(value: unknown): DiscountType | null {
+  return value === "percent" || value === "fixed" ? value : null;
+}
+
+function normalizeDiscount(typeValue: unknown, valueValue: unknown): NormalizedDiscount {
+  const type = normalizeDiscountType(typeValue);
+  const value = money(Number(valueValue || 0));
+  if (!type || value <= 0) return { type: null, value: 0 };
+  return { type, value };
+}
+
+function calculateDiscountAmount(type: DiscountType | null, value: number, baseAmount: number): number {
+  if (!type || value <= 0 || baseAmount <= 0) return 0;
+  const rawAmount = type === "percent" ? baseAmount * (Math.min(value, 100) / 100) : value;
+  return money(Math.min(baseAmount, rawAmount));
 }
 
 function requireEnv(name: string): string {
@@ -121,6 +146,8 @@ async function resolvePosItems(rawItems: PosPaymentItemInput[]) {
     unitPrice: number;
     quantity: number;
     discountAmount: number;
+    lineDiscountType: DiscountType | null;
+    lineDiscountValue: number | null;
     lineTotal: number;
   }>;
 
@@ -128,7 +155,11 @@ async function resolvePosItems(rawItems: PosPaymentItemInput[]) {
     const productId = typeof item.productId === "string" ? item.productId.trim() : "";
     const variantId = typeof item.variantId === "string" && item.variantId.trim() ? item.variantId.trim() : null;
     const quantity = Number.isFinite(Number(item.quantity)) ? Math.max(1, Math.floor(Number(item.quantity))) : 1;
-    const discountAmount = money(Number(item.discountAmount || 0));
+    const legacyLineDiscount = money(Number(item.discountAmount || 0));
+    const lineDiscount = normalizeDiscount(
+      item.lineDiscountType || (legacyLineDiscount > 0 ? "fixed" : null),
+      item.lineDiscountValue ?? legacyLineDiscount
+    );
 
     if (!productId) throw new Error("Un produit du panier est invalide.");
 
@@ -151,7 +182,7 @@ async function resolvePosItems(rawItems: PosPaymentItemInput[]) {
 
     const unitPrice = money(variant?.price ?? product.price);
     const grossLineTotal = money(unitPrice * quantity);
-    const safeDiscount = Math.min(discountAmount, grossLineTotal);
+    const safeDiscount = calculateDiscountAmount(lineDiscount.type, lineDiscount.value, grossLineTotal);
     const images = parseImages(product.images);
 
     resolvedItems.push({
@@ -163,6 +194,8 @@ async function resolvePosItems(rawItems: PosPaymentItemInput[]) {
       unitPrice,
       quantity,
       discountAmount: safeDiscount,
+      lineDiscountType: lineDiscount.type,
+      lineDiscountValue: lineDiscount.type ? lineDiscount.value : null,
       lineTotal: money(grossLineTotal - safeDiscount),
     });
   }
@@ -215,6 +248,9 @@ function serializeOrder(order: any) {
     posSessionId: order.posSessionId,
     subtotal: order.subtotal,
     discountAmount: order.discountAmount,
+    orderDiscountType: order.orderDiscountType,
+    orderDiscountValue: order.orderDiscountValue,
+    discountTotal: order.discountTotal,
     totalHT: order.totalHT,
     vatAmount: order.vatAmount,
     totalTTC: order.totalTTC,
@@ -237,6 +273,8 @@ function serializeOrder(order: any) {
           quantity: item.quantity,
           image: item.image,
           discountAmount: item.discountAmount,
+          lineDiscountType: item.lineDiscountType,
+          lineDiscountValue: item.lineDiscountValue,
           isCustomSale: item.isCustomSale,
         }))
       : [],
@@ -373,8 +411,13 @@ posRouter.post("/payments", async (req: AuthRequest, res: Response) => {
     const items = await resolvePosItems(body.items || []);
     const subtotal = money(items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0));
     const itemDiscount = money(items.reduce((sum, item) => sum + item.discountAmount, 0));
-    const globalDiscount = Math.min(money(Number(body.globalDiscount || 0)), Math.max(0, subtotal - itemDiscount));
-    const discountAmount = money(itemDiscount + globalDiscount);
+    const legacyGlobalDiscount = money(Number(body.globalDiscount || 0));
+    const orderDiscount = normalizeDiscount(
+      body.orderDiscountType || (legacyGlobalDiscount > 0 ? "fixed" : null),
+      body.orderDiscountValue ?? legacyGlobalDiscount
+    );
+    const orderDiscountAmount = calculateDiscountAmount(orderDiscount.type, orderDiscount.value, Math.max(0, subtotal - itemDiscount));
+    const discountAmount = money(itemDiscount + orderDiscountAmount);
     const { totalTTC, totalHT, vatAmount } = buildOrderTotals(subtotal, discountAmount);
 
     if (totalTTC <= 0) {
@@ -409,6 +452,9 @@ posRouter.post("/payments", async (req: AuthRequest, res: Response) => {
         posCashierId: req.user?.id || null,
         posCashierEmail: req.user?.email || null,
         discountAmount,
+        orderDiscountType: orderDiscount.type,
+        orderDiscountValue: orderDiscount.type ? orderDiscount.value : null,
+        discountTotal: discountAmount,
         notes: body.notes || null,
         items: {
           create: items.map((item) => ({
@@ -420,6 +466,8 @@ posRouter.post("/payments", async (req: AuthRequest, res: Response) => {
             quantity: item.quantity,
             image: item.image,
             discountAmount: item.discountAmount,
+            lineDiscountType: item.lineDiscountType,
+            lineDiscountValue: item.lineDiscountValue,
           })),
         },
       },
@@ -496,7 +544,13 @@ posRouter.post("/quick-sale", async (req: AuthRequest, res: Response) => {
 
     const customer = req.body.customerId ? await prisma.customer.findUnique({ where: { id: String(req.body.customerId) } }) : null;
     const orderNumber = await generateOrderNumber();
-    const { totalTTC, totalHT, vatAmount } = buildOrderTotals(amount, 0);
+    const legacyGlobalDiscount = money(Number(req.body.globalDiscount || 0));
+    const orderDiscount = normalizeDiscount(
+      req.body.orderDiscountType || (legacyGlobalDiscount > 0 ? "fixed" : null),
+      req.body.orderDiscountValue ?? legacyGlobalDiscount
+    );
+    const orderDiscountAmount = calculateDiscountAmount(orderDiscount.type, orderDiscount.value, amount);
+    const { totalTTC, totalHT, vatAmount } = buildOrderTotals(amount, orderDiscountAmount);
 
     const order = await prisma.order.create({
       data: {
@@ -521,8 +575,12 @@ posRouter.post("/quick-sale", async (req: AuthRequest, res: Response) => {
         posPaymentStatus: "pending",
         posCashierId: req.user?.id || null,
         posCashierEmail: req.user?.email || null,
+        discountAmount: orderDiscountAmount,
+        orderDiscountType: orderDiscount.type,
+        orderDiscountValue: orderDiscount.type ? orderDiscount.value : null,
+        discountTotal: orderDiscountAmount,
         notes: req.body.notes || null,
-        items: { create: [{ name: description, price: amount, quantity: 1, image: "", isCustomSale: true }] },
+        items: { create: [{ name: description, price: amount, quantity: 1, image: "", discountAmount: orderDiscountAmount, lineDiscountType: orderDiscount.type, lineDiscountValue: orderDiscount.type ? orderDiscount.value : null, isCustomSale: true }] },
       },
       include: { customer: true, items: true },
     });

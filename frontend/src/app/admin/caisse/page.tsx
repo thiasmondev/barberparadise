@@ -29,6 +29,7 @@ import {
   getPosPaymentStatus,
   getPosTerminals,
   openPosSession,
+  type DiscountType,
   type PosOrder,
   type PosProduct,
   type PosTerminal,
@@ -52,7 +53,8 @@ type CartLine = {
   price: number;
   stock: number;
   quantity: number;
-  discountAmount: number;
+  lineDiscountType: DiscountType;
+  lineDiscountValue: string;
   variantLabel?: string | null;
 };
 
@@ -65,6 +67,22 @@ function customerName(customer: Customer) {
   return fullName || customer.email;
 }
 
+function numericValue(value: string | number | null | undefined) {
+  const parsed = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+function resolveDiscount(type: DiscountType, value: string | number | null | undefined, base: number) {
+  const safeBase = Math.max(0, base);
+  const safeValue = numericValue(value);
+  if (safeValue <= 0 || safeBase <= 0) return 0;
+  return type === "percent" ? Math.min(safeBase, safeBase * Math.min(100, safeValue) / 100) : Math.min(safeBase, safeValue);
+}
+
+function lineDiscountAmount(line: CartLine) {
+  return resolveDiscount(line.lineDiscountType, line.lineDiscountValue, line.price * line.quantity);
+}
+
 export default function AdminCaissePage() {
   const [terminals, setTerminals] = useState<PosTerminal[]>([]);
   const [terminalId, setTerminalId] = useState("");
@@ -74,7 +92,8 @@ export default function AdminCaissePage() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [globalDiscount, setGlobalDiscount] = useState(0);
+  const [orderDiscountType, setOrderDiscountType] = useState<DiscountType>("fixed");
+  const [orderDiscountValue, setOrderDiscountValue] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerSearch, setCustomerSearch] = useState("");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
@@ -149,7 +168,8 @@ export default function AdminCaissePage() {
         if (data.status === "paid") {
           setMessage(`Paiement validé pour la commande ${data.order?.orderNumber || "POS"}.`);
           setCart([]);
-          setGlobalDiscount(0);
+          setOrderDiscountType("fixed");
+          setOrderDiscountValue("");
           setNotes("");
           setPaymentId(null);
           await loadCatalog();
@@ -167,9 +187,11 @@ export default function AdminCaissePage() {
 
   const selectedCustomer = useMemo(() => customers.find((customer) => customer.id === selectedCustomerId) || null, [customers, selectedCustomerId]);
   const subtotal = useMemo(() => cart.reduce((sum, line) => sum + line.price * line.quantity, 0), [cart]);
-  const lineDiscount = useMemo(() => cart.reduce((sum, line) => sum + line.discountAmount * line.quantity, 0), [cart]);
-  const discount = Math.max(0, Math.min(subtotal, lineDiscount + globalDiscount));
-  const total = Math.max(0, subtotal - discount);
+  const lineDiscount = useMemo(() => cart.reduce((sum, line) => sum + lineDiscountAmount(line), 0), [cart]);
+  const subtotalAfterLineDiscount = Math.max(0, subtotal - lineDiscount);
+  const orderDiscount = resolveDiscount(orderDiscountType, orderDiscountValue, subtotalAfterLineDiscount);
+  const discount = Math.max(0, Math.min(subtotal, lineDiscount + orderDiscount));
+  const total = Math.max(0, subtotalAfterLineDiscount - orderDiscount);
   const vat = total - total / 1.2;
 
   function addToCart(product: PosProduct, variant?: PosVariant | null) {
@@ -195,7 +217,8 @@ export default function AdminCaissePage() {
           price,
           stock,
           quantity: 1,
-          discountAmount: 0,
+          lineDiscountType: "fixed",
+          lineDiscountValue: "",
           variantLabel: variant?.label || variant?.name || null,
         },
       ];
@@ -210,8 +233,14 @@ export default function AdminCaissePage() {
     );
   }
 
-  function updateLineDiscount(key: string, value: number) {
-    setCart((lines) => lines.map((line) => (line.key === key ? { ...line, discountAmount: Math.max(0, Math.min(value, line.price)) } : line)));
+  function updateLineDiscount(key: string, type: DiscountType, value: string) {
+    const cleanedValue = value === "" ? "" : String(numericValue(value));
+    setCart((lines) => lines.map((line) => (line.key === key ? { ...line, lineDiscountType: type, lineDiscountValue: cleanedValue } : line)));
+  }
+
+  function updateOrderDiscount(type: DiscountType, value: string) {
+    setOrderDiscountType(type);
+    setOrderDiscountValue(value === "" ? "" : String(numericValue(value)));
   }
 
   async function ensureSession() {
@@ -259,8 +288,15 @@ export default function AdminCaissePage() {
         terminalId,
         posSessionId: activeSessionId,
         customerId: selectedCustomerId,
-        items: cart.map((line) => ({ productId: line.productId, variantId: line.variantId, quantity: line.quantity, discountAmount: line.discountAmount })),
-        globalDiscount,
+        items: cart.map((line) => ({
+          productId: line.productId,
+          variantId: line.variantId,
+          quantity: line.quantity,
+          lineDiscountType: numericValue(line.lineDiscountValue) > 0 ? line.lineDiscountType : null,
+          lineDiscountValue: numericValue(line.lineDiscountValue) > 0 ? numericValue(line.lineDiscountValue) : null,
+        })),
+        orderDiscountType: numericValue(orderDiscountValue) > 0 ? orderDiscountType : null,
+        orderDiscountValue: numericValue(orderDiscountValue) > 0 ? numericValue(orderDiscountValue) : null,
         notes: notes || null,
       });
       setCurrentOrder(data.order);
@@ -292,6 +328,8 @@ export default function AdminCaissePage() {
         customerId: selectedCustomerId,
         amount,
         description: quickDescription || "Vente comptoir",
+        orderDiscountType: numericValue(orderDiscountValue) > 0 ? orderDiscountType : null,
+        orderDiscountValue: numericValue(orderDiscountValue) > 0 ? numericValue(orderDiscountValue) : null,
         notes: notes || null,
       });
       setCurrentOrder(data.order);
@@ -299,6 +337,8 @@ export default function AdminCaissePage() {
       setPaymentStatus(data.status);
       setMessage(`Vente rapide envoyée au terminal pour ${formatPrice(data.order.totalTTC || data.order.total)}.`);
       setQuickAmount("");
+      setOrderDiscountType("fixed");
+      setOrderDiscountValue("");
     } catch (err: any) {
       setError(err.message || "Impossible de créer la vente rapide.");
     } finally {
@@ -448,7 +488,7 @@ export default function AdminCaissePage() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-bold text-gray-950">{line.name}</p>
                       <p className="text-xs text-gray-500">{line.variantLabel || line.brand}</p>
-                      <p className="mt-1 text-sm font-black text-gray-950">{formatPrice(line.price)}</p>
+                      <button type="button" onClick={() => updateLineDiscount(line.key, line.lineDiscountType, line.lineDiscountValue || "")} className="mt-1 text-left text-sm font-black text-gray-950 underline-offset-2 hover:text-primary hover:underline">{formatPrice(line.price)}</button>
                     </div>
                     <button type="button" onClick={() => updateQuantity(line.key, 0)} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
                   </div>
@@ -458,8 +498,15 @@ export default function AdminCaissePage() {
                       <span className="text-sm font-bold">{line.quantity}</span>
                       <button type="button" onClick={() => updateQuantity(line.key, line.quantity + 1)}><Plus size={14} /></button>
                     </div>
-                    <input type="number" min="0" step="0.01" value={line.discountAmount} onChange={(event) => updateLineDiscount(line.key, Number(event.target.value))} className="rounded-lg border border-gray-200 px-2 py-1 text-sm outline-none focus:border-primary" placeholder="Remise ligne" />
+                    <div className="grid grid-cols-[76px_1fr] gap-2">
+                      <select value={line.lineDiscountType} onChange={(event) => updateLineDiscount(line.key, event.target.value as DiscountType, line.lineDiscountValue)} className="rounded-lg border border-gray-200 px-2 py-1 text-sm outline-none focus:border-primary">
+                        <option value="fixed">€</option>
+                        <option value="percent">%</option>
+                      </select>
+                      <input type="number" min="0" step="0.01" value={line.lineDiscountValue} onChange={(event) => updateLineDiscount(line.key, line.lineDiscountType, event.target.value)} onFocus={(event) => event.currentTarget.select()} className="rounded-lg border border-gray-200 px-2 py-1 text-sm outline-none focus:border-primary" placeholder="Remise" />
+                    </div>
                   </div>
+                  {lineDiscountAmount(line) > 0 ? <p className="mt-2 text-right text-xs font-semibold text-emerald-700">Remise ligne : - {formatPrice(lineDiscountAmount(line))}</p> : null}
                 </div>
               ))}
             </div>
@@ -475,14 +522,22 @@ export default function AdminCaissePage() {
                 {customers.map((customer) => <option key={customer.id} value={customer.id}>{customerName(customer)} · {customer.email}</option>)}
               </select>
               {selectedCustomer && <p className="text-xs text-emerald-700">Vente rattachée à {customerName(selectedCustomer)}.</p>}
-              <input type="number" min="0" step="0.01" value={globalDiscount} onChange={(event) => setGlobalDiscount(Number(event.target.value))} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary" placeholder="Remise globale (€)" />
+              <div className="grid grid-cols-[96px_1fr] gap-2">
+                <select value={orderDiscountType} onChange={(event) => updateOrderDiscount(event.target.value as DiscountType, orderDiscountValue)} className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary">
+                  <option value="fixed">€ fixe</option>
+                  <option value="percent">%</option>
+                </select>
+                <input type="number" min="0" step="0.01" value={orderDiscountValue} onChange={(event) => updateOrderDiscount(orderDiscountType, event.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary" placeholder="Remise commande" />
+              </div>
               <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary" placeholder="Notes internes de vente" />
             </div>
 
             <div className="mt-4 rounded-2xl bg-gray-950 p-4 text-white">
               <div className="space-y-1 text-sm text-gray-300">
                 <div className="flex justify-between"><span>Sous-total</span><span>{formatPrice(subtotal)}</span></div>
-                <div className="flex justify-between"><span>Remises</span><span>- {formatPrice(discount)}</span></div>
+                {lineDiscount > 0 ? <div className="flex justify-between"><span>Remises articles</span><span>- {formatPrice(lineDiscount)}</span></div> : null}
+                {orderDiscount > 0 ? <div className="flex justify-between"><span>Remise commande</span><span>- {formatPrice(orderDiscount)}</span></div> : null}
+                {discount <= 0 ? <div className="flex justify-between"><span>Remises</span><span>- {formatPrice(0)}</span></div> : null}
                 <div className="flex justify-between"><span>TVA incluse estimée</span><span>{formatPrice(vat)}</span></div>
               </div>
               <div className="mt-3 flex justify-between text-xl font-black"><span>Total</span><span>{formatPrice(total)}</span></div>

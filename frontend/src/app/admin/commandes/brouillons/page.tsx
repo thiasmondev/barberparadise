@@ -8,6 +8,7 @@ import {
   AdminDraftAddressPayload,
   AdminOrderDraft,
   AdminOrderDraftPayload,
+  DiscountType,
   confirmAdminOrderDraft,
   createAdminOrderDraft,
   getAdminCustomers,
@@ -37,6 +38,8 @@ type DraftLine = {
   image?: string;
   product?: Product;
   fallbackPrice?: number;
+  lineDiscountType: DiscountType;
+  lineDiscountValue: string;
 };
 
 type DraftForm = {
@@ -47,6 +50,8 @@ type DraftForm = {
   vatNumber: string;
   shipping: string;
   notes: string;
+  orderDiscountType: DiscountType;
+  orderDiscountValue: string;
   shippingAddress: AdminDraftAddressPayload;
   items: DraftLine[];
 };
@@ -59,6 +64,8 @@ const initialForm: DraftForm = {
   vatNumber: "",
   shipping: "",
   notes: "",
+  orderDiscountType: "fixed",
+  orderDiscountValue: "",
   shippingAddress: emptyAddress,
   items: [],
 };
@@ -90,6 +97,26 @@ function unitPrice(line: DraftLine, isB2B: boolean) {
   return isB2B ? Number(line.product.priceProEur ?? line.product.price / 1.2) : Number(line.product.price);
 }
 
+function numericValue(value: string | number | null | undefined) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+function discountAmount(type: DiscountType, value: string | number | null | undefined, base: number) {
+  const safeBase = Math.max(0, base);
+  const safeValue = numericValue(value);
+  if (safeValue <= 0 || safeBase <= 0) return 0;
+  return type === "percent" ? Math.min(safeBase, safeBase * Math.min(100, safeValue) / 100) : Math.min(safeBase, safeValue);
+}
+
+function lineGrossTotal(line: DraftLine, isB2B: boolean) {
+  return unitPrice(line, isB2B) * line.quantity;
+}
+
+function lineDiscountAmount(line: DraftLine, isB2B: boolean) {
+  return discountAmount(line.lineDiscountType, line.lineDiscountValue, lineGrossTotal(line, isB2B));
+}
+
 function draftToForm(draft: AdminOrderDraft): DraftForm {
   const address = draft.shippingAddress
     ? {
@@ -111,6 +138,8 @@ function draftToForm(draft: AdminOrderDraft): DraftForm {
     vatNumber: draft.vatNumber || "",
     shipping: String(draft.shipping ?? ""),
     notes: draft.notes || "",
+    orderDiscountType: (draft.orderDiscountType as DiscountType) || (Number(draft.discountAmount || 0) > 0 ? "fixed" : "fixed"),
+    orderDiscountValue: String(draft.orderDiscountValue ?? draft.discountAmount ?? ""),
     shippingAddress: address,
     items: (draft.items || []).map((item: OrderItem) => ({
       productId: item.productId,
@@ -118,6 +147,8 @@ function draftToForm(draft: AdminOrderDraft): DraftForm {
       quantity: item.quantity,
       image: item.image,
       fallbackPrice: item.price,
+      lineDiscountType: (item.lineDiscountType as DiscountType) || (Number(item.discountAmount || 0) > 0 ? "fixed" : "fixed"),
+      lineDiscountValue: String(item.lineDiscountValue ?? item.discountAmount ?? ""),
     })),
   };
 }
@@ -151,13 +182,17 @@ export default function AdminOrderDraftsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const totals = useMemo(() => {
-    const subtotal = form.items.reduce((sum, line) => sum + unitPrice(line, form.isB2B) * line.quantity, 0);
+    const subtotal = form.items.reduce((sum, line) => sum + lineGrossTotal(line, form.isB2B), 0);
+    const lineDiscount = form.items.reduce((sum, line) => sum + lineDiscountAmount(line, form.isB2B), 0);
+    const subtotalAfterLineDiscount = Math.max(0, subtotal - lineDiscount);
+    const orderDiscount = discountAmount(form.orderDiscountType, form.orderDiscountValue, subtotalAfterLineDiscount);
+    const discountedSubtotal = Math.max(0, subtotalAfterLineDiscount - orderDiscount);
     const shipping = form.shipping === "" ? 0 : Number(form.shipping || 0);
-    const ht = form.isB2B ? subtotal : subtotal / 1.2;
-    const vat = form.isB2B ? ht * 0.2 : subtotal - ht;
-    const total = form.isB2B ? ht + vat + shipping : subtotal + shipping;
-    return { subtotal, ht, vat, shipping, total };
-  }, [form.items, form.isB2B, form.shipping]);
+    const ht = form.isB2B ? discountedSubtotal : discountedSubtotal / 1.2;
+    const vat = form.isB2B ? ht * 0.2 : discountedSubtotal - ht;
+    const total = form.isB2B ? ht + vat + shipping : discountedSubtotal + shipping;
+    return { subtotal, lineDiscount, orderDiscount, discountedSubtotal, ht, vat, shipping, total };
+  }, [form.items, form.isB2B, form.shipping, form.orderDiscountType, form.orderDiscountValue]);
 
   async function loadDrafts(query = search) {
     setLoadingDrafts(true);
@@ -227,12 +262,27 @@ export default function AdminOrderDraftsPage() {
             image: productImages(product)[0],
             product,
             fallbackPrice: product.price,
+            lineDiscountType: "fixed",
+            lineDiscountValue: "",
           },
         ],
       };
     });
     setProductSearch("");
     setProducts([]);
+  }
+
+  function updateLineDiscount(productId: string, type: DiscountType, value: string) {
+    const cleanedValue = value === "" ? "" : String(Math.max(0, Number(value || 0)));
+    setForm((current) => ({
+      ...current,
+      items: current.items.map((item) => item.productId === productId ? { ...item, lineDiscountType: type, lineDiscountValue: cleanedValue } : item),
+    }));
+  }
+
+  function updateOrderDiscount(type: DiscountType, value: string) {
+    const cleanedValue = value === "" ? "" : String(Math.max(0, Number(value || 0)));
+    setForm((current) => ({ ...current, orderDiscountType: type, orderDiscountValue: cleanedValue }));
   }
 
   function buildPayload(): AdminOrderDraftPayload {
@@ -245,9 +295,16 @@ export default function AdminOrderDraftsPage() {
       vatNumber: form.vatNumber || null,
       shipping: Number.isFinite(shippingValue) ? shippingValue : undefined,
       notes: form.notes,
+      orderDiscountType: numericValue(form.orderDiscountValue) > 0 ? form.orderDiscountType : null,
+      orderDiscountValue: numericValue(form.orderDiscountValue) > 0 ? numericValue(form.orderDiscountValue) : null,
       shippingAddress: form.shippingAddress,
       billingAddress: form.shippingAddress,
-      items: form.items.map((line) => ({ productId: line.productId, quantity: line.quantity })),
+      items: form.items.map((line) => ({
+        productId: line.productId,
+        quantity: line.quantity,
+        lineDiscountType: numericValue(line.lineDiscountValue) > 0 ? line.lineDiscountType : null,
+        lineDiscountValue: numericValue(line.lineDiscountValue) > 0 ? numericValue(line.lineDiscountValue) : null,
+      })),
     };
   }
 
@@ -412,10 +469,17 @@ export default function AdminOrderDraftsPage() {
               </div>
               <div className="divide-y divide-gray-100 rounded-xl border border-gray-100">
                 {form.items.length === 0 ? <div className="p-6 text-center text-sm text-gray-500">Ajoutez au moins un produit au brouillon.</div> : form.items.map((line) => (
-                  <div key={line.productId} className="grid gap-3 p-3 sm:grid-cols-[1fr_95px_100px_36px] sm:items-center">
-                    <div className="flex min-w-0 items-center gap-3"><div className="h-11 w-11 overflow-hidden rounded-lg bg-gray-100">{line.image ? <img src={line.image} alt="" className="h-full w-full object-cover" /> : null}</div><div className="min-w-0"><p className="truncate font-medium">{line.name}</p><p className="text-sm text-gray-500">{form.isB2B ? "Pro HT" : "Public TTC"} : {eur(unitPrice(line, form.isB2B))}</p></div></div>
+                  <div key={line.productId} className="grid gap-3 p-3 sm:grid-cols-[1fr_95px_190px_120px_36px] sm:items-center">
+                    <div className="flex min-w-0 items-center gap-3"><div className="h-11 w-11 overflow-hidden rounded-lg bg-gray-100">{line.image ? <img src={line.image} alt="" className="h-full w-full object-cover" /> : null}</div><div className="min-w-0"><p className="truncate font-medium">{line.name}</p><button type="button" onClick={() => updateLineDiscount(line.productId, line.lineDiscountType, line.lineDiscountValue || "")} className="text-left text-sm text-gray-500 underline-offset-2 hover:text-dark-800 hover:underline">{form.isB2B ? "Pro HT" : "Public TTC"} : {eur(unitPrice(line, form.isB2B))}</button></div></div>
                     <input type="number" min={1} value={line.quantity} onChange={(event) => setForm((current) => ({ ...current, items: current.items.map((item) => item.productId === line.productId ? { ...item, quantity: Math.max(1, Number(event.target.value || 1)) } : item) }))} className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-dark-800" />
-                    <div className="text-sm font-semibold sm:text-right">{eur(unitPrice(line, form.isB2B) * line.quantity)}</div>
+                    <div className="grid grid-cols-[82px_1fr] gap-2">
+                      <select value={line.lineDiscountType} onChange={(event) => updateLineDiscount(line.productId, event.target.value as DiscountType, line.lineDiscountValue)} className="rounded-xl border border-gray-200 px-2 py-2 text-sm outline-none focus:border-dark-800">
+                        <option value="fixed">€</option>
+                        <option value="percent">%</option>
+                      </select>
+                      <input type="number" min="0" step="0.01" value={line.lineDiscountValue} onChange={(event) => updateLineDiscount(line.productId, line.lineDiscountType, event.target.value)} onFocus={(event) => event.currentTarget.select()} className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-dark-800" placeholder="Remise" />
+                    </div>
+                    <div className="text-sm font-semibold sm:text-right"><span>{eur(Math.max(0, lineGrossTotal(line, form.isB2B) - lineDiscountAmount(line, form.isB2B)))}</span>{lineDiscountAmount(line, form.isB2B) > 0 ? <span className="block text-xs font-medium text-emerald-700">-{eur(lineDiscountAmount(line, form.isB2B))}</span> : null}</div>
                     <button type="button" onClick={() => setForm((current) => ({ ...current, items: current.items.filter((item) => item.productId !== line.productId) }))} className="rounded-lg p-2 text-red-500 hover:bg-red-50"><Trash2 size={16} /></button>
                   </div>
                 ))}
@@ -436,8 +500,9 @@ export default function AdminOrderDraftsPage() {
             <h2 className="font-semibold text-dark-800">Résumé Shopify-like</h2>
             <label className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 p-3 text-sm"><span><strong className="block">Paiement ultérieur</strong><span className="text-gray-500">La commande sera en attente de paiement.</span></span><input type="checkbox" checked={form.paymentLater} onChange={(event) => setForm({ ...form, paymentLater: event.target.checked })} className="h-5 w-5" /></label>
             <div className="mt-4"><label className="text-sm font-medium text-gray-700">Livraison</label><input type="number" min="0" step="0.01" value={form.shipping} onChange={(event) => setForm({ ...form, shipping: event.target.value })} placeholder="Auto si vide" className="mt-2 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-dark-800" /></div>
+            <div className="mt-4"><label className="text-sm font-medium text-gray-700">Remise commande totale</label><div className="mt-2 grid grid-cols-[92px_1fr] gap-2"><select value={form.orderDiscountType} onChange={(event) => updateOrderDiscount(event.target.value as DiscountType, form.orderDiscountValue)} className="rounded-xl border border-gray-200 px-2 py-2.5 text-sm outline-none focus:border-dark-800"><option value="fixed">€ fixe</option><option value="percent">%</option></select><input type="number" min="0" step="0.01" value={form.orderDiscountValue} onChange={(event) => updateOrderDiscount(form.orderDiscountType, event.target.value)} placeholder="0" className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-dark-800" /></div></div>
             <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Notes internes" rows={4} className="mt-4 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-dark-800" />
-            <div className="mt-5 space-y-3 border-t border-gray-100 pt-4 text-sm"><div className="flex justify-between"><span>Sous-total {form.isB2B ? "HT" : "TTC"}</span><strong>{eur(totals.subtotal)}</strong></div><div className="flex justify-between"><span>TVA estimée</span><strong>{eur(totals.vat)}</strong></div><div className="flex justify-between"><span>Livraison</span><strong>{form.shipping === "" ? "Auto" : eur(totals.shipping)}</strong></div><div className="flex justify-between border-t border-gray-100 pt-3 text-base"><span>Total</span><strong>{eur(totals.total)}</strong></div></div>
+            <div className="mt-5 space-y-3 border-t border-gray-100 pt-4 text-sm"><div className="flex justify-between"><span>Sous-total {form.isB2B ? "HT" : "TTC"}</span><strong>{eur(totals.subtotal)}</strong></div>{totals.lineDiscount > 0 ? <div className="flex justify-between text-emerald-700"><span>Remises articles</span><strong>- {eur(totals.lineDiscount)}</strong></div> : null}{totals.orderDiscount > 0 ? <div className="flex justify-between text-emerald-700"><span>Remise commande</span><strong>- {eur(totals.orderDiscount)}</strong></div> : null}<div className="flex justify-between"><span>TVA estimée</span><strong>{eur(totals.vat)}</strong></div><div className="flex justify-between"><span>Livraison</span><strong>{form.shipping === "" ? "Auto" : eur(totals.shipping)}</strong></div><div className="flex justify-between border-t border-gray-100 pt-3 text-base"><span>Total</span><strong>{eur(totals.total)}</strong></div></div>
             <button type="button" onClick={saveDraft} disabled={saving} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-dark-800 px-4 py-3 text-sm font-semibold text-white hover:bg-dark-900 disabled:opacity-60">{saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Enregistrer</button>
             <button type="button" onClick={confirmDraft} disabled={!editingId || saving} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"><CheckCircle2 size={16} /> Créer la commande</button>
             <p className="mt-3 text-xs text-gray-500">Le minimum professionnel de 200 € HT est appliqué au moment de créer la commande.</p>
