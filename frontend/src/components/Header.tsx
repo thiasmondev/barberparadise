@@ -833,6 +833,7 @@ export default function Header() {
 
             <Link href="/nouveautes" onClick={() => setMobileOpen(false)} className="group flex items-center justify-between border-b border-white/5 py-4 transition-colors hover:border-[#ff4a8d]/30"><span className="text-2xl font-black uppercase italic tracking-tighter text-white group-hover:text-[#ff4a8d]">NOUVEAUTÉS</span><span className="text-[#ff4a8d]">→</span></Link>
             <Link href="/pro" onClick={() => setMobileOpen(false)} className="group flex items-center justify-between border-b border-white/5 py-4 transition-colors hover:border-[#ff4a8d]/30"><span className="text-2xl font-black uppercase italic tracking-tighter text-white group-hover:text-[#ff4a8d]">PRO</span><span className="text-[#ff4a8d]">→</span></Link>
+            <Link href="/blog" onClick={() => setMobileOpen(false)} className="group flex items-center justify-between border-b border-white/5 py-4 transition-colors hover:border-[#ff4a8d]/30"><span className="text-2xl font-black uppercase italic tracking-tighter text-white group-hover:text-[#ff4a8d]">BLOG</span><span className="text-[#ff4a8d]">→</span></Link>
           </nav>
 
           <div className="shrink-0 border-t border-white/5 px-5 py-5">

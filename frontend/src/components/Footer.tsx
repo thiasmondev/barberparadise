@@ -126,11 +126,41 @@ export default function Footer() {
             <ul className="space-y-4">
               {[
                 { label: "NOUVEAUTÉS", href: "/nouveautes" },
-                { label: "BLOG", href: "/blog" },
                 { label: "PRO", href: "/pro" },
                 { label: "PRODUITS", href: "/catalogue" },
                 { label: "MATÉRIEL", href: "/catalogue?category=materiel" },
-                { label: "MARQUES", href: "/catalogue" },
+                { label: "MARQUES", href: "/marques" },
+              ].map((link) => (
+                <li key={link.label}>
+                  <Link
+                    href={link.href}
+                    className="text-[10px] font-bold text-gray-500 hover:text-[#ffb1c4] transition-colors tracking-widest uppercase"
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-8 border-t border-white/5 pt-8">
+              <h3 className="text-[10px] font-black tracking-[0.3em] text-white uppercase mb-5">BLOG</h3>
+              <ul className="space-y-4">
+                {[
+                  { label: "TOUS LES ARTICLES", href: "/blog" },
+                  { label: "CONSEILS BARBIER", href: "/blog" },
+                ].map((link) => (
+                  <li key={link.label}>
+                    <Link
+                      href={link.href}
+                      className="text-[10px] font-bold text-gray-500 hover:text-[#ffb1c4] transition-colors tracking-widest uppercase"
+                    >
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <ul className="mt-8 space-y-4 border-t border-white/5 pt-8">
+              {[
                 { label: "PROMO", href: "/catalogue?promo=true" },
                 { label: "CONTACT", href: "/contact" },
               ].map((link) => (
