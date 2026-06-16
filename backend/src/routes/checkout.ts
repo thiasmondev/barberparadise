@@ -161,6 +161,24 @@ function parseProductStringArray(value: string | null | undefined): string[] {
   }
 }
 
+function normalizeCheckoutItemsSignature(items: CheckoutCartItem[]): string {
+  return items
+    .map((item) => ({ productId: item.productId || item.id || "", quantity: item.quantity }))
+    .filter((item) => item.productId && Number.isInteger(item.quantity) && item.quantity > 0)
+    .sort((a, b) => a.productId.localeCompare(b.productId))
+    .map((item) => `${item.productId}:${item.quantity}`)
+    .join("|");
+}
+
+function normalizeDraftItemsSignature(items: Array<{ productId: string | null; quantity: number }>): string {
+  return items
+    .map((item) => ({ productId: item.productId || "", quantity: item.quantity }))
+    .filter((item) => item.productId && Number.isInteger(item.quantity) && item.quantity > 0)
+    .sort((a, b) => a.productId.localeCompare(b.productId))
+    .map((item) => `${item.productId}:${item.quantity}`)
+    .join("|");
+}
+
 function getBackendUrl(req: Request): string {
   return (process.env.BACKEND_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
 }
@@ -396,9 +414,18 @@ checkoutRouter.get("/draft/:token", async (req: Request, res: Response): Promise
         orderNumber: draft.orderNumber,
         email: draft.email || draft.customerEmail,
         expiresAt: draft.draftShareExpiresAt,
+        isB2B: draft.isB2B,
         subtotal: draft.subtotal,
         shipping: draft.shipping,
         total: draft.totalTTC || draft.total,
+        totalHT: draft.totalHT,
+        vatRate: draft.vatRate,
+        vatAmount: draft.vatAmount,
+        totalTTC: draft.totalTTC || draft.total,
+        discountAmount: draft.discountAmount,
+        orderDiscountType: draft.orderDiscountType,
+        orderDiscountValue: draft.orderDiscountValue,
+        discountTotal: draft.discountTotal,
         shippingAddress: draft.shippingAddress,
         items: draft.items.map((item) => {
           const images = parseProductImages(item.product?.images);
@@ -408,6 +435,10 @@ checkoutRouter.get("/draft/:token", async (req: Request, res: Response): Promise
             name: item.name,
             price: item.price,
             quantity: item.quantity,
+            discountAmount: item.discountAmount,
+            lineDiscountType: item.lineDiscountType,
+            lineDiscountValue: item.lineDiscountValue,
+            discountedLineTotal: money(Math.max(0, item.price * item.quantity - item.discountAmount)),
             image: item.image || images[0] || "",
             slug: item.product?.slug || "",
             brand: item.product?.brand || "",
@@ -631,6 +662,123 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
     const allowedMethods = getAvailableMethods(country, isB2B);
     if (!allowedMethods.includes(body.paymentMethod)) {
       res.status(400).json({ error: "Méthode non disponible pour ce pays/profil" });
+      return;
+    }
+
+    const draftTokenValue = typeof body.draftToken === "string" ? body.draftToken.trim() : "";
+    const draftTokenHash = draftTokenValue ? hashDraftShareToken(draftTokenValue) : "";
+    const checkoutDraft = draftTokenHash
+      ? await prisma.order.findFirst({
+          where: {
+            status: "draft",
+            draftShareTokenHash: draftTokenHash,
+            draftShareExpiresAt: { gt: new Date() },
+            draftShareConvertedAt: null,
+          },
+          include: { items: true },
+        })
+      : null;
+    const shouldUseDraftPricing = Boolean(
+      checkoutDraft && normalizeCheckoutItemsSignature(body.cartItems) === normalizeDraftItemsSignature(checkoutDraft.items),
+    );
+
+    if (checkoutDraft && shouldUseDraftPricing) {
+      const provider = getProvider(body.paymentMethod, country);
+      const orderTotalTTC = money(checkoutDraft.totalTTC || checkoutDraft.total);
+      const order = await prisma.order.create({
+        data: {
+          orderNumber: generateOrderNumber(),
+          email: body.customerEmail,
+          customerEmail: body.customerEmail,
+          customerId: body.customerId || null,
+          status: "pending",
+          paymentMethod: body.paymentMethod,
+          paymentProvider: provider,
+          isB2B: checkoutDraft.isB2B,
+          subtotal: checkoutDraft.subtotal,
+          shipping: checkoutDraft.shipping,
+          total: checkoutDraft.total,
+          totalHT: checkoutDraft.totalHT,
+          vatRate: checkoutDraft.vatRate,
+          vatAmount: checkoutDraft.vatAmount,
+          totalTTC: orderTotalTTC,
+          currency: CURRENCY,
+          vatNumber: vatNumber || checkoutDraft.vatNumber || null,
+          discountAmount: checkoutDraft.discountAmount,
+          orderDiscountType: checkoutDraft.orderDiscountType,
+          orderDiscountValue: checkoutDraft.orderDiscountValue,
+          discountTotal: checkoutDraft.discountTotal,
+          billingAddress: (body.billingAddress || shippingAddress) as object,
+          notes: checkoutDraft.notes || null,
+          items: {
+            create: checkoutDraft.items.map((item) => ({
+              productId: item.productId,
+              variantId: item.variantId,
+              variantLabel: item.variantLabel,
+              name: item.name,
+              price: item.price,
+              quantity: item.quantity,
+              image: item.image,
+              discountAmount: item.discountAmount,
+              lineDiscountType: item.lineDiscountType,
+              lineDiscountValue: item.lineDiscountValue,
+              isCustomSale: item.isCustomSale,
+            })),
+          },
+          shippingAddress: {
+            create: {
+              firstName: shippingAddress.firstName,
+              lastName: shippingAddress.lastName,
+              address: shippingAddress.address,
+              extension: shippingAddress.extension || "",
+              city: shippingAddress.city,
+              postalCode: shippingAddress.postalCode,
+              country,
+              phone: shippingAddress.phone || "",
+            },
+          },
+        },
+      });
+
+      if (body.cartSessionId) {
+        await prisma.abandonedCartSession.updateMany({
+          where: { id: body.cartSessionId },
+          data: { convertedOrderId: order.id, convertedAt: new Date(), itemCount: 0 },
+        });
+      }
+
+      await prisma.order.update({
+        where: { id: checkoutDraft.id },
+        data: { draftShareConvertedAt: new Date() },
+      });
+
+      const checkout = await createProviderCheckout(provider, {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        totalTTC: orderTotalTTC,
+        frontendUrl: getFrontendUrl(),
+        backendUrl: getBackendUrl(req),
+        method: body.paymentMethod,
+        country,
+        customerEmail: body.customerEmail,
+      });
+
+      if (!checkout.checkoutUrl) {
+        throw new Error(`URL de paiement introuvable pour ${provider}`);
+      }
+
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { providerPaymentId: checkout.providerPaymentId || null },
+      });
+
+      res.status(201).json({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        checkoutUrl: checkout.checkoutUrl,
+        provider,
+        discountAmount: checkoutDraft.discountTotal,
+      });
       return;
     }
 

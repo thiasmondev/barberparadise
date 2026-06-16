@@ -33,10 +33,31 @@ type DraftCheckoutItem = {
   name: string;
   price: number;
   quantity: number;
+  discountAmount?: number;
+  lineDiscountType?: string | null;
+  lineDiscountValue?: number | null;
+  discountedLineTotal?: number;
   image?: string;
   slug?: string;
   brand?: string;
   images?: string[];
+};
+
+type DraftPricingSnapshot = {
+  orderNumber: string;
+  subtotal: number;
+  shipping: number;
+  total: number;
+  totalHT: number;
+  vatRate: number;
+  vatAmount: number;
+  totalTTC: number;
+  discountAmount: number;
+  orderDiscountType?: string | null;
+  orderDiscountValue?: number | null;
+  discountTotal: number;
+  isB2B: boolean;
+  cartSignature: string;
 };
 
 type DraftCheckoutResponse = {
@@ -44,6 +65,18 @@ type DraftCheckoutResponse = {
     orderNumber: string;
     email?: string | null;
     expiresAt?: string;
+    isB2B?: boolean;
+    subtotal?: number;
+    shipping?: number;
+    total?: number;
+    totalHT?: number;
+    vatRate?: number;
+    vatAmount?: number;
+    totalTTC?: number;
+    discountAmount?: number;
+    orderDiscountType?: string | null;
+    orderDiscountValue?: number | null;
+    discountTotal?: number;
     items: DraftCheckoutItem[];
   };
   error?: string;
@@ -114,6 +147,19 @@ function supportsApplePay(): boolean {
   return Boolean(applePaySession?.canMakePayments?.());
 }
 
+function money(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function getCartSignature(items: Array<{ product: { id: string }; quantity: number }>): string {
+  return items
+    .map((item) => ({ productId: item.product.id, quantity: item.quantity }))
+    .filter((item) => item.productId && item.quantity > 0)
+    .sort((a, b) => a.productId.localeCompare(b.productId))
+    .map((item) => `${item.productId}:${item.quantity}`)
+    .join("|");
+}
+
 export default function CheckoutPage() {
   const searchParams = useSearchParams();
   const { items, total, cartSessionId, replaceItems } = useCart();
@@ -137,6 +183,7 @@ export default function CheckoutPage() {
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoError, setPromoError] = useState("");
   const [draftToken, setDraftToken] = useState("");
+  const [draftPricing, setDraftPricing] = useState<DraftPricingSnapshot | null>(null);
   const [draftLoading, setDraftLoading] = useState(false);
   const [draftError, setDraftError] = useState("");
   const [draftNotice, setDraftNotice] = useState("");
@@ -158,11 +205,14 @@ export default function CheckoutPage() {
     () => shippingOptions.find((option) => option.id === selectedShippingOptionId) || shippingOptions[0],
     [selectedShippingOptionId, shippingOptions],
   );
-  const shipping = selectedShippingOption?.price ?? 0;
+  const cartSignature = useMemo(() => getCartSignature(items), [items]);
+  const draftPricingActive = Boolean(draftPricing && draftPricing.cartSignature === cartSignature);
+  const shipping = draftPricingActive ? draftPricing?.shipping || 0 : selectedShippingOption?.price ?? 0;
   const countryCode = useMemo(() => getCountryCode(form.pays), [form.pays]);
   const effectiveIsB2B = isB2B || isApprovedPro;
   const vatRate = useMemo(() => getEstimatedVatRate(countryCode, effectiveIsB2B, vatNumber), [countryCode, effectiveIsB2B, vatNumber]);
   const subtotalHT = useMemo(() => {
+    if (draftPricingActive && draftPricing) return draftPricing.totalHT;
     const rawSubtotalHT = items.reduce((sum, item) => {
       const unitPrice = item.product.price;
       const publicTtcPrice = typeof item.product.pricePublic === "number" ? item.product.pricePublic : unitPrice;
@@ -170,10 +220,14 @@ export default function CheckoutPage() {
       return sum + unitHT * item.quantity;
     }, 0);
     return Math.round((rawSubtotalHT + Number.EPSILON) * 100) / 100;
-  }, [effectiveIsB2B, items]);
-  const shippingReferenceAmount = effectiveIsB2B ? subtotalHT : total;
-  const vatAmount = useMemo(() => Math.round((subtotalHT * (vatRate / 100) + Number.EPSILON) * 100) / 100, [subtotalHT, vatRate]);
-  const grandTotal = subtotalHT + vatAmount + shipping;
+  }, [draftPricing, draftPricingActive, effectiveIsB2B, items]);
+  const displaySubtotalTTC = draftPricingActive && draftPricing ? draftPricing.subtotal : total;
+  const shippingReferenceAmount = effectiveIsB2B ? subtotalHT : displaySubtotalTTC;
+  const vatAmount = useMemo(() => {
+    if (draftPricingActive && draftPricing) return draftPricing.vatAmount;
+    return Math.round((subtotalHT * (vatRate / 100) + Number.EPSILON) * 100) / 100;
+  }, [draftPricing, draftPricingActive, subtotalHT, vatRate]);
+  const grandTotal = draftPricingActive && draftPricing ? draftPricing.totalTTC : subtotalHT + vatAmount + shipping;
   const promotionCartItems = useMemo(() => items.map((item) => {
     const publicTtcPrice = typeof item.product.pricePublic === "number" ? item.product.pricePublic : item.product.price;
     const proUnitPrice = item.product.hasPriceProEur ? item.product.price : publicTtcPrice / 1.2;
@@ -184,8 +238,8 @@ export default function CheckoutPage() {
       price: effectiveIsB2B ? proUnitPrice : publicTtcPrice,
     };
   }), [effectiveIsB2B, items]);
-  const promoDiscount = promoResult?.valid ? Math.min(promoResult.discount || 0, grandTotal) : 0;
-  const discountedGrandTotal = Math.max(0, grandTotal - promoDiscount);
+  const promoDiscount = draftPricingActive ? 0 : promoResult?.valid ? Math.min(promoResult.discount || 0, grandTotal) : 0;
+  const discountedGrandTotal = draftPricingActive && draftPricing ? draftPricing.totalTTC : Math.max(0, grandTotal - promoDiscount);
 
   const displayMethods = useMemo(
     () => availableMethods.filter((method) => {
@@ -217,6 +271,11 @@ export default function CheckoutPage() {
 
         const nextItems: CartItem[] = data.draft.items.map((item) => {
           const images = item.images?.length ? item.images : item.image ? [item.image] : [];
+          const discountedUnitPrice = item.quantity > 0 && typeof item.discountedLineTotal === "number"
+            ? money(item.discountedLineTotal / item.quantity)
+            : item.quantity > 0 && item.discountAmount
+              ? money(Math.max(0, item.price * item.quantity - item.discountAmount) / item.quantity)
+              : item.price;
           const product: Product = {
             id: item.productId || item.id,
             handle: item.slug || item.productId || item.id,
@@ -226,8 +285,8 @@ export default function CheckoutPage() {
             category: "",
             subcategory: "",
             subsubcategory: "",
-            price: item.price,
-            pricePublic: item.price,
+            price: discountedUnitPrice,
+            pricePublic: discountedUnitPrice,
             originalPrice: null,
             images,
             description: "",
@@ -248,11 +307,32 @@ export default function CheckoutPage() {
         });
 
         replaceItems(nextItems);
+        const nextSignature = getCartSignature(nextItems);
+        setDraftPricing({
+          orderNumber: data.draft.orderNumber,
+          subtotal: data.draft.subtotal ?? money(nextItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0)),
+          shipping: data.draft.shipping ?? 0,
+          total: data.draft.total ?? 0,
+          totalHT: data.draft.totalHT ?? 0,
+          vatRate: data.draft.vatRate ?? 20,
+          vatAmount: data.draft.vatAmount ?? 0,
+          totalTTC: data.draft.totalTTC ?? data.draft.total ?? 0,
+          discountAmount: data.draft.discountAmount ?? 0,
+          orderDiscountType: data.draft.orderDiscountType,
+          orderDiscountValue: data.draft.orderDiscountValue,
+          discountTotal: data.draft.discountTotal ?? 0,
+          isB2B: Boolean(data.draft.isB2B),
+          cartSignature: nextSignature,
+        });
+        setIsB2B(Boolean(data.draft.isB2B));
+        setPromoCode("");
+        setPromoResult(null);
+        setPromoError("");
         if (data.draft.email) {
           setForm((prev) => ({ ...prev, email: data.draft?.email || prev.email }));
           setGuestCheckout(true);
         }
-        setDraftNotice(`Commande préparée ${data.draft.orderNumber} chargée dans votre panier. Vous pouvez la modifier avant paiement.`);
+        setDraftNotice(`Commande préparée ${data.draft.orderNumber} chargée dans votre panier avec ses prix et remises figés. Vous pouvez la modifier avant paiement, ce qui recalculera alors les totaux au tarif catalogue.`);
       } catch (err) {
         if ((err as Error).name !== "AbortError") {
           setDraftToken("");
@@ -266,6 +346,14 @@ export default function CheckoutPage() {
     loadSharedDraft();
     return () => controller.abort();
   }, [replaceItems, searchParams]);
+
+  useEffect(() => {
+    if (draftPricing && draftPricing.cartSignature !== cartSignature) {
+      setDraftPricing(null);
+      setDraftToken("");
+      setDraftNotice("Le panier a été modifié : les totaux sont recalculés au tarif catalogue.");
+    }
+  }, [cartSignature, draftPricing]);
 
   useEffect(() => {
     if (customerLoading) return;
@@ -332,7 +420,7 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     const normalized = promoCode.trim().toUpperCase();
-    if (!normalized || items.length === 0) {
+    if (draftPricingActive || !normalized || items.length === 0) {
       setPromoResult(null);
       setPromoError("");
       return;
@@ -360,7 +448,7 @@ export default function CheckoutPage() {
     });
 
     return () => { cancelled = true; };
-  }, [effectiveIsB2B, items.length, promoCode, promotionCartItems, shipping, shippingReferenceAmount]);
+  }, [draftPricingActive, effectiveIsB2B, items.length, promoCode, promotionCartItems, shipping, shippingReferenceAmount]);
 
   useEffect(() => {
     if (!cartSessionId || !form.email.includes("@") || items.length === 0) return;
@@ -474,7 +562,7 @@ export default function CheckoutPage() {
             phone: form.telephone,
           },
           paymentMethod,
-          shippingOptionId: selectedShippingOption?.id,
+          shippingOptionId: draftPricingActive ? undefined : selectedShippingOption?.id,
           isB2B: effectiveIsB2B,
           vatNumber: vatNumber.trim() || undefined,
           promoCode: promoCode.trim() || undefined,
@@ -704,7 +792,7 @@ export default function CheckoutPage() {
                   {promoLoading ? "Vérification du code promo..." : promoResult?.valid ? `Code ${promoCode} appliqué · -${formatPrice(promoDiscount)}` : promoError || `Code ${promoCode} transmis pour vérification serveur.`}
                 </div>
               )}
-              <button onClick={handleCheckout} disabled={isSubmittingPayment || displayMethods.length === 0 || methodsLoading || shippingLoading || !selectedShippingOption} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-wait text-white py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 transition-colors"><Lock size={12} />{isSubmittingPayment ? "REDIRECTION EN COURS..." : `PAYER ${formatPrice(discountedGrandTotal)}`}</button>
+              <button onClick={handleCheckout} disabled={isSubmittingPayment || displayMethods.length === 0 || methodsLoading || shippingLoading || (!draftPricingActive && !selectedShippingOption)} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-wait text-white py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 transition-colors"><Lock size={12} />{isSubmittingPayment ? "REDIRECTION EN COURS..." : `PAYER ${formatPrice(discountedGrandTotal)}`}</button>
               <button onClick={() => setStep("livraison")} className="w-full text-center text-xs text-gray-500 hover:text-white transition-colors uppercase tracking-widest font-black">← Retour à la livraison</button>
             </div>
           )}
@@ -731,13 +819,15 @@ export default function CheckoutPage() {
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total HT</span><span className="text-sm font-black">{formatPrice(subtotalHT)}</span></div>
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">TVA ({vatRate}%)</span><span className="text-sm font-black">{formatPrice(vatAmount)}</span></div>
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>{shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>}</div>
+                  {draftPricingActive && draftPricing && draftPricing.discountTotal > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise brouillon</span><span className="text-sm font-black">-{formatPrice(draftPricing.discountTotal)}</span></div>}
                   {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="text-sm font-black">-{formatPrice(promoDiscount)}</span></div>}
                   <div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL TTC</span><span className="text-2xl font-black">{formatPrice(discountedGrandTotal)}</span></div>
                 </>
               ) : (
                 <>
-                  <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total</span><span className="text-sm font-black">{formatPrice(total)}</span></div>
+                  <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total</span><span className="text-sm font-black">{formatPrice(displaySubtotalTTC)}</span></div>
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>{shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>}</div>
+                  {draftPricingActive && draftPricing && draftPricing.discountTotal > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise brouillon</span><span className="text-sm font-black">-{formatPrice(draftPricing.discountTotal)}</span></div>}
                   {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="text-sm font-black">-{formatPrice(promoDiscount)}</span></div>}
                   <div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL</span><span className="text-2xl font-black">{formatPrice(discountedGrandTotal)}</span></div>
                 </>
