@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { prisma } from "../utils/prisma";
 import { formatPaymentMethod, getCustomerName, sendOrderConfirmationEmail } from "../services/emailService";
 import { ensureProInvoiceForOrder } from "../services/proInvoiceService";
+import { ensureB2CInvoiceForOrder } from "../services/b2cInvoiceService";
 import promotionService from "../services/promotionService";
 
 export const webhooksRouter = Router();
@@ -166,7 +167,7 @@ async function markOrderPaid(orderId: string, provider: WebhookProvider, provide
   });
 }
 
-async function sendOrderPaidEmail(orderId: string): Promise<void> {
+async function sendOrderPaidEmail(orderId: string, invoiceAttachment?: { filename: string; content: string }): Promise<void> {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
     include: { items: true, shippingAddress: true, customer: true },
@@ -192,7 +193,17 @@ async function sendOrderPaidEmail(orderId: string): Promise<void> {
     shippingCost: order.shipping,
     shippingAddress: order.shippingAddress,
     paymentMethod: formatPaymentMethod(order.paymentMethod),
+    attachments: invoiceAttachment ? [invoiceAttachment] : undefined,
   });
+}
+
+async function generateB2CInvoiceAttachment(orderId: string): Promise<{ filename: string; content: string } | undefined> {
+  const invoice = await ensureB2CInvoiceForOrder(orderId);
+  if (!invoice?.pdfBuffer) return undefined;
+  return {
+    filename: `${invoice.invoiceNumber}.pdf`,
+    content: invoice.pdfBuffer.toString("base64"),
+  };
 }
 
 async function findOrderIdByProviderPaymentId(providerPaymentId: string): Promise<string | null> {
@@ -222,7 +233,8 @@ webhooksRouter.post("/mollie", async (req: Request, res: Response): Promise<void
       const result = await markOrderPaid(orderId, "mollie", payment.id);
       if (result.changed && result.channel !== "pos") {
         await recordPromotionUsageForPaidOrder(orderId);
-        await sendOrderPaidEmail(orderId);
+        const invoiceAttachment = result.channel === "online" ? await generateB2CInvoiceAttachment(orderId) : undefined;
+        await sendOrderPaidEmail(orderId, invoiceAttachment);
         await ensureProInvoiceForOrder(orderId);
       }
       console.log("Webhook Mollie paid", { orderId, paymentId: payment.id, changed: result.changed, channel: result.channel });
@@ -254,7 +266,8 @@ webhooksRouter.post("/paypal", async (req: Request, res: Response): Promise<void
       const result = await markOrderPaid(orderId, "paypal", resource?.id || resource?.supplementary_data?.related_ids?.order_id);
       if (result.changed && result.channel !== "pos") {
         await recordPromotionUsageForPaidOrder(orderId);
-        await sendOrderPaidEmail(orderId);
+        const invoiceAttachment = result.channel === "online" ? await generateB2CInvoiceAttachment(orderId) : undefined;
+        await sendOrderPaidEmail(orderId, invoiceAttachment);
         await ensureProInvoiceForOrder(orderId);
       }
       console.log("Webhook PayPal paid", { orderId, eventType, changed: result.changed, channel: result.channel });
@@ -280,7 +293,8 @@ webhooksRouter.post("/checkout", async (req: Request, res: Response): Promise<vo
       const result = await markOrderPaid(orderId, "checkout", req.body?.data?.id || req.body?.id);
       if (result.changed && result.channel !== "pos") {
         await recordPromotionUsageForPaidOrder(orderId);
-        await sendOrderPaidEmail(orderId);
+        const invoiceAttachment = result.channel === "online" ? await generateB2CInvoiceAttachment(orderId) : undefined;
+        await sendOrderPaidEmail(orderId, invoiceAttachment);
         await ensureProInvoiceForOrder(orderId);
       }
       console.log("Webhook Checkout.com paid", { orderId, type, changed: result.changed, channel: result.channel });

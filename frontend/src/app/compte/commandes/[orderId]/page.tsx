@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Loader2, PackageCheck, ShoppingBag } from "lucide-react";
+import { ArrowLeft, Download, Loader2, PackageCheck, ShoppingBag } from "lucide-react";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
 import { getCustomerOrder } from "@/lib/customer-api";
 import { formatPrice } from "@/lib/utils";
@@ -200,6 +200,12 @@ export default function CustomerOrderDetailPage() {
                   <h2 className="text-sm font-black uppercase tracking-[0.25em]">Méthode de paiement</h2>
                   <p className="mt-5 text-lg font-black uppercase text-white">{getPaymentLabel(order)}</p>
                 </div>
+
+                {(order.invoiceUrl || order.proInvoiceUrl) && (
+                  <a href={order.invoiceUrl || order.proInvoiceUrl || "#"} target="_blank" rel="noreferrer" className="flex w-full items-center justify-center gap-2 border border-white/15 bg-white px-6 py-4 text-[11px] font-black uppercase tracking-[0.2em] text-black transition hover:bg-white/90">
+                    <Download size={16} /> Télécharger ma facture
+                  </a>
+                )}
 
                 <Link href="/compte?tab=commandes" className="flex w-full items-center justify-center bg-[#E91E8C] px-6 py-4 text-[11px] font-black uppercase tracking-[0.2em] text-white transition hover:bg-[#ff4a9f]">
                   Retour à mes commandes

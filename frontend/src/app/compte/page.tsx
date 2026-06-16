@@ -315,8 +315,8 @@ function OrdersPanel({ orders }: { orders: Order[] }) {
             </div>
             <div className="flex flex-wrap items-center gap-3 sm:justify-end">
               <p className="text-xl font-black">{order.total.toFixed(2)} €</p>
-              {order.proInvoiceUrl && (
-                <a href={order.proInvoiceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/70 hover:border-[#E91E8C] hover:text-white">
+              {(order.invoiceUrl || order.proInvoiceUrl) && (
+                <a href={order.invoiceUrl || order.proInvoiceUrl || "#"} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 border border-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/70 hover:border-[#E91E8C] hover:text-white">
                   <Download size={14} /> Facture PDF
                 </a>
               )}
@@ -332,9 +332,9 @@ function OrdersPanel({ orders }: { orders: Order[] }) {
 function InvoicesPanel({ invoices }: { invoices: CustomerInvoice[] }) {
   return (
     <div>
-      <PanelTitle title="Mes factures" subtitle="Téléchargez vos factures professionnelles générées après confirmation du paiement." />
+      <PanelTitle title="Mes factures" subtitle="Téléchargez vos factures B2C et B2B générées après confirmation du paiement." />
       <div className="mt-8 space-y-4">
-        {invoices.length === 0 ? <EmptyState text="Aucune facture professionnelle disponible pour le moment." /> : invoices.map((invoice) => (
+        {invoices.length === 0 ? <EmptyState text="Aucune facture disponible pour le moment." /> : invoices.map((invoice) => (
           <article key={invoice.id} className="flex flex-col gap-4 border border-white/10 bg-black/20 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#E91E8C]">Facture {invoice.invoiceNumber}</p>

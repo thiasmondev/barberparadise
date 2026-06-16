@@ -7,6 +7,7 @@ const ORDER_TABS = [
   { label: "Commandes", href: "/admin/commandes" },
   { label: "Brouillons", href: "/admin/commandes/brouillons" },
   { label: "Étiquettes d’expédition", href: "/admin/commandes/etiquettes" },
+  { label: "Factures", href: "/admin/commandes/factures" },
   { label: "Paniers abandonnés", href: "/admin/commandes/paniers-abandonnes" },
 ];
 

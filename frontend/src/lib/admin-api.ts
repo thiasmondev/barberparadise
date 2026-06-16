@@ -357,6 +357,33 @@ export function getAdminOrder(id: string) {
   return adminFetch<Order>(`/api/admin/orders/${id}`);
 }
 
+export interface AdminOrderInvoice {
+  id: string;
+  orderNumber: string;
+  type: "B2C" | "B2B";
+  invoiceNumber: string | null;
+  invoiceUrl: string | null;
+  customerName: string;
+  customerEmail: string;
+  totalHT?: number | null;
+  vatAmount?: number | null;
+  totalTTC: number;
+  currency?: string | null;
+  issuedAt: string;
+  createdAt: string;
+}
+
+export function getAdminOrderInvoices(params?: { page?: number; limit?: number; search?: string; type?: "B2C" | "B2B" | "" }) {
+  const sp = new URLSearchParams();
+  if (params) {
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") sp.set(k, String(v));
+    });
+  }
+  const q = sp.toString();
+  return adminFetch<{ invoices: AdminOrderInvoice[]; total: number; page: number; pages: number }>(`/api/admin/orders/invoices${q ? `?${q}` : ""}`);
+}
+
 export function updateOrderStatus(id: string, status: string) {
   return adminFetch<Order>(`/api/admin/orders/${id}/status`, {
     method: "PATCH",

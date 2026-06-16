@@ -129,11 +129,12 @@ export async function sendPasswordResetEmail(params: { to: string; customerName:
   });
 }
 
-export async function sendOrderConfirmationEmail(params: Parameters<typeof orderConfirmationEmail>[0] & { to: string }) {
+export async function sendOrderConfirmationEmail(params: Parameters<typeof orderConfirmationEmail>[0] & { to: string; attachments?: Array<{ filename: string; content: string }> }) {
   return sendEmail({
     to: params.to,
     subject: `Confirmation de commande ${params.orderNumber}`,
     html: orderConfirmationEmail(params),
+    attachments: params.attachments,
   });
 }
 

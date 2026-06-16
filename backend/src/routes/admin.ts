@@ -4700,6 +4700,93 @@ adminRouter.post(
   }
 );
 
+// GET /api/admin/orders/invoices — Liste des factures B2C et B2B
+adminRouter.get(
+  "/orders/invoices",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { page = "1", limit = "20", search, type } = req.query as Record<string, string>;
+      const take = Math.min(Math.max(Number(limit) || 20, 1), 100);
+      const currentPage = Math.max(Number(page) || 1, 1);
+      const skip = (currentPage - 1) * take;
+      const trimmedSearch = search?.trim();
+      const normalizedType = type === "B2B" || type === "B2C" ? type : "";
+
+      const where: any = {
+        OR: [
+          { invoiceNumber: { not: null }, invoiceUrl: { not: null } },
+          { proInvoiceNumber: { not: null }, proInvoiceUrl: { not: null } },
+        ],
+      };
+
+      if (normalizedType === "B2C") {
+        where.invoiceNumber = { not: null };
+        where.invoiceUrl = { not: null };
+        where.isB2B = false;
+        delete where.OR;
+      } else if (normalizedType === "B2B") {
+        where.proInvoiceNumber = { not: null };
+        where.proInvoiceUrl = { not: null };
+        where.isB2B = true;
+        delete where.OR;
+      }
+
+      if (trimmedSearch) {
+        const searchFilters = [
+          { orderNumber: { contains: trimmedSearch, mode: "insensitive" as const } },
+          { email: { contains: trimmedSearch, mode: "insensitive" as const } },
+          { customerEmail: { contains: trimmedSearch, mode: "insensitive" as const } },
+          { invoiceNumber: { contains: trimmedSearch, mode: "insensitive" as const } },
+          { proInvoiceNumber: { contains: trimmedSearch, mode: "insensitive" as const } },
+          { customer: { firstName: { contains: trimmedSearch, mode: "insensitive" as const } } },
+          { customer: { lastName: { contains: trimmedSearch, mode: "insensitive" as const } } },
+        ];
+        where.AND = [{ OR: where.OR || [{ invoiceNumber: { not: null }, invoiceUrl: { not: null } }, { proInvoiceNumber: { not: null }, proInvoiceUrl: { not: null } }] }, { OR: searchFilters }];
+        if (normalizedType) where.AND = [{ OR: searchFilters }];
+      }
+
+      const [orders, total] = await Promise.all([
+        prisma.order.findMany({
+          where,
+          include: { customer: true, shippingAddress: true },
+          orderBy: { updatedAt: "desc" },
+          skip,
+          take,
+        }),
+        prisma.order.count({ where }),
+      ]);
+
+      res.json({
+        invoices: orders.map((order) => {
+          const isProInvoice = Boolean(order.isB2B && order.proInvoiceNumber && order.proInvoiceUrl);
+          return {
+            id: order.id,
+            orderNumber: order.orderNumber,
+            type: isProInvoice ? "B2B" : "B2C",
+            invoiceNumber: isProInvoice ? order.proInvoiceNumber : order.invoiceNumber,
+            invoiceUrl: isProInvoice ? order.proInvoiceUrl : order.invoiceUrl,
+            customerName: [order.customer?.firstName || order.shippingAddress?.firstName, order.customer?.lastName || order.shippingAddress?.lastName].filter(Boolean).join(" ") || "Client invité",
+            customerEmail: order.customer?.email || order.customerEmail || order.email,
+            totalHT: order.totalHT,
+            vatAmount: order.vatAmount,
+            totalTTC: order.totalTTC || order.total,
+            currency: order.currency,
+            issuedAt: order.updatedAt,
+            createdAt: order.createdAt,
+          };
+        }),
+        total,
+        page: currentPage,
+        pages: Math.max(1, Math.ceil(total / take)),
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur récupération factures admin" });
+    }
+  }
+);
+
 // GET /api/admin/orders/:id — Détail d'une commande
 adminRouter.get(
   "/orders/:id",

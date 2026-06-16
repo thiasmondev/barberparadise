@@ -50,6 +50,7 @@ export interface CustomerAddressInput {
 export interface CustomerInvoice {
   id: string;
   orderNumber: string;
+  type?: "B2C" | "B2B";
   invoiceNumber: string;
   invoiceUrl: string;
   downloadUrl: string;

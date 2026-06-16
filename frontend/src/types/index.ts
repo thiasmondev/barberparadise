@@ -185,6 +185,8 @@ export interface Order {
   totalTTC?: number;
   currency?: string;
   isB2B?: boolean;
+  invoiceNumber?: string | null;
+  invoiceUrl?: string | null;
   proInvoiceNumber?: string | null;
   proInvoiceUrl?: string | null;
   channel?: "online" | "pos" | string;

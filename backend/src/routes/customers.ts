@@ -54,19 +54,23 @@ customersRouter.get("/me/orders", requireAuth, async (req: AuthRequest, res: Res
   }
 });
 
-// GET /api/customers/me/invoices — Factures professionnelles du client connecté
+// GET /api/customers/me/invoices — Factures B2C et B2B du client connecté
 customersRouter.get("/me/invoices", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const invoices = await prisma.order.findMany({
       where: {
         customerId: req.user!.id,
-        isB2B: true,
-        proInvoiceNumber: { not: null },
-        proInvoiceUrl: { not: null },
+        OR: [
+          { invoiceNumber: { not: null }, invoiceUrl: { not: null } },
+          { proInvoiceNumber: { not: null }, proInvoiceUrl: { not: null } },
+        ],
       },
       select: {
         id: true,
         orderNumber: true,
+        isB2B: true,
+        invoiceNumber: true,
+        invoiceUrl: true,
         proInvoiceNumber: true,
         proInvoiceUrl: true,
         totalHT: true,
@@ -82,19 +86,24 @@ customersRouter.get("/me/invoices", requireAuth, async (req: AuthRequest, res: R
     });
 
     res.json({
-      invoices: invoices.map((invoice) => ({
-        id: invoice.id,
-        orderNumber: invoice.orderNumber,
-        invoiceNumber: invoice.proInvoiceNumber,
-        invoiceUrl: invoice.proInvoiceUrl,
-        downloadUrl: invoice.proInvoiceUrl,
-        issuedAt: invoice.updatedAt,
-        totalHT: invoice.totalHT,
-        vatRate: invoice.vatRate,
-        vatAmount: invoice.vatAmount,
-        totalTTC: invoice.totalTTC || invoice.total,
-        currency: invoice.currency,
-      })),
+      invoices: invoices.map((invoice) => {
+        const invoiceNumber = invoice.isB2B ? invoice.proInvoiceNumber : invoice.invoiceNumber;
+        const invoiceUrl = invoice.isB2B ? invoice.proInvoiceUrl : invoice.invoiceUrl;
+        return {
+          id: invoice.id,
+          orderNumber: invoice.orderNumber,
+          type: invoice.isB2B ? "B2B" : "B2C",
+          invoiceNumber,
+          invoiceUrl,
+          downloadUrl: invoiceUrl,
+          issuedAt: invoice.updatedAt,
+          totalHT: invoice.totalHT,
+          vatRate: invoice.vatRate,
+          vatAmount: invoice.vatAmount,
+          totalTTC: invoice.totalTTC || invoice.total,
+          currency: invoice.currency,
+        };
+      }),
     });
   } catch (err) {
     console.error(err);

@@ -314,6 +314,8 @@ model Order {
   vatNumber         String?
   proInvoiceNumber  String?
   proInvoiceUrl     String?
+  invoiceNumber     String?
+  invoiceUrl        String?
   channel           String   @default("online")
   terminalId        String?
   posSessionId      String?
@@ -342,6 +344,7 @@ model Order {
   @@index([status])
   @@index([customerId])
   @@index([channel])
+  @@index([invoiceNumber])
   @@index([terminalId])
   @@index([posSessionId])
   @@index([promoCodeId])
