@@ -11,6 +11,8 @@ interface CartContextType {
   updateQuantity: (productId: string, quantity: number, variantId?: string | null) => void;
   replaceItems: (items: CartItem[]) => void;
   clearCart: () => void;
+  removedInvalidVariantLines: string[];
+  clearRemovedInvalidVariantLines: () => void;
   itemCount: number;
   total: number;
 }
@@ -28,19 +30,68 @@ function createCartSessionId() {
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 function getCartLineKey(productId: string, variantId?: string | null) {
-  return `${productId}::${variantId || 'product'}`;
+  return `${productId}::${variantId || "product"}`;
+}
+
+function hasProductVariants(product: Product) {
+  return Array.isArray(product.variants) && product.variants.length > 0;
+}
+
+function getCartItemVariantId(item: CartItem) {
+  return item.variantId || item.variant?.id || null;
+}
+
+function getValidVariant(product: Product, variantId: string | null, variant?: ProductVariant | null) {
+  if (!hasProductVariants(product)) return null;
+  if (!variantId) return null;
+  return product.variants?.find((candidate) => candidate.id === variantId) || variant || null;
+}
+
+function sanitizeCartItems(nextItems: CartItem[]) {
+  const removed: string[] = [];
+  const items = nextItems.reduce<CartItem[]>((acc, item) => {
+    if (!hasProductVariants(item.product)) {
+      acc.push(item);
+      return acc;
+    }
+
+    const variantId = getCartItemVariantId(item);
+    const variant = getValidVariant(item.product, variantId, item.variant);
+    if (!variantId || !variant) {
+      removed.push(item.product.name);
+      return acc;
+    }
+
+    acc.push({ ...item, variantId, variant });
+    return acc;
+  }, []);
+
+  return { items, removed };
 }
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [cartSessionId, setCartSessionId] = useState("");
+  const [removedInvalidVariantLines, setRemovedInvalidVariantLines] = useState<string[]>([]);
+
+  const registerRemovedLines = useCallback((removed: string[]) => {
+    if (removed.length === 0) return;
+    setRemovedInvalidVariantLines((current) => Array.from(new Set([...current, ...removed])));
+  }, []);
+
+  const clearRemovedInvalidVariantLines = useCallback(() => {
+    setRemovedInvalidVariantLines([]);
+  }, []);
 
   // Charger le panier et la session de suivi depuis localStorage
   useEffect(() => {
     const saved = localStorage.getItem("barberparadise-cart");
     if (saved) {
       try {
-        setItems(JSON.parse(saved));
+        const parsed = JSON.parse(saved) as CartItem[];
+        const sanitized = sanitizeCartItems(Array.isArray(parsed) ? parsed : []);
+        setItems(sanitized.items);
+        registerRemovedLines(sanitized.removed);
       } catch {
         // ignore
       }
@@ -50,7 +101,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const sessionId = existingSessionId || createCartSessionId();
     localStorage.setItem(CART_SESSION_KEY, sessionId);
     setCartSessionId(sessionId);
-  }, []);
+  }, [registerRemovedLines]);
 
   // Sauvegarder le panier dans localStorage
   useEffect(() => {
@@ -69,7 +120,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         sessionId: cartSessionId,
         cartItems: items.map((item) => ({
           productId: item.product.id,
-          variantId: item.variantId || item.variant?.id || null,
+          variantId: getCartItemVariantId(item),
           quantity: item.quantity,
         })),
       }),
@@ -82,24 +133,33 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [cartSessionId, items]);
 
   const addItem = useCallback((product: Product, quantity = 1, variant: ProductVariant | null = null) => {
+    if (hasProductVariants(product)) {
+      const variantId = variant?.id ?? null;
+      const validVariant = getValidVariant(product, variantId, variant);
+      if (!variantId || !validVariant) {
+        registerRemovedLines([product.name]);
+        return;
+      }
+    }
+
     setItems((prev) => {
       const variantId = variant?.id ?? null;
       const lineKey = getCartLineKey(product.id, variantId);
-      const existing = prev.find((item) => getCartLineKey(item.product.id, item.variantId || item.variant?.id || null) === lineKey);
+      const existing = prev.find((item) => getCartLineKey(item.product.id, getCartItemVariantId(item)) === lineKey);
       if (existing) {
         return prev.map((item) =>
-          getCartLineKey(item.product.id, item.variantId || item.variant?.id || null) === lineKey
+          getCartLineKey(item.product.id, getCartItemVariantId(item)) === lineKey
             ? { ...item, quantity: item.quantity + quantity, variantId, variant }
             : item
         );
       }
       return [...prev, { product, quantity, variantId, variant }];
     });
-  }, []);
+  }, [registerRemovedLines]);
 
   const removeItem = useCallback((productId: string, variantId: string | null = null) => {
     const lineKey = getCartLineKey(productId, variantId);
-    setItems((prev) => prev.filter((item) => getCartLineKey(item.product.id, item.variantId || item.variant?.id || null) !== lineKey));
+    setItems((prev) => prev.filter((item) => getCartLineKey(item.product.id, getCartItemVariantId(item)) !== lineKey));
   }, []);
 
   const updateQuantity = useCallback((productId: string, quantity: number, variantId: string | null = null) => {
@@ -110,17 +170,20 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const lineKey = getCartLineKey(productId, variantId);
     setItems((prev) =>
       prev.map((item) =>
-        getCartLineKey(item.product.id, item.variantId || item.variant?.id || null) === lineKey ? { ...item, quantity } : item
+        getCartLineKey(item.product.id, getCartItemVariantId(item)) === lineKey ? { ...item, quantity } : item
       )
     );
   }, [removeItem]);
 
   const replaceItems = useCallback((nextItems: CartItem[]) => {
-    setItems(nextItems);
-  }, []);
+    const sanitized = sanitizeCartItems(nextItems);
+    setItems(sanitized.items);
+    registerRemovedLines(sanitized.removed);
+  }, [registerRemovedLines]);
 
   const clearCart = useCallback(() => {
     setItems([]);
+    setRemovedInvalidVariantLines([]);
     const nextSessionId = createCartSessionId();
     localStorage.setItem(CART_SESSION_KEY, nextSessionId);
     setCartSessionId(nextSessionId);
@@ -134,7 +197,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   return (
     <CartContext.Provider
-      value={{ items, cartSessionId, addItem, removeItem, updateQuantity, replaceItems, clearCart, itemCount, total }}
+      value={{ items, cartSessionId, addItem, removeItem, updateQuantity, replaceItems, clearCart, removedInvalidVariantLines, clearRemovedInvalidVariantLines, itemCount, total }}
     >
       {children}
     </CartContext.Provider>

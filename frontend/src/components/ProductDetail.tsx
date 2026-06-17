@@ -142,6 +142,10 @@ export default function ProductDetail({ product }: { product: Product }) {
   }, [authLoading, isAuthenticated, product.id]);
 
   const handleAddToCart = () => {
+    if (requiresVariantSelection) {
+      return;
+    }
+
     const productToAdd = selectedVariant
       ? {
           ...product,
@@ -161,7 +165,7 @@ export default function ProductDetail({ product }: { product: Product }) {
   };
 
   const handleSelectVariant = (v: ProductVariant) => {
-    setSelectedVariant(selectedVariant?.id === v.id ? null : v);
+    setSelectedVariant(v);
     setSelectedImage(0);
   };
 

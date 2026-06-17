@@ -576,8 +576,8 @@ export default function CheckoutPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        if (data?.code === "VARIANT_SELECTION_REQUIRED" && data?.productSlug) {
-          setPaymentError(`${data.error || "Une variante doit être sélectionnée."} Retournez au panier pour choisir une variante ou retirer l’article.`);
+        if (data?.code === "VARIANT_SELECTION_REQUIRED") {
+          setPaymentError(`${data.error || "Un article de votre panier est incomplet."} Retournez au panier pour retirer cet article puis ajoutez-le à nouveau depuis sa fiche produit avec une variante.`);
           return;
         }
         throw new Error(data?.error || "Impossible d'initialiser le paiement");

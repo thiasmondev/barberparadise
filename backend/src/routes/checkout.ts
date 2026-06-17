@@ -631,16 +631,19 @@ checkoutRouter.post("/cart-session", async (req: Request, res: Response): Promis
       .map((item) => {
         const product = productById.get(item.productId as string);
         if (!product) return null;
+        const hasVariants = product.variants.length > 0;
+        const variant = item.variantId ? product.variants.find((candidate) => candidate.id === item.variantId) : null;
+        if (hasVariants && !variant) return null;
         return {
           productId: product.id,
           name: product.name,
-          variantId: item.variantId,
-          variantLabel: item.variantId ? product.variants.find((variant) => variant.id === item.variantId)?.name || null : null,
-          price: item.variantId ? product.variants.find((variant) => variant.id === item.variantId)?.price ?? product.price : product.price,
+          variantId: variant?.id || null,
+          variantLabel: variant?.name || null,
+          price: variant?.price ?? product.price,
           quantity: item.quantity,
         };
       })
-      .filter(Boolean) as Array<{ productId: string; name: string; price: number; quantity: number }>;
+      .filter(Boolean) as Array<{ productId: string; name: string; variantId: string | null; variantLabel: string | null; price: number; quantity: number }>;
 
     const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
     const total = money(items.reduce((sum, item) => sum + item.price * item.quantity, 0));
@@ -848,11 +851,10 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       const selectedVariant = variantId ? product.variants.find((variant) => variant.id === variantId) : null;
       if (hasVariants && !selectedVariant) {
         res.status(400).json({
-          error: `Sélectionnez une variante disponible pour ${product.name}`,
+          error: `L’article ${product.name} est incomplet dans votre panier. Retirez-le puis ajoutez-le à nouveau depuis sa fiche produit avec une variante.`,
           code: "VARIANT_SELECTION_REQUIRED",
           productId: product.id,
           productName: product.name,
-          productSlug: product.slug,
         });
         return;
       }
