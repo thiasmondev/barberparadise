@@ -62,7 +62,7 @@ async function nextInvoiceNumber(year: number): Promise<string> {
     select: { proInvoiceNumber: true },
   });
 
-  const max = existing.reduce((highest, order) => {
+  const max = existing.reduce((highest: number, order: { proInvoiceNumber: string | null }) => {
     const sequence = Number(order.proInvoiceNumber?.replace(prefix, "") || 0);
     return Number.isFinite(sequence) && sequence > highest ? sequence : highest;
   }, 0);
@@ -92,7 +92,7 @@ function getClientIdentity(order: LoadedOrder) {
 }
 
 function buildInvoiceLines(order: LoadedOrder): InvoiceLine[] {
-  const lines = order.items.map((item) => ({
+  const lines = order.items.map((item: { name: string; quantity: number; price: number }) => ({
     designation: item.name,
     quantity: item.quantity,
     unitHT: item.price,
@@ -262,10 +262,15 @@ async function sendInvoiceEmail(order: LoadedOrder, invoiceNumber: string, invoi
   });
 }
 
-export async function ensureProInvoiceForOrder(orderId: string): Promise<{ invoiceNumber: string; invoiceUrl: string } | null> {
+export async function ensureProInvoiceForOrder(
+  orderId: string,
+  options?: { sendInvoiceEmail?: boolean }
+): Promise<{ invoiceNumber: string; invoiceUrl: string; pdfBuffer?: Buffer } | null> {
+  const shouldSendEmail = options?.sendInvoiceEmail !== false;
   const order = await loadInvoiceOrder(orderId);
   if (!order || !order.isB2B) return null;
   if (order.proInvoiceNumber && order.proInvoiceUrl) {
+    // Facture déjà générée — la retourner sans renvoyer d'email
     return { invoiceNumber: order.proInvoiceNumber, invoiceUrl: order.proInvoiceUrl };
   }
 
@@ -278,6 +283,9 @@ export async function ensureProInvoiceForOrder(orderId: string): Promise<{ invoi
     data: { proInvoiceNumber: invoiceNumber, proInvoiceUrl: invoiceUrl },
   });
 
-  await sendInvoiceEmail(order, invoiceNumber, invoiceUrl, pdfBuffer);
-  return { invoiceNumber, invoiceUrl };
+  if (shouldSendEmail) {
+    await sendInvoiceEmail(order, invoiceNumber, invoiceUrl, pdfBuffer);
+  }
+
+  return { invoiceNumber, invoiceUrl, pdfBuffer };
 }

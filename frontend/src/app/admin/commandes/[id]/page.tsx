@@ -878,6 +878,27 @@ export default function OrderDetailPage() {
               </div>
             </section>
 
+            <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="mb-3 flex items-center gap-2"><FileText className="h-4 w-4 text-gray-500" /><h2 className="font-semibold text-gray-950">Facture</h2></div>
+              {order.invoiceNumber && order.invoiceUrl ? (
+                <div className="space-y-2 text-sm">
+                  <p className="font-medium text-gray-950">{order.invoiceNumber}</p>
+                  <a href={order.invoiceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-blue-600 underline-offset-4 hover:underline">
+                    <Download className="h-4 w-4" /> Télécharger le PDF B2C
+                  </a>
+                </div>
+              ) : order.proInvoiceNumber && order.proInvoiceUrl ? (
+                <div className="space-y-2 text-sm">
+                  <p className="font-medium text-gray-950">{order.proInvoiceNumber}</p>
+                  <a href={order.proInvoiceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-blue-600 underline-offset-4 hover:underline">
+                    <Download className="h-4 w-4" /> Télécharger le PDF Pro
+                  </a>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400">Aucune facture générée pour cette commande.</p>
+              )}
+            </section>
+
             {isPosOrder ? (
               <section className="rounded-2xl border border-fuchsia-200 bg-fuchsia-50 p-5 shadow-sm">
                 <div className="mb-3 flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-fuchsia-600" /><h2 className="font-semibold text-fuchsia-950">Encaissement caisse</h2></div>
