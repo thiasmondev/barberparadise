@@ -3397,7 +3397,13 @@ adminRouter.get(
   async (_req: Request, res: Response): Promise<void> => {
     try {
       const orders = await prisma.order.findMany({
-        where: { status: "paid", shipment: null },
+        where: {
+          status: "paid",
+          OR: [
+            { shipment: null },
+            { shipment: { is: { labelGeneratedAt: null, shippedAt: null } } },
+          ],
+        },
         include: {
           items: {
             include: {
@@ -3422,6 +3428,7 @@ adminRouter.get(
             select: { firstName: true, lastName: true, email: true },
           },
           shippingAddress: true,
+          shipment: true,
         },
         orderBy: { createdAt: "asc" },
       });

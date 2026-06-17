@@ -12,7 +12,7 @@ import {
   PaymentMethod,
   PaymentProvider,
 } from "../services/paymentRouter";
-import { calculateFreeShippingRemaining, calculateShippingOptions, getFreeShippingThresholdForCountry } from "../services/shippingCalculator";
+import { calculateFreeShippingRemaining, calculateShippingOptions, getFreeShippingThresholdForCountry, ShippingOption } from "../services/shippingCalculator";
 import { getVatRate } from "../services/vatCalculator";
 import { calculateDiscountAmount } from "../services/marketingAgentService";
 import promotionService, { PromotionValidationResult } from "../services/promotionService";
@@ -73,6 +73,20 @@ function money(value: number): number {
 
 function normalizePromoCode(code: string): string {
   return code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 32);
+}
+
+function normalizeShipmentCarrier(option?: Pick<ShippingOption, "carrier" | "label" | "id"> | null): string {
+  const raw = [option?.carrier, option?.label, option?.id].filter(Boolean).join(" ").toLowerCase();
+  if (raw.includes("mondial")) return "mondial_relay";
+  if (raw.includes("colissimo") && raw.includes("international")) return "colissimo_international";
+  if (raw.includes("colissimo")) return "colissimo";
+  return option?.carrier || option?.label || "livraison_standard";
+}
+
+function resolveShippingOptionForPaidOrder(options: ShippingOption[], selectedId: string | undefined, chargedShipping: number): ShippingOption | undefined {
+  return options.find((option) => option.id === selectedId)
+    || options.find((option) => money(option.price) === money(chargedShipping))
+    || options[0];
 }
 
 async function resolvePromoCode(code: string | undefined, baseAmount: number, shipping: number) {
@@ -720,7 +734,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
             draftShareExpiresAt: { gt: new Date() },
             draftShareConvertedAt: null,
           },
-          include: { items: true },
+          include: { items: true, shipment: true },
         })
       : null;
     const shouldUseDraftPricing = Boolean(
@@ -730,6 +744,8 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
     if (checkoutDraft && shouldUseDraftPricing) {
       const provider = getProvider(body.paymentMethod, country);
       const orderTotalTTC = money(checkoutDraft.totalTTC || checkoutDraft.total);
+      const draftShippingOptions = await calculateShippingOptions(country, checkoutDraft.isB2B ? checkoutDraft.subtotal : Math.max(0, orderTotalTTC - checkoutDraft.shipping), checkoutDraft.isB2B);
+      const draftShippingOption = resolveShippingOptionForPaidOrder(draftShippingOptions, body.shippingOptionId, checkoutDraft.shipping);
       const order = await prisma.order.create({
         data: {
           orderNumber: generateOrderNumber(),
@@ -780,6 +796,12 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
               postalCode: shippingAddress.postalCode,
               country,
               phone: shippingAddress.phone || "",
+            },
+          },
+          shipment: {
+            create: {
+              carrier: checkoutDraft.shipment?.carrier || normalizeShipmentCarrier(draftShippingOption),
+              totalWeightG: checkoutDraft.shipment?.totalWeightG || null,
             },
           },
         },
@@ -971,6 +993,11 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
             postalCode: shippingAddress.postalCode,
             country,
             phone: shippingAddress.phone || "",
+          },
+        },
+        shipment: {
+          create: {
+            carrier: normalizeShipmentCarrier(selectedShippingOption),
           },
         },
       },

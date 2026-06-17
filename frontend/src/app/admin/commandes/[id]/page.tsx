@@ -120,7 +120,14 @@ function carrierLabel(carrier?: string | null) {
   if (carrier === "mondial_relay") return "Mondial Relay";
   if (carrier === "colissimo_international") return "Colissimo International";
   if (carrier === "colissimo") return "Colissimo";
-  return carrier || "Non défini";
+  if (carrier === "livraison_standard") return "Livraison standard";
+  return carrier || "Transporteur à vérifier";
+}
+
+function shipmentSummary(order: Order) {
+  const carrier = carrierLabel(order.shipment?.carrier);
+  const weight = order.shipment?.totalWeightG ? ` · ${order.shipment.totalWeightG} g` : " · poids à calculer";
+  return `Expédition (${carrier}${weight})`;
 }
 
 function gramsToKgInput(value?: number | null) {
@@ -743,7 +750,7 @@ export default function OrderDetailPage() {
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between"><span className="text-gray-500">Sous-total</span><span>{formatPrice(order.subtotal, order.currency)}</span></div>
                 {order.discountAmount ? <div className="flex justify-between text-emerald-700"><span>Remise caisse</span><span>-{formatPrice(order.discountAmount, order.currency)}</span></div> : null}
-                <div className="flex justify-between"><span className="text-gray-500">{isPosOrder ? "Expédition" : `Expédition (${carrierLabel(order.shipment?.carrier)} · ${order.shipment?.totalWeightG || "—"} g)`}</span><span>{isPosOrder ? "Non applicable" : order.shipping === 0 ? "Gratuite" : formatPrice(order.shipping, order.currency)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">{isPosOrder ? "Expédition" : shipmentSummary(order)}</span><span>{isPosOrder ? "Non applicable" : order.shipping === 0 ? "Gratuite" : formatPrice(order.shipping, order.currency)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Taxes</span><span>{formatPrice(totals.taxes, order.currency)}</span></div>
                 <div className="flex justify-between border-t border-gray-200 pt-3 text-base font-semibold text-gray-950"><span>Total</span><span>{formatPrice(order.total, order.currency)}</span></div>
                 <div className="flex justify-between text-sm font-medium text-emerald-700"><span>Payé</span><span>{paymentBadge(order).label === "Payée" ? formatPrice(order.total, order.currency) : formatPrice(0, order.currency)}</span></div>
