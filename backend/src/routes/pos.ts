@@ -40,7 +40,7 @@ type PosPaymentItemInput = {
   lineDiscountValue?: number | null;
 };
 
-type PosPaymentMethod = "card" | "cash";
+type PosPaymentMethod = "card" | "cash" | "manual";
 
 type PosPaymentBody = {
   items?: PosPaymentItemInput[];
@@ -65,7 +65,9 @@ function normalizeDiscountType(value: unknown): DiscountType | null {
 }
 
 function normalizePaymentMethod(value: unknown): PosPaymentMethod {
-  return value === "cash" ? "cash" : "card";
+  if (value === "cash") return "cash";
+  if (value === "manual") return "manual";
+  return "card";
 }
 
 function normalizeDiscount(typeValue: unknown, valueValue: unknown): NormalizedDiscount {
@@ -117,6 +119,8 @@ async function parseJsonResponse<T>(response: globalThis.Response): Promise<T> {
 }
 
 async function fetchMollie<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = init?.method || "GET";
+  console.log(`[POS][Mollie] ${method} ${path}`);
   const response = await fetch(`https://api.mollie.com/v2${path}`, {
     ...init,
     headers: {
@@ -125,6 +129,10 @@ async function fetchMollie<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers || {}),
     },
   });
+  if (!response.ok) {
+    const text = await response.text();
+    console.error(`[POS][Mollie] HTTP ${response.status} ${response.statusText} — ${method} ${path}`, text.slice(0, 500));
+  }
   return parseJsonResponse<T>(response);
 }
 
@@ -294,12 +302,14 @@ async function createMolliePosPayment(params: {
   terminalId: string;
   description?: string;
 }) {
+  const webhookUrl = `${getBackendUrl(params.req)}/api/webhooks/mollie`;
+  console.log(`[POS][Terminal] Création paiement Mollie — orderId=${params.orderId} orderNumber=${params.orderNumber} terminalId=${params.terminalId} amount=${params.totalTTC.toFixed(2)} ${CURRENCY} webhookUrl=${webhookUrl}`);
   const payment = await fetchMollie<MolliePayment>("/payments", {
     method: "POST",
     body: JSON.stringify({
       amount: { currency: CURRENCY, value: params.totalTTC.toFixed(2) },
       description: params.description || `Barber Paradise POS #${params.orderNumber}`,
-      webhookUrl: `${getBackendUrl(params.req)}/api/webhooks/mollie`,
+      webhookUrl,
       method: "pointofsale",
       terminalId: params.terminalId,
       metadata: {
@@ -309,6 +319,7 @@ async function createMolliePosPayment(params: {
       },
     }),
   });
+  console.log(`[POS][Terminal] Paiement Mollie créé — paymentId=${payment.id} status=${payment.status}`);
   return payment;
 }
 
@@ -485,6 +496,7 @@ posRouter.post("/payments", async (req: AuthRequest, res: Response) => {
       res.status(400).json({ error: "terminalId est requis pour un paiement carte." });
       return;
     }
+    console.log(`[POS][/payments] méthode=${paymentMethod} terminalId=${terminalId || "n/a"} cashier=${req.user?.email || "n/a"}`);
 
     const items = await resolvePosItems(body.items || []);
     const subtotal = money(items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0));
@@ -514,7 +526,7 @@ posRouter.post("/payments", async (req: AuthRequest, res: Response) => {
         customerEmail: customer?.email || null,
         status: "pending_payment",
         paymentMethod,
-        paymentProvider: paymentMethod === "cash" ? "cash" : "mollie",
+        paymentProvider: (paymentMethod === "cash" || paymentMethod === "manual") ? "cash" : "mollie",
         subtotal,
         shipping: 0,
         total: totalTTC,
@@ -553,7 +565,7 @@ posRouter.post("/payments", async (req: AuthRequest, res: Response) => {
     });
     createdOrderId = order.id;
 
-    if (paymentMethod === "cash") {
+    if (paymentMethod === "cash" || paymentMethod === "manual") {
       const paidOrder = await applyPaidPosSideEffects(order.id);
       res.status(201).json({ order: serializeOrder(paidOrder), paymentId: null, status: "paid", changePaymentStateUrl: null });
       return;
@@ -571,12 +583,14 @@ posRouter.post("/payments", async (req: AuthRequest, res: Response) => {
     if (createdOrderId) {
       await prisma.order.update({ where: { id: createdOrderId }, data: { status: "cancelled", posPaymentStatus: "failed" } }).catch(() => undefined);
     }
+    console.error("[POS][/payments] Erreur", error instanceof Error ? error.message : error);
     res.status(400).json({ error: error instanceof Error ? error.message : "Impossible de créer le paiement POS." });
   }
 });
 
 posRouter.get("/payments/:paymentId/status", async (req: AuthRequest, res: Response) => {
   try {
+    console.log(`[POS][/status] polling paymentId=${req.params.paymentId}`);
     const payment = await fetchMollie<MolliePayment>(`/payments/${encodeURIComponent(req.params.paymentId)}`);
     const order = await prisma.order.findFirst({
       where: { providerPaymentId: payment.id, channel: "pos" },
@@ -646,7 +660,7 @@ posRouter.post("/quick-sale", async (req: AuthRequest, res: Response) => {
         customerEmail: customer?.email || null,
         status: "pending_payment",
         paymentMethod,
-        paymentProvider: paymentMethod === "cash" ? "cash" : "mollie",
+        paymentProvider: (paymentMethod === "cash" || paymentMethod === "manual") ? "cash" : "mollie",
         subtotal: amount,
         shipping: 0,
         total: totalTTC,
@@ -672,7 +686,7 @@ posRouter.post("/quick-sale", async (req: AuthRequest, res: Response) => {
     });
     createdOrderId = order.id;
 
-    if (paymentMethod === "cash") {
+    if (paymentMethod === "cash" || paymentMethod === "manual") {
       const paidOrder = await applyPaidPosSideEffects(order.id);
       res.status(201).json({ order: serializeOrder(paidOrder), paymentId: null, status: "paid", changePaymentStateUrl: null });
       return;
@@ -686,7 +700,32 @@ posRouter.post("/quick-sale", async (req: AuthRequest, res: Response) => {
     if (createdOrderId) {
       await prisma.order.update({ where: { id: createdOrderId }, data: { status: "cancelled", posPaymentStatus: "failed" } }).catch(() => undefined);
     }
+    console.error("[POS][/quick-sale] Erreur", error instanceof Error ? error.message : error);
     res.status(400).json({ error: error instanceof Error ? error.message : "Impossible de créer la vente personnalisée." });
+  }
+});
+
+posRouter.post("/orders/:orderId/mark-paid", async (req: AuthRequest, res: Response) => {
+  try {
+    const { orderId } = req.params;
+    const order = await prisma.order.findFirst({
+      where: { id: orderId, channel: "pos" },
+      include: { customer: true, items: true },
+    });
+    if (!order) {
+      res.status(404).json({ error: "Vente POS introuvable." });
+      return;
+    }
+    if (order.status === "paid") {
+      res.json({ order: serializeOrder(order), alreadyPaid: true });
+      return;
+    }
+    console.log(`[POS][mark-paid] orderId=${orderId} cashier=${req.user?.email || "n/a"}`);
+    const paidOrder = await applyPaidPosSideEffects(orderId);
+    res.json({ order: serializeOrder(paidOrder), alreadyPaid: false });
+  } catch (error) {
+    console.error("[POS][mark-paid] Erreur", error instanceof Error ? error.message : error);
+    res.status(500).json({ error: error instanceof Error ? error.message : "Impossible de marquer la vente comme payée." });
   }
 });
 
