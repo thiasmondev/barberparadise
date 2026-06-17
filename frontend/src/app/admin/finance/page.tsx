@@ -42,6 +42,12 @@ function formatMonth(month: string) {
   });
 }
 
+function formatPspLabel(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (normalized.startsWith("mol")) return "Virement bancaire sécurisé";
+  return value;
+}
+
 export default function AdminFinancePage() {
   const [month, setMonth] = useState(currentMonthKey);
   const [report, setReport] = useState<IndyReport | null>(null);
@@ -241,7 +247,7 @@ export default function AdminFinancePage() {
                 title="Détail PSP"
                 headers={["PSP", "Ventes", "Commissions", "Variation"]}
                 rows={report.ventesParPSP.map(line => [
-                  line.psp,
+                  formatPspLabel(line.psp),
                   formatCurrency(line.ventesRealisees),
                   formatCurrency(line.commissionsPrelevees),
                   formatCurrency(line.variationTotale),
@@ -272,7 +278,7 @@ export default function AdminFinancePage() {
                 row.pays_livraison,
                 `${row.tva_pct}`,
                 row.total_ttc.toFixed(2),
-                row.moyen_paiement,
+                formatPspLabel(row.moyen_paiement),
               ])}
               empty="Aucune ligne CSV à exporter."
             />

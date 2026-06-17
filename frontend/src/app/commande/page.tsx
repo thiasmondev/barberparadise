@@ -546,6 +546,8 @@ export default function CheckoutPage() {
     setPaymentError("");
     setIsSubmittingPayment(true);
 
+    const checkoutPaymentMethod: PaymentMethod = effectiveIsB2B ? "pay_by_bank" : paymentMethod;
+
     try {
       const res = await fetch(`${API_URL}/api/checkout/initiate`, {
         method: "POST",
@@ -566,7 +568,7 @@ export default function CheckoutPage() {
             country: countryCode,
             phone: form.telephone,
           },
-          paymentMethod,
+          paymentMethod: checkoutPaymentMethod,
           shippingOptionId: draftPricingActive ? undefined : selectedShippingOption?.id,
           isB2B: effectiveIsB2B,
           vatNumber: vatNumber.trim() || undefined,

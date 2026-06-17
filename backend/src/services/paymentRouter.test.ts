@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { getAvailableMethods, getPaymentProvider } from "./paymentRouter";
+import { getAvailableMethods, getPaymentProvider, MOLLIE_METHOD_MAP } from "./paymentRouter";
 
 assert.deepEqual(getAvailableMethods("FR", false), [
   "card",
@@ -41,5 +41,7 @@ assert.equal(getPaymentProvider({ method: "card_international", country: "US", i
 assert.equal(getPaymentProvider({ method: "pay_by_bank", country: "FR", isB2B: true }), "mollie");
 assert.equal(getAvailableMethods("FR", true).includes("sepa"), false);
 assert.equal(getAvailableMethods("US", true).includes("sepa"), false);
+assert.deepEqual(MOLLIE_METHOD_MAP.pay_by_bank, ["banktransfer"]);
+assert.deepEqual(MOLLIE_METHOD_MAP.sepa, ["directdebit"]);
 
 console.log("paymentRouter regression tests passed");

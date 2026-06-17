@@ -1881,7 +1881,7 @@ export function syncLogisticsTracking(orderId: string) {
 
 // ─── Finance / Export Indy ─────────────────────────────────────
 
-export type IndyPspName = "Mollie" | "PayPal" | "Checkout.com";
+export type IndyPspName = string;
 
 export interface IndyReport {
   month: string;

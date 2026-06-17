@@ -259,7 +259,7 @@ export default function AdminCaissePage() {
 
   async function ensureSession() {
     if (sessionId) return sessionId;
-    if (!terminalId) throw new Error("Sélectionnez un terminal Mollie.");
+    if (!terminalId) throw new Error("Sélectionnez un terminal de paiement.");
     const data = await openPosSession({ terminalId, notes: "Session ouverte depuis l’admin Barber Paradise" });
     setSessionId(data.session.id);
     return data.session.id;
@@ -415,7 +415,7 @@ export default function AdminCaissePage() {
             <Store className="h-7 w-7 text-primary" /> Caisse POS
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-gray-600">
-            Encaissez les ventes physiques Barber Paradise avec terminal Mollie, décrémentation du stock, historique et rattachement client facultatif.
+            Encaissez les ventes physiques Barber Paradise avec terminal de paiement sécurisé, décrémentation du stock, historique et rattachement client facultatif.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
