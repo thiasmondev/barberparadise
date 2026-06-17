@@ -1,6 +1,6 @@
 import { prisma } from "../utils/prisma";
 
-export type IndyPspName = "Mollie" | "PayPal" | "Checkout.com";
+export type IndyPspName = "Mollie" | "PayPal";
 
 export interface IndyReport {
   month: string;
@@ -51,7 +51,7 @@ type OrderForIndy = Awaited<ReturnType<typeof fetchOrdersForIndy>>[number];
 
 const SALES_STATUSES = ["paid", "shipped"];
 const REFUND_STATUSES = ["cancelled", "refunded"];
-const PSP_ORDER: IndyPspName[] = ["Mollie", "PayPal", "Checkout.com"];
+const PSP_ORDER: IndyPspName[] = ["Mollie", "PayPal"];
 const EU_COUNTRIES = new Set([
   "AT", "AUTRICHE",
   "BE", "BELGIQUE", "BELGIUM",
@@ -132,7 +132,6 @@ function getOrderTotalTTC(order: OrderForIndy): number {
 function mapPsp(order: Pick<OrderForIndy, "paymentMethod" | "paymentProvider">): IndyPspName {
   const raw = `${order.paymentProvider || ""} ${order.paymentMethod || ""}`.toLowerCase();
   if (raw.includes("paypal")) return "PayPal";
-  if (raw.includes("checkout") || raw.includes("card_international")) return "Checkout.com";
   return "Mollie";
 }
 

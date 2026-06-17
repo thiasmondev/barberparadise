@@ -222,7 +222,7 @@ async function createMollieCheckout(params: {
   totalTTC: number;
   frontendUrl: string;
   backendUrl: string;
-  method: Exclude<PaymentMethod, "paypal_4x" | "card_international">;
+  method: Exclude<PaymentMethod, "paypal_4x">;
   country: string;
 }) {
   const mollieMethod = MOLLIE_METHOD_MAP[params.method];
@@ -300,27 +300,6 @@ async function createPaypalCheckout(params: { orderId: string; orderNumber: stri
   return { providerPaymentId: order.id, checkoutUrl: order.links?.find((link) => link.rel === "payer-action" || link.rel === "approve")?.href };
 }
 
-async function createCheckoutComSession(params: { orderId: string; totalTTC: number; frontendUrl: string; customerEmail: string }) {
-  const baseUrl = process.env.CHECKOUT_ENV === "live" ? "https://api.checkout.com" : "https://api.sandbox.checkout.com";
-  const response = await fetch(`${baseUrl}/payment-sessions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${requireEnv("CHECKOUT_SECRET_KEY")}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      amount: Math.round(params.totalTTC * 100),
-      currency: CURRENCY,
-      reference: params.orderId,
-      success_url: `${params.frontendUrl}/commande/succes?orderId=${params.orderId}`,
-      cancel_url: `${params.frontendUrl}/commande/annulation?orderId=${params.orderId}`,
-      customer: { email: params.customerEmail },
-    }),
-  });
-  const session = await parseJsonResponse<{ id?: string; url?: string; _links?: { redirect?: { href?: string } } }>(response, "checkout");
-  return { providerPaymentId: session.id || params.orderId, checkoutUrl: session.url || session._links?.redirect?.href };
-}
-
 async function createProviderCheckout(
   provider: PaymentProvider,
   params: {
@@ -335,13 +314,13 @@ async function createProviderCheckout(
   },
 ) {
   if (provider === "mollie") {
-    if (params.method === "paypal_4x" || params.method === "card_international") {
+    if (params.method === "paypal_4x") {
       throw new Error("Méthode Mollie invalide");
     }
     return createMollieCheckout({ ...params, method: params.method });
   }
   if (provider === "paypal") return createPaypalCheckout(params);
-  return createCheckoutComSession(params);
+  throw new Error(`Prestataire de paiement non supporté : ${provider}`);
 }
 
 checkoutRouter.get("/available-methods", (req: Request, res: Response): void => {

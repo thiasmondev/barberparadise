@@ -24,8 +24,7 @@ type PaymentMethod =
   | "ideal"
   | "blik"
   | "mb_way"
-  | "multibanco"
-  | "card_international";
+  | "multibanco";
 
 type DraftCheckoutItem = {
   id: string;
@@ -130,7 +129,6 @@ const METHOD_CONFIG: Record<PaymentMethod, { label: string; badge: string; icon:
   blik: { label: "BLIK", badge: "PL", icon: Smartphone },
   mb_way: { label: "MB WAY", badge: "PT", icon: Smartphone },
   multibanco: { label: "MULTIBANCO", badge: "PT", icon: Landmark },
-  card_international: { label: "CARTE BANCAIRE", badge: "INT", icon: CreditCard },
 };
 
 function getCountryCode(countryName: string): string {

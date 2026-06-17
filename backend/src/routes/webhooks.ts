@@ -1,5 +1,4 @@
 import { Router, Request, Response } from "express";
-import crypto from "crypto";
 import { prisma } from "../utils/prisma";
 import { formatPaymentMethod, getCustomerName, sendOrderConfirmationEmail } from "../services/emailService";
 import { ensureProInvoiceForOrder } from "../services/proInvoiceService";
@@ -9,20 +8,6 @@ import promotionService from "../services/promotionService";
 export const webhooksRouter = Router();
 
 type WebhookProvider = "mollie" | "paypal";
-
-function timingSafeEqual(a: string, b: string): boolean {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  return left.length === right.length && crypto.timingSafeEqual(left, right);
-}
-
-function getHeader(req: Request, names: string[]): string | undefined {
-  for (const name of names) {
-    const value = req.get(name);
-    if (value) return value;
-  }
-  return undefined;
-}
 
 function requireEnv(name: string): string {
   const value = process.env[name];

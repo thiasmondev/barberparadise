@@ -9,10 +9,9 @@ export type PaymentMethod =
   | "ideal"
   | "blik"
   | "mb_way"
-  | "multibanco"
-  | "card_international";
+  | "multibanco";
 
-export type PaymentProvider = "mollie" | "paypal" | "checkout";
+export type PaymentProvider = "mollie" | "paypal";
 export type Provider = PaymentProvider;
 
 export const EEE_COUNTRIES = [
@@ -64,10 +63,9 @@ export const SUPPORTED_PAYMENT_METHODS: PaymentMethod[] = [
   "blik",
   "mb_way",
   "multibanco",
-  "card_international",
 ];
 
-export const MOLLIE_METHOD_MAP: Record<Exclude<PaymentMethod, "paypal_4x" | "card_international">, string[]> = {
+export const MOLLIE_METHOD_MAP: Record<Exclude<PaymentMethod, "paypal_4x">, string[]> = {
   card: ["creditcard"],
   pay_by_bank: ["banktransfer"],
   sepa: ["directdebit"],
@@ -95,7 +93,7 @@ export function getAvailableMethods(country: string, isB2B: boolean): PaymentMet
   const normalizedCountry = normalizeCountry(country);
 
   if (!EEE_COUNTRY_SET.has(normalizedCountry)) {
-    return isB2B ? [] : ["card_international"];
+    return [];
   }
 
   if (isB2B) {
@@ -108,7 +106,6 @@ export function getAvailableMethods(country: string, isB2B: boolean): PaymentMet
 }
 
 export function getProvider(method: PaymentMethod, country = "FR"): PaymentProvider {
-  if (method === "card_international") return "checkout";
   if (method === "paypal_4x") return "paypal";
   return "mollie";
 }
