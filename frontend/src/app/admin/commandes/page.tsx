@@ -78,9 +78,12 @@ function shippingMode(order: Order) {
   if (order.channel === "pos") return "Vente en caisse";
   const carrier = order.shipment?.carrier;
   if (carrier === "mondial_relay") return "Mondial Relay";
-  if (carrier === "colissimo" || carrier === "colissimo_international") return "Colissimo";
+  if (carrier === "colissimo_international") return "Colissimo International";
+  if (carrier === "colissimo") return "Colissimo";
+  if (carrier === "livraison_standard") return "Livraison standard";
   if (order.shipment?.relayPointId) return "Point de retrait";
-  return order.shipping > 0 ? "Colissimo" : "Point de retrait";
+  if (!carrier) return order.shipping > 0 ? "Colissimo" : "Point de retrait";
+  return carrier;
 }
 
 export default function AdminOrdersPage() {

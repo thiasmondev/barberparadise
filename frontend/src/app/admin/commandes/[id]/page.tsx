@@ -121,7 +121,8 @@ function carrierLabel(carrier?: string | null) {
   if (carrier === "colissimo_international") return "Colissimo International";
   if (carrier === "colissimo") return "Colissimo";
   if (carrier === "livraison_standard") return "Livraison standard";
-  return carrier || "Transporteur à vérifier";
+  if (!carrier || carrier === "non_defini") return "Transporteur à vérifier";
+  return carrier;
 }
 
 function shipmentSummary(order: Order) {

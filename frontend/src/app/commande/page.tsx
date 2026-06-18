@@ -567,7 +567,7 @@ export default function CheckoutPage() {
             phone: form.telephone,
           },
           paymentMethod: checkoutPaymentMethod,
-          shippingOptionId: draftPricingActive ? undefined : selectedShippingOption?.id,
+          shippingOptionId: selectedShippingOption?.id,
           isB2B: effectiveIsB2B,
           vatNumber: vatNumber.trim() || undefined,
           promoCode: promoCode.trim() || undefined,

@@ -779,7 +779,8 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
           },
           shipment: {
             create: {
-              carrier: checkoutDraft.shipment?.carrier || normalizeShipmentCarrier(draftShippingOption),
+              // Priorité : option choisie par le client > option du brouillon > fallback par montant
+              carrier: normalizeShipmentCarrier(draftShippingOption) || checkoutDraft.shipment?.carrier || "livraison_standard",
               totalWeightG: checkoutDraft.shipment?.totalWeightG || null,
             },
           },
@@ -976,7 +977,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         },
         shipment: {
           create: {
-            carrier: normalizeShipmentCarrier(selectedShippingOption),
+            carrier: normalizeShipmentCarrier(selectedShippingOption) || "livraison_standard",
           },
         },
       },
