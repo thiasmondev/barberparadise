@@ -2159,6 +2159,9 @@ adminRouter.get(
           stockCount: true,
           inStock: true,
           status: true,
+          variants: {
+            select: { stock: true, inStock: true },
+          },
         },
         orderBy: [{ brand: "asc" }, { name: "asc" }],
       });
@@ -2206,11 +2209,19 @@ adminRouter.get(
         const item = grouped.get(key)!;
         if (!item.brandId && product.brandId) item.brandId = product.brandId;
         if (!item.logo && brandRef?.logo) item.logo = brandRef.logo;
+        const hasVariants = product.variants.length > 0;
+        const variantStockTotal = hasVariants
+          ? product.variants.reduce((sum, v) => sum + Math.max(0, v.stock ?? 0), 0)
+          : 0;
+        const effectiveStock = hasVariants ? variantStockTotal : (product.stockCount ?? 0);
+        const effectiveInStock = hasVariants
+          ? product.variants.some((v) => v.inStock && (v.stock ?? 0) > 0)
+          : product.inStock;
         item.productCount += 1;
         if (product.status === "active") item.activeCount += 1;
-        if (product.inStock) item.inStockCount += 1;
+        if (effectiveInStock) item.inStockCount += 1;
         else item.outOfStockCount += 1;
-        item.totalStockCount += product.stockCount ?? 0;
+        item.totalStockCount += effectiveStock;
       }
       res.json({
         brands: [...grouped.values()].sort((a, b) =>
@@ -2388,7 +2399,7 @@ adminRouter.patch(
     try {
       const currentVariant = await prisma.productVariant.findUnique({
         where: { id: req.params.id },
-        select: { stock: true, price: true, productId: true, product: { select: { price: true } } },
+        select: { stock: true, price: true, productId: true, product: { select: { price: true, inStock: true } } },
       });
       if (!currentVariant) {
         res.status(404).json({ error: "Variante introuvable" });
@@ -2431,6 +2442,20 @@ adminRouter.patch(
           variantId: updated.id,
           previousStock: currentVariant.stock,
           nextStock: nextVariantStock,
+        });
+        // Mettre à jour inStock du produit parent selon l'état réel de toutes ses variantes
+        const allVariants = await prisma.productVariant.findMany({
+          where: { productId: currentVariant.productId },
+          select: { id: true, stock: true, inStock: true },
+        });
+        const parentInStock = allVariants.some((v) =>
+          v.id === updated.id
+            ? (updated.inStock ?? false) && (updated.stock ?? 0) > 0
+            : (v.inStock ?? false) && (v.stock ?? 0) > 0
+        );
+        await prisma.product.update({
+          where: { id: currentVariant.productId },
+          data: { inStock: parentInStock },
         });
       }
       res.json(updated);

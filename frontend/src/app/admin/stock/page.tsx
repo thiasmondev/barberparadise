@@ -161,22 +161,43 @@ export default function AdminStockPage() {
   useEffect(() => { loadAlerts(); }, [loadAlerts]);
 
   const totals = useMemo(() => {
-    const stock = products.reduce((sum, product) => sum + Number(productForms[product.id]?.stockCount ?? product.stockCount ?? 0), 0);
+    const stock = products.reduce((sum, product) => {
+      const hasVariants = (product.variants?.length || 0) > 0;
+      if (hasVariants) {
+        return sum + (product.variants || []).reduce((vSum, v) => vSum + Math.max(0, Number(variantForms[v.id]?.stock ?? v.stock ?? 0)), 0);
+      }
+      return sum + Number(productForms[product.id]?.stockCount ?? product.stockCount ?? 0);
+    }, 0);
     const variants = products.reduce((sum, product) => sum + (product.variants?.length || 0), 0);
-    const ruptures = products.filter(product => !isStockAvailable(productForms[product.id]?.stockCount ?? product.stockCount ?? 0)).length;
+    const ruptures = products.filter(product => {
+      const hasVariants = (product.variants?.length || 0) > 0;
+      if (hasVariants) {
+        return !(product.variants || []).some(v => isStockAvailable(variantForms[v.id]?.stock ?? v.stock ?? 0));
+      }
+      return !isStockAvailable(productForms[product.id]?.stockCount ?? product.stockCount ?? 0);
+    }).length;
     return { stock, variants, ruptures };
-  }, [products, productForms]);
+  }, [products, productForms, variantForms]);
+
+  function getEffectiveStock(product: StockProductRow): number {
+    const hasVariants = (product.variants?.length || 0) > 0;
+    if (hasVariants) {
+      return (product.variants || []).reduce((sum, v) => sum + Math.max(0, Number(variantForms[v.id]?.stock ?? v.stock ?? 0)), 0);
+    }
+    return Number(productForms[product.id]?.stockCount ?? product.stockCount ?? 0);
+  }
 
   const sortedProducts = useMemo(() => {
     if (!stockSortDirection) return products;
     return [...products].sort((left, right) => {
-      const leftStock = Number(productForms[left.id]?.stockCount ?? left.stockCount ?? 0);
-      const rightStock = Number(productForms[right.id]?.stockCount ?? right.stockCount ?? 0);
+      const leftStock = getEffectiveStock(left);
+      const rightStock = getEffectiveStock(right);
       const stockDiff = stockSortDirection === "asc" ? leftStock - rightStock : rightStock - leftStock;
       if (stockDiff !== 0) return stockDiff;
       return left.name.localeCompare(right.name, "fr", { sensitivity: "base" });
     });
-  }, [products, productForms, stockSortDirection]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, productForms, variantForms, stockSortDirection]);
 
   const saveAllVisibleStock = async () => {
     if (products.length === 0 || bulkSaving) return;
@@ -185,11 +206,15 @@ export default function AdminStockPage() {
     try {
       const productUpdates = products.map(product => {
         const draft = productForms[product.id] || productDraft(product);
+        const hasVariants = (product.variants?.length || 0) > 0;
         return updateStockProduct(product.id, {
           price: Number(draft.price),
           priceProEur: draft.priceProEur === "" ? null : Number(draft.priceProEur),
-          stockCount: Number(draft.stockCount),
-          inStock: isStockAvailable(draft.stockCount),
+          // Pour les produits à variantes, ne pas écraser le stockCount parent
+          ...(hasVariants ? {} : {
+            stockCount: Number(draft.stockCount),
+            inStock: isStockAvailable(draft.stockCount),
+          }),
           status: draft.status,
         } as any);
       });
@@ -625,6 +650,10 @@ function FragmentRows({
   setProductForms: Dispatch<SetStateAction<Record<string, ReturnType<typeof productDraft>>>>;
   setVariantForms: Dispatch<SetStateAction<Record<string, ReturnType<typeof variantDraft>>>>;
 }) {
+  const hasVariants = (product.variants?.length || 0) > 0;
+  const variantInStock = hasVariants
+    ? (product.variants || []).some(v => isStockAvailable(variantForms[v.id]?.stock ?? v.stock ?? 0))
+    : false;
   return (
     <>
       <tr className="hover:bg-gray-50/50 align-top">
@@ -642,8 +671,14 @@ function FragmentRows({
         <td className="px-3 py-3 text-right"><NumberInput value={form.price} onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, price: value } }))} /></td>
         <td className="px-3 py-3 text-right"><NumberInput value={form.priceProEur} placeholder="—" onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, priceProEur: value } }))} /></td>
         <td className="px-3 py-3 text-right text-gray-400 text-xs">Produit</td>
-        <td className="px-3 py-3 text-center"><NumberInput value={form.stockCount} integer onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, stockCount: value, inStock: isStockAvailable(value) } }))} /></td>
-        <td className="px-3 py-3 text-center"><AvailabilityBadge inStock={isStockAvailable(form.stockCount)} /></td>
+        {hasVariants ? (
+          <td className="px-3 py-3 text-center text-gray-400 text-xs" title="Stock géré par variante">—</td>
+        ) : (
+          <td className="px-3 py-3 text-center"><NumberInput value={form.stockCount} integer onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, stockCount: value, inStock: isStockAvailable(value) } }))} /></td>
+        )}
+        <td className="px-3 py-3 text-center">
+          <AvailabilityBadge inStock={hasVariants ? variantInStock : isStockAvailable(form.stockCount)} />
+        </td>
         <td className="px-3 py-3 text-center">
           <select value={form.status} onChange={event => setProductForms(current => ({ ...current, [product.id]: { ...form, status: event.target.value } }))} className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white">
             {STATUSES.filter(item => item.value).map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
