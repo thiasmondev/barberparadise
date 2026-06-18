@@ -308,3 +308,13 @@ export async function ensureB2CInvoiceForOrder(orderId: string): Promise<B2CInvo
 
   return { invoiceNumber, invoiceUrl, pdfBuffer };
 }
+
+/**
+ * Re-génère le PDF en mémoire pour une commande dont la facture existe déjà en base.
+ * Utilisé pour attacher le PDF à l'email de confirmation sans re-uploader sur Cloudinary.
+ */
+export async function generateB2CInvoicePdfBuffer(orderId: string, invoiceNumber: string): Promise<Buffer | null> {
+  const order = await loadInvoiceOrder(orderId);
+  if (!order || order.isB2B) return null;
+  return generateInvoicePdf(order, invoiceNumber);
+}

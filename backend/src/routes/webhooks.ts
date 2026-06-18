@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import { prisma } from "../utils/prisma";
 import { formatPaymentMethod, getCustomerName, sendOrderConfirmationEmail } from "../services/emailService";
 import { ensureProInvoiceForOrder } from "../services/proInvoiceService";
-import { ensureB2CInvoiceForOrder } from "../services/b2cInvoiceService";
+import { ensureB2CInvoiceForOrder, generateB2CInvoicePdfBuffer } from "../services/b2cInvoiceService";
 import promotionService from "../services/promotionService";
 
 export const webhooksRouter = Router();
@@ -186,19 +186,30 @@ async function sendOrderPaidEmail(orderId: string, invoiceAttachment?: { filenam
 }
 
 async function generateB2CInvoiceAttachment(orderId: string): Promise<{ filename: string; content: string } | undefined> {
+  // ensureB2CInvoiceForOrder retourne pdfBuffer uniquement lors de la création.
+  // Si la facture existe déjà en base, on re-génère le PDF en mémoire via generateB2CInvoicePdfBuffer.
   const invoice = await ensureB2CInvoiceForOrder(orderId);
-  if (!invoice?.pdfBuffer) return undefined;
+  if (!invoice) return undefined;
+
+  const pdfBuffer = invoice.pdfBuffer ?? await generateB2CInvoicePdfBuffer(orderId, invoice.invoiceNumber);
+  if (!pdfBuffer) {
+    console.warn("[email] PDF facture B2C introuvable pour la pièce jointe", { orderId });
+    return undefined;
+  }
+
   return {
     filename: `${invoice.invoiceNumber}.pdf`,
-    content: invoice.pdfBuffer.toString("base64"),
+    content: pdfBuffer.toString("base64"),
   };
 }
 
 async function runPostPaymentEffects(orderId: string, channel: string | null, changed: boolean): Promise<void> {
+  // "pos" = vente en caisse, pas d'email de confirmation e-commerce
   if (channel === "pos") return;
 
-  // Générer ou récupérer la facture même si la commande était déjà payée (idempotence)
-  const invoiceAttachment = channel === "online" ? await generateB2CInvoiceAttachment(orderId) : undefined;
+  // Bug fix: channel peut être null pour les anciennes commandes ou "online" pour les nouvelles.
+  // On génère la facture B2C pour tout canal non-POS et non-B2B (vérifié dans ensureB2CInvoiceForOrder).
+  const invoiceAttachment = await generateB2CInvoiceAttachment(orderId);
 
   // N'envoyer l'email de confirmation que si le statut vient de changer
   if (changed) {
