@@ -3730,8 +3730,15 @@ adminRouter.post(
         res.status(404).json({ error: "Commande non trouvée" });
         return;
       }
-      if (!["paid", "processing", "shipped"].includes(order.status)) {
-        res.status(400).json({ error: "Commande non éligible à l’achat d’étiquette" });
+      // Les commandes B2B en virement bancaire peuvent être expédiées avant réception des fonds
+      // (délai de 1 à 3 jours ouvrés). L'admin est responsable de la décision d'expédition.
+      const BANK_TRANSFER_METHODS = ["pay_by_bank", "banktransfer", "bank_transfer", "bank-transfer", "virement"];
+      const isB2BBankTransfer = order.isB2B && BANK_TRANSFER_METHODS.includes((order.paymentMethod || "").toLowerCase());
+      const ELIGIBLE_STATUSES = ["paid", "processing", "shipped"];
+      const isPendingB2BBankTransfer = isB2BBankTransfer && ["pending", "pending_payment", "open"].includes(order.status);
+
+      if (!ELIGIBLE_STATUSES.includes(order.status) && !isPendingB2BBankTransfer) {
+        res.status(400).json({ error: "Commande non éligible à l'achat d'étiquette" });
         return;
       }
       if (!order.shippingAddress) {

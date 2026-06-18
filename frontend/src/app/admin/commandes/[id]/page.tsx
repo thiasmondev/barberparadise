@@ -673,6 +673,11 @@ export default function OrderDetailPage() {
   const fulfillment = fulfillmentBadge(order);
   const channelInfo = channelBadge(order);
   const isPosOrder = order.channel === "pos";
+  const BANK_TRANSFER_METHODS = ["pay_by_bank", "banktransfer", "bank_transfer", "bank-transfer", "virement"];
+  const isB2BBankTransferPending =
+    order.isB2B &&
+    BANK_TRANSFER_METHODS.includes((order.paymentMethod || "").toLowerCase()) &&
+    ["pending", "pending_payment", "open"].includes(order.status);
   const labelBlockerMessage = hasZeroWeight ? "Veuillez renseigner le poids des articles" : "";
   const totalItemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -957,6 +962,16 @@ export default function OrderDetailPage() {
                     <div className="flex gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
                       <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
                       <p>{drawerError}</p>
+                    </div>
+                  )}
+
+                  {isB2BBankTransferPending && (
+                    <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                      <div>
+                        <p className="font-semibold">Virement bancaire en attente de réception</p>
+                        <p className="mt-1">Cette commande B2B est en attente de virement. Vous pouvez créer l'étiquette dès maintenant — la décision d'expédition avant réception des fonds est sous votre responsabilité.</p>
+                      </div>
                     </div>
                   )}
 
