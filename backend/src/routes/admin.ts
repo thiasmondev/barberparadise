@@ -480,6 +480,95 @@ function cleanCategoryPayload(body: Record<string, unknown>) {
   return payload;
 }
 
+// ─── Réintégration de stock ─────────────────────────────────────────────────
+/**
+ * Réintègre le stock de chaque article d'une commande.
+ * Idempotente : ne fait rien si order.stockRestored est déjà true.
+ * Doit être appelée dans une transaction Prisma ou de manière autonome.
+ *
+ * @param orderId - ID de la commande dont le stock doit être réintégré
+ * @param tx - Optionnel : instance Prisma transactionnelle. Si absent, utilise prisma directement.
+ */
+async function restoreOrderStock(
+  orderId: string,
+  tx?: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
+): Promise<void> {
+  const db = tx ?? prisma;
+
+  const order = await db.order.findUnique({
+    where: { id: orderId },
+    include: { items: true },
+  });
+
+  if (!order) {
+    console.warn(`[stock-restore] Commande introuvable : ${orderId}`);
+    return;
+  }
+
+  // Idempotence : ne pas réintégrer deux fois
+  if (order.stockRestored) {
+    console.log(`[stock-restore] Stock déjà réintégré pour la commande ${order.orderNumber} — ignoré.`);
+    return;
+  }
+
+  for (const item of order.items) {
+    if (!item.productId) continue;
+
+    if (item.variantId) {
+      // Produit à variantes : réincrémenter le stock de la variante
+      const variant = await db.productVariant.findUnique({ where: { id: item.variantId } });
+      if (!variant) {
+        console.warn(`[stock-restore] Variante introuvable : ${item.variantId} (commande ${order.orderNumber})`);
+        continue;
+      }
+
+      const newVariantStock = variant.stock + item.quantity;
+      await db.productVariant.update({
+        where: { id: item.variantId },
+        data: { stock: newVariantStock, inStock: newVariantStock > 0 },
+      });
+
+      // Mettre à jour inStock du produit parent selon l'état réel de toutes ses variantes
+      const activeVariantCount = await db.productVariant.count({
+        where: { productId: item.productId, stock: { gt: 0 } },
+      });
+      await db.product.update({
+        where: { id: item.productId },
+        data: { inStock: activeVariantCount > 0 },
+      });
+
+      console.log(
+        `[stock-restore] Variante ${variant.id} (produit ${item.productId}) : +${item.quantity} → ${newVariantStock} (commande ${order.orderNumber})`
+      );
+    } else {
+      // Produit sans variante : réincrémenter stockCount
+      const product = await db.product.findUnique({ where: { id: item.productId } });
+      if (!product) {
+        console.warn(`[stock-restore] Produit introuvable : ${item.productId} (commande ${order.orderNumber})`);
+        continue;
+      }
+
+      const newStock = product.stockCount + item.quantity;
+      await db.product.update({
+        where: { id: item.productId },
+        data: { stockCount: newStock, inStock: newStock > 0 },
+      });
+
+      console.log(
+        `[stock-restore] Produit ${product.id} : +${item.quantity} → ${newStock} (commande ${order.orderNumber})`
+      );
+    }
+  }
+
+  // Marquer la commande comme ayant eu son stock réintégré (idempotence)
+  await db.order.update({
+    where: { id: orderId },
+    data: { stockRestored: true },
+  });
+
+  console.log(`[stock-restore] Réintégration terminée pour la commande ${order.orderNumber} (${order.items.length} article(s)).`);
+}
+
 // GET /api/admin/categories/:id — Détail catégorie + produits associés
 adminRouter.get("/categories/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
@@ -5070,6 +5159,12 @@ adminRouter.patch(
         }),
       ]);
 
+      // Réintégration du stock si la commande passe en annulée via la modification complète
+      const stockDecrementedStatuses = new Set(["paid", "processing", "shipped", "delivered"]);
+      if (status === "cancelled" && stockDecrementedStatuses.has(current.status)) {
+        await restoreOrderStock(current.id);
+      }
+
       const order = await prisma.order.findUnique({
         where: { id: current.id },
         include: {
@@ -5099,6 +5194,14 @@ adminRouter.delete(
         return;
       }
 
+      // Réintégrer le stock avant suppression, uniquement si la commande était dans un statut
+      // où le stock avait été décrémenté (paid, processing, shipped, delivered).
+      // Si la commande était déjà annulée ou en attente, le stock n'avait pas été touché.
+      const stockDecrementedStatuses = new Set(["paid", "processing", "shipped", "delivered"]);
+      if (stockDecrementedStatuses.has(order.status)) {
+        await restoreOrderStock(order.id);
+      }
+
       await prisma.order.delete({ where: { id: order.id } });
       res.json({ success: true });
     } catch (err) {
@@ -5124,6 +5227,14 @@ adminRouter.patch(
         data: { status },
         include: { customer: true },
       });
+
+      // Réintégration du stock si la commande passe en annulée
+      // Condition : le statut précédent était un statut "actif" (stock décrémenté)
+      const stockDecrementedStatuses = new Set(["paid", "processing", "shipped", "delivered"]);
+      if (status === "cancelled" && stockDecrementedStatuses.has(previousOrder?.status || "")) {
+        await restoreOrderStock(order.id);
+      }
+
       const shippingEmailStatuses = new Set([
         "shipped",
         "delivered",

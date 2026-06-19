@@ -340,6 +340,7 @@ model Order {
   orderDiscountValue Float?
   discountTotal     Float    @default(0)
   notes             String?
+  stockRestored     Boolean  @default(false) // true si le stock a déjà été réintégré (annulation/suppression)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
