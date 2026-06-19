@@ -799,18 +799,31 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         data: { draftShareConvertedAt: new Date() },
       });
 
-      const checkout = await createProviderCheckout(provider, {
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        totalTTC: orderTotalTTC,
-        frontendUrl: getFrontendUrl(),
-        backendUrl: getBackendUrl(req),
-        method: body.paymentMethod,
-        country,
-        customerEmail: body.customerEmail,
-      });
+      let checkout: { providerPaymentId?: string; checkoutUrl?: string };
+      try {
+        checkout = await createProviderCheckout(provider, {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          totalTTC: orderTotalTTC,
+          frontendUrl: getFrontendUrl(),
+          backendUrl: getBackendUrl(req),
+          method: body.paymentMethod,
+          country,
+          customerEmail: body.customerEmail,
+        });
+      } catch (providerErr) {
+        // Supprimer la commande créée en base pour éviter les commandes fantômes
+        console.error(`[checkout] Échec création paiement ${provider} pour commande ${order.orderNumber} — suppression de la commande orpheline`, providerErr);
+        await prisma.order.delete({ where: { id: order.id } }).catch((delErr) =>
+          console.error(`[checkout] Impossible de supprimer la commande orpheline ${order.id}:`, delErr)
+        );
+        throw providerErr;
+      }
 
       if (!checkout.checkoutUrl) {
+        await prisma.order.delete({ where: { id: order.id } }).catch((delErr) =>
+          console.error(`[checkout] Impossible de supprimer la commande orpheline ${order.id}:`, delErr)
+        );
         throw new Error(`URL de paiement introuvable pour ${provider}`);
       }
 
@@ -1007,18 +1020,31 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       await prisma.promoCode.update({ where: { id: promoResolution.promoCode.id }, data: { usedCount: { increment: 1 } } });
     }
 
-    const checkout = await createProviderCheckout(provider, {
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      totalTTC,
-      frontendUrl: getFrontendUrl(),
-      backendUrl: getBackendUrl(req),
-      method: body.paymentMethod,
-      country,
-      customerEmail: body.customerEmail,
-    });
+    let checkout: { providerPaymentId?: string; checkoutUrl?: string };
+    try {
+      checkout = await createProviderCheckout(provider, {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        totalTTC,
+        frontendUrl: getFrontendUrl(),
+        backendUrl: getBackendUrl(req),
+        method: body.paymentMethod,
+        country,
+        customerEmail: body.customerEmail,
+      });
+    } catch (providerErr) {
+      // Supprimer la commande créée en base pour éviter les commandes fantômes
+      console.error(`[checkout] Échec création paiement ${provider} pour commande ${order.orderNumber} — suppression de la commande orpheline`, providerErr);
+      await prisma.order.delete({ where: { id: order.id } }).catch((delErr) =>
+        console.error(`[checkout] Impossible de supprimer la commande orpheline ${order.id}:`, delErr)
+      );
+      throw providerErr;
+    }
 
     if (!checkout.checkoutUrl) {
+      await prisma.order.delete({ where: { id: order.id } }).catch((delErr) =>
+        console.error(`[checkout] Impossible de supprimer la commande orpheline ${order.id}:`, delErr)
+      );
       throw new Error(`URL de paiement introuvable pour ${provider}`);
     }
 
