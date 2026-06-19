@@ -156,6 +156,7 @@ export interface DashboardStats {
   totalRevenue: number;
   recentOrders: {
     id: string;
+    orderNumber: string;
     total: number;
     status: string;
     createdAt: string;

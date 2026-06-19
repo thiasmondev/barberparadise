@@ -18,6 +18,9 @@ import {
 import Link from "next/link";
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Clock }> = {
   pending: { label: "En attente", color: "text-yellow-600 bg-yellow-50", icon: Clock },
+  pending_payment: { label: "Paiement en attente", color: "text-orange-500 bg-orange-50", icon: Clock },
+  draft: { label: "Brouillon", color: "text-gray-500 bg-gray-100", icon: Clock },
+  paid: { label: "Payée", color: "text-emerald-600 bg-emerald-50", icon: CheckCircle },
   processing: { label: "En cours", color: "text-blue-600 bg-blue-50", icon: AlertCircle },
   shipped: { label: "Expédiée", color: "text-purple-600 bg-purple-50", icon: Truck },
   delivered: { label: "Livrée", color: "text-green-600 bg-green-50", icon: CheckCircle },
@@ -101,13 +104,17 @@ export default function AdminDashboard() {
               stats.recentOrders.map((order) => {
                 const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
                 return (
-                  <div key={order.id} className="flex items-center gap-4 px-5 py-3.5">
+                  <Link
+                    key={order.id}
+                    href={`/admin/commandes/${order.id}`}
+                    className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${cfg.color}`}>
                       <cfg.icon size={14} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-dark-800 truncate">
-                        Commande #{order.id.slice(-6)}
+                        {order.orderNumber || `#${order.id.slice(-6)}`}
                       </div>
                       <div className="text-xs text-gray-400">{formatDate(order.createdAt)}</div>
                     </div>
@@ -117,7 +124,7 @@ export default function AdminDashboard() {
                     <span className="text-sm font-semibold text-dark-800 tabular-nums">
                       {formatPrice(order.total)}
                     </span>
-                  </div>
+                  </Link>
                 );
               })
             )}

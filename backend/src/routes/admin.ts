@@ -1519,7 +1519,7 @@ adminRouter.get(
         prisma.order.count(),
         prisma.customer.count(),
         prisma.order.findMany({
-          select: { id: true, total: true, status: true, createdAt: true },
+          select: { id: true, orderNumber: true, total: true, status: true, createdAt: true },
           orderBy: { createdAt: "desc" },
           take: 5,
         }),
