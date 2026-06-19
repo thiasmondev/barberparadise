@@ -2899,7 +2899,7 @@ export interface PosOrder {
   items: PosOrderItem[];
 }
 
-export type PosPaymentMethod = "card" | "cash";
+export type PosPaymentMethod = "card" | "cash" | "manual";
 
 export interface PosStats {
   period: string;
@@ -3009,4 +3009,8 @@ export function getPosOrder(orderId: string) {
 
 export function getPosStats(period = "today") {
   return adminFetch<PosStats>(`/api/pos/stats?period=${encodeURIComponent(period)}`);
+}
+
+export function markPosOrderPaid(orderId: string) {
+  return adminFetch<{ order: PosOrder }>(`/api/pos/orders/${encodeURIComponent(orderId)}/mark-paid`, { method: "POST" });
 }

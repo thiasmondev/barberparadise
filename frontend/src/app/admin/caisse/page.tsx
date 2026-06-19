@@ -28,6 +28,7 @@ import {
   getPosCatalog,
   getPosPaymentStatus,
   getPosTerminals,
+  markPosOrderPaid,
   openPosSession,
   type DiscountType,
   type PosOrder,
@@ -321,13 +322,14 @@ export default function AdminCaissePage() {
       setCurrentOrder(data.order);
       setPaymentId(data.paymentId);
       setPaymentStatus(data.status);
-      if (paymentMethod === "cash") {
+      if (paymentMethod === "cash" || paymentMethod === "manual") {
         setCart([]);
         setOrderDiscountType("fixed");
         setOrderDiscountValue("");
         setCashReceived("");
         setNotes("");
-        setMessage(`Encaissement espèces validé pour ${formatPrice(data.order.totalTTC || data.order.total)}.`);
+        const label = paymentMethod === "manual" ? "Encaissement manuel validé" : "Encaissement espèces validé";
+        setMessage(`${label} pour ${formatPrice(data.order.totalTTC || data.order.total)}.`);
         await loadCatalog();
       } else {
         setMessage(`Paiement envoyé au terminal pour ${formatPrice(data.order.totalTTC || data.order.total)}.`);
@@ -369,8 +371,9 @@ export default function AdminCaissePage() {
       setCurrentOrder(data.order);
       setPaymentId(data.paymentId);
       setPaymentStatus(data.status);
-      if (paymentMethod === "cash") {
-        setMessage(`Vente rapide espèces validée pour ${formatPrice(data.order.totalTTC || data.order.total)}.`);
+      if (paymentMethod === "cash" || paymentMethod === "manual") {
+        const label = paymentMethod === "manual" ? "Vente rapide manuelle validée" : "Vente rapide espèces validée";
+        setMessage(`${label} pour ${formatPrice(data.order.totalTTC || data.order.total)}.`);
         setCashReceived("");
         await loadCatalog();
       } else {
@@ -394,7 +397,34 @@ export default function AdminCaissePage() {
       setPaymentStatus("canceled");
       setMessage("Paiement POS annulé.");
     } catch (err: any) {
-      setError(err.message || "Impossible d’annuler le paiement.");
+      setError(err.message || "Impossible d'annuler le paiement.");
+    }
+  }
+
+  async function handleMarkPaid() {
+    if (!currentOrder) {
+      setError("Aucune commande en cours à marquer comme payée.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const data = await markPosOrderPaid(currentOrder.id);
+      setCurrentOrder(data.order);
+      setPaymentId(null);
+      setPaymentStatus("paid");
+      setCart([]);
+      setOrderDiscountType("fixed");
+      setOrderDiscountValue("");
+      setCashReceived("");
+      setNotes("");
+      setMessage(`Commande ${data.order.orderNumber} marquée comme payée.`);
+      await loadCatalog();
+    } catch (err: any) {
+      setError(err.message || "Impossible de marquer la commande comme payée.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -639,9 +669,10 @@ export default function AdminCaissePage() {
 
             <div className="mt-4 space-y-3 rounded-2xl border border-gray-100 bg-gray-50 p-3">
               <label className="block text-xs font-bold uppercase tracking-[0.2em] text-gray-400">Moyen de paiement</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button type="button" onClick={() => setPaymentMethod("card")} className={`rounded-xl border px-3 py-2 text-sm font-black ${paymentMethod === "card" ? "border-primary bg-primary text-white" : "border-gray-200 bg-white text-gray-700 hover:border-primary/40"}`}>Carte · Tap to Pay</button>
                 <button type="button" onClick={() => setPaymentMethod("cash")} className={`rounded-xl border px-3 py-2 text-sm font-black ${paymentMethod === "cash" ? "border-emerald-600 bg-emerald-600 text-white" : "border-gray-200 bg-white text-gray-700 hover:border-emerald-300"}`}>Espèces</button>
+                <button type="button" onClick={() => setPaymentMethod("manual")} className={`rounded-xl border px-3 py-2 text-sm font-black ${paymentMethod === "manual" ? "border-violet-600 bg-violet-600 text-white" : "border-gray-200 bg-white text-gray-700 hover:border-violet-300"}`}>Marquer payé</button>
               </div>
               {paymentMethod === "cash" ? (
                 <div className="grid gap-2 sm:grid-cols-[1fr_1fr]">
@@ -668,8 +699,8 @@ export default function AdminCaissePage() {
               <div className="mt-3 flex justify-between text-xl font-black"><span>Total</span><span>{formatPrice(total)}</span></div>
             </div>
 
-            <button type="submit" disabled={submitting || (paymentMethod === "card" && !terminalId) || !cart.length || Boolean(paymentId)} className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-black uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-50 ${paymentMethod === "cash" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-primary hover:bg-primary/90"}`}>
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : paymentMethod === "cash" ? <Banknote size={16} /> : <CreditCard size={16} />} {paymentMethod === "cash" ? "Valider l’encaissement espèces" : "Encaisser sur terminal"}
+            <button type="submit" disabled={submitting || (paymentMethod === "card" && !terminalId) || !cart.length || Boolean(paymentId)} className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-black uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-50 ${paymentMethod === "cash" ? "bg-emerald-600 hover:bg-emerald-700" : paymentMethod === "manual" ? "bg-violet-600 hover:bg-violet-700" : "bg-primary hover:bg-primary/90"}`}>
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : paymentMethod === "cash" ? <Banknote size={16} /> : paymentMethod === "manual" ? <CheckCircle2 size={16} /> : <CreditCard size={16} />} {paymentMethod === "cash" ? "Valider l'encaissement espèces" : paymentMethod === "manual" ? "Marquer comme payé" : "Encaisser sur terminal"}
             </button>
           </form>
 
@@ -681,7 +712,7 @@ export default function AdminCaissePage() {
               <input value={quickDescription} onChange={(event) => setQuickDescription(event.target.value)} className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary" placeholder="Libellé" />
             </div>
             <button type="submit" disabled={submitting || (paymentMethod === "card" && !terminalId) || Boolean(paymentId)} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-bold text-gray-800 hover:border-primary/40 hover:text-primary disabled:opacity-40">
-              <Banknote size={16} /> {paymentMethod === "cash" ? "Valider la vente rapide espèces" : "Encaisser une vente rapide"}
+              <Banknote size={16} /> {paymentMethod === "cash" ? "Valider la vente rapide espèces" : paymentMethod === "manual" ? "Vente rapide — Marquer comme payé" : "Encaisser une vente rapide"}
             </button>
           </form>
 

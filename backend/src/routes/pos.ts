@@ -108,16 +108,6 @@ function compactVariantLabel(variant: { name: string; size: string; color: strin
   return [variant.name, variant.size, variant.color].map((part) => part?.trim()).filter(Boolean).join(" · ") || null;
 }
 
-async function parseJsonResponse<T>(response: globalThis.Response): Promise<T> {
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!response.ok) {
-    const message = typeof data?.detail === "string" ? data.detail : typeof data?.message === "string" ? data.message : text;
-    throw new Error(message || response.statusText);
-  }
-  return data as T;
-}
-
 async function fetchMollie<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method || "GET";
   console.log(`[POS][Mollie] ${method} ${path}`);
@@ -129,11 +119,17 @@ async function fetchMollie<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers || {}),
     },
   });
+  // Lire le body UNE SEULE FOIS pour éviter "Body has already been read"
+  const text = await response.text();
   if (!response.ok) {
-    const text = await response.text();
     console.error(`[POS][Mollie] HTTP ${response.status} ${response.statusText} — ${method} ${path}`, text.slice(0, 500));
   }
-  return parseJsonResponse<T>(response);
+  const data = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    const message = typeof data?.detail === "string" ? data.detail : typeof data?.message === "string" ? data.message : text;
+    throw new Error(message || response.statusText);
+  }
+  return data as T;
 }
 
 async function generateOrderNumber(): Promise<string> {
