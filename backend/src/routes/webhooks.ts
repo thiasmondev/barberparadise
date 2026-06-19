@@ -4,6 +4,7 @@ import { formatPaymentMethod, getCustomerName, sendOrderConfirmationEmail } from
 import { ensureProInvoiceForOrder } from "../services/proInvoiceService";
 import { ensureB2CInvoiceForOrder, generateB2CInvoicePdfBuffer } from "../services/b2cInvoiceService";
 import promotionService from "../services/promotionService";
+import { notifyAdminNewOrder } from "../services/adminNotificationService";
 
 export const webhooksRouter = Router();
 
@@ -211,10 +212,32 @@ async function runPostPaymentEffects(orderId: string, channel: string | null, ch
   // On génère la facture B2C pour tout canal non-POS et non-B2B (vérifié dans ensureB2CInvoiceForOrder).
   const invoiceAttachment = await generateB2CInvoiceAttachment(orderId);
 
-  // N'envoyer l'email de confirmation que si le statut vient de changer
+  // N'envoyer l'email de confirmation et les notifications que si le statut vient de changer
   if (changed) {
     await recordPromotionUsageForPaidOrder(orderId);
     await sendOrderPaidEmail(orderId, invoiceAttachment);
+
+    // Notification admin (email + Telegram) — non bloquant, erreurs loggées dans le service
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { items: true, customer: true },
+    });
+    if (order) {
+      void notifyAdminNewOrder({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        createdAt: order.createdAt,
+        customerName: getCustomerName(order.customer, order.email),
+        customerEmail: order.email || order.customerEmail || "",
+        isB2B: order.isB2B,
+        items: order.items.map((item: { name: string; quantity: number }) => ({
+          name: item.name,
+          quantity: item.quantity,
+        })),
+        totalTTC: order.total,
+        paymentMethod: order.paymentMethod,
+      });
+    }
   }
 
   // Toujours s'assurer que la facture pro est générée (idempotente)
