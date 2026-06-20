@@ -9,7 +9,7 @@ import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
 import { parseImages, formatPrice } from "@/lib/utils";
 import { validatePromotionCode, type PromotionValidationResult } from "@/lib/api";
 
-type PaymentMethod = "card" | "pay_by_bank" | "paypal_4x";
+type PaymentMethod = "card" | "pay_by_bank" | "paypal";
 
 type ShippingOption = {
   id: string;
@@ -73,13 +73,14 @@ export default function CartPage() {
   const isProMinimumBlocked = isApprovedPro && subtotalHT < minimumProOrder;
   const paymentMethods = ([
     { id: "card", label: "CARTE BANCAIRE", icon: CreditCard },
-    { id: "paypal_4x", label: "PAYPAL 4X SANS FRAIS", icon: WalletCards },
-    { id: "pay_by_bank", label: "VIREMENT BANCAIRE", icon: Landmark },
+    { id: "paypal", label: "PAYPAL", icon: WalletCards },
+    { id: "pay_by_bank", label: "VIREMENT BANCAIRE (B2B)", icon: Landmark },
   ] satisfies Array<{ id: PaymentMethod; label: string; icon: typeof CreditCard }>).filter((method) => !isApprovedPro || method.id === "pay_by_bank");
 
 
   useEffect(() => {
     if (isApprovedPro && paymentMethod !== "pay_by_bank") setPaymentMethod("pay_by_bank");
+    if (!isApprovedPro && paymentMethod === "pay_by_bank") setPaymentMethod("card");
   }, [isApprovedPro, paymentMethod]);
 
   useEffect(() => {

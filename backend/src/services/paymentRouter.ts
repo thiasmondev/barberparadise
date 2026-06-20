@@ -2,6 +2,7 @@ export type PaymentMethod =
   | "card"
   | "pay_by_bank"
   | "sepa"
+  | "paypal"
   | "paypal_4x"
   | "apple_pay"
   | "google_pay"
@@ -55,6 +56,7 @@ export const SUPPORTED_PAYMENT_METHODS: PaymentMethod[] = [
   "card",
   "pay_by_bank",
   "sepa",
+  "paypal",
   "paypal_4x",
   "apple_pay",
   "google_pay",
@@ -65,7 +67,7 @@ export const SUPPORTED_PAYMENT_METHODS: PaymentMethod[] = [
   "multibanco",
 ];
 
-export const MOLLIE_METHOD_MAP: Record<Exclude<PaymentMethod, "paypal_4x">, string[]> = {
+export const MOLLIE_METHOD_MAP: Record<Exclude<PaymentMethod, "paypal" | "paypal_4x">, string[]> = {
   card: ["creditcard"],
   pay_by_bank: ["banktransfer"],
   sepa: ["directdebit"],
@@ -100,13 +102,18 @@ export function getAvailableMethods(country: string, isB2B: boolean): PaymentMet
     return ["pay_by_bank"];
   }
 
-  const commonMethods: PaymentMethod[] = ["card", "pay_by_bank", "paypal_4x", "apple_pay", "google_pay", "sepa"];
+  // B2C : carte + PayPal standard + Apple Pay (conditionnel côté client)
+  // pay_by_bank (virement) : B2B uniquement
+  // sepa (prélèvement) : retiré
+  // paypal_4x : retiré (Pay Later non activé sur le compte PayPal Business)
+  // google_pay : retiré temporairement (non activé sur le profil Mollie live)
+  const commonMethods: PaymentMethod[] = ["card", "paypal", "apple_pay"];
   const localMethods = LOCAL_METHODS_BY_COUNTRY[normalizedCountry] || [];
   return [...commonMethods, ...localMethods];
 }
 
 export function getProvider(method: PaymentMethod, country = "FR"): PaymentProvider {
-  if (method === "paypal_4x") return "paypal";
+  if (method === "paypal" || method === "paypal_4x") return "paypal";
   return "mollie";
 }
 

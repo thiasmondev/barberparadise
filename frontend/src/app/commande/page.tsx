@@ -17,6 +17,7 @@ type PaymentMethod =
   | "card"
   | "pay_by_bank"
   | "sepa"
+  | "paypal"
   | "paypal_4x"
   | "apple_pay"
   | "google_pay"
@@ -121,7 +122,8 @@ const METHOD_CONFIG: Record<PaymentMethod, { label: string; badge: string; icon:
   card: { label: "CARTE BANCAIRE", badge: "CB", icon: CreditCard },
   pay_by_bank: { label: "VIREMENT BANCAIRE", badge: "BANK", icon: Landmark },
   sepa: { label: "PRÉLÈVEMENT SEPA", badge: "SEPA", icon: ReceiptText },
-  paypal_4x: { label: "PAYPAL 4X SANS FRAIS", badge: "PP", icon: WalletCards },
+  paypal: { label: "PAYPAL", badge: "PP", icon: WalletCards },
+  paypal_4x: { label: "PAYPAL 4X SANS FRAIS", badge: "PP4X", icon: WalletCards },
   apple_pay: { label: "APPLE PAY", badge: "APPLE", icon: Smartphone },
   google_pay: { label: "GOOGLE PAY", badge: "GPAY", icon: Smartphone },
   bancontact: { label: "BANCONTACT", badge: "BE", icon: Landmark },

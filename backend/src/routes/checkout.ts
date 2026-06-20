@@ -222,7 +222,7 @@ async function createMollieCheckout(params: {
   totalTTC: number;
   frontendUrl: string;
   backendUrl: string;
-  method: Exclude<PaymentMethod, "paypal_4x">;
+  method: Exclude<PaymentMethod, "paypal" | "paypal_4x">;
   country: string;
 }) {
   const mollieMethod = MOLLIE_METHOD_MAP[params.method];
@@ -283,12 +283,14 @@ async function createPaypalCheckout(params: { orderId: string; orderNumber: stri
         },
       ],
       payment_source: {
-        pay_later: {
+        paypal: {
           experience_context: {
             payment_method_preference: "IMMEDIATE_PAYMENT_REQUIRED",
             brand_name: "Barber Paradise",
             locale: "fr-FR",
             landing_page: "LOGIN",
+            shipping_preference: "GET_FROM_FILE",
+            user_action: "PAY_NOW",
             return_url: `${params.frontendUrl}/commande/succes?orderId=${params.orderId}`,
             cancel_url: `${params.frontendUrl}/commande/annulation?orderId=${params.orderId}`,
           },
@@ -314,10 +316,10 @@ async function createProviderCheckout(
   },
 ) {
   if (provider === "mollie") {
-    if (params.method === "paypal_4x") {
-      throw new Error("Méthode Mollie invalide");
+    if (params.method === "paypal" || params.method === "paypal_4x") {
+      throw new Error("Méthode Mollie invalide : PayPal doit passer par le provider PayPal");
     }
-    return createMollieCheckout({ ...params, method: params.method });
+    return createMollieCheckout({ ...params, method: params.method as Exclude<PaymentMethod, "paypal" | "paypal_4x"> });
   }
   if (provider === "paypal") return createPaypalCheckout(params);
   throw new Error(`Prestataire de paiement non supporté : ${provider}`);
