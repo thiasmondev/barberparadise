@@ -116,6 +116,20 @@ function channelBadge(order: Order) {
   return { label: "Boutique web", className: "bg-gray-100 text-gray-700 ring-gray-200" };
 }
 
+function paymentMethodLabel(method?: string | null, provider?: string | null): string {
+  const m = (method || "").toLowerCase();
+  const p = (provider || "").toLowerCase();
+  if (m === "cash" || m === "especes" || m === "espèces") return "Espèces";
+  if (m === "manual") return "Encaissement manuel";
+  if (m === "paypal" || p === "paypal") return "PayPal";
+  if (["pay_by_bank", "banktransfer", "bank_transfer", "bank-transfer", "virement"].includes(m)) return "Virement bancaire";
+  if (["creditcard", "credit_card", "card", "carte", "ideal", "bancontact"].includes(m)) return "Carte bancaire";
+  if (m === "applepay" || m === "apple_pay") return "Apple Pay";
+  if (m === "googlepay" || m === "google_pay") return "Google Pay";
+  if (!m && !p) return "Paiement non initié";
+  return method || provider || "Non renseigné";
+}
+
 function carrierLabel(carrier?: string | null) {
   if (carrier === "mondial_relay") return "Mondial Relay";
   if (carrier === "colissimo_international") return "Colissimo International";
@@ -760,6 +774,7 @@ export default function OrderDetailPage() {
                 <div className="flex justify-between"><span className="text-gray-500">Taxes</span><span>{formatPrice(totals.taxes, order.currency)}</span></div>
                 <div className="flex justify-between border-t border-gray-200 pt-3 text-base font-semibold text-gray-950"><span>Total</span><span>{formatPrice(order.total, order.currency)}</span></div>
                 <div className="flex justify-between text-sm font-medium text-emerald-700"><span>Payé</span><span>{paymentBadge(order).label === "Payée" ? formatPrice(order.total, order.currency) : formatPrice(0, order.currency)}</span></div>
+                <div className="flex justify-between border-t border-gray-100 pt-3 text-sm"><span className="text-gray-500">Moyen de paiement</span><span className="font-medium text-gray-800">{paymentMethodLabel(order.paymentMethod, order.paymentProvider)}</span></div>
               </div>
             </section>
 

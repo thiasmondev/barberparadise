@@ -74,6 +74,20 @@ function channelBadge(order: Order) {
   return { label: "Boutique web", className: "bg-gray-100 text-gray-700 ring-gray-200" };
 }
 
+function paymentMethodLabel(method?: string | null, provider?: string | null): string {
+  const m = (method || "").toLowerCase();
+  const p = (provider || "").toLowerCase();
+  if (m === "cash" || m === "especes" || m === "espèces") return "Espèces";
+  if (m === "manual") return "Encaissement manuel";
+  if (m === "paypal" || p === "paypal") return "PayPal";
+  if (["pay_by_bank", "banktransfer", "bank_transfer", "bank-transfer", "virement"].includes(m)) return "Virement bancaire";
+  if (["creditcard", "credit_card", "card", "carte", "ideal", "bancontact"].includes(m)) return "Carte bancaire";
+  if (m === "applepay" || m === "apple_pay") return "Apple Pay";
+  if (m === "googlepay" || m === "google_pay") return "Google Pay";
+  if (!m && !p) return "—";
+  return method || provider || "—";
+}
+
 function shippingMode(order: Order) {
   if (order.channel === "pos") return "Vente en caisse";
   const carrier = order.shipment?.carrier;
@@ -263,6 +277,7 @@ export default function AdminOrdersPage() {
                         <td className="whitespace-nowrap px-4 py-4 text-right font-medium text-gray-950">{formatPrice(order.total, order.currency)}</td>
                         <td className="whitespace-nowrap px-4 py-4">
                           <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${pay.className}`}>{pay.label}</span>
+                          <div className="mt-1 text-xs text-gray-400">{paymentMethodLabel(order.paymentMethod, order.paymentProvider)}</div>
                         </td>
                         <td className="whitespace-nowrap px-4 py-4">
                           <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${fulfillment.className}`}>{fulfillment.label}</span>
