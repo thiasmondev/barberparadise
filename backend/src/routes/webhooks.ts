@@ -156,14 +156,19 @@ async function markOrderPaid(orderId: string, provider: WebhookProvider, provide
   });
 }
 
-async function sendOrderPaidEmail(orderId: string, invoiceAttachment?: { filename: string; content: string }): Promise<void> {
+async function sendOrderPaidEmail(orderId: string, orderNumber: string, invoiceAttachment?: { filename: string; content: string } | null): Promise<void> {
+  console.log(`[email] Chargement commande pour email confirmation — orderId=${orderId} orderNumber=${orderNumber}`);
   const order = await prisma.order.findUnique({
     where: { id: orderId },
     include: { items: true, shippingAddress: true, customer: true },
   });
-  if (!order?.email) return;
+  if (!order?.email) {
+    console.warn(`[email] Pas d'adresse email pour la commande ${orderNumber} — email non envoyé`);
+    return;
+  }
 
-  await sendOrderConfirmationEmail({
+  console.log(`[email] Envoi confirmation pour ${orderNumber} → ${order.email} (pièce jointe: ${invoiceAttachment ? invoiceAttachment.filename : "aucune"})`);
+  const result = await sendOrderConfirmationEmail({
     to: order.email,
     orderNumber: order.orderNumber,
     customerName: getCustomerName(order.customer, order.email),
@@ -184,64 +189,98 @@ async function sendOrderPaidEmail(orderId: string, invoiceAttachment?: { filenam
     paymentMethod: formatPaymentMethod(order.paymentMethod),
     attachments: invoiceAttachment ? [invoiceAttachment] : undefined,
   });
+  console.log(`[email] Résultat envoi confirmation ${orderNumber}: sent=${result.sent} provider=${result.provider || "?"} id=${result.id || "?"}`);
 }
 
-async function generateB2CInvoiceAttachment(orderId: string): Promise<{ filename: string; content: string } | undefined> {
-  // ensureB2CInvoiceForOrder retourne pdfBuffer uniquement lors de la création.
-  // Si la facture existe déjà en base, on re-génère le PDF en mémoire via generateB2CInvoicePdfBuffer.
-  const invoice = await ensureB2CInvoiceForOrder(orderId);
-  if (!invoice) return undefined;
+async function generateB2CInvoiceAttachment(orderId: string, orderNumber: string): Promise<{ filename: string; content: string } | null> {
+  try {
+    console.log(`[invoice] Génération facture B2C pour ${orderNumber} — orderId=${orderId}`);
+    const invoice = await ensureB2CInvoiceForOrder(orderId);
+    if (!invoice) {
+      console.log(`[invoice] Pas de facture B2C générée pour ${orderNumber} (commande B2B ou non éligible)`);
+      return null;
+    }
 
-  const pdfBuffer = invoice.pdfBuffer ?? await generateB2CInvoicePdfBuffer(orderId, invoice.invoiceNumber);
-  if (!pdfBuffer) {
-    console.warn("[email] PDF facture B2C introuvable pour la pièce jointe", { orderId });
-    return undefined;
+    const pdfBuffer = invoice.pdfBuffer ?? await generateB2CInvoicePdfBuffer(orderId, invoice.invoiceNumber);
+    if (!pdfBuffer) {
+      console.warn(`[invoice] PDF facture B2C introuvable pour la pièce jointe — orderId=${orderId} invoiceNumber=${invoice.invoiceNumber}`);
+      return null;
+    }
+
+    console.log(`[invoice] Facture B2C prête — ${invoice.invoiceNumber} (${pdfBuffer.length} bytes)`);
+    return {
+      filename: `${invoice.invoiceNumber}.pdf`,
+      content: pdfBuffer.toString("base64"),
+    };
+  } catch (err) {
+    console.error(`[invoice] Erreur génération facture B2C pour ${orderNumber}:`, err instanceof Error ? err.message : err);
+    return null; // Ne pas bloquer l'email de confirmation si la facture échoue
+  }
+}
+
+async function runPostPaymentEffects(orderId: string, orderNumber: string, channel: string | null, changed: boolean): Promise<void> {
+  // "pos" = vente en caisse, pas d'email de confirmation e-commerce
+  if (channel === "pos") {
+    console.log(`[webhook] Commande POS ${orderNumber} — pas d'email de confirmation e-commerce`);
+    return;
   }
 
-  return {
-    filename: `${invoice.invoiceNumber}.pdf`,
-    content: pdfBuffer.toString("base64"),
-  };
-}
+  console.log(`[webhook] runPostPaymentEffects — orderId=${orderId} orderNumber=${orderNumber} channel=${channel} changed=${changed}`);
 
-async function runPostPaymentEffects(orderId: string, channel: string | null, changed: boolean): Promise<void> {
-  // "pos" = vente en caisse, pas d'email de confirmation e-commerce
-  if (channel === "pos") return;
-
-  // Bug fix: channel peut être null pour les anciennes commandes ou "online" pour les nouvelles.
-  // On génère la facture B2C pour tout canal non-POS et non-B2B (vérifié dans ensureB2CInvoiceForOrder).
-  const invoiceAttachment = await generateB2CInvoiceAttachment(orderId);
+  // Génération facture B2C (non bloquante — erreur loggée mais ne bloque pas l'email)
+  const invoiceAttachment = await generateB2CInvoiceAttachment(orderId, orderNumber);
 
   // N'envoyer l'email de confirmation et les notifications que si le statut vient de changer
   if (changed) {
-    await recordPromotionUsageForPaidOrder(orderId);
-    await sendOrderPaidEmail(orderId, invoiceAttachment);
-
-    // Notification admin (email + Telegram) — non bloquant, erreurs loggées dans le service
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      include: { items: true, customer: true },
-    });
-    if (order) {
-      void notifyAdminNewOrder({
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        createdAt: order.createdAt,
-        customerName: getCustomerName(order.customer, order.email),
-        customerEmail: order.email || order.customerEmail || "",
-        isB2B: order.isB2B,
-        items: order.items.map((item: { name: string; quantity: number }) => ({
-          name: item.name,
-          quantity: item.quantity,
-        })),
-        totalTTC: order.total,
-        paymentMethod: order.paymentMethod,
-      });
+    // Enregistrement de l'usage de la promotion
+    try {
+      await recordPromotionUsageForPaidOrder(orderId);
+    } catch (err) {
+      console.error(`[webhook] Erreur enregistrement promotion pour ${orderNumber}:`, err instanceof Error ? err.message : err);
     }
+
+    // Email de confirmation client
+    try {
+      await sendOrderPaidEmail(orderId, orderNumber, invoiceAttachment);
+    } catch (err) {
+      console.error(`[email] Erreur envoi confirmation pour ${orderNumber}:`, err instanceof Error ? err.message : err);
+    }
+
+    // Notification admin (email + Telegram) — non bloquant
+    try {
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        include: { items: true, customer: true },
+      });
+      if (order) {
+        void notifyAdminNewOrder({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          createdAt: order.createdAt,
+          customerName: getCustomerName(order.customer, order.email),
+          customerEmail: order.email || order.customerEmail || "",
+          isB2B: order.isB2B,
+          items: order.items.map((item: { name: string; quantity: number }) => ({
+            name: item.name,
+            quantity: item.quantity,
+          })),
+          totalTTC: order.total,
+          paymentMethod: order.paymentMethod,
+        });
+      }
+    } catch (err) {
+      console.error(`[webhook] Erreur notification admin pour ${orderNumber}:`, err instanceof Error ? err.message : err);
+    }
+  } else {
+    console.log(`[webhook] Commande ${orderNumber} déjà payée — email de confirmation non renvoyé (idempotence)`);
   }
 
   // Toujours s'assurer que la facture pro est générée (idempotente)
-  await ensureProInvoiceForOrder(orderId);
+  try {
+    await ensureProInvoiceForOrder(orderId);
+  } catch (err) {
+    console.error(`[invoice] Erreur génération facture pro pour ${orderNumber}:`, err instanceof Error ? err.message : err);
+  }
 }
 
 async function findOrderIdByProviderPaymentId(providerPaymentId: string): Promise<string | null> {
@@ -250,59 +289,124 @@ async function findOrderIdByProviderPaymentId(providerPaymentId: string): Promis
 }
 
 webhooksRouter.post("/mollie", async (req: Request, res: Response): Promise<void> => {
-  try {
-    const paymentId = req.body?.id;
-    if (!paymentId) {
-      res.status(400).json({ error: "Identifiant paiement Mollie manquant" });
-      return;
-    }
+  const paymentId = req.body?.id;
+  console.log(`[webhook][mollie] Réception — paymentId=${paymentId}`);
 
+  if (!paymentId) {
+    res.status(400).json({ error: "Identifiant paiement Mollie manquant" });
+    return;
+  }
+
+  // Étape 1 : Vérifier le paiement auprès de Mollie
+  let payment: { id: string; status?: string; metadata?: { orderId?: string }; orderNumber?: string };
+  try {
     const response = await fetch(`https://api.mollie.com/v2/payments/${paymentId}`, {
       headers: { Authorization: `Bearer ${requireEnv("MOLLIE_API_KEY")}` },
     });
-    const payment = (await response.json()) as { id: string; status?: string; metadata?: { orderId?: string } };
+    payment = (await response.json()) as { id: string; status?: string; metadata?: { orderId?: string } };
     if (!response.ok) {
+      console.error(`[webhook][mollie] Vérification paiement échouée — paymentId=${paymentId} status=${response.status}`);
       res.status(401).json({ error: "Webhook Mollie non vérifié" });
       return;
     }
-
-    const orderId = payment.metadata?.orderId || (await findOrderIdByProviderPaymentId(payment.id));
-    if (payment.status === "paid" && orderId) {
-      const result = await markOrderPaid(orderId, "mollie", payment.id);
-      await runPostPaymentEffects(orderId, result.channel, result.changed);
-      console.log("Webhook Mollie paid", { orderId, paymentId: payment.id, changed: result.changed, channel: result.channel });
-    }
-    if (["failed", "canceled", "expired"].includes(payment.status || "") && orderId) {
-      await markOrderCanceled(orderId, payment.id);
-    }
-    res.json({ received: true });
+    console.log(`[webhook][mollie] Paiement vérifié — paymentId=${paymentId} status=${payment.status} orderId=${payment.metadata?.orderId || "via lookup"}`);
   } catch (err) {
-    console.error("Erreur webhook Mollie", err);
-    res.status(500).json({ error: "Erreur webhook Mollie" });
+    console.error(`[webhook][mollie] Erreur appel API Mollie — paymentId=${paymentId}:`, err instanceof Error ? err.message : err);
+    res.status(500).json({ error: "Erreur vérification paiement Mollie" });
+    return;
   }
-});
 
-webhooksRouter.post("/paypal", async (req: Request, res: Response): Promise<void> => {
-  try {
-    if (!(await verifyPaypalSignature(req))) {
-      res.status(401).json({ error: "Signature PayPal invalide" });
+  // Étape 2 : Trouver la commande
+  const orderId = payment.metadata?.orderId || (await findOrderIdByProviderPaymentId(payment.id));
+
+  if (payment.status === "paid" && orderId) {
+    // Étape 3 : Marquer comme payé (critique — si ça échoue, renvoyer 500 pour que Mollie retente)
+    let result: { changed: boolean; channel: string | null };
+    let orderNumber = orderId;
+    try {
+      result = await markOrderPaid(orderId, "mollie", payment.id);
+      // Récupérer le orderNumber pour les logs
+      const orderRef = await prisma.order.findUnique({ where: { id: orderId }, select: { orderNumber: true } });
+      orderNumber = orderRef?.orderNumber || orderId;
+      console.log(`[webhook][mollie] Commande marquée payée — orderId=${orderId} orderNumber=${orderNumber} changed=${result.changed} channel=${result.channel}`);
+    } catch (err) {
+      console.error(`[webhook][mollie] Erreur critique markOrderPaid — orderId=${orderId}:`, err instanceof Error ? err.stack : err);
+      res.status(500).json({ error: "Erreur marquage commande payée" });
       return;
     }
 
-    const eventType = req.body?.event_type;
-    const resource = req.body?.resource;
-    const orderId = resource?.supplementary_data?.related_ids?.order_id
-      ? await findOrderIdByProviderPaymentId(resource.supplementary_data.related_ids.order_id)
-      : resource?.custom_id || resource?.invoice_id || resource?.purchase_units?.[0]?.reference_id;
-
-    if (eventType === "PAYMENT.CAPTURE.COMPLETED" && orderId) {
-      const result = await markOrderPaid(orderId, "paypal", resource?.id || resource?.supplementary_data?.related_ids?.order_id);
-      await runPostPaymentEffects(orderId, result.channel, result.changed);
-      console.log("Webhook PayPal paid", { orderId, eventType, changed: result.changed, channel: result.channel });
-    }
+    // Étape 4 : Répondre 200 à Mollie IMMÉDIATEMENT (avant les effets secondaires)
     res.json({ received: true });
-  } catch (err) {
-    console.error("Erreur webhook PayPal", err);
-    res.status(500).json({ error: "Erreur webhook PayPal" });
+
+    // Étape 5 : Effets secondaires (facture, email, notification) — non bloquants pour Mollie
+    try {
+      await runPostPaymentEffects(orderId, orderNumber, result.channel, result.changed);
+    } catch (err) {
+      // Ne jamais laisser une erreur ici remonter — Mollie a déjà reçu son 200
+      console.error(`[webhook][mollie] Erreur runPostPaymentEffects — orderId=${orderId} orderNumber=${orderNumber}:`, err instanceof Error ? err.stack : err);
+    }
+    return;
   }
+
+  if (["failed", "canceled", "expired"].includes(payment.status || "") && orderId) {
+    try {
+      await markOrderCanceled(orderId, payment.id);
+      console.log(`[webhook][mollie] Commande annulée — orderId=${orderId} status=${payment.status}`);
+    } catch (err) {
+      console.error(`[webhook][mollie] Erreur markOrderCanceled — orderId=${orderId}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  res.json({ received: true });
+});
+
+webhooksRouter.post("/paypal", async (req: Request, res: Response): Promise<void> => {
+  const eventType = req.body?.event_type;
+  console.log(`[webhook][paypal] Réception — eventType=${eventType}`);
+
+  try {
+    if (!(await verifyPaypalSignature(req))) {
+      console.warn(`[webhook][paypal] Signature invalide — eventType=${eventType}`);
+      res.status(401).json({ error: "Signature PayPal invalide" });
+      return;
+    }
+  } catch (err) {
+    console.error(`[webhook][paypal] Erreur vérification signature:`, err instanceof Error ? err.message : err);
+    res.status(500).json({ error: "Erreur vérification signature PayPal" });
+    return;
+  }
+
+  const resource = req.body?.resource;
+  const orderId = resource?.supplementary_data?.related_ids?.order_id
+    ? await findOrderIdByProviderPaymentId(resource.supplementary_data.related_ids.order_id)
+    : resource?.custom_id || resource?.invoice_id || resource?.purchase_units?.[0]?.reference_id;
+
+  if (eventType === "PAYMENT.CAPTURE.COMPLETED" && orderId) {
+    // Étape 3 : Marquer comme payé
+    let result: { changed: boolean; channel: string | null };
+    let orderNumber = orderId;
+    try {
+      result = await markOrderPaid(orderId, "paypal", resource?.id || resource?.supplementary_data?.related_ids?.order_id);
+      const orderRef = await prisma.order.findUnique({ where: { id: orderId }, select: { orderNumber: true } });
+      orderNumber = orderRef?.orderNumber || orderId;
+      console.log(`[webhook][paypal] Commande marquée payée — orderId=${orderId} orderNumber=${orderNumber} changed=${result.changed} channel=${result.channel}`);
+    } catch (err) {
+      console.error(`[webhook][paypal] Erreur critique markOrderPaid — orderId=${orderId}:`, err instanceof Error ? err.stack : err);
+      res.status(500).json({ error: "Erreur marquage commande payée" });
+      return;
+    }
+
+    // Répondre 200 à PayPal IMMÉDIATEMENT
+    res.json({ received: true });
+
+    // Effets secondaires non bloquants
+    try {
+      await runPostPaymentEffects(orderId, orderNumber, result.channel, result.changed);
+    } catch (err) {
+      console.error(`[webhook][paypal] Erreur runPostPaymentEffects — orderId=${orderId} orderNumber=${orderNumber}:`, err instanceof Error ? err.stack : err);
+    }
+    return;
+  }
+
+  res.json({ received: true });
 });
