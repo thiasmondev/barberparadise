@@ -19,6 +19,7 @@ import {
   Phone,
   Scale,
   Save,
+  Send,
   ShieldCheck,
   StickyNote,
   Trash2,
@@ -36,6 +37,8 @@ import {
   getLogisticsOrder,
   getShipmentLabelPdfUrl,
   purchaseLogisticsLabel,
+  resendOrderConfirmation,
+  resendOrderTracking,
   updateAdminOrder,
   updateOrderStatus,
   type LogisticsCarrierQuote,
@@ -270,6 +273,8 @@ export default function OrderDetailPage() {
   const [updating, setUpdating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [resendingConfirmation, setResendingConfirmation] = useState(false);
+  const [resendingTracking, setResendingTracking] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [notes, setNotes] = useState("");
   const [editForm, setEditForm] = useState<EditOrderForm>({
@@ -649,6 +654,38 @@ export default function OrderDetailPage() {
     }
   };
 
+  const handleResendConfirmation = async () => {
+    if (!order) return;
+    const emailTo = order.customer?.email || order.customerEmail || order.email;
+    const confirmed = window.confirm(`Renvoyer l'email de confirmation à ${emailTo} ?`);
+    if (!confirmed) return;
+    setResendingConfirmation(true);
+    try {
+      const result = await resendOrderConfirmation(order.id);
+      alert(result.message || "Email de confirmation renvoyé avec succès.");
+    } catch (err: any) {
+      alert(err.message || "Impossible de renvoyer l'email de confirmation.");
+    } finally {
+      setResendingConfirmation(false);
+    }
+  };
+
+  const handleResendTracking = async () => {
+    if (!order) return;
+    const emailTo = order.customer?.email || order.customerEmail || order.email;
+    const confirmed = window.confirm(`Renvoyer l'email de suivi d'expédition à ${emailTo} ?`);
+    if (!confirmed) return;
+    setResendingTracking(true);
+    try {
+      const result = await resendOrderTracking(order.id);
+      alert(result.message || "Email de suivi renvoyé avec succès.");
+    } catch (err: any) {
+      alert(err.message || "Impossible de renvoyer l'email de suivi.");
+    } finally {
+      setResendingTracking(false);
+    }
+  };
+
   const markAsProcessed = async () => {
     if (!order) return;
     setUpdating(true);
@@ -871,6 +908,36 @@ export default function OrderDetailPage() {
                 </div>
               )}
             </section>
+
+            {/* Bloc Emails — visible uniquement pour les commandes en ligne payées */}
+            {!isPosOrder && ["paid", "processing", "shipped", "delivered"].includes(order.status) && (
+              <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                <div className="mb-4 flex items-center gap-2">
+                  <Send className="h-4 w-4 text-gray-500" />
+                  <h2 className="font-semibold text-gray-950">Emails transactionnels</h2>
+                </div>
+                <div className="space-y-2">
+                  <button
+                    onClick={handleResendConfirmation}
+                    disabled={resendingConfirmation}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {resendingConfirmation ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                    Renvoyer la confirmation
+                  </button>
+                  {activeShipment?.trackingNumber && (
+                    <button
+                      onClick={handleResendTracking}
+                      disabled={resendingTracking}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {resendingTracking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />}
+                      Renvoyer le suivi
+                    </button>
+                  )}
+                </div>
+              </section>
+            )}
 
             <section className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm">
               <div className="flex items-start gap-3">

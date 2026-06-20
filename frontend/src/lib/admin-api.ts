@@ -3014,3 +3014,17 @@ export function getPosStats(period = "today") {
 export function markPosOrderPaid(orderId: string) {
   return adminFetch<{ order: PosOrder }>(`/api/pos/orders/${encodeURIComponent(orderId)}/mark-paid`, { method: "POST" });
 }
+
+export function resendOrderConfirmation(orderId: string) {
+  return adminFetch<{ success: boolean; message: string; provider?: string; id?: string }>(
+    `/api/admin/orders/${encodeURIComponent(orderId)}/resend-confirmation`,
+    { method: "POST" }
+  );
+}
+
+export function resendOrderTracking(orderId: string) {
+  return adminFetch<{ success: boolean; message: string; trackingNumber?: string; provider?: string; id?: string }>(
+    `/api/admin/orders/${encodeURIComponent(orderId)}/resend-tracking`,
+    { method: "POST" }
+  );
+}

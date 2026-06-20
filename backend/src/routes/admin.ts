@@ -5,12 +5,15 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../utils/prisma";
 import { getFrontendUrl } from "../utils/frontendUrl";
 import {
+  formatPaymentMethod,
   getCustomerName,
   sendDraftOrderEmail,
   sendEmail,
+  sendOrderConfirmationEmail,
   sendOrderShippedEmail,
   sendPasswordResetEmail,
 } from "../services/emailService";
+import { ensureB2CInvoiceForOrder, generateB2CInvoicePdfBuffer } from "../services/b2cInvoiceService";
 import { requireAdmin, AuthRequest } from "../middleware/auth";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
@@ -6250,6 +6253,141 @@ adminRouter.put(
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Erreur mise à jour alt texts" });
+    }
+  }
+);
+
+// POST /api/admin/orders/:id/resend-confirmation — Renvoyer l'email de confirmation au client
+adminRouter.post(
+  "/orders/:id/resend-confirmation",
+  requireAdmin,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const order = await prisma.order.findUnique({
+        where: { id: req.params.id },
+        include: { items: true, shippingAddress: true, customer: true },
+      });
+
+      if (!order) {
+        res.status(404).json({ error: "Commande introuvable" });
+        return;
+      }
+
+      const emailTo = order.email || order.customerEmail || order.customer?.email || "";
+      if (!emailTo) {
+        res.status(400).json({ error: "Aucune adresse email pour cette commande" });
+        return;
+      }
+
+      // Récupérer la facture existante sans en créer une nouvelle si elle existe déjà
+      let invoiceAttachment: { filename: string; content: string } | undefined;
+      try {
+        const invoice = await ensureB2CInvoiceForOrder(order.id);
+        if (invoice) {
+          const pdfBuffer = invoice.pdfBuffer ?? await generateB2CInvoicePdfBuffer(order.id, invoice.invoiceNumber);
+          if (pdfBuffer) {
+            invoiceAttachment = {
+              filename: `${invoice.invoiceNumber}.pdf`,
+              content: pdfBuffer.toString("base64"),
+            };
+          }
+        }
+      } catch (invoiceErr) {
+        console.warn(`[email][admin-resend] Impossible de récupérer la facture pour ${order.orderNumber}:`, invoiceErr instanceof Error ? invoiceErr.message : invoiceErr);
+        // Continuer sans pièce jointe
+      }
+
+      console.log(`[email][admin-resend] Renvoi confirmation ${order.orderNumber} → ${emailTo} (pièce jointe: ${invoiceAttachment ? invoiceAttachment.filename : "aucune"}) par ${req.user?.email || "admin"}`);
+
+      const result = await sendOrderConfirmationEmail({
+        to: emailTo,
+        orderNumber: order.orderNumber,
+        customerName: getCustomerName(order.customer, emailTo),
+        items: order.items.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+          image: item.image,
+        })),
+        totalHT: order.totalHT || order.subtotal,
+        vatAmount: order.vatAmount,
+        vatRate: order.vatRate,
+        vatNumber: order.vatNumber,
+        isB2B: order.isB2B,
+        totalTTC: order.total,
+        shippingCost: order.shipping,
+        shippingAddress: order.shippingAddress,
+        paymentMethod: formatPaymentMethod(order.paymentMethod),
+        attachments: invoiceAttachment ? [invoiceAttachment] : undefined,
+      });
+
+      console.log(`[email][admin-resend] Résultat renvoi confirmation ${order.orderNumber}: sent=${result.sent} provider=${result.provider || "?"} id=${result.id || "?"}`);
+
+      if (!result.sent) {
+        res.status(500).json({ error: "L'email n'a pas pu être envoyé. Vérifiez la configuration Resend." });
+        return;
+      }
+
+      res.json({ success: true, message: `Email de confirmation renvoyé à ${emailTo}`, provider: result.provider, id: result.id });
+    } catch (err) {
+      console.error(`[email][admin-resend] Erreur renvoi confirmation:`, err);
+      res.status(500).json({ error: err instanceof Error ? err.message : "Erreur renvoi email de confirmation" });
+    }
+  }
+);
+
+// POST /api/admin/orders/:id/resend-tracking — Renvoyer l'email de suivi d'expédition au client
+adminRouter.post(
+  "/orders/:id/resend-tracking",
+  requireAdmin,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const order = await prisma.order.findUnique({
+        where: { id: req.params.id },
+        include: { customer: true, shipment: true },
+      });
+
+      if (!order) {
+        res.status(404).json({ error: "Commande introuvable" });
+        return;
+      }
+
+      const emailTo = order.email || order.customerEmail || order.customer?.email || "";
+      if (!emailTo) {
+        res.status(400).json({ error: "Aucune adresse email pour cette commande" });
+        return;
+      }
+
+      const shipment = order.shipment as { trackingNumber?: string | null; trackingUrl?: string | null; carrier?: string | null } | null;
+      if (!shipment?.trackingNumber) {
+        res.status(400).json({ error: "Aucun numéro de suivi enregistré pour cette commande" });
+        return;
+      }
+
+      const carrierLabel = LOGISTICS_CARRIERS[shipment.carrier as keyof typeof LOGISTICS_CARRIERS] || shipment.carrier || "Transporteur";
+
+      console.log(`[email][admin-resend] Renvoi suivi ${order.orderNumber} → ${emailTo} tracking=${shipment.trackingNumber} par ${req.user?.email || "admin"}`);
+
+      const result = await sendOrderShippedEmail({
+        to: emailTo,
+        orderNumber: order.orderNumber,
+        customerName: getCustomerName(order.customer, emailTo),
+        carrier: carrierLabel,
+        trackingNumber: shipment.trackingNumber,
+        trackingUrl: shipment.trackingUrl || `https://www.laposte.fr/outils/suivre-vos-envois?code=${encodeURIComponent(shipment.trackingNumber)}`,
+      });
+
+      console.log(`[email][admin-resend] Résultat renvoi suivi ${order.orderNumber}: sent=${result.sent} provider=${result.provider || "?"} id=${result.id || "?"}`);
+
+      if (!result.sent) {
+        res.status(500).json({ error: "L'email n'a pas pu être envoyé. Vérifiez la configuration Resend." });
+        return;
+      }
+
+      res.json({ success: true, message: `Email de suivi renvoyé à ${emailTo}`, trackingNumber: shipment.trackingNumber, provider: result.provider, id: result.id });
+    } catch (err) {
+      console.error(`[email][admin-resend] Erreur renvoi suivi:`, err);
+      res.status(500).json({ error: err instanceof Error ? err.message : "Erreur renvoi email de suivi" });
     }
   }
 );
