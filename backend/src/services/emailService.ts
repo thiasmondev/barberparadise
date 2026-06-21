@@ -115,11 +115,16 @@ export function formatPaymentMethod(method?: string | null): string {
     case "cash":
       return "Espèces";
     case "paypal":
+      return "PayPal";
     case "paypal_4x":
       return "PayPal 4x sans frais";
+    case "paybybank":
+      return "Paiement bancaire instantané";
+    case "pay_by_bank":
     case "bank_transfer":
     case "bank-transfer":
     case "virement":
+    case "banktransfer":
       return "Virement bancaire";
     case "b2b_deferred":
       return "Paiement différé B2B";

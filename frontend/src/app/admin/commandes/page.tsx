@@ -80,6 +80,7 @@ function paymentMethodLabel(method?: string | null, provider?: string | null): s
   if (m === "cash" || m === "especes" || m === "espèces") return "Espèces";
   if (m === "manual") return "Encaissement manuel";
   if (m === "paypal" || p === "paypal") return "PayPal";
+  if (m === "paybybank") return "Paiement bancaire instantané";
   if (["pay_by_bank", "banktransfer", "bank_transfer", "bank-transfer", "virement"].includes(m)) return "Virement bancaire";
   if (["creditcard", "credit_card", "card", "carte", "ideal", "bancontact"].includes(m)) return "Carte bancaire";
   if (m === "applepay" || m === "apple_pay") return "Apple Pay";

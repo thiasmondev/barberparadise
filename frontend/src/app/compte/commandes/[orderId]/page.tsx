@@ -24,10 +24,17 @@ const PAYMENT_LABELS: Record<string, string> = {
   card: "CARTE BANCAIRE",
   cb: "CARTE BANCAIRE",
   checkout: "CARTE BANCAIRE",
-  paypal: "PAYPAL 4X SANS FRAIS",
+  paypal: "PAYPAL",
   paypal_4x: "PAYPAL 4X SANS FRAIS",
+  paybybank: "PAIEMENT BANCAIRE INSTANTANÉ",
+  pay_by_bank: "VIREMENT BANCAIRE",
+  banktransfer: "VIREMENT BANCAIRE",
   bank_transfer: "VIREMENT BANCAIRE",
   virement: "VIREMENT BANCAIRE",
+  apple_pay: "APPLE PAY",
+  applepay: "APPLE PAY",
+  google_pay: "GOOGLE PAY",
+  googlepay: "GOOGLE PAY",
 };
 
 function formatDate(value: string): string {

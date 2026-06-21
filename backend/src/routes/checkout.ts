@@ -226,25 +226,48 @@ async function createMollieCheckout(params: {
   country: string;
 }) {
   const mollieMethod = MOLLIE_METHOD_MAP[params.method];
+  const isGooglePay = params.method === "google_pay";
+
+  if (isGooglePay) {
+    console.log(`[mollie] Google Pay — début appel API Mollie, orderId: ${params.orderId}, montant: ${params.totalTTC}€, méthode Mollie: ${JSON.stringify(mollieMethod)}`);
+  }
+
+  const requestBody = {
+    amount: { currency: CURRENCY, value: params.totalTTC.toFixed(2) },
+    description: `Commande Barber Paradise #${params.orderNumber}`,
+    redirectUrl: `${params.frontendUrl}/commande/succes?orderId=${params.orderId}`,
+    cancelUrl: `${params.frontendUrl}/commande/annulation?orderId=${params.orderId}`,
+    webhookUrl: `${params.backendUrl}/api/webhooks/mollie`,
+    metadata: { orderId: params.orderId },
+    locale: getMollieLocale(params.country),
+    method: mollieMethod,
+  };
+
   const response = await fetch("https://api.mollie.com/v2/payments", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${requireEnv("MOLLIE_API_KEY")}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      amount: { currency: CURRENCY, value: params.totalTTC.toFixed(2) },
-      description: `Commande Barber Paradise #${params.orderNumber}`,
-      redirectUrl: `${params.frontendUrl}/commande/succes?orderId=${params.orderId}`,
-      cancelUrl: `${params.frontendUrl}/commande/annulation?orderId=${params.orderId}`,
-      webhookUrl: `${params.backendUrl}/api/webhooks/mollie`,
-      metadata: { orderId: params.orderId },
-      locale: getMollieLocale(params.country),
-      method: mollieMethod,
-    }),
+    body: JSON.stringify(requestBody),
   });
 
+  if (isGooglePay) {
+    const statusText = response.status;
+    console.log(`[mollie] Google Pay — réponse Mollie: HTTP ${statusText}`);
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "(impossible de lire le corps)");
+      console.error(`[mollie] Google Pay — erreur Mollie: ${errorText}`);
+      throw new Error(`Mollie Google Pay erreur ${statusText}: ${errorText}`);
+    }
+  }
+
   const payment = await parseJsonResponse<{ id: string; _links?: { checkout?: { href?: string } } }>(response, "mollie");
+
+  if (isGooglePay) {
+    console.log(`[mollie] Google Pay — paiement créé: ${payment.id}, checkoutUrl: ${payment._links?.checkout?.href ? "OK" : "MANQUANT"}`);
+  }
+
   return { providerPaymentId: payment.id, checkoutUrl: payment._links?.checkout?.href };
 }
 
@@ -263,9 +286,43 @@ async function getPaypalAccessToken(): Promise<string> {
   return data.access_token;
 }
 
-async function createPaypalCheckout(params: { orderId: string; orderNumber: string; totalTTC: number; frontendUrl: string }) {
+async function createPaypalCheckout(params: { orderId: string; orderNumber: string; totalTTC: number; frontendUrl: string; method: PaymentMethod }) {
   const baseUrl = process.env.PAYPAL_ENV === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
   const accessToken = await getPaypalAccessToken();
+  const isPayLater = params.method === "paypal_4x";
+
+  // PayPal 4x (Pay Later / Pay in 4) : utilise payment_source.pay_later
+  // PayPal standard : utilise payment_source.paypal
+  const paymentSource = isPayLater
+    ? {
+        pay_later: {
+          experience_context: {
+            brand_name: "Barber Paradise",
+            locale: "fr-FR",
+            shipping_preference: "GET_FROM_FILE",
+            user_action: "PAY_NOW",
+            return_url: `${params.frontendUrl}/commande/succes?orderId=${params.orderId}`,
+            cancel_url: `${params.frontendUrl}/commande/annulation?orderId=${params.orderId}`,
+          },
+        },
+      }
+    : {
+        paypal: {
+          experience_context: {
+            payment_method_preference: "IMMEDIATE_PAYMENT_REQUIRED",
+            brand_name: "Barber Paradise",
+            locale: "fr-FR",
+            landing_page: "LOGIN",
+            shipping_preference: "GET_FROM_FILE",
+            user_action: "PAY_NOW",
+            return_url: `${params.frontendUrl}/commande/succes?orderId=${params.orderId}`,
+            cancel_url: `${params.frontendUrl}/commande/annulation?orderId=${params.orderId}`,
+          },
+        },
+      };
+
+  console.log(`[paypal] Création commande PayPal — méthode: ${params.method}, isPayLater: ${isPayLater}, montant: ${params.totalTTC}€, orderId: ${params.orderId}`);
+
   const response = await fetch(`${baseUrl}/v2/checkout/orders`, {
     method: "POST",
     headers: {
@@ -282,24 +339,13 @@ async function createPaypalCheckout(params: { orderId: string; orderNumber: stri
           amount: { currency_code: CURRENCY, value: params.totalTTC.toFixed(2) },
         },
       ],
-      payment_source: {
-        paypal: {
-          experience_context: {
-            payment_method_preference: "IMMEDIATE_PAYMENT_REQUIRED",
-            brand_name: "Barber Paradise",
-            locale: "fr-FR",
-            landing_page: "LOGIN",
-            shipping_preference: "GET_FROM_FILE",
-            user_action: "PAY_NOW",
-            return_url: `${params.frontendUrl}/commande/succes?orderId=${params.orderId}`,
-            cancel_url: `${params.frontendUrl}/commande/annulation?orderId=${params.orderId}`,
-          },
-        },
-      },
+      payment_source: paymentSource,
     }),
   });
   const order = await parseJsonResponse<{ id: string; links?: Array<{ rel: string; href: string }> }>(response, "paypal");
-  return { providerPaymentId: order.id, checkoutUrl: order.links?.find((link) => link.rel === "payer-action" || link.rel === "approve")?.href };
+  const checkoutUrl = order.links?.find((link) => link.rel === "payer-action" || link.rel === "approve")?.href;
+  console.log(`[paypal] Commande PayPal créée — id: ${order.id}, checkoutUrl: ${checkoutUrl ? "OK" : "MANQUANT"}`);
+  return { providerPaymentId: order.id, checkoutUrl };
 }
 
 async function createProviderCheckout(
@@ -321,7 +367,7 @@ async function createProviderCheckout(
     }
     return createMollieCheckout({ ...params, method: params.method as Exclude<PaymentMethod, "paypal" | "paypal_4x"> });
   }
-  if (provider === "paypal") return createPaypalCheckout(params);
+  if (provider === "paypal") return createPaypalCheckout({ ...params, method: params.method });
   throw new Error(`Prestataire de paiement non supporté : ${provider}`);
 }
 

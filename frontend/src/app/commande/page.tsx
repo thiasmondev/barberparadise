@@ -15,6 +15,7 @@ import type { CartItem, Product } from "@/types";
 type Step = "contact" | "livraison" | "paiement";
 type PaymentMethod =
   | "card"
+  | "paybybank"
   | "pay_by_bank"
   | "sepa"
   | "paypal"
@@ -120,6 +121,7 @@ const COUNTRY_CODE_BY_NAME: Record<string, string> = {
 
 const METHOD_CONFIG: Record<PaymentMethod, { label: string; badge: string; icon: typeof CreditCard }> = {
   card: { label: "CARTE BANCAIRE", badge: "CB", icon: CreditCard },
+  paybybank: { label: "PAIEMENT BANCAIRE INSTANTANÉ", badge: "BANK", icon: Landmark },
   pay_by_bank: { label: "VIREMENT BANCAIRE", badge: "BANK", icon: Landmark },
   sepa: { label: "PRÉLÈVEMENT SEPA", badge: "SEPA", icon: ReceiptText },
   paypal: { label: "PAYPAL", badge: "PP", icon: WalletCards },
@@ -247,9 +249,11 @@ export default function CheckoutPage() {
   const displayMethods = useMemo(
     () => availableMethods.filter((method) => {
       if (effectiveIsB2B && method === "sepa") return false;
+      // PayPal 4x : minimum 30€ requis (PayPal Pay Later)
+      if (method === "paypal_4x" && discountedGrandTotal < 30) return false;
       return method !== "apple_pay" || supportsApplePay();
     }),
-    [availableMethods, effectiveIsB2B],
+    [availableMethods, effectiveIsB2B, discountedGrandTotal],
   );
 
   const checkoutSteps: Step[] = isAuthenticated ? ["livraison", "paiement"] : ["contact", "livraison", "paiement"];
@@ -546,7 +550,7 @@ export default function CheckoutPage() {
     setPaymentError("");
     setIsSubmittingPayment(true);
 
-    const checkoutPaymentMethod: PaymentMethod = effectiveIsB2B ? "pay_by_bank" : paymentMethod;
+    const checkoutPaymentMethod: PaymentMethod = effectiveIsB2B ? "paybybank" : paymentMethod;
 
     try {
       const res = await fetch(`${API_URL}/api/checkout/initiate`, {
