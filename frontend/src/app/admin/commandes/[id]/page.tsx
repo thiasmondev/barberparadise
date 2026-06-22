@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   CalendarClock,
   CheckCircle2,
+  Copy,
   Download,
   ExternalLink,
   FileText,
@@ -32,6 +33,7 @@ import {
   getAdminToken,
   cancelShipmentLabel,
   deleteAdminOrder,
+  duplicateAdminOrder,
   getLogisticsCarrierQuotes,
   getLogisticsLabelUrl,
   getLogisticsOrder,
@@ -276,6 +278,7 @@ export default function OrderDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [resendingConfirmation, setResendingConfirmation] = useState(false);
   const [resendingTracking, setResendingTracking] = useState(false);
+  const [isDuplicating, setIsDuplicating] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [notes, setNotes] = useState("");
   const [editForm, setEditForm] = useState<EditOrderForm>({
@@ -641,6 +644,22 @@ export default function OrderDetailPage() {
     }
   };
 
+  const handleDuplicateOrder = async () => {
+    if (!order) return;
+    const confirmed = window.confirm(
+      `Dupliquer la commande ${order.orderNumber} ?\n\nUn brouillon identique sera créé avec les mêmes articles, le même client et la même adresse. Vous serez redirigé vers les brouillons.`
+    );
+    if (!confirmed) return;
+    setIsDuplicating(true);
+    try {
+      const result = await duplicateAdminOrder(order.id);
+      router.push(`/admin/commandes/brouillons?highlight=${result.draft.id}`);
+    } catch (err: any) {
+      alert(err.message || "Impossible de dupliquer la commande.");
+      setIsDuplicating(false);
+    }
+  };
+
   const handleDeleteOrder = async () => {
     if (!order) return;
     const confirmed = window.confirm(`Supprimer définitivement la commande ${order.orderNumber} ? Cette action est irréversible.`);
@@ -939,6 +958,23 @@ export default function OrderDetailPage() {
                 </div>
               </section>
             )}
+
+            <section className="rounded-2xl border border-indigo-100 bg-indigo-50 p-5 shadow-sm">
+              <div className="flex items-start gap-3">
+                <Copy className="mt-0.5 h-5 w-5 text-indigo-600" />
+                <div className="flex-1">
+                  <h2 className="font-semibold text-indigo-950">Dupliquer la commande</h2>
+                  <p className="mt-1 text-sm text-indigo-700">Crée un brouillon identique avec les mêmes articles, le même client et la même adresse. Les prix sont recalculés au tarif actuel.</p>
+                  <button
+                    onClick={handleDuplicateOrder}
+                    disabled={isDuplicating}
+                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isDuplicating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />} Dupliquer en brouillon
+                  </button>
+                </div>
+              </div>
+            </section>
 
             <section className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm">
               <div className="flex items-start gap-3">

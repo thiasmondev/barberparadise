@@ -6392,4 +6392,130 @@ adminRouter.post(
   }
 );
 
+// POST /api/admin/orders/:id/duplicate — Dupliquer une commande en brouillon
+adminRouter.post(
+  "/orders/:id/duplicate",
+  requireAdmin,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const source = await prisma.order.findUnique({
+        where: { id: req.params.id },
+        include: { items: true, shippingAddress: true, customer: true },
+      });
+
+      if (!source) {
+        res.status(404).json({ error: "Commande introuvable" });
+        return;
+      }
+
+      const email = (
+        source.email ||
+        source.customerEmail ||
+        source.customer?.email ||
+        ""
+      ).toLowerCase();
+
+      if (!email || !email.includes("@")) {
+        res.status(400).json({ error: "Impossible de dupliquer : aucune adresse email sur la commande source" });
+        return;
+      }
+
+      // Construire les items normalisés pour recalcul des totaux
+      const normalizedItems: NormalizedDraftItem[] = source.items
+        .filter((item) => item.productId)
+        .map((item) => ({
+          productId: item.productId!,
+          variantId: item.variantId || null,
+          quantity: item.quantity,
+          lineDiscountType: (item.lineDiscountType as NormalizedDraftItem["lineDiscountType"]) || null,
+          lineDiscountValue: item.lineDiscountValue ?? 0,
+        }));
+
+      if (normalizedItems.length === 0) {
+        res.status(400).json({ error: "La commande source ne contient aucun article duplicable" });
+        return;
+      }
+
+      const country = (source.shippingAddress?.country as string) || "FR";
+      const isB2B = Boolean(source.isB2B);
+      const vatNumber = source.vatNumber || null;
+
+      // Recalcul des totaux avec les prix actuels (les prix peuvent avoir changé)
+      const totals = await calculateAdminDraftTotals({
+        items: normalizedItems,
+        isB2B,
+        country,
+        vatNumber,
+        shippingOverride: source.shipping,
+        orderDiscountType: source.orderDiscountType,
+        orderDiscountValue: source.orderDiscountValue,
+        enforceProMinimum: false,
+        allowInactiveProducts: true,
+      });
+
+      const shippingAddress = source.shippingAddress
+        ? {
+            firstName: source.shippingAddress.firstName,
+            lastName: source.shippingAddress.lastName,
+            address: source.shippingAddress.address,
+            extension: source.shippingAddress.extension || "",
+            city: source.shippingAddress.city,
+            postalCode: source.shippingAddress.postalCode,
+            country: source.shippingAddress.country,
+            phone: source.shippingAddress.phone || "",
+          }
+        : {
+            firstName: source.customer?.firstName || "Client",
+            lastName: source.customer?.lastName || "Barber Paradise",
+            address: "Adresse à compléter",
+            extension: "",
+            city: "Ville à compléter",
+            postalCode: "00000",
+            country,
+            phone: "",
+          };
+
+      const duplicate = await prisma.order.create({
+        data: {
+          orderNumber: generateAdminDraftOrderNumber(),
+          email,
+          customerEmail: email,
+          customerId: source.customerId || null,
+          status: "draft",
+          paymentMethod: isB2B ? "paybybank" : "card",
+          paymentProvider: null,
+          isB2B,
+          subtotal: totals.subtotal,
+          shipping: totals.shipping,
+          total: totals.total,
+          totalHT: totals.totalHT,
+          vatRate: totals.vatRate,
+          vatAmount: totals.vatAmount,
+          totalTTC: totals.totalTTC,
+          discountAmount: totals.discountTotal,
+          orderDiscountType: totals.orderDiscountType,
+          orderDiscountValue: totals.orderDiscountValue,
+          discountTotal: totals.discountTotal,
+          currency: source.currency || CURRENCY,
+          vatNumber,
+          billingAddress: (source.billingAddress || shippingAddress) as Prisma.InputJsonValue,
+          notes: source.notes ? `Dupliquée depuis ${source.orderNumber}` : null,
+          items: { create: totals.orderItems },
+          shippingAddress: { create: shippingAddress },
+        },
+      });
+
+      console.log(
+        `[admin] Commande dupliquée : source=${source.orderNumber} → brouillon=${duplicate.orderNumber} par ${req.user?.email || "admin"}`
+      );
+
+      const draft = await serializeAdminDraft(duplicate.id);
+      res.status(201).json({ draft, message: `Brouillon créé depuis ${source.orderNumber}` });
+    } catch (err) {
+      console.error(`[admin] Erreur duplication commande ${req.params.id}:`, err);
+      res.status(400).json({ error: err instanceof Error ? err.message : "Erreur lors de la duplication" });
+    }
+  }
+);
+
 export default adminRouter;

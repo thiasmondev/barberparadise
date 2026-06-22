@@ -547,6 +547,13 @@ export function exportAbandonedCartToDraft(id: string, options?: { isB2B?: boole
   );
 }
 
+export function duplicateAdminOrder(id: string) {
+  return adminFetch<{ draft: AdminOrderDraft; message?: string }>(
+    `/api/admin/orders/${id}/duplicate`,
+    { method: "POST" }
+  );
+}
+
 // ─── Customers ───────────────────────────────────────────────
 
 export function getAdminCustomers(params?: {
