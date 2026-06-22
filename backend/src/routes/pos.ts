@@ -2,6 +2,8 @@ import { Router, Response } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../utils/prisma";
 import { AuthRequest } from "../middleware/auth";
+import { ensureB2CInvoiceForOrder } from "../services/b2cInvoiceService";
+import { ensureProInvoiceForOrder } from "../services/proInvoiceService";
 
 export const posRouter = Router();
 
@@ -222,14 +224,17 @@ function buildOrderTotals(subtotal: number, discountAmount: number) {
 }
 
 async function applyPaidPosSideEffects(orderId: string) {
-  return prisma.$transaction(async (tx) => {
+  const paidOrder = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
       where: { id: orderId },
       include: { items: true },
     });
 
     if (!order) throw new Error("Vente POS introuvable.");
-    if (order.status === "paid") return order;
+    if (order.status === "paid") {
+      // Charger avec les relations pour être cohérent avec le retour normal
+      return tx.order.findUniqueOrThrow({ where: { id: orderId }, include: { customer: true, items: true } });
+    }
 
     for (const item of order.items) {
       if (!item.productId) continue;
@@ -288,6 +293,21 @@ async function applyPaidPosSideEffects(orderId: string) {
 
     return updated;
   });
+
+  // Génération de facture hors transaction (idempotente — ne bloque pas si erreur)
+  try {
+    if (paidOrder.isB2B) {
+      await ensureProInvoiceForOrder(paidOrder.id, { sendInvoiceEmail: false });
+      console.log(`[POS][invoice] Facture B2B générée — orderId=${paidOrder.id} orderNumber=${paidOrder.orderNumber}`);
+    } else {
+      await ensureB2CInvoiceForOrder(paidOrder.id);
+      console.log(`[POS][invoice] Facture B2C générée — orderId=${paidOrder.id} orderNumber=${paidOrder.orderNumber}`);
+    }
+  } catch (invoiceErr) {
+    console.error(`[POS][invoice] Erreur génération facture pour ${paidOrder.orderNumber}:`, invoiceErr instanceof Error ? invoiceErr.message : invoiceErr);
+  }
+
+  return paidOrder;
 }
 
 async function createMolliePosPayment(params: {

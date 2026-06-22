@@ -220,8 +220,21 @@ async function generateB2CInvoiceAttachment(orderId: string, orderNumber: string
 
 async function runPostPaymentEffects(orderId: string, orderNumber: string, channel: string | null, changed: boolean): Promise<void> {
   // "pos" = vente en caisse, pas d'email de confirmation e-commerce
+  // Mais on génère quand même la facture (B2C ou B2B)
   if (channel === "pos") {
-    console.log(`[webhook] Commande POS ${orderNumber} — pas d'email de confirmation e-commerce`);
+    console.log(`[webhook] Commande POS ${orderNumber} — génération facture POS (pas d'email e-commerce)`);
+    try {
+      const posOrder = await prisma.order.findUnique({ where: { id: orderId }, select: { isB2B: true } });
+      if (posOrder?.isB2B) {
+        await ensureProInvoiceForOrder(orderId, { sendInvoiceEmail: false });
+        console.log(`[webhook][POS] Facture B2B générée — ${orderNumber}`);
+      } else {
+        await ensureB2CInvoiceForOrder(orderId);
+        console.log(`[webhook][POS] Facture B2C générée — ${orderNumber}`);
+      }
+    } catch (invoiceErr) {
+      console.error(`[webhook][POS] Erreur génération facture pour ${orderNumber}:`, invoiceErr instanceof Error ? invoiceErr.message : invoiceErr);
+    }
     return;
   }
 
