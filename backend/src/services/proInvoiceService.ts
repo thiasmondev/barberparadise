@@ -49,7 +49,7 @@ async function loadInvoiceOrder(orderId: string) {
     where: { id: orderId },
     include: {
       items: true,
-      customer: { include: { proAccount: true } },
+      customer: { include: { proAccount: true, addresses: { orderBy: { isDefault: "desc" } } } },
       shippingAddress: true,
     },
   });
@@ -74,19 +74,47 @@ function getClientIdentity(order: LoadedOrder) {
   const pro = order.customer?.proAccount;
   const billing = (order.billingAddress || {}) as Record<string, string | undefined>;
   const shipping = order.shippingAddress;
-  const name = pro?.companyName || `${billing.firstName || shipping?.firstName || ""} ${billing.lastName || shipping?.lastName || ""}`.trim() || order.email;
-  const address = billing.address || shipping?.address || "Adresse non renseignée";
-  const extension = billing.extension || shipping?.extension || "";
-  const city = `${billing.postalCode || shipping?.postalCode || ""} ${billing.city || shipping?.city || ""}`.trim();
-  const country = billing.country || shipping?.country || "France";
+  // Fallback vers le carnet d'adresses client (adresse par défaut en premier)
+  const savedAddress = order.customer?.addresses?.[0];
+
+  const name =
+    pro?.companyName ||
+    `${billing.firstName || shipping?.firstName || savedAddress?.firstName || order.customer?.firstName || ""} ${
+      billing.lastName || shipping?.lastName || savedAddress?.lastName || order.customer?.lastName || ""
+    }`.trim() ||
+    order.email;
+
+  const address =
+    billing.address ||
+    shipping?.address ||
+    savedAddress?.address ||
+    "Adresse non renseignée";
+
+  const extension =
+    billing.extension ||
+    shipping?.extension ||
+    savedAddress?.extension ||
+    "";
+
+  const city = `${
+    billing.postalCode || shipping?.postalCode || savedAddress?.postalCode || ""
+  } ${
+    billing.city || shipping?.city || savedAddress?.city || ""
+  }`.trim();
+
+  const country =
+    billing.country ||
+    shipping?.country ||
+    savedAddress?.country ||
+    "France";
 
   return {
     name,
     address: [address, extension].filter(Boolean).join(" "),
     city,
     country,
-    siret: pro?.siret || "Non renseigné",
-    vatNumber: order.vatNumber || pro?.vatNumber || "Non renseigné",
+    siret: pro?.siret || "",
+    vatNumber: order.vatNumber || pro?.vatNumber || "",
     email: order.email,
   };
 }
@@ -163,8 +191,10 @@ async function generateInvoicePdf(order: LoadedOrder, invoiceNumber: string): Pr
   wrapText(client.address, 34).forEach((line, index) => draw(line, 330, 642 - index * 14, 10));
   draw(client.city, 330, 612, 10);
   draw(client.country, 330, 598, 10);
-  draw(`SIRET : ${client.siret}`, 330, 582, 9, regular, muted);
-  draw(`TVA intracommunautaire : ${client.vatNumber}`, 330, 568, 9, regular, muted);
+  let clientInfoY = 582;
+  if (client.siret) { draw(`SIRET : ${client.siret}`, 330, clientInfoY, 9, regular, muted); clientInfoY -= 14; }
+  if (client.vatNumber) { draw(`TVA intracommunautaire : ${client.vatNumber}`, 330, clientInfoY, 9, regular, muted); clientInfoY -= 14; }
+  draw(`Email : ${client.email}`, 330, clientInfoY, 9, regular, muted);
 
   const tableTop = 520;
   page.drawRectangle({ x: 40, y: tableTop, width: 515, height: 24, color: rgb(0.93, 0.91, 0.87) });
