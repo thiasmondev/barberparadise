@@ -547,6 +547,13 @@ export function exportAbandonedCartToDraft(id: string, options?: { isB2B?: boole
   );
 }
 
+export function generateAdminOrderInvoice(id: string, force = false) {
+  return adminFetch<{ invoiceNumber: string; invoiceUrl: string; isB2B: boolean }>(
+    `/api/admin/orders/${id}/generate-invoice`,
+    { method: "POST", body: JSON.stringify({ force }) }
+  );
+}
+
 export function duplicateAdminOrder(id: string) {
   return adminFetch<{ draft: AdminOrderDraft; message?: string }>(
     `/api/admin/orders/${id}/duplicate`,

@@ -18,6 +18,7 @@ import {
   Package,
   Pencil,
   Phone,
+  RefreshCw,
   Scale,
   Save,
   Send,
@@ -34,6 +35,7 @@ import {
   cancelShipmentLabel,
   deleteAdminOrder,
   duplicateAdminOrder,
+  generateAdminOrderInvoice,
   getLogisticsCarrierQuotes,
   getLogisticsLabelUrl,
   getLogisticsOrder,
@@ -279,6 +281,7 @@ export default function OrderDetailPage() {
   const [resendingConfirmation, setResendingConfirmation] = useState(false);
   const [resendingTracking, setResendingTracking] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
+  const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [notes, setNotes] = useState("");
   const [editForm, setEditForm] = useState<EditOrderForm>({
@@ -641,6 +644,26 @@ export default function OrderDetailPage() {
       alert(err.message || "Impossible d’enregistrer la commande.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleGenerateInvoice = async (force = false) => {
+    if (!order) return;
+    setIsGeneratingInvoice(true);
+    try {
+      const result = await generateAdminOrderInvoice(order.id, force);
+      // Mettre à jour l'objet order localement pour afficher le lien sans recharger
+      setOrder((prev) => {
+        if (!prev) return prev;
+        if (result.isB2B) {
+          return { ...prev, proInvoiceNumber: result.invoiceNumber, proInvoiceUrl: result.invoiceUrl };
+        }
+        return { ...prev, invoiceNumber: result.invoiceNumber, invoiceUrl: result.invoiceUrl };
+      });
+    } catch (err: any) {
+      alert(err.message || "Impossible de générer la facture.");
+    } finally {
+      setIsGeneratingInvoice(false);
     }
   };
 
@@ -1011,6 +1034,13 @@ export default function OrderDetailPage() {
                   <a href={order.invoiceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-blue-600 underline-offset-4 hover:underline">
                     <Download className="h-4 w-4" /> Télécharger le PDF B2C
                   </a>
+                  <button
+                    onClick={() => handleGenerateInvoice(true)}
+                    disabled={isGeneratingInvoice}
+                    className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-60"
+                  >
+                    {isGeneratingInvoice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Régénérer la facture
+                  </button>
                 </div>
               ) : order.proInvoiceNumber && order.proInvoiceUrl ? (
                 <div className="space-y-2 text-sm">
@@ -1018,9 +1048,25 @@ export default function OrderDetailPage() {
                   <a href={order.proInvoiceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-blue-600 underline-offset-4 hover:underline">
                     <Download className="h-4 w-4" /> Télécharger le PDF Pro
                   </a>
+                  <button
+                    onClick={() => handleGenerateInvoice(true)}
+                    disabled={isGeneratingInvoice}
+                    className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-60"
+                  >
+                    {isGeneratingInvoice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Régénérer la facture
+                  </button>
                 </div>
               ) : (
-                <p className="text-sm text-gray-400">Aucune facture générée pour cette commande.</p>
+                <div>
+                  <p className="text-sm text-gray-400">Aucune facture générée pour cette commande.</p>
+                  <button
+                    onClick={() => handleGenerateInvoice(false)}
+                    disabled={isGeneratingInvoice}
+                    className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-700 disabled:opacity-60"
+                  >
+                    {isGeneratingInvoice ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />} Générer la facture
+                  </button>
+                </div>
               )}
             </section>
 

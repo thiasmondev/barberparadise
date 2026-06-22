@@ -14,6 +14,7 @@ import {
   sendPasswordResetEmail,
 } from "../services/emailService";
 import { ensureB2CInvoiceForOrder, generateB2CInvoicePdfBuffer } from "../services/b2cInvoiceService";
+import { ensureProInvoiceForOrder } from "../services/proInvoiceService";
 import { requireAdmin, AuthRequest } from "../middleware/auth";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
@@ -6514,6 +6515,65 @@ adminRouter.post(
     } catch (err) {
       console.error(`[admin] Erreur duplication commande ${req.params.id}:`, err);
       res.status(400).json({ error: err instanceof Error ? err.message : "Erreur lors de la duplication" });
+    }
+  }
+);
+
+// POST /api/admin/orders/:id/generate-invoice — Génère ou régénère la facture d'une commande
+adminRouter.post(
+  "/orders/:id/generate-invoice",
+  requireAdmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { id } = req.params;
+      const force = req.body?.force === true; // force=true pour régénérer même si facture existante
+
+      const order = await prisma.order.findUnique({
+        where: { id },
+        select: { id: true, orderNumber: true, isB2B: true, status: true, invoiceNumber: true, invoiceUrl: true, proInvoiceNumber: true, proInvoiceUrl: true },
+      });
+
+      if (!order) {
+        res.status(404).json({ error: "Commande introuvable" });
+        return;
+      }
+
+      // Si force=true, effacer les références existantes pour forcer la régénération
+      if (force) {
+        if (order.isB2B) {
+          await prisma.order.update({ where: { id }, data: { proInvoiceNumber: null, proInvoiceUrl: null } });
+        } else {
+          await prisma.order.update({ where: { id }, data: { invoiceNumber: null, invoiceUrl: null } });
+        }
+        console.log(`[admin][generate-invoice] Régénération forcée — ${order.orderNumber} (${order.isB2B ? "B2B" : "B2C"}) par ${req.user?.email || "admin"}`);
+      }
+
+      let invoiceNumber: string | null = null;
+      let invoiceUrl: string | null = null;
+
+      if (order.isB2B) {
+        const result = await ensureProInvoiceForOrder(id, { sendInvoiceEmail: false });
+        if (!result) {
+          res.status(400).json({ error: "Impossible de générer la facture B2B" });
+          return;
+        }
+        invoiceNumber = result.invoiceNumber;
+        invoiceUrl = result.invoiceUrl;
+      } else {
+        const result = await ensureB2CInvoiceForOrder(id);
+        if (!result) {
+          res.status(400).json({ error: "Impossible de générer la facture B2C" });
+          return;
+        }
+        invoiceNumber = result.invoiceNumber;
+        invoiceUrl = result.invoiceUrl;
+      }
+
+      console.log(`[admin][generate-invoice] Facture générée — ${order.orderNumber} → ${invoiceNumber} par ${req.user?.email || "admin"}`);
+      res.json({ invoiceNumber, invoiceUrl, isB2B: order.isB2B });
+    } catch (err) {
+      console.error(`[admin][generate-invoice] Erreur pour ${req.params.id}:`, err);
+      res.status(500).json({ error: err instanceof Error ? err.message : "Erreur lors de la génération de la facture" });
     }
   }
 );
