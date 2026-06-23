@@ -531,7 +531,8 @@ posRouter.post("/payments", async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const customer = body.customerId ? await prisma.customer.findUnique({ where: { id: body.customerId } }) : null;
+    const customer = body.customerId ? await prisma.customer.findUnique({ where: { id: body.customerId }, include: { proAccount: true } }) : null;
+    const isB2B = customer?.proAccount?.status === "approved";
     const orderNumber = await generateOrderNumber();
 
     const order = await prisma.order.create({
@@ -540,6 +541,7 @@ posRouter.post("/payments", async (req: AuthRequest, res: Response) => {
         customerId: customer?.id || null,
         email: customer?.email || POS_EMAIL_FALLBACK,
         customerEmail: customer?.email || null,
+        isB2B,
         status: "pending_payment",
         paymentMethod,
         paymentProvider: (paymentMethod === "cash" || paymentMethod === "manual") ? "cash" : "mollie",
@@ -658,7 +660,8 @@ posRouter.post("/quick-sale", async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const customer = req.body.customerId ? await prisma.customer.findUnique({ where: { id: String(req.body.customerId) } }) : null;
+    const customer = req.body.customerId ? await prisma.customer.findUnique({ where: { id: String(req.body.customerId) }, include: { proAccount: true } }) : null;
+    const isB2BQuick = customer?.proAccount?.status === "approved";
     const orderNumber = await generateOrderNumber();
     const legacyGlobalDiscount = money(Number(req.body.globalDiscount || 0));
     const orderDiscount = normalizeDiscount(
@@ -674,6 +677,7 @@ posRouter.post("/quick-sale", async (req: AuthRequest, res: Response) => {
         customerId: customer?.id || null,
         email: customer?.email || POS_EMAIL_FALLBACK,
         customerEmail: customer?.email || null,
+        isB2B: isB2BQuick,
         status: "pending_payment",
         paymentMethod,
         paymentProvider: (paymentMethod === "cash" || paymentMethod === "manual") ? "cash" : "mollie",
