@@ -561,6 +561,13 @@ export function duplicateAdminOrder(id: string) {
   );
 }
 
+export function toggleAdminOrderB2B(id: string, isB2B: boolean) {
+  return adminFetch<{ id: string; isB2B: boolean }>(
+    `/api/admin/orders/${id}/toggle-b2b`,
+    { method: "PATCH", body: JSON.stringify({ isB2B }) }
+  );
+}
+
 // ─── Customers ───────────────────────────────────────────────
 
 export function getAdminCustomers(params?: {

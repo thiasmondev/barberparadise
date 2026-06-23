@@ -6578,4 +6578,35 @@ adminRouter.post(
   }
 );
 
+// PATCH /api/admin/orders/:id/toggle-b2b — Bascule isB2B d'une commande (correction manuelle pour commandes POS)
+adminRouter.patch(
+  "/orders/:id/toggle-b2b",
+  requireAdmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { isB2B } = req.body;
+      if (typeof isB2B !== "boolean") {
+        res.status(400).json({ error: "isB2B doit être un booléen" });
+        return;
+      }
+      const order = await prisma.order.findUnique({ where: { id }, select: { id: true, orderNumber: true } });
+      if (!order) {
+        res.status(404).json({ error: "Commande introuvable" });
+        return;
+      }
+      const updated = await prisma.order.update({
+        where: { id },
+        data: { isB2B },
+        select: { id: true, isB2B: true },
+      });
+      console.log(`[admin][toggle-b2b] ${order.orderNumber} → isB2B=${isB2B} par ${req.user?.email || "admin"}`);
+      res.json(updated);
+    } catch (err) {
+      console.error(`[admin][toggle-b2b] Erreur pour ${req.params.id}:`, err);
+      res.status(500).json({ error: err instanceof Error ? err.message : "Erreur lors de la mise à jour" });
+    }
+  }
+);
+
 export default adminRouter;

@@ -36,6 +36,7 @@ import {
   deleteAdminOrder,
   duplicateAdminOrder,
   generateAdminOrderInvoice,
+  toggleAdminOrderB2B,
   getLogisticsCarrierQuotes,
   getLogisticsLabelUrl,
   getLogisticsOrder,
@@ -282,6 +283,7 @@ export default function OrderDetailPage() {
   const [resendingTracking, setResendingTracking] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
+  const [isTogglingB2B, setIsTogglingB2B] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [notes, setNotes] = useState("");
   const [editForm, setEditForm] = useState<EditOrderForm>({
@@ -664,6 +666,25 @@ export default function OrderDetailPage() {
       alert(err.message || "Impossible de générer la facture.");
     } finally {
       setIsGeneratingInvoice(false);
+    }
+  };
+
+  const handleToggleB2B = async () => {
+    if (!order) return;
+    const newIsB2B = !order.isB2B;
+    const label = newIsB2B ? "B2B (professionnel)" : "B2C (particulier)";
+    const confirmed = window.confirm(
+      `Changer le type de cette commande en ${label} ?\n\nCela affecte la génération de facture (B2C ou B2B). Si une facture a déjà été générée, elle ne sera pas supprimée automatiquement — utilisez "Régénérer la facture" ensuite.`
+    );
+    if (!confirmed) return;
+    setIsTogglingB2B(true);
+    try {
+      await toggleAdminOrderB2B(order.id, newIsB2B);
+      setOrder((prev) => prev ? { ...prev, isB2B: newIsB2B } : prev);
+    } catch (err: any) {
+      alert(err.message || "Impossible de modifier le type de commande.");
+    } finally {
+      setIsTogglingB2B(false);
     }
   };
 
@@ -1071,6 +1092,7 @@ export default function OrderDetailPage() {
             </section>
 
             {isPosOrder ? (
+              <>
               <section className="rounded-2xl border border-fuchsia-200 bg-fuchsia-50 p-5 shadow-sm">
                 <div className="mb-3 flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-fuchsia-600" /><h2 className="font-semibold text-fuchsia-950">Encaissement caisse</h2></div>
                 <div className="space-y-2 text-sm text-fuchsia-800">
@@ -1080,6 +1102,22 @@ export default function OrderDetailPage() {
                   <p><span className="font-semibold">Caissier :</span> {order.posCashierEmail || "Non renseigné"}</p>
                 </div>
               </section>
+              <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-sm font-semibold text-amber-900">Type de commande</span>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-bold ring-1 ${order.isB2B ? "bg-violet-100 text-violet-700 ring-violet-300" : "bg-gray-100 text-gray-600 ring-gray-300"}`}>{order.isB2B ? "B2B" : "B2C"}</span>
+                </div>
+                <p className="mb-3 text-xs text-amber-700">Correction pour les commandes POS créées avant la mise à jour automatique du type client.</p>
+                <button
+                  onClick={handleToggleB2B}
+                  disabled={isTogglingB2B}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-amber-400 bg-white px-3 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
+                >
+                  {isTogglingB2B ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  {order.isB2B ? "Basculer en B2C" : "Basculer en B2B"}
+                </button>
+              </section>
+              </>
             ) : (
               <>
                 <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
