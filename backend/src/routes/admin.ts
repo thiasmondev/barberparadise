@@ -6538,14 +6538,14 @@ adminRouter.post(
         return;
       }
 
-      // Si force=true, effacer les références existantes pour forcer la régénération
+      // Si force=true, effacer TOUTES les références existantes (B2C et B2B)
+      // Nécessaire quand la commande a changé de type (ex. POS B2C → B2B via toggle)
       if (force) {
-        if (order.isB2B) {
-          await prisma.order.update({ where: { id }, data: { proInvoiceNumber: null, proInvoiceUrl: null } });
-        } else {
-          await prisma.order.update({ where: { id }, data: { invoiceNumber: null, invoiceUrl: null } });
-        }
-        console.log(`[admin][generate-invoice] Régénération forcée — ${order.orderNumber} (${order.isB2B ? "B2B" : "B2C"}) par ${req.user?.email || "admin"}`);
+        await prisma.order.update({
+          where: { id },
+          data: { invoiceNumber: null, invoiceUrl: null, proInvoiceNumber: null, proInvoiceUrl: null },
+        });
+        console.log(`[admin][generate-invoice] Régénération forcée (reset complet) — ${order.orderNumber} (${order.isB2B ? "B2B" : "B2C"}) par ${req.user?.email || "admin"}`);
       }
 
       let invoiceNumber: string | null = null;
