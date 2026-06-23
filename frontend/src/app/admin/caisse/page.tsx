@@ -344,8 +344,12 @@ export default function AdminCaissePage() {
   async function handleQuickSale(event: FormEvent) {
     event.preventDefault();
     const amount = Number(quickAmount.replace(",", "."));
-    if (!amount || amount <= 0) {
+    if (isNaN(amount) || amount < 0) {
       setError("Saisissez un montant de vente rapide valide.");
+      return;
+    }
+    if (paymentMethod === "card" && amount <= 0) {
+      setError("Le montant doit être supérieur à 0 € pour un paiement par carte.");
       return;
     }
     setSubmitting(true);

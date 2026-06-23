@@ -526,8 +526,10 @@ posRouter.post("/payments", async (req: AuthRequest, res: Response) => {
     const discountAmount = money(itemDiscount + orderDiscountAmount);
     const { totalTTC, totalHT, vatAmount } = buildOrderTotals(subtotal, discountAmount);
 
-    if (totalTTC <= 0) {
-      res.status(400).json({ error: "Le total à encaisser doit être supérieur à 0 €." });
+    // Pour le mode carte (Mollie), un montant nul est rejeté par l'API de paiement.
+    // Pour cash et manual, un total à 0€ est autorisé (échange, geste commercial, offert).
+    if (paymentMethod === "card" && totalTTC <= 0) {
+      res.status(400).json({ error: "Le total à encaisser doit être supérieur à 0 € pour un paiement par carte." });
       return;
     }
 
@@ -655,8 +657,10 @@ posRouter.post("/quick-sale", async (req: AuthRequest, res: Response) => {
       res.status(400).json({ error: "terminalId est requis pour un paiement carte." });
       return;
     }
-    if (amount <= 0) {
-      res.status(400).json({ error: "Le montant de vente personnalisée doit être supérieur à 0 €." });
+    // Pour le mode carte (Mollie), un montant nul est rejeté par l'API de paiement.
+    // Pour cash et manual, un montant à 0€ est autorisé (échange, geste commercial, offert).
+    if (paymentMethod === "card" && amount <= 0) {
+      res.status(400).json({ error: "Le montant de vente personnalisée doit être supérieur à 0 € pour un paiement par carte." });
       return;
     }
 
