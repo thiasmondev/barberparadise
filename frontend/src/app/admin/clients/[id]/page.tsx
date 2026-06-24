@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { getAdminCustomer, updateAdminCustomerProAccount } from "@/lib/admin-api";
+import {
+  getAdminCustomer,
+  updateAdminCustomerProAccount,
+  getCustomerExtraEmails,
+  addCustomerExtraEmail,
+  updateCustomerExtraEmail,
+  deleteCustomerExtraEmail,
+  type CustomerExtraEmail,
+} from "@/lib/admin-api";
 import type { Customer } from "@/types";
 import Link from "next/link";
 import {
@@ -18,6 +26,10 @@ import {
   XCircle,
   AlertCircle,
   Building2,
+  Plus,
+  Star,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Clock }> = {
@@ -27,6 +39,8 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof
   delivered: { label: "Livrée", color: "text-green-600 bg-green-50", icon: CheckCircle },
   cancelled: { label: "Annulée", color: "text-red-600 bg-red-50", icon: XCircle },
 };
+
+const LABEL_SUGGESTIONS = ["Facturation", "Comptabilité", "Direction", "Commandes", "Secondaire"];
 
 function formatPrice(n: number) {
   return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(n);
@@ -45,6 +59,16 @@ export default function CustomerDetailPage() {
   const [proMessage, setProMessage] = useState("");
   const [proForm, setProForm] = useState({ companyName: "", activity: "", phone: "", siret: "", vatNumber: "" });
 
+  // Emails secondaires
+  const [extraEmails, setExtraEmails] = useState<CustomerExtraEmail[]>([]);
+  const [emailsLoading, setEmailsLoading] = useState(false);
+  const [showAddEmail, setShowAddEmail] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [newLabel, setNewLabel] = useState("Facturation");
+  const [newIsPrimary, setNewIsPrimary] = useState(false);
+  const [addingEmail, setAddingEmail] = useState(false);
+  const [emailError, setEmailError] = useState("");
+
   useEffect(() => {
     if (!id) return;
     getAdminCustomer(id)
@@ -60,6 +84,13 @@ export default function CustomerDetailPage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
+
+    // Charger les emails secondaires
+    setEmailsLoading(true);
+    getCustomerExtraEmails(id)
+      .then(setExtraEmails)
+      .catch(console.error)
+      .finally(() => setEmailsLoading(false));
   }, [id]);
 
   const setProField = (field: keyof typeof proForm, value: string) => {
@@ -85,6 +116,60 @@ export default function CustomerDetailPage() {
       setProMessage(err instanceof Error ? err.message : "Impossible de modifier le compte B2B.");
     } finally {
       setSavingPro(false);
+    }
+  };
+
+  const handleAddEmail = async () => {
+    if (!customer) return;
+    setEmailError("");
+    if (!newEmail.includes("@")) {
+      setEmailError("Adresse email invalide.");
+      return;
+    }
+    setAddingEmail(true);
+    try {
+      const created = await addCustomerExtraEmail(customer.id, {
+        email: newEmail.trim().toLowerCase(),
+        label: newLabel.trim() || "Secondaire",
+        isPrimary: newIsPrimary,
+      });
+      // Si isPrimary, mettre à jour les autres localement
+      setExtraEmails((prev) =>
+        newIsPrimary
+          ? [...prev.map((e) => ({ ...e, isPrimary: false })), created]
+          : [...prev, created]
+      );
+      setNewEmail("");
+      setNewLabel("Facturation");
+      setNewIsPrimary(false);
+      setShowAddEmail(false);
+    } catch (err: any) {
+      setEmailError(err.message || "Impossible d'ajouter cet email.");
+    } finally {
+      setAddingEmail(false);
+    }
+  };
+
+  const handleSetPrimary = async (emailId: string) => {
+    if (!customer) return;
+    try {
+      await updateCustomerExtraEmail(customer.id, emailId, { isPrimary: true });
+      setExtraEmails((prev) =>
+        prev.map((e) => ({ ...e, isPrimary: e.id === emailId }))
+      );
+    } catch (err: any) {
+      alert(err.message || "Impossible de modifier cet email.");
+    }
+  };
+
+  const handleDeleteEmail = async (emailId: string) => {
+    if (!customer) return;
+    if (!window.confirm("Supprimer cet email du compte client ?")) return;
+    try {
+      await deleteCustomerExtraEmail(customer.id, emailId);
+      setExtraEmails((prev) => prev.filter((e) => e.id !== emailId));
+    } catch (err: any) {
+      alert(err.message || "Impossible de supprimer cet email.");
     }
   };
 
@@ -142,8 +227,9 @@ export default function CustomerDetailPage() {
             </div>
             <div className="space-y-3">
               <div className="flex items-center gap-2.5 text-sm text-gray-600">
-                <Mail size={14} className="text-gray-400" />
-                {customer.email}
+                <Mail size={14} className="text-gray-400 shrink-0" />
+                <span className="font-medium">{customer.email}</span>
+                <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Principal</span>
               </div>
               {customer.phone && (
                 <div className="flex items-center gap-2.5 text-sm text-gray-600">
@@ -158,6 +244,140 @@ export default function CustomerDetailPage() {
             </div>
           </div>
 
+          {/* Emails secondaires */}
+          <div className="bg-white rounded-xl border border-gray-100 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-heading font-semibold text-sm text-dark-800 flex items-center gap-2">
+                <Mail size={15} className="text-gray-400" /> Adresses email
+              </h3>
+              <button
+                onClick={() => { setShowAddEmail((v) => !v); setEmailError(""); }}
+                className="flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary/80"
+              >
+                <Plus size={13} /> Ajouter
+              </button>
+            </div>
+
+            {/* Formulaire ajout */}
+            {showAddEmail && (
+              <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+                <label className="block text-xs font-semibold text-gray-500">
+                  Adresse email
+                  <input
+                    type="email"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    placeholder="facturation@salon.fr"
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-dark-800 focus:border-primary focus:outline-none"
+                  />
+                </label>
+                <label className="block text-xs font-semibold text-gray-500">
+                  Libellé
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {LABEL_SUGGESTIONS.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setNewLabel(s)}
+                        className={`rounded-full px-2.5 py-1 text-xs font-medium border transition ${
+                          newLabel === s
+                            ? "bg-dark-800 text-white border-dark-800"
+                            : "border-gray-200 text-gray-600 hover:border-gray-400"
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="text"
+                    value={newLabel}
+                    onChange={(e) => setNewLabel(e.target.value)}
+                    placeholder="Ou saisir un libellé personnalisé"
+                    className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-dark-800 focus:border-primary focus:outline-none"
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-xs font-semibold text-gray-500 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newIsPrimary}
+                    onChange={(e) => setNewIsPrimary(e.target.checked)}
+                    className="rounded border-gray-300"
+                  />
+                  Définir comme email de facturation par défaut
+                </label>
+                {emailError && <p className="text-xs text-red-600">{emailError}</p>}
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleAddEmail}
+                    disabled={addingEmail || !newEmail}
+                    className="flex-1 rounded-lg bg-dark-800 px-3 py-2 text-xs font-bold uppercase tracking-wide text-white hover:bg-primary disabled:opacity-50 flex items-center justify-center gap-1"
+                  >
+                    {addingEmail ? <Loader2 size={12} className="animate-spin" /> : null}
+                    Ajouter
+                  </button>
+                  <button
+                    onClick={() => { setShowAddEmail(false); setEmailError(""); }}
+                    className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-500 hover:bg-gray-50"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Liste des emails */}
+            {emailsLoading ? (
+              <div className="flex items-center gap-2 text-xs text-gray-400">
+                <Loader2 size={12} className="animate-spin" /> Chargement…
+              </div>
+            ) : extraEmails.length === 0 ? (
+              <p className="text-xs text-gray-400">Aucun email secondaire. Cliquez sur "Ajouter" pour en créer un.</p>
+            ) : (
+              <div className="space-y-2">
+                {extraEmails.map((e) => (
+                  <div
+                    key={e.id}
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 ${
+                      e.isPrimary ? "border-primary/30 bg-primary/5" : "border-gray-100 bg-white"
+                    }`}
+                  >
+                    <Mail size={13} className={e.isPrimary ? "text-primary shrink-0" : "text-gray-400 shrink-0"} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-dark-800 truncate">{e.email}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-xs text-gray-400">{e.label}</span>
+                        {e.isPrimary && (
+                          <span className="text-xs font-semibold text-primary flex items-center gap-0.5">
+                            <Star size={10} fill="currentColor" /> Facturation
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {!e.isPrimary && (
+                        <button
+                          onClick={() => handleSetPrimary(e.id)}
+                          title="Définir comme email de facturation"
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/10 transition"
+                        >
+                          <Star size={13} />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDeleteEmail(e.id)}
+                        title="Supprimer"
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* B2B account */}
           <div className="bg-white rounded-xl border border-gray-100 p-5">
             <div className="flex items-start justify-between gap-3 mb-4">
@@ -165,7 +385,7 @@ export default function CustomerDetailPage() {
                 <h3 className="font-heading font-semibold text-sm text-dark-800 flex items-center gap-2">
                   <Building2 size={16} className="text-primary" /> Compte B2B
                 </h3>
-                <p className="mt-1 text-xs text-gray-500">Activez ou modifiez manuellement l’accès aux tarifs professionnels.</p>
+                <p className="mt-1 text-xs text-gray-500">Activez ou modifiez manuellement l'accès aux tarifs professionnels.</p>
               </div>
               <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${customer.proAccount?.status === "approved" ? "bg-green-50 text-green-700" : customer.proAccount ? "bg-yellow-50 text-yellow-700" : "bg-gray-100 text-gray-500"}`}>
                 {customer.proAccount?.status === "approved" ? "B2B actif" : customer.proAccount ? customer.proAccount.status : "B2C"}

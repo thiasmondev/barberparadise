@@ -5565,6 +5565,115 @@ adminRouter.patch(
   }
 );
 
+// ─── Emails secondaires client ──────────────────────────────────────────────
+
+// GET /api/admin/customers/:id/emails — Liste des emails secondaires d'un client
+adminRouter.get(
+  "/customers/:id/emails",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const emails = await prisma.customerEmail.findMany({
+        where: { customerId: req.params.id },
+        orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
+      });
+      res.json(emails);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur serveur" });
+    }
+  }
+);
+
+// POST /api/admin/customers/:id/emails — Ajouter un email secondaire
+adminRouter.post(
+  "/customers/:id/emails",
+  requireAdmin,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const { email, label, isPrimary } = req.body as { email: string; label?: string; isPrimary?: boolean };
+      if (!email || !email.includes("@")) {
+        res.status(400).json({ error: "Adresse email invalide" });
+        return;
+      }
+      // Vérifier que le client existe
+      const customer = await prisma.customer.findUnique({ where: { id: req.params.id }, select: { id: true } });
+      if (!customer) {
+        res.status(404).json({ error: "Client non trouvé" });
+        return;
+      }
+      // Si isPrimary, retirer le flag des autres
+      if (isPrimary) {
+        await prisma.customerEmail.updateMany({
+          where: { customerId: req.params.id },
+          data: { isPrimary: false },
+        });
+      }
+      const created = await prisma.customerEmail.create({
+        data: {
+          customerId: req.params.id,
+          email: email.trim().toLowerCase(),
+          label: label?.trim() || "Secondaire",
+          isPrimary: Boolean(isPrimary),
+        },
+      });
+      console.log(`[admin][customer-email] Ajout email ${created.email} (${created.label}) pour client ${req.params.id} par ${req.user?.email || "admin"}`);
+      res.status(201).json(created);
+    } catch (err: any) {
+      if (err?.code === "P2002") {
+        res.status(409).json({ error: "Cette adresse email est déjà enregistrée pour ce client" });
+        return;
+      }
+      console.error(err);
+      res.status(500).json({ error: "Erreur serveur" });
+    }
+  }
+);
+
+// PATCH /api/admin/customers/:id/emails/:emailId — Modifier label ou isPrimary
+adminRouter.patch(
+  "/customers/:id/emails/:emailId",
+  requireAdmin,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const { label, isPrimary } = req.body as { label?: string; isPrimary?: boolean };
+      // Si on définit comme primaire, retirer le flag des autres
+      if (isPrimary) {
+        await prisma.customerEmail.updateMany({
+          where: { customerId: req.params.id },
+          data: { isPrimary: false },
+        });
+      }
+      const updated = await prisma.customerEmail.update({
+        where: { id: req.params.emailId },
+        data: {
+          ...(label !== undefined ? { label: label.trim() } : {}),
+          ...(isPrimary !== undefined ? { isPrimary: Boolean(isPrimary) } : {}),
+        },
+      });
+      res.json(updated);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur serveur" });
+    }
+  }
+);
+
+// DELETE /api/admin/customers/:id/emails/:emailId — Supprimer un email secondaire
+adminRouter.delete(
+  "/customers/:id/emails/:emailId",
+  requireAdmin,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      await prisma.customerEmail.delete({ where: { id: req.params.emailId } });
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur serveur" });
+    }
+  }
+);
+
 // GET /api/admin/reviews — Avis en attente de modération
 adminRouter.get(
   "/reviews",
@@ -6607,7 +6716,10 @@ adminRouter.post(
         return;
       }
 
-      const emailTo = order.email || order.customerEmail || order.customer?.email || "";
+      // Permettre de surcharger l'adresse destinataire depuis le frontend (email secondaire choisi)
+      const { overrideEmail } = req.body as { overrideEmail?: string };
+      const emailTo = (overrideEmail && overrideEmail.includes("@") ? overrideEmail.trim() : null)
+        || order.email || order.customerEmail || order.customer?.email || "";
       if (!emailTo) {
         res.status(400).json({ error: "Aucune adresse email pour cette commande" });
         return;

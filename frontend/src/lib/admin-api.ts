@@ -568,10 +568,47 @@ export function toggleAdminOrderB2B(id: string, isB2B: boolean) {
   );
 }
 
-export function sendAdminOrderInvoice(id: string) {
+export function sendAdminOrderInvoice(id: string, overrideEmail?: string) {
   return adminFetch<{ success: boolean; message: string }>(
     `/api/admin/orders/${id}/send-invoice`,
-    { method: "POST" }
+    { method: "POST", body: JSON.stringify(overrideEmail ? { overrideEmail } : {}) }
+  );
+}
+
+// ─── Emails secondaires client ─────────────────────────────────────────────
+
+export interface CustomerExtraEmail {
+  id: string;
+  customerId: string;
+  email: string;
+  label: string;
+  isPrimary: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function getCustomerExtraEmails(customerId: string) {
+  return adminFetch<CustomerExtraEmail[]>(`/api/admin/customers/${customerId}/emails`);
+}
+
+export function addCustomerExtraEmail(customerId: string, data: { email: string; label: string; isPrimary: boolean }) {
+  return adminFetch<CustomerExtraEmail>(
+    `/api/admin/customers/${customerId}/emails`,
+    { method: "POST", body: JSON.stringify(data) }
+  );
+}
+
+export function updateCustomerExtraEmail(customerId: string, emailId: string, data: { label?: string; isPrimary?: boolean }) {
+  return adminFetch<CustomerExtraEmail>(
+    `/api/admin/customers/${customerId}/emails/${emailId}`,
+    { method: "PATCH", body: JSON.stringify(data) }
+  );
+}
+
+export function deleteCustomerExtraEmail(customerId: string, emailId: string) {
+  return adminFetch<{ success: boolean }>(
+    `/api/admin/customers/${customerId}/emails/${emailId}`,
+    { method: "DELETE" }
   );
 }
 

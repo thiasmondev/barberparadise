@@ -36,8 +36,10 @@ import {
   deleteAdminOrder,
   duplicateAdminOrder,
   generateAdminOrderInvoice,
+  getCustomerExtraEmails,
   sendAdminOrderInvoice,
   toggleAdminOrderB2B,
+  type CustomerExtraEmail,
   getLogisticsCarrierQuotes,
   getLogisticsLabelUrl,
   getLogisticsOrder,
@@ -286,6 +288,9 @@ export default function OrderDetailPage() {
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
   const [isSendingInvoice, setIsSendingInvoice] = useState(false);
   const [invoiceSentSuccess, setInvoiceSentSuccess] = useState(false);
+  const [customerExtraEmails, setCustomerExtraEmails] = useState<CustomerExtraEmail[]>([]);
+  const [showEmailPicker, setShowEmailPicker] = useState(false);
+  const [selectedInvoiceEmail, setSelectedInvoiceEmail] = useState<string | null>(null);
   const [isTogglingB2B, setIsTogglingB2B] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [notes, setNotes] = useState("");
@@ -326,6 +331,17 @@ export default function OrderDetailPage() {
       setShipment((data.shipment as ShipmentRecord | null) || null);
       setNotes(data.notes || "");
       setEditForm(buildEditForm(data));
+      // Charger les emails secondaires du client si disponible
+      if (data.customerId) {
+        getCustomerExtraEmails(data.customerId)
+          .then((emails) => {
+            setCustomerExtraEmails(emails);
+            // Pré-sélectionner l'email primaire s'il existe
+            const primary = emails.find((e) => e.isPrimary);
+            if (primary) setSelectedInvoiceEmail(primary.email);
+          })
+          .catch(() => { /* silencieux si pas d'emails secondaires */ });
+      }
     } finally {
       setLoading(false);
     }
@@ -676,8 +692,11 @@ export default function OrderDetailPage() {
     if (!order) return;
     setIsSendingInvoice(true);
     setInvoiceSentSuccess(false);
+    setShowEmailPicker(false);
     try {
-      const result = await sendAdminOrderInvoice(order.id);
+      // Utiliser l'email sélectionné si différent de l'email principal de la commande
+      const overrideEmail = selectedInvoiceEmail || undefined;
+      const result = await sendAdminOrderInvoice(order.id, overrideEmail);
       setInvoiceSentSuccess(true);
       setTimeout(() => setInvoiceSentSuccess(false), 4000);
       console.log("[send-invoice]", result.message);
@@ -1068,58 +1087,84 @@ export default function OrderDetailPage() {
 
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <div className="mb-3 flex items-center gap-2"><FileText className="h-4 w-4 text-gray-500" /><h2 className="font-semibold text-gray-950">Facture</h2></div>
-              {order.invoiceNumber && order.invoiceUrl ? (
-                <div className="space-y-2 text-sm">
-                  <p className="font-medium text-gray-950">{order.invoiceNumber}</p>
-                  <a href={order.invoiceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-blue-600 underline-offset-4 hover:underline">
-                    <Download className="h-4 w-4" /> Télécharger le PDF B2C
-                  </a>
-                  <button
-                    onClick={handleSendInvoice}
-                    disabled={isSendingInvoice}
-                    className={`mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${
-                      invoiceSentSuccess
-                        ? "bg-emerald-600 text-white"
-                        : "bg-gray-900 text-white hover:bg-gray-700"
-                    }`}
-                  >
-                    {isSendingInvoice ? <Loader2 className="h-4 w-4 animate-spin" /> : invoiceSentSuccess ? <span>✓</span> : <Send className="h-4 w-4" />}
-                    {invoiceSentSuccess ? "Envoyée !" : "Envoyer la facture"}
-                  </button>
-                  <button
-                    onClick={() => handleGenerateInvoice(true)}
-                    disabled={isGeneratingInvoice}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-60"
-                  >
-                    {isGeneratingInvoice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Régénérer la facture
-                  </button>
-                </div>
-              ) : order.proInvoiceNumber && order.proInvoiceUrl ? (
-                <div className="space-y-2 text-sm">
-                  <p className="font-medium text-gray-950">{order.proInvoiceNumber}</p>
-                  <a href={order.proInvoiceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-blue-600 underline-offset-4 hover:underline">
-                    <Download className="h-4 w-4" /> Télécharger le PDF Pro
-                  </a>
-                  <button
-                    onClick={handleSendInvoice}
-                    disabled={isSendingInvoice}
-                    className={`mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${
-                      invoiceSentSuccess
-                        ? "bg-emerald-600 text-white"
-                        : "bg-gray-900 text-white hover:bg-gray-700"
-                    }`}
-                  >
-                    {isSendingInvoice ? <Loader2 className="h-4 w-4 animate-spin" /> : invoiceSentSuccess ? <span>✓</span> : <Send className="h-4 w-4" />}
-                    {invoiceSentSuccess ? "Envoyée !" : "Envoyer la facture"}
-                  </button>
-                  <button
-                    onClick={() => handleGenerateInvoice(true)}
-                    disabled={isGeneratingInvoice}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-60"
-                  >
-                    {isGeneratingInvoice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Régénérer la facture
-                  </button>
-                </div>
+              {(order.invoiceNumber && order.invoiceUrl) || (order.proInvoiceNumber && order.proInvoiceUrl) ? (
+                (() => {
+                  const isB2B = order.isB2B && order.proInvoiceNumber && order.proInvoiceUrl;
+                  const invoiceNum = isB2B ? order.proInvoiceNumber : order.invoiceNumber;
+                  const invoiceUrl = isB2B ? order.proInvoiceUrl : order.invoiceUrl;
+                  const defaultEmail = order.customer?.email || order.customerEmail || order.email || "";
+                  const allEmails: { email: string; label: string }[] = [
+                    { email: defaultEmail, label: "Email principal" },
+                    ...customerExtraEmails.map((e) => ({ email: e.email, label: e.label })),
+                  ].filter((e) => e.email);
+                  const activeEmail = selectedInvoiceEmail || defaultEmail;
+                  return (
+                    <div className="space-y-2 text-sm">
+                      <p className="font-medium text-gray-950">{invoiceNum}</p>
+                      <a href={invoiceUrl!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-blue-600 underline-offset-4 hover:underline">
+                        <Download className="h-4 w-4" /> Télécharger le PDF {isB2B ? "Pro" : "B2C"}
+                      </a>
+
+                      {/* Sélecteur d'email destinataire */}
+                      {allEmails.length > 1 && (
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowEmailPicker((v) => !v)}
+                            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700"
+                          >
+                            <Mail className="h-3.5 w-3.5" />
+                            <span className="truncate max-w-[180px]">{activeEmail}</span>
+                            <span className="text-gray-400">▾</span>
+                          </button>
+                          {showEmailPicker && (
+                            <div className="mt-1.5 rounded-xl border border-gray-200 bg-white shadow-md overflow-hidden">
+                              {allEmails.map((e) => (
+                                <button
+                                  key={e.email}
+                                  type="button"
+                                  onClick={() => { setSelectedInvoiceEmail(e.email); setShowEmailPicker(false); }}
+                                  className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs hover:bg-gray-50 transition ${
+                                    activeEmail === e.email ? "bg-primary/5 text-primary font-semibold" : "text-gray-700"
+                                  }`}
+                                >
+                                  <Mail className="h-3 w-3 shrink-0" />
+                                  <div>
+                                    <div className="font-medium">{e.email}</div>
+                                    <div className="text-gray-400">{e.label}</div>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {allEmails.length === 1 && (
+                        <p className="text-xs text-gray-400 flex items-center gap-1.5"><Mail className="h-3 w-3" /> {activeEmail}</p>
+                      )}
+
+                      <button
+                        onClick={handleSendInvoice}
+                        disabled={isSendingInvoice}
+                        className={`mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${
+                          invoiceSentSuccess
+                            ? "bg-emerald-600 text-white"
+                            : "bg-gray-900 text-white hover:bg-gray-700"
+                        }`}
+                      >
+                        {isSendingInvoice ? <Loader2 className="h-4 w-4 animate-spin" /> : invoiceSentSuccess ? <span>✓</span> : <Send className="h-4 w-4" />}
+                        {invoiceSentSuccess ? "Envoyée !" : "Envoyer la facture"}
+                      </button>
+                      <button
+                        onClick={() => handleGenerateInvoice(true)}
+                        disabled={isGeneratingInvoice}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-60"
+                      >
+                        {isGeneratingInvoice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Régénérer la facture
+                      </button>
+                    </div>
+                  );
+                })()
               ) : (
                 <div>
                   <p className="text-sm text-gray-400">Aucune facture générée pour cette commande.</p>

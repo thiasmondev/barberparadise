@@ -256,6 +256,23 @@ model Customer {
   wishlist            WishlistItem[]
   passwordResetTokens PasswordResetToken[]
   proAccount          ProAccount?
+  extraEmails         CustomerEmail[]
+}
+
+// Emails secondaires d'un client (facturation, comptabilité, direction...)
+model CustomerEmail {
+  id         String   @id @default(cuid())
+  customerId String
+  email      String
+  label      String   @default("Secondaire") // ex: "Facturation", "Comptabilité", "Direction"
+  isPrimary  Boolean  @default(false)         // true = email de facturation par défaut
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, email])
+  @@index([customerId])
 }
 
 model ProAccount {
