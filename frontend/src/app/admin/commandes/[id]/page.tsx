@@ -55,6 +55,7 @@ import {
   type ShipmentRecord,
 } from "@/lib/admin-api";
 import type { Order, Packaging, ShippingAddress } from "@/types";
+import { EmailPickerModal, type EmailOption } from "@/components/admin/EmailPickerModal";
 
 const PAYMENT_BADGES: Record<string, { label: string; className: string }> = {
   paid: { label: "Payée", className: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
@@ -292,6 +293,10 @@ export default function OrderDetailPage() {
   const [showEmailPicker, setShowEmailPicker] = useState(false);
   const [selectedInvoiceEmail, setSelectedInvoiceEmail] = useState<string | null>(null);
   const [isTogglingB2B, setIsTogglingB2B] = useState(false);
+  // Modal sélecteur d'email — confirmation et suivi
+  const [emailPickerAction, setEmailPickerAction] = useState<"confirmation" | "tracking" | null>(null);
+  const [emailPickerOrderOptions, setEmailPickerOrderOptions] = useState<EmailOption[]>([]);
+  const [emailPickerOrderDefault, setEmailPickerOrderDefault] = useState<string>("");
   const [editMode, setEditMode] = useState(false);
   const [notes, setNotes] = useState("");
   const [editForm, setEditForm] = useState<EditOrderForm>({
@@ -756,14 +761,11 @@ export default function OrderDetailPage() {
     }
   };
 
-  const handleResendConfirmation = async () => {
+  const doResendConfirmation = async (overrideEmail?: string) => {
     if (!order) return;
-    const emailTo = order.customer?.email || order.customerEmail || order.email;
-    const confirmed = window.confirm(`Renvoyer l'email de confirmation à ${emailTo} ?`);
-    if (!confirmed) return;
     setResendingConfirmation(true);
     try {
-      const result = await resendOrderConfirmation(order.id);
+      const result = await resendOrderConfirmation(order.id, overrideEmail);
       alert(result.message || "Email de confirmation renvoyé avec succès.");
     } catch (err: any) {
       alert(err.message || "Impossible de renvoyer l'email de confirmation.");
@@ -772,20 +774,55 @@ export default function OrderDetailPage() {
     }
   };
 
-  const handleResendTracking = async () => {
+  const handleResendConfirmation = async () => {
     if (!order) return;
-    const emailTo = order.customer?.email || order.customerEmail || order.email;
-    const confirmed = window.confirm(`Renvoyer l'email de suivi d'expédition à ${emailTo} ?`);
+    const baseEmail = order.customer?.email || order.customerEmail || order.email || "";
+    if (customerExtraEmails.length > 0) {
+      const options: EmailOption[] = [
+        { email: baseEmail, label: "Email principal" },
+        ...customerExtraEmails.map((e) => ({ email: e.email, label: e.label, isPrimary: e.isPrimary })),
+      ];
+      const primaryExtra = customerExtraEmails.find((e) => e.isPrimary);
+      setEmailPickerOrderDefault(primaryExtra?.email || baseEmail);
+      setEmailPickerOrderOptions(options);
+      setEmailPickerAction("confirmation");
+      return;
+    }
+    const confirmed = window.confirm(`Renvoyer l'email de confirmation à ${baseEmail} ?`);
     if (!confirmed) return;
+    doResendConfirmation();
+  };
+
+  const doResendTracking = async (overrideEmail?: string) => {
+    if (!order) return;
     setResendingTracking(true);
     try {
-      const result = await resendOrderTracking(order.id);
+      const result = await resendOrderTracking(order.id, overrideEmail);
       alert(result.message || "Email de suivi renvoyé avec succès.");
     } catch (err: any) {
       alert(err.message || "Impossible de renvoyer l'email de suivi.");
     } finally {
       setResendingTracking(false);
     }
+  };
+
+  const handleResendTracking = async () => {
+    if (!order) return;
+    const baseEmail = order.customer?.email || order.customerEmail || order.email || "";
+    if (customerExtraEmails.length > 0) {
+      const options: EmailOption[] = [
+        { email: baseEmail, label: "Email principal" },
+        ...customerExtraEmails.map((e) => ({ email: e.email, label: e.label, isPrimary: e.isPrimary })),
+      ];
+      const primaryExtra = customerExtraEmails.find((e) => e.isPrimary);
+      setEmailPickerOrderDefault(primaryExtra?.email || baseEmail);
+      setEmailPickerOrderOptions(options);
+      setEmailPickerAction("tracking");
+      return;
+    }
+    const confirmed = window.confirm(`Renvoyer l'email de suivi d'expédition à ${baseEmail} ?`);
+    if (!confirmed) return;
+    doResendTracking();
   };
 
   const markAsProcessed = async () => {
@@ -1364,6 +1401,26 @@ export default function OrderDetailPage() {
             )}
           </section>
         </div>
+      )}
+
+      {/* Modal sélecteur d'email — confirmation et suivi */}
+      {emailPickerAction && (
+        <EmailPickerModal
+          options={emailPickerOrderOptions}
+          defaultEmail={emailPickerOrderDefault}
+          actionLabel={emailPickerAction === "confirmation" ? "Renvoyer la confirmation" : "Renvoyer le suivi"}
+          onConfirm={(email) => {
+            const action = emailPickerAction;
+            setEmailPickerAction(null);
+            setEmailPickerOrderOptions([]);
+            if (action === "confirmation") doResendConfirmation(email);
+            else doResendTracking(email);
+          }}
+          onCancel={() => {
+            setEmailPickerAction(null);
+            setEmailPickerOrderOptions([]);
+          }}
+        />
       )}
     </div>
   );

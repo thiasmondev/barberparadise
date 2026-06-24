@@ -531,9 +531,10 @@ export function confirmAdminOrderDraft(id: string, paymentMethod?: string | null
   });
 }
 
-export function sendAdminOrderDraftEmail(id: string) {
+export function sendAdminOrderDraftEmail(id: string, overrideEmail?: string) {
   return adminFetch<{ ok: boolean; draft: AdminOrderDraft; shareUrl: string; expiresAt: string; sentAt: string; skippedEmail?: boolean }>(`/api/admin/orders/drafts/${id}/send`, {
     method: "POST",
+    body: JSON.stringify(overrideEmail ? { overrideEmail } : {}),
   });
 }
 
@@ -3080,16 +3081,16 @@ export function markPosOrderPaid(orderId: string) {
   return adminFetch<{ order: PosOrder }>(`/api/pos/orders/${encodeURIComponent(orderId)}/mark-paid`, { method: "POST" });
 }
 
-export function resendOrderConfirmation(orderId: string) {
+export function resendOrderConfirmation(orderId: string, overrideEmail?: string) {
   return adminFetch<{ success: boolean; message: string; provider?: string; id?: string }>(
     `/api/admin/orders/${encodeURIComponent(orderId)}/resend-confirmation`,
-    { method: "POST" }
+    { method: "POST", body: JSON.stringify(overrideEmail ? { overrideEmail } : {}) }
   );
 }
 
-export function resendOrderTracking(orderId: string) {
+export function resendOrderTracking(orderId: string, overrideEmail?: string) {
   return adminFetch<{ success: boolean; message: string; trackingNumber?: string; provider?: string; id?: string }>(
     `/api/admin/orders/${encodeURIComponent(orderId)}/resend-tracking`,
-    { method: "POST" }
+    { method: "POST", body: JSON.stringify(overrideEmail ? { overrideEmail } : {}) }
   );
 }

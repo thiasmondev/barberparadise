@@ -4,16 +4,19 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, FileText, Loader2, Mail, PackagePlus, Plus, Save, Search, Trash2, UserPlus } from "lucide-react";
 
 import AdminOrdersTabs from "@/components/admin/AdminOrdersTabs";
+import { EmailPickerModal, type EmailOption } from "@/components/admin/EmailPickerModal";
 import {
   AdminDraftAddressPayload,
   AdminOrderDraft,
   AdminOrderDraftPayload,
+  CustomerExtraEmail,
   DiscountType,
   confirmAdminOrderDraft,
   createAdminOrderDraft,
   getAdminCustomers,
   getAdminOrderDrafts,
   getAdminProducts,
+  getCustomerExtraEmails,
   sendAdminOrderDraftEmail,
   updateAdminOrderDraft,
 } from "@/lib/admin-api";
@@ -182,6 +185,10 @@ export default function AdminOrderDraftsPage() {
   const [sendingDraftEmailId, setSendingDraftEmailId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Modal sélecteur d'email
+  const [emailPickerDraftId, setEmailPickerDraftId] = useState<string | null>(null);
+  const [emailPickerOptions, setEmailPickerOptions] = useState<EmailOption[]>([]);
+  const [emailPickerDefault, setEmailPickerDefault] = useState<string>("");
 
   const totals = useMemo(() => {
     const subtotal = form.items.reduce((sum, line) => sum + lineGrossTotal(line, form.isB2B), 0);
@@ -328,16 +335,43 @@ export default function AdminOrderDraftsPage() {
     }
   }
 
-  async function sendDraftEmail(draftId = editingId) {
+  async function sendDraftEmail(draftId = editingId, overrideEmail?: string) {
     if (!draftId) return;
+
+    // Si pas d'overrideEmail, vérifier si le client a des emails secondaires
+    if (!overrideEmail) {
+      const draft = drafts.find((d) => d.id === draftId);
+      const customerId = draft?.customerId || null;
+      if (customerId) {
+        try {
+          const extras = await getCustomerExtraEmails(customerId);
+          if (extras.length > 0) {
+            const baseEmail = draft?.email || "";
+            const options: EmailOption[] = [
+              { email: baseEmail, label: "Email principal" },
+              ...extras.map((e: CustomerExtraEmail) => ({ email: e.email, label: e.label, isPrimary: e.isPrimary })),
+            ];
+            const primaryExtra = extras.find((e: CustomerExtraEmail) => e.isPrimary);
+            setEmailPickerDefault(primaryExtra?.email || baseEmail);
+            setEmailPickerOptions(options);
+            setEmailPickerDraftId(draftId);
+            return; // Attendre la confirmation du modal
+          }
+        } catch {
+          // Ignorer les erreurs de chargement des emails secondaires
+        }
+      }
+    }
+
     setSendingDraftEmailId(draftId);
     setError(null);
     setMessage(null);
     try {
-      const data = await sendAdminOrderDraftEmail(draftId);
+      const data = await sendAdminOrderDraftEmail(draftId, overrideEmail);
       setDrafts((current) => current.map((draft) => (draft.id === draftId ? data.draft : draft)));
       if (editingId === draftId) setForm(draftToForm(data.draft));
-      setMessage(`Email envoyé au client. Lien valable jusqu’au ${new Date(data.expiresAt).toLocaleString("fr-FR")}.`);
+      const sentTo = overrideEmail || data.draft.email || "";
+      setMessage(`Email envoyé${sentTo ? ` à ${sentTo}` : ""}. Lien valable jusqu'au ${new Date(data.expiresAt).toLocaleString("fr-FR")}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur envoi email brouillon");
     } finally {
@@ -543,6 +577,25 @@ export default function AdminOrderDraftsPage() {
           </aside>
         </section>
       </div>
+
+      {/* Modal sélecteur d'email pour les brouillons */}
+      {emailPickerDraftId && (
+        <EmailPickerModal
+          options={emailPickerOptions}
+          defaultEmail={emailPickerDefault}
+          actionLabel="Envoyer au client"
+          onConfirm={(email) => {
+            const id = emailPickerDraftId;
+            setEmailPickerDraftId(null);
+            setEmailPickerOptions([]);
+            sendDraftEmail(id, email);
+          }}
+          onCancel={() => {
+            setEmailPickerDraftId(null);
+            setEmailPickerOptions([]);
+          }}
+        />
+      )}
     </div>
   );
 }

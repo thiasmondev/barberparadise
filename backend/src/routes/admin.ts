@@ -4649,7 +4649,9 @@ adminRouter.post(
         return;
       }
 
-      const email = (draft.email || draft.customerEmail || draft.customer?.email || "").trim().toLowerCase();
+      const { overrideEmail } = req.body as { overrideEmail?: string };
+      const baseEmail = (draft.email || draft.customerEmail || draft.customer?.email || "").trim().toLowerCase();
+      const email = (overrideEmail && overrideEmail.includes("@") ? overrideEmail.trim().toLowerCase() : null) || baseEmail;
       if (!email || !email.includes("@")) {
         res.status(400).json({ error: "Email client requis pour envoyer le brouillon" });
         return;
@@ -6383,7 +6385,9 @@ adminRouter.post(
         return;
       }
 
-      const emailTo = order.email || order.customerEmail || order.customer?.email || "";
+      const { overrideEmail: overrideEmailConf } = req.body as { overrideEmail?: string };
+      const baseEmailConf = order.email || order.customerEmail || order.customer?.email || "";
+      const emailTo = (overrideEmailConf && overrideEmailConf.includes("@") ? overrideEmailConf.trim() : null) || baseEmailConf;
       if (!emailTo) {
         res.status(400).json({ error: "Aucune adresse email pour cette commande" });
         return;
@@ -6462,7 +6466,9 @@ adminRouter.post(
         return;
       }
 
-      const emailTo = order.email || order.customerEmail || order.customer?.email || "";
+      const { overrideEmail: overrideEmailTracking } = req.body as { overrideEmail?: string };
+      const baseEmailTracking = order.email || order.customerEmail || order.customer?.email || "";
+      const emailTo = (overrideEmailTracking && overrideEmailTracking.includes("@") ? overrideEmailTracking.trim() : null) || baseEmailTracking;
       if (!emailTo) {
         res.status(400).json({ error: "Aucune adresse email pour cette commande" });
         return;
