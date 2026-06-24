@@ -36,6 +36,7 @@ import {
   deleteAdminOrder,
   duplicateAdminOrder,
   generateAdminOrderInvoice,
+  sendAdminOrderInvoice,
   toggleAdminOrderB2B,
   getLogisticsCarrierQuotes,
   getLogisticsLabelUrl,
@@ -283,6 +284,8 @@ export default function OrderDetailPage() {
   const [resendingTracking, setResendingTracking] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
+  const [isSendingInvoice, setIsSendingInvoice] = useState(false);
+  const [invoiceSentSuccess, setInvoiceSentSuccess] = useState(false);
   const [isTogglingB2B, setIsTogglingB2B] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [notes, setNotes] = useState("");
@@ -666,6 +669,22 @@ export default function OrderDetailPage() {
       alert(err.message || "Impossible de générer la facture.");
     } finally {
       setIsGeneratingInvoice(false);
+    }
+  };
+
+  const handleSendInvoice = async () => {
+    if (!order) return;
+    setIsSendingInvoice(true);
+    setInvoiceSentSuccess(false);
+    try {
+      const result = await sendAdminOrderInvoice(order.id);
+      setInvoiceSentSuccess(true);
+      setTimeout(() => setInvoiceSentSuccess(false), 4000);
+      console.log("[send-invoice]", result.message);
+    } catch (err: any) {
+      alert(err.message || "Impossible d'envoyer la facture.");
+    } finally {
+      setIsSendingInvoice(false);
     }
   };
 
@@ -1056,9 +1075,21 @@ export default function OrderDetailPage() {
                     <Download className="h-4 w-4" /> Télécharger le PDF B2C
                   </a>
                   <button
+                    onClick={handleSendInvoice}
+                    disabled={isSendingInvoice}
+                    className={`mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${
+                      invoiceSentSuccess
+                        ? "bg-emerald-600 text-white"
+                        : "bg-gray-900 text-white hover:bg-gray-700"
+                    }`}
+                  >
+                    {isSendingInvoice ? <Loader2 className="h-4 w-4 animate-spin" /> : invoiceSentSuccess ? <span>✓</span> : <Send className="h-4 w-4" />}
+                    {invoiceSentSuccess ? "Envoyée !" : "Envoyer la facture"}
+                  </button>
+                  <button
                     onClick={() => handleGenerateInvoice(true)}
                     disabled={isGeneratingInvoice}
-                    className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-60"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-60"
                   >
                     {isGeneratingInvoice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Régénérer la facture
                   </button>
@@ -1070,9 +1101,21 @@ export default function OrderDetailPage() {
                     <Download className="h-4 w-4" /> Télécharger le PDF Pro
                   </a>
                   <button
+                    onClick={handleSendInvoice}
+                    disabled={isSendingInvoice}
+                    className={`mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition disabled:opacity-60 ${
+                      invoiceSentSuccess
+                        ? "bg-emerald-600 text-white"
+                        : "bg-gray-900 text-white hover:bg-gray-700"
+                    }`}
+                  >
+                    {isSendingInvoice ? <Loader2 className="h-4 w-4 animate-spin" /> : invoiceSentSuccess ? <span>✓</span> : <Send className="h-4 w-4" />}
+                    {invoiceSentSuccess ? "Envoyée !" : "Envoyer la facture"}
+                  </button>
+                  <button
                     onClick={() => handleGenerateInvoice(true)}
                     disabled={isGeneratingInvoice}
-                    className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-60"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-60"
                   >
                     {isGeneratingInvoice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Régénérer la facture
                   </button>

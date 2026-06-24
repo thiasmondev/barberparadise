@@ -6578,6 +6578,108 @@ adminRouter.post(
   }
 );
 
+// POST /api/admin/orders/:id/send-invoice — Envoyer la facture existante au client par email
+adminRouter.post(
+  "/orders/:id/send-invoice",
+  requireAdmin,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+
+      const order = await prisma.order.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          orderNumber: true,
+          isB2B: true,
+          email: true,
+          customerEmail: true,
+          invoiceNumber: true,
+          invoiceUrl: true,
+          proInvoiceNumber: true,
+          proInvoiceUrl: true,
+          customer: { select: { email: true, firstName: true, lastName: true } },
+        },
+      });
+
+      if (!order) {
+        res.status(404).json({ error: "Commande introuvable" });
+        return;
+      }
+
+      const emailTo = order.email || order.customerEmail || order.customer?.email || "";
+      if (!emailTo) {
+        res.status(400).json({ error: "Aucune adresse email pour cette commande" });
+        return;
+      }
+
+      if (order.isB2B) {
+        // Facture pro
+        if (!order.proInvoiceNumber || !order.proInvoiceUrl) {
+          res.status(400).json({ error: "Aucune facture pro générée pour cette commande. Générez-la d'abord." });
+          return;
+        }
+        // Régénérer le PDF en mémoire pour la pièce jointe
+        const fullOrder = await prisma.order.findUnique({
+          where: { id },
+          include: {
+            items: true,
+            shippingAddress: true,
+            customer: { include: { proAccount: true, addresses: true } },
+          },
+        });
+        if (!fullOrder) {
+          res.status(404).json({ error: "Commande introuvable" });
+          return;
+        }
+        // Utiliser ensureProInvoiceForOrder avec sendInvoiceEmail=true pour envoyer l'email
+        // Comme la facture existe déjà, on doit envoyer manuellement
+        const customerName = order.customer
+          ? `${order.customer.firstName || ""} ${order.customer.lastName || ""}`.trim() || emailTo
+          : emailTo;
+        await sendEmail({
+          to: emailTo,
+          subject: `Facture ${order.proInvoiceNumber} — Barber Paradise Pro`,
+          html: `<p>Bonjour ${customerName},</p><p>Veuillez trouver ci-joint votre facture professionnelle <strong>${order.proInvoiceNumber}</strong> pour la commande <strong>${order.orderNumber}</strong>.</p><p>Vous pouvez également la télécharger directement : <a href="${order.proInvoiceUrl}">${order.proInvoiceUrl}</a>.</p><p>Cordialement,<br/>L'équipe Barber Paradise</p>`,
+          attachments: [
+            {
+              filename: `${order.proInvoiceNumber}.pdf`,
+              content: await fetch(order.proInvoiceUrl).then((r) => r.arrayBuffer()).then((b) => Buffer.from(b).toString("base64")),
+            },
+          ],
+        });
+        console.log(`[admin][send-invoice] Facture pro ${order.proInvoiceNumber} envoyée à ${emailTo} pour ${order.orderNumber} par ${req.user?.email || "admin"}`);
+        res.json({ success: true, message: `Facture ${order.proInvoiceNumber} envoyée à ${emailTo}` });
+      } else {
+        // Facture B2C
+        if (!order.invoiceNumber || !order.invoiceUrl) {
+          res.status(400).json({ error: "Aucune facture générée pour cette commande. Générez-la d'abord." });
+          return;
+        }
+        const customerName = order.customer
+          ? `${order.customer.firstName || ""} ${order.customer.lastName || ""}`.trim() || emailTo
+          : emailTo;
+        await sendEmail({
+          to: emailTo,
+          subject: `Votre facture ${order.invoiceNumber} — Barber Paradise`,
+          html: `<p>Bonjour ${customerName},</p><p>Veuillez trouver ci-joint votre facture <strong>${order.invoiceNumber}</strong> pour la commande <strong>${order.orderNumber}</strong>.</p><p>Vous pouvez également la télécharger depuis votre espace client : <a href="${order.invoiceUrl}">${order.invoiceUrl}</a>.</p><p>Cordialement,<br/>L'équipe Barber Paradise</p>`,
+          attachments: [
+            {
+              filename: `${order.invoiceNumber}.pdf`,
+              content: await fetch(order.invoiceUrl).then((r) => r.arrayBuffer()).then((b) => Buffer.from(b).toString("base64")),
+            },
+          ],
+        });
+        console.log(`[admin][send-invoice] Facture B2C ${order.invoiceNumber} envoyée à ${emailTo} pour ${order.orderNumber} par ${req.user?.email || "admin"}`);
+        res.json({ success: true, message: `Facture ${order.invoiceNumber} envoyée à ${emailTo}` });
+      }
+    } catch (err) {
+      console.error(`[admin][send-invoice] Erreur pour ${req.params.id}:`, err);
+      res.status(500).json({ error: err instanceof Error ? err.message : "Erreur lors de l'envoi de la facture" });
+    }
+  }
+);
+
 // PATCH /api/admin/orders/:id/toggle-b2b — Bascule isB2B d'une commande (correction manuelle pour commandes POS)
 adminRouter.patch(
   "/orders/:id/toggle-b2b",

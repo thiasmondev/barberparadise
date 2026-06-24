@@ -568,6 +568,13 @@ export function toggleAdminOrderB2B(id: string, isB2B: boolean) {
   );
 }
 
+export function sendAdminOrderInvoice(id: string) {
+  return adminFetch<{ success: boolean; message: string }>(
+    `/api/admin/orders/${id}/send-invoice`,
+    { method: "POST" }
+  );
+}
+
 // ─── Customers ───────────────────────────────────────────────
 
 export function getAdminCustomers(params?: {
