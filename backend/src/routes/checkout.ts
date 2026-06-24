@@ -286,13 +286,15 @@ async function getPaypalAccessToken(): Promise<string> {
   return data.access_token;
 }
 
-async function createPaypalCheckout(params: { orderId: string; orderNumber: string; totalTTC: number; frontendUrl: string; method: PaymentMethod }) {
+async function createPaypalCheckout(params: { orderId: string; orderNumber: string; totalTTC: number; frontendUrl: string; backendUrl: string; method: PaymentMethod }) {
   const baseUrl = process.env.PAYPAL_ENV === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
   const accessToken = await getPaypalAccessToken();
   const isPayLater = params.method === "paypal_4x";
 
+  // La return_url pointe vers le backend pour déclencher la capture des fonds avant la redirection
   // PayPal 4x (Pay Later / Pay in 4) : utilise payment_source.pay_later
   // PayPal standard : utilise payment_source.paypal
+  const captureReturnUrl = `${params.backendUrl}/api/checkout/paypal/capture?orderId=${params.orderId}&frontendUrl=${encodeURIComponent(params.frontendUrl)}`;
   const paymentSource = isPayLater
     ? {
         pay_later: {
@@ -301,7 +303,7 @@ async function createPaypalCheckout(params: { orderId: string; orderNumber: stri
             locale: "fr-FR",
             shipping_preference: "GET_FROM_FILE",
             user_action: "PAY_NOW",
-            return_url: `${params.frontendUrl}/commande/succes?orderId=${params.orderId}`,
+            return_url: captureReturnUrl,
             cancel_url: `${params.frontendUrl}/commande/annulation?orderId=${params.orderId}`,
           },
         },
@@ -315,7 +317,7 @@ async function createPaypalCheckout(params: { orderId: string; orderNumber: stri
             landing_page: "LOGIN",
             shipping_preference: "GET_FROM_FILE",
             user_action: "PAY_NOW",
-            return_url: `${params.frontendUrl}/commande/succes?orderId=${params.orderId}`,
+            return_url: captureReturnUrl,
             cancel_url: `${params.frontendUrl}/commande/annulation?orderId=${params.orderId}`,
           },
         },
@@ -367,7 +369,7 @@ async function createProviderCheckout(
     }
     return createMollieCheckout({ ...params, method: params.method as Exclude<PaymentMethod, "paypal" | "paypal_4x"> });
   }
-  if (provider === "paypal") return createPaypalCheckout({ ...params, method: params.method });
+  if (provider === "paypal") return createPaypalCheckout({ ...params, method: params.method, backendUrl: params.backendUrl });
   throw new Error(`Prestataire de paiement non supporté : ${provider}`);
 }
 
@@ -1107,5 +1109,76 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
     const message = err instanceof Error ? err.message : "Erreur initialisation paiement";
     const status = message.includes("Variable d'environnement manquante") ? 503 : 500;
     res.status(status).json({ error: message });
+  }
+});
+
+// ─── Route de capture PayPal ──────────────────────────────────────────────────
+// PayPal redirige le client vers cette URL après approbation du paiement.
+// Le backend capture les fonds, met à jour la commande, puis redirige vers la page de succès.
+checkoutRouter.get("/paypal/capture", async (req: Request, res: Response): Promise<void> => {
+  const { orderId, token, frontendUrl } = req.query as { orderId?: string; token?: string; frontendUrl?: string };
+  const safeFrontendUrl = frontendUrl ? decodeURIComponent(frontendUrl) : getFrontendUrl();
+
+  console.log(`[paypal][capture] Réception retour PayPal — orderId=${orderId} token=${token}`);
+
+  if (!orderId || !token) {
+    console.error(`[paypal][capture] Paramètres manquants — orderId=${orderId} token=${token}`);
+    res.redirect(`${safeFrontendUrl}/commande/annulation?error=missing_params`);
+    return;
+  }
+
+  try {
+    const baseUrl = process.env.PAYPAL_ENV === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+    const accessToken = await getPaypalAccessToken();
+
+    console.log(`[paypal][capture] Appel API capture — paypalOrderId=${token}`);
+    const captureResponse = await fetch(`${baseUrl}/v2/checkout/orders/${token}/capture`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "PayPal-Request-Id": `capture-${orderId}`,
+      },
+    });
+
+    const captureData = await captureResponse.json() as {
+      status?: string;
+      id?: string;
+      purchase_units?: Array<{ payments?: { captures?: Array<{ id: string; status: string }> } }>;
+      details?: Array<{ issue?: string; description?: string }>;
+    };
+
+    console.log(`[paypal][capture] Réponse PayPal — status=${captureResponse.status} paypalStatus=${captureData.status}`);
+
+    if (!captureResponse.ok || captureData.status !== "COMPLETED") {
+      const detail = captureData.details?.[0];
+      const errMsg = detail?.issue || detail?.description || captureData.status || "Capture échouée";
+      console.error(`[paypal][capture] Échec capture — orderId=${orderId} paypalOrderId=${token} erreur=${errMsg}`);
+      res.redirect(`${safeFrontendUrl}/commande/annulation?orderId=${orderId}&error=capture_failed`);
+      return;
+    }
+
+    const captureId = captureData.purchase_units?.[0]?.payments?.captures?.[0]?.id || token;
+    console.log(`[paypal][capture] Capture réussie — captureId=${captureId} orderId=${orderId}`);
+
+    // Marquer la commande comme payée
+    const { markOrderPaidFromCapture, runPostPaymentEffectsFromCapture } = await import("./webhooks");
+    const result = await markOrderPaidFromCapture(orderId, "paypal", captureId);
+    const orderRef = await prisma.order.findUnique({ where: { id: orderId }, select: { orderNumber: true } });
+    const orderNumber = orderRef?.orderNumber || orderId;
+    console.log(`[paypal][capture] Commande marquée payée — orderId=${orderId} orderNumber=${orderNumber} changed=${result.changed}`);
+
+    // Rediriger immédiatement vers la page de succès
+    res.redirect(`${safeFrontendUrl}/commande/succes?orderId=${orderId}`);
+
+    // Effets secondaires non bloquants
+    try {
+      await runPostPaymentEffectsFromCapture(orderId, orderNumber, result.channel, result.changed);
+    } catch (err) {
+      console.error(`[paypal][capture] Erreur runPostPaymentEffects — orderId=${orderId}:`, err instanceof Error ? err.stack : err);
+    }
+  } catch (err) {
+    console.error(`[paypal][capture] Erreur inattendue — orderId=${orderId}:`, err instanceof Error ? err.stack : err);
+    res.redirect(`${safeFrontendUrl}/commande/annulation?orderId=${orderId}&error=internal_error`);
   }
 });

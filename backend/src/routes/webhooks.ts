@@ -62,6 +62,14 @@ async function verifyPaypalSignature(req: Request): Promise<boolean> {
   return response.ok && data.verification_status === "SUCCESS";
 }
 
+export async function markOrderPaidFromCapture(orderId: string, provider: WebhookProvider, providerPaymentId?: string): Promise<{ changed: boolean; channel: string | null }> {
+  return markOrderPaid(orderId, provider, providerPaymentId);
+}
+
+export async function runPostPaymentEffectsFromCapture(orderId: string, orderNumber: string, channel: string | null, changed: boolean): Promise<void> {
+  return runPostPaymentEffects(orderId, orderNumber, channel, changed);
+}
+
 async function markOrderCanceled(orderId: string, providerPaymentId?: string): Promise<void> {
   await prisma.order.update({
     where: { id: orderId },
