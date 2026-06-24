@@ -358,6 +358,9 @@ model Order {
   discountTotal     Float    @default(0)
   notes             String?
   stockRestored     Boolean  @default(false) // true si le stock a déjà été réintégré (annulation/suppression)
+  relayPointId      String?  // ID du point relais Mondial Relay sélectionné au checkout
+  relayPointName    String?  // Nom du point relais (ex. "TABAC PRESSE DU MARCHE")
+  relayPointAddress String?  // Adresse complète du point relais (ex. "12 RUE DU MARCHE, 75001 PARIS")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

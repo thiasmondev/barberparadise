@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, Lock, ChevronDown, ShoppingBag, CreditCard, Landmark, WalletCards, ReceiptText, AlertCircle, Smartphone } from "lucide-react";
+import { ArrowLeft, Lock, ChevronDown, ShoppingBag, CreditCard, Landmark, WalletCards, ReceiptText, AlertCircle, Smartphone, MapPin, Search, Loader2, CheckCircle2, Clock, X } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
 import { getCustomerAddresses, type CustomerAddress } from "@/lib/customer-api";
@@ -97,6 +97,28 @@ type ShippingOption = {
   zoneName?: string;
   minAmount?: number;
   maxAmount?: number | null;
+};
+
+type RelayPoint = {
+  id: string;
+  name: string;
+  address: string;
+  city: string;
+  postalCode: string;
+  country: string;
+  latitude: number | null;
+  longitude: number | null;
+  distance: number | null;
+  openingHours: {
+    monday: string;
+    tuesday: string;
+    wednesday: string;
+    thursday: string;
+    friday: string;
+    saturday: string;
+    sunday: string;
+  };
+  fullAddress: string;
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
@@ -193,6 +215,17 @@ export default function CheckoutPage() {
   const [draftError, setDraftError] = useState("");
   const [draftNotice, setDraftNotice] = useState("");
 
+  // États Mondial Relay
+  const [relayPoints, setRelayPoints] = useState<RelayPoint[]>([]);
+  const [relayLoading, setRelayLoading] = useState(false);
+  const [relayError, setRelayError] = useState("");
+  const [relayPointId, setRelayPointId] = useState("");
+  const [relayPointName, setRelayPointName] = useState("");
+  const [relayPointAddress, setRelayPointAddress] = useState("");
+  const [relaySearchCp, setRelaySearchCp] = useState("");
+  const [relaySearched, setRelaySearched] = useState(false);
+  const [expandedRelayId, setExpandedRelayId] = useState<string | null>(null);
+
   const [form, setForm] = useState({
     email: "",
     newsletter: false,
@@ -257,6 +290,57 @@ export default function CheckoutPage() {
   );
 
   const checkoutSteps: Step[] = isAuthenticated ? ["livraison", "paiement"] : ["contact", "livraison", "paiement"];
+
+  // Détecter si Mondial Relay est sélectionné
+  const isMondialRelay = useMemo(() => {
+    if (!selectedShippingOption) return false;
+    const raw = [selectedShippingOption.carrier, selectedShippingOption.label, selectedShippingOption.id].join(" ").toLowerCase();
+    return raw.includes("mondial");
+  }, [selectedShippingOption]);
+
+  // Réinitialiser le point relais quand on change de transporteur
+  useEffect(() => {
+    if (!isMondialRelay) {
+      setRelayPointId("");
+      setRelayPointName("");
+      setRelayPointAddress("");
+      setRelayPoints([]);
+      setRelaySearched(false);
+      setRelayError("");
+    }
+  }, [isMondialRelay]);
+
+  // Pré-remplir le CP de recherche avec le CP de l'adresse de livraison
+  useEffect(() => {
+    if (isMondialRelay && form.codePostal && !relaySearchCp) {
+      setRelaySearchCp(form.codePostal);
+    }
+  }, [isMondialRelay, form.codePostal, relaySearchCp]);
+
+  const searchRelayPoints = async (cp: string) => {
+    const cleanCp = cp.trim();
+    if (cleanCp.length < 4) {
+      setRelayError("Veuillez saisir un code postal valide (min. 4 chiffres)");
+      return;
+    }
+    setRelayLoading(true);
+    setRelayError("");
+    setRelaySearched(false);
+    try {
+      const params = new URLSearchParams({ cp: cleanCp, country: countryCode, nb: "10" });
+      const res = await fetch(`${API_URL}/api/mondialrelay/points?${params.toString()}`);
+      const data = await res.json() as { points?: RelayPoint[]; error?: string };
+      if (!res.ok) throw new Error(data.error || "Impossible de récupérer les points relais");
+      setRelayPoints(data.points || []);
+      setRelaySearched(true);
+      if ((data.points || []).length === 0) setRelayError("Aucun point relais trouvé pour ce code postal");
+    } catch (err) {
+      setRelayError(err instanceof Error ? err.message : "Erreur lors de la recherche des points relais");
+      setRelayPoints([]);
+    } finally {
+      setRelayLoading(false);
+    }
+  };
 
   useEffect(() => {
     const token = searchParams.get("draftToken")?.trim() || "";
@@ -577,6 +661,9 @@ export default function CheckoutPage() {
           isB2B: effectiveIsB2B,
           vatNumber: vatNumber.trim() || undefined,
           promoCode: promoCode.trim() || undefined,
+          relayPointId: relayPointId || undefined,
+          relayPointName: relayPointName || undefined,
+          relayPointAddress: relayPointAddress || undefined,
         }),
       });
 
@@ -775,7 +862,161 @@ export default function CheckoutPage() {
                   );
                 })}
               </div>
-              <button onClick={() => setStep("paiement")} disabled={!form.prenom || !form.nom || !form.adresse || !form.ville || !form.codePostal || shippingLoading || !selectedShippingOption} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-not-allowed text-white py-5 text-xs font-black tracking-widest uppercase transition-colors">CONTINUER VERS LE PAIEMENT</button>
+
+              {/* Sélecteur de point relais Mondial Relay */}
+              {isMondialRelay && (
+                <div className="space-y-4">
+                  <h3 className="text-[10px] font-black tracking-[0.3em] uppercase text-gray-500 flex items-center gap-2">
+                    <MapPin size={12} className="text-[#ff4a8d]" />
+                    Sélectionner un point relais
+                  </h3>
+
+                  {/* Point relais sélectionné */}
+                  {relayPointId && (
+                    <div className="border border-[#ff4a8d] bg-[#ff4a8d]/10 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <CheckCircle2 size={16} className="text-[#ff4a8d] mt-0.5 flex-shrink-0" />
+                          <div>
+                            <p className="text-xs font-black uppercase tracking-widest text-white">{relayPointName}</p>
+                            <p className="mt-1 text-[11px] text-gray-400">{relayPointAddress}</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { setRelayPointId(""); setRelayPointName(""); setRelayPointAddress(""); }}
+                          className="text-gray-500 hover:text-white transition-colors flex-shrink-0"
+                          title="Changer de point relais"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Barre de recherche */}
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        value={relaySearchCp}
+                        onChange={(e) => setRelaySearchCp(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); searchRelayPoints(relaySearchCp); } }}
+                        placeholder={form.codePostal || "Code postal"}
+                        maxLength={10}
+                        className="w-full bg-transparent border border-white/10 px-4 py-3 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-[#ff4a8d] transition-colors"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => searchRelayPoints(relaySearchCp || form.codePostal)}
+                      disabled={relayLoading}
+                      className="bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/10 disabled:cursor-not-allowed px-4 py-3 text-white transition-colors flex items-center gap-2"
+                    >
+                      {relayLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                      <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Rechercher</span>
+                    </button>
+                  </div>
+
+                  {/* Erreur de recherche */}
+                  {relayError && !relayLoading && (
+                    <div className="border border-red-500/30 bg-red-500/10 p-4 flex gap-3 text-red-200">
+                      <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+                      <p className="text-xs leading-relaxed">{relayError}</p>
+                    </div>
+                  )}
+
+                  {/* Liste des points relais */}
+                  {relaySearched && !relayLoading && relayPoints.length > 0 && (
+                    <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                      {relayPoints.map((point) => {
+                        const isSelected = relayPointId === point.id;
+                        const isExpanded = expandedRelayId === point.id;
+                        return (
+                          <div
+                            key={point.id}
+                            className={`border transition-colors ${isSelected ? "border-[#ff4a8d] bg-[#ff4a8d]/10" : "border-white/10 bg-[#1c1b1b] hover:border-white/25"}`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRelayPointId(point.id);
+                                setRelayPointName(point.name);
+                                setRelayPointAddress(point.fullAddress);
+                              }}
+                              className="w-full text-left p-4"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-start gap-3 min-w-0">
+                                  <MapPin size={14} className={`mt-0.5 flex-shrink-0 ${isSelected ? "text-[#ff4a8d]" : "text-gray-500"}`} />
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-black uppercase tracking-widest text-white truncate">{point.name}</p>
+                                    <p className="mt-1 text-[11px] text-gray-400 truncate">{point.address}, {point.postalCode} {point.city}</p>
+                                    {point.distance !== null && (
+                                      <p className="mt-0.5 text-[10px] text-gray-600 uppercase tracking-widest">{point.distance < 1000 ? `${point.distance} m` : `${(point.distance / 1000).toFixed(1)} km`}</p>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  {isSelected && <CheckCircle2 size={14} className="text-[#ff4a8d]" />}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setExpandedRelayId(isExpanded ? null : point.id); }}
+                                    className="text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-white transition-colors border border-white/10 px-2 py-1"
+                                  >
+                                    {isExpanded ? "Masquer" : "Horaires"}
+                                  </button>
+                                </div>
+                              </div>
+                            </button>
+
+                            {/* Horaires détaillés */}
+                            {isExpanded && (
+                              <div className="border-t border-white/5 px-4 pb-4 pt-3">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2 flex items-center gap-1.5">
+                                  <Clock size={10} />Horaires d'ouverture
+                                </p>
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                                  {([
+                                    ["Lundi", point.openingHours.monday],
+                                    ["Mardi", point.openingHours.tuesday],
+                                    ["Mercredi", point.openingHours.wednesday],
+                                    ["Jeudi", point.openingHours.thursday],
+                                    ["Vendredi", point.openingHours.friday],
+                                    ["Samedi", point.openingHours.saturday],
+                                    ["Dimanche", point.openingHours.sunday],
+                                  ] as [string, string][]).map(([day, hours]) => (
+                                    <div key={day} className="flex justify-between gap-2">
+                                      <span className="text-[10px] text-gray-500 uppercase tracking-widest">{day}</span>
+                                      <span className={`text-[10px] font-black ${hours === "Fermé" ? "text-red-400" : "text-gray-300"}`}>{hours}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Alerte si Mondial Relay sélectionné mais aucun point relais choisi */}
+                  {!relayPointId && relaySearched && relayPoints.length > 0 && (
+                    <div className="border border-amber-500/30 bg-amber-500/10 p-4 flex gap-3 text-amber-200">
+                      <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+                      <p className="text-xs leading-relaxed">Veuillez sélectionner un point relais dans la liste ci-dessus pour continuer.</p>
+                    </div>
+                  )}
+                  {!relayPointId && !relaySearched && (
+                    <div className="border border-amber-500/30 bg-amber-500/10 p-4 flex gap-3 text-amber-200">
+                      <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+                      <p className="text-xs leading-relaxed">Saisissez un code postal et cliquez sur Rechercher pour trouver les points relais proches.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <button onClick={() => setStep("paiement")} disabled={!form.prenom || !form.nom || !form.adresse || !form.ville || !form.codePostal || shippingLoading || !selectedShippingOption || (isMondialRelay && !relayPointId)} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-not-allowed text-white py-5 text-xs font-black tracking-widest uppercase transition-colors">CONTINUER VERS LE PAIEMENT</button>
               {!isAuthenticated && <button onClick={() => setStep("contact")} className="w-full text-center text-xs text-gray-500 hover:text-white transition-colors uppercase tracking-widest font-black">← Retour au contact</button>}
             </div>
           )}

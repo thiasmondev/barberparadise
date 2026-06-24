@@ -14,6 +14,10 @@ export function orderConfirmationEmail(params: {
   shippingCost: number;
   shippingAddress: any;
   paymentMethod: string;
+  // Point relais Mondial Relay
+  relayPointId?: string | null;
+  relayPointName?: string | null;
+  relayPointAddress?: string | null;
 }): string {
   const itemsHtml = params.items.map(item => `
     <tr>
@@ -72,8 +76,17 @@ export function orderConfirmationEmail(params: {
     </tr>
     <tr>
       <td style="padding:0 32px 32px;">
+        ${params.relayPointId ? `
+        <p style="color:#A0A0A0;font-size:12px;letter-spacing:2px;margin:0 0 12px;">POINT RELAIS MONDIAL RELAY</p>
+        <div style="background:#161616;border-radius:6px;padding:16px;">
+          <p style="color:#E91E8C;font-weight:bold;margin:0 0 4px;">${escapeHtml(params.relayPointName || "Point relais")}</p>
+          <p style="color:#FFFFFF;margin:0;line-height:1.6;">${escapeHtml(params.relayPointAddress || "")}</p>
+          <p style="color:#A0A0A0;font-size:12px;margin:8px 0 0;">Réf. point relais : ${escapeHtml(params.relayPointId)}</p>
+        </div>
+        ` : `
         <p style="color:#A0A0A0;font-size:12px;letter-spacing:2px;margin:0 0 12px;">ADRESSE DE LIVRAISON</p>
         <p style="color:#FFFFFF;margin:0;line-height:1.6;">${formatAddress(params.shippingAddress)}</p>
+        `}
       </td>
     </tr>
   `);

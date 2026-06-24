@@ -1247,12 +1247,26 @@ export default function OrderDetailPage() {
               <>
                 <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                   <div className="mb-3 flex items-center gap-2"><MapPin className="h-4 w-4 text-gray-500" /><h2 className="font-semibold text-gray-950">Adresse de livraison</h2></div>
-                  {order.shipment?.carrier === "mondial_relay" && (
-                    <div className="mb-3 inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">
-                      <span className="rounded bg-red-600 px-1.5 py-0.5 text-white">MR</span> Mondial Relay {order.shipment.relayPointId ? `· ${order.shipment.relayPointId}` : ""}
+                  {order.shipment?.carrier === "mondial_relay" ? (
+                    <div className="mb-3 space-y-2">
+                      <div className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">
+                        <span className="rounded bg-red-600 px-1.5 py-0.5 text-white">MR</span> Mondial Relay
+                      </div>
+                      {(order.relayPointName || order.relayPointId) ? (
+                        <div className="rounded-xl border border-red-100 bg-red-50/60 p-3 text-sm">
+                          {order.relayPointName && <p className="font-semibold text-gray-900">{order.relayPointName}</p>}
+                          {order.relayPointAddress && <p className="text-gray-600">{order.relayPointAddress}</p>}
+                          {order.relayPointId && <p className="mt-1 text-xs text-gray-400">Réf. : {order.relayPointId}</p>}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-amber-600">Point relais non renseigné</p>
+                      )}
+                      <p className="text-xs text-gray-400">Adresse personnelle du client :</p>
+                      {renderAddress(order.shippingAddress)}
                     </div>
+                  ) : (
+                    renderAddress(order.shippingAddress)
                   )}
-                  {renderAddress(order.shippingAddress)}
                 </section>
 
                 <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -1306,11 +1320,28 @@ export default function OrderDetailPage() {
                   <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                     <div className="mb-4 flex items-center gap-2"><MapPin className="h-5 w-5 text-gray-500" /><h3 className="font-semibold text-gray-950">Adresse de livraison</h3></div>
                     {activeShipment?.carrier === "mondial_relay" ? (
-                      <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span className="mr-2 rounded bg-red-600 px-1.5 py-0.5 text-xs font-bold text-white">MR</span>Point relais {activeShipment.relayPointId ? `· ${activeShipment.relayPointId}` : ""}</div>
+                      <div className="mb-4 space-y-2">
+                        <div className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">
+                          <span className="rounded bg-red-600 px-1.5 py-0.5 text-white">MR</span> Mondial Relay — Point relais
+                        </div>
+                        {(order.relayPointName || order.relayPointId) ? (
+                          <div className="rounded-xl border border-red-100 bg-red-50/60 p-3 text-sm">
+                            {order.relayPointName && <p className="font-semibold text-gray-900">{order.relayPointName}</p>}
+                            {order.relayPointAddress && <p className="text-gray-600">{order.relayPointAddress}</p>}
+                            {order.relayPointId && <p className="mt-1 text-xs text-gray-400">Réf. : {order.relayPointId}</p>}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-amber-600">Point relais non renseigné (commande antérieure)</p>
+                        )}
+                        <p className="text-xs text-gray-400">Adresse personnelle :</p>
+                        {renderAddress(order.shippingAddress)}
+                      </div>
                     ) : (
-                      <div className="mb-4 inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">Colissimo à domicile</div>
+                      <>
+                        <div className="mb-4 inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">Colissimo à domicile</div>
+                        {renderAddress(order.shippingAddress)}
+                      </>
                     )}
-                    {renderAddress(order.shippingAddress)}
                   </section>
 
                   <section className="rounded-2xl border border-gray-200 bg-white shadow-sm">

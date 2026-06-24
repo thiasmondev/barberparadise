@@ -195,6 +195,9 @@ async function sendOrderPaidEmail(orderId: string, orderNumber: string, invoiceA
     shippingCost: order.shipping,
     shippingAddress: order.shippingAddress,
     paymentMethod: formatPaymentMethod(order.paymentMethod),
+    relayPointId: order.relayPointId || null,
+    relayPointName: order.relayPointName || null,
+    relayPointAddress: order.relayPointAddress || null,
     attachments: invoiceAttachment ? [invoiceAttachment] : undefined,
   });
   console.log(`[email] Résultat envoi confirmation ${orderNumber}: sent=${result.sent} provider=${result.provider || "?"} id=${result.id || "?"}`);

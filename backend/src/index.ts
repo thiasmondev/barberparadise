@@ -47,6 +47,7 @@ import { chatRouter } from "./routes/chat";
 import { stockAlertsRouter } from "./routes/stock-alerts";
 import { legalPagesRouter } from "./routes/legalPages";
 import { posRouter } from "./routes/pos";
+import { mondialRelayRouter } from "./routes/mondialrelay";
 import { requireAdmin, requireJwtAdmin } from "./middleware/auth";
 import telegramBotService from "./services/telegram/telegramBot";
 import { registerTelegramHandlers } from "./services/telegram/telegramHandlers";
@@ -106,6 +107,7 @@ app.use("/api/chat", chatRouter);
 app.use("/api/stock-alerts", stockAlertsRouter);
 app.use("/api/legal-pages", legalPagesRouter);
 app.use("/api/pos", requireAdmin, posRouter);
+app.use("/api/mondialrelay", mondialRelayRouter); // Points relais Mondial Relay (public — lecture seule)
 
 // ─── Root & Health Check ─────────────────────────────────────
 app.get("/", (_req, res) => {

@@ -206,6 +206,9 @@ export interface Order {
   customerEmail?: string | null;
   billingAddress?: unknown;
   notes: string | null;
+  relayPointId?: string | null;
+  relayPointName?: string | null;
+  relayPointAddress?: string | null;
   createdAt: string;
   updatedAt: string;
   customer?: {

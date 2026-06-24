@@ -54,6 +54,10 @@ type CheckoutRequestBody = {
   promoCode?: string;
   cartSessionId?: string;
   draftToken?: string;
+  // Point relais Mondial Relay sélectionné au checkout
+  relayPointId?: string;
+  relayPointName?: string;
+  relayPointAddress?: string;
 };
 
 const CURRENCY = "EUR";
@@ -745,6 +749,14 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       return;
     }
 
+    // Bloquer Mondial Relay sans point relais sélectionné
+    const selectedCarrier = normalizeShipmentCarrier({ carrier: body.shippingOptionId || "", label: body.shippingOptionId || "", id: body.shippingOptionId || "" });
+    const isMondialRelay = body.shippingOptionId?.toLowerCase().includes("mondial") || selectedCarrier === "mondial_relay";
+    if (isMondialRelay && !body.relayPointId) {
+      res.status(400).json({ error: "Veuillez sélectionner un point relais Mondial Relay avant de valider votre commande" });
+      return;
+    }
+
     const isB2B = isApprovedPro;
     const vatNumber = typeof body.vatNumber === "string" ? body.vatNumber.trim().toUpperCase() : proAccount?.vatNumber || undefined;
     const allowedMethods = getAvailableMethods(country, isB2B);
@@ -827,6 +839,9 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
               phone: shippingAddress.phone || "",
             },
           },
+          relayPointId: body.relayPointId || null,
+          relayPointName: body.relayPointName || null,
+          relayPointAddress: body.relayPointAddress || null,
           shipment: {
             create: {
               // Priorité : option choisie par le client > option du brouillon > fallback par montant
@@ -1038,6 +1053,9 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
             phone: shippingAddress.phone || "",
           },
         },
+        relayPointId: body.relayPointId || null,
+        relayPointName: body.relayPointName || null,
+        relayPointAddress: body.relayPointAddress || null,
         shipment: {
           create: {
             carrier: normalizeShipmentCarrier(selectedShippingOption) || "livraison_standard",
