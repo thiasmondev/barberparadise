@@ -27,14 +27,33 @@ function getXmlValue(xml: string, tag: string) {
   return match?.[1]?.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim() || null;
 }
 
-function getXmlValues(xml: string, tag: string): string[] {
-  const regex = new RegExp(`<(?:\\w+:)?${tag}[^>]*>([\\s\\S]*?)</(?:\\w+:)?${tag}>`, "gi");
+/**
+ * Extrait les valeurs d'un ArrayOfString Mondial Relay.
+ * Structure XML : <Horaires_Lundi><string>0900-1200</string><string>1400-1900</string></Horaires_Lundi>
+ */
+function getXmlArrayOfString(xml: string, tag: string): string[] {
+  const blockMatch = xml.match(new RegExp(`<(?:\\w+:)?${tag}[^>]*>([\\s\\S]*?)</(?:\\w+:)?${tag}>`, "i"));
+  if (!blockMatch) return [];
+  const block = blockMatch[1];
+  const regex = /<(?:\w+:)?string[^>]*>([\s\S]*?)<\/(?:\w+:)?string>/gi;
   const results: string[] = [];
   let match;
-  while ((match = regex.exec(xml)) !== null) {
-    results.push(match[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim());
+  while ((match = regex.exec(block)) !== null) {
+    const val = match[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+    if (val) results.push(val);
   }
   return results;
+}
+
+/**
+ * Formate un créneau horaire Mondial Relay.
+ * Format reçu : "0900-1200" → "09:00 – 12:00"
+ */
+function formatTimeSlot(slot: string): string {
+  const clean = slot.replace(/\s/g, "");
+  const match = clean.match(/^(\d{2})(\d{2})-(\d{2})(\d{2})$/);
+  if (!match) return slot;
+  return `${match[1]}:${match[2]} – ${match[3]}:${match[4]}`;
 }
 
 function mondialRelaySecurity(values: Array<string | number | null | undefined>) {
@@ -68,17 +87,21 @@ interface RelayPoint {
   fullAddress: string;
 }
 
-function parseOpeningHours(xml: string, prefix: string): RelayPoint["openingHours"] {
-  const days = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
-  const keys: (keyof RelayPoint["openingHours"])[] = [
-    "monday",
-    "tuesday",
-    "wednesday",
-    "thursday",
-    "friday",
-    "saturday",
-    "sunday",
+/**
+ * Parse les horaires d'un point relais depuis le XML.
+ * Les horaires sont des ArrayOfString : <Horaires_Lundi><string>0900-1200</string>...</Horaires_Lundi>
+ */
+function parseOpeningHours(xml: string): RelayPoint["openingHours"] {
+  const days: Array<[string, keyof RelayPoint["openingHours"]]> = [
+    ["Lundi", "monday"],
+    ["Mardi", "tuesday"],
+    ["Mercredi", "wednesday"],
+    ["Jeudi", "thursday"],
+    ["Vendredi", "friday"],
+    ["Samedi", "saturday"],
+    ["Dimanche", "sunday"],
   ];
+
   const result: RelayPoint["openingHours"] = {
     monday: "",
     tuesday: "",
@@ -88,23 +111,25 @@ function parseOpeningHours(xml: string, prefix: string): RelayPoint["openingHour
     saturday: "",
     sunday: "",
   };
-  days.forEach((day, i) => {
-    const am = getXmlValue(xml, `${prefix}${day}Matin`) || "";
-    const pm = getXmlValue(xml, `${prefix}${day}ApresMidi`) || "";
-    const parts: string[] = [];
-    if (am && am !== "0000-0000") parts.push(am.replace("-", " – "));
-    if (pm && pm !== "0000-0000") parts.push(pm.replace("-", " – "));
-    result[keys[i]] = parts.join(" / ") || "Fermé";
-  });
+
+  for (const [day, key] of days) {
+    const slots = getXmlArrayOfString(xml, `Horaires_${day}`);
+    if (slots.length === 0) {
+      result[key] = "Fermé";
+    } else {
+      result[key] = slots.map(formatTimeSlot).join(" / ");
+    }
+  }
+
   return result;
 }
 
 // ─── Route GET /api/mondialrelay/points ──────────────────────
 // Query params: cp (code postal), country (FR par défaut), nb (nombre de résultats, défaut 10)
+// Méthode SOAP : WSI3_PointRelais_Recherche (WSDL : https://api.mondialrelay.com/Web_Services.asmx?WSDL)
 mondialRelayRouter.get("/points", async (req: Request, res: Response): Promise<void> => {
   const cp = String(req.query.cp || "").trim().replace(/\s/g, "");
   const country = String(req.query.country || "FR").trim().toUpperCase();
-  const nb = Math.min(parseInt(String(req.query.nb || "10"), 10) || 10, 20);
 
   if (!cp || cp.length < 4) {
     res.status(400).json({ error: "Code postal requis (minimum 4 caractères)" });
@@ -120,19 +145,22 @@ mondialRelayRouter.get("/points", async (req: Request, res: Response): Promise<v
   }
 
   try {
-    // WSI3_PointRelaisRecherche — recherche de points relais par code postal
-    const securityValues = [enseigne, "24R", country, cp, "", "", "", "", "", "", "", nb.toString(), "", "", "", "", "1", ""];
+    // Signature MD5 pour WSI3_PointRelais_Recherche
+    // Ordre des valeurs : Enseigne + Pays + NumPointRelais + Ville + CP + Latitude + Longitude +
+    //                     Taille + Poids + Action + DelaiEnvoi + RayonRecherche + TypeActivite + NACE
+    const securityValues = [enseigne, country, "", "", cp, "", "", "", "", "", "", "", "", ""];
     const security = mondialRelaySecurity(securityValues);
 
+    // Enveloppe SOAP conforme au WSDL WSI3_PointRelais_Recherche
     const envelope = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
-    <WSI3_PointRelaisRecherche xmlns="http://www.mondialrelay.fr/webservice/">
+    <WSI3_PointRelais_Recherche xmlns="http://www.mondialrelay.fr/webservice/">
       <Enseigne>${xmlEscape(enseigne)}</Enseigne>
-      <ModeLiv>24R</ModeLiv>
       <Pays>${xmlEscape(country)}</Pays>
-      <CP>${xmlEscape(cp)}</CP>
+      <NumPointRelais></NumPointRelais>
       <Ville></Ville>
+      <CP>${xmlEscape(cp)}</CP>
       <Latitude></Latitude>
       <Longitude></Longitude>
       <Taille></Taille>
@@ -142,11 +170,8 @@ mondialRelayRouter.get("/points", async (req: Request, res: Response): Promise<v
       <RayonRecherche></RayonRecherche>
       <TypeActivite></TypeActivite>
       <NACE></NACE>
-      <NombreResultats>${nb}</NombreResultats>
-      <Langue>FR</Langue>
-      <Offset></Offset>
       <Security>${security}</Security>
-    </WSI3_PointRelaisRecherche>
+    </WSI3_PointRelais_Recherche>
   </soap:Body>
 </soap:Envelope>`;
 
@@ -154,7 +179,7 @@ mondialRelayRouter.get("/points", async (req: Request, res: Response): Promise<v
       method: "POST",
       headers: {
         "Content-Type": "text/xml; charset=utf-8",
-        SOAPAction: "http://www.mondialrelay.fr/webservice/WSI3_PointRelaisRecherche",
+        SOAPAction: "\"http://www.mondialrelay.fr/webservice/WSI3_PointRelais_Recherche\"",
       },
       body: envelope,
       signal: AbortSignal.timeout(10000),
@@ -194,7 +219,7 @@ mondialRelayRouter.get("/points", async (req: Request, res: Response): Promise<v
       const longitude = lngStr ? parseFloat(lngStr.replace(",", ".")) : null;
       const distance = distStr ? parseInt(distStr, 10) : null;
 
-      const openingHours = parseOpeningHours(block, "Horaires_");
+      const openingHours = parseOpeningHours(block);
       const fullAddress = [address, postalCode, city].filter(Boolean).join(", ");
 
       return {
