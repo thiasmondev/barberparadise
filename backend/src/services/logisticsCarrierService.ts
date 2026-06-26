@@ -471,8 +471,10 @@ function extractPdfBase64FromSoapResponse(response: SoapBinaryResponse): string 
 }
 
 async function downloadPdfAsBase64(url: string) {
-  // Les URLs Mondial Relay sont parfois relatives (/StickersProxy/...) — préfixer le domaine.
-  const absoluteUrl = url.startsWith("/") ? `https://api.mondialrelay.com${url}` : url;
+  // Les URLs Mondial Relay sont relatives (/StickersProxy/...) — préfixer le domaine.
+  // Doc officielle v5.14 : "The value given by URL_Etiquette does not include the domain name and the protocol."
+  // Domaine correct confirmé : https://www.mondialrelay.com (HTTP 200 + application/pdf)
+  const absoluteUrl = url.startsWith("/") ? `https://www.mondialrelay.com${url}` : url;
   const response = await fetch(absoluteUrl);
   if (!response.ok) {
     throw new Error(`Impossible de télécharger l’étiquette officielle (${response.status}).`);
