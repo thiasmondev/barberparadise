@@ -239,6 +239,20 @@ function normalizeMondialRelayText(value: string | number | null | undefined, ma
   return s;
 }
 
+/**
+ * Construit un identifiant client valide pour le champ NClient de Mondial Relay.
+ * Contraintes (spec v5.11) : alphanumérique, max 9 caractères, sans @ ni caractères spéciaux.
+ * Stratégie : prend la partie avant le @ de l'email, supprime les caractères non alphanumériques,
+ * tronque à 9 caractères en majuscules. Déterministe et stable pour un email donné.
+ */
+function buildMondialRelayNClient(email: string): string {
+  const local = (email || "").split("@")[0] || "CLIENT";
+  // Supprime tout ce qui n'est pas alphanumérique (tirets, points, +, etc.)
+  const alnum = local.replace(/[^a-zA-Z0-9]/g, "");
+  // Tronque à 9 caractères en majuscules
+  return (alnum || "CLIENT").slice(0, 9).toUpperCase();
+}
+
 function getXmlValue(xml: string, tag: string) {
   const match = xml.match(new RegExp(`<(?:\\w+:)?${tag}[^>]*>([\\s\\S]*?)</(?:\\w+:)?${tag}>`, "i"));
   return match?.[1]?.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim() || null;
@@ -594,7 +608,8 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
   const expValeur = Math.round(input.insuranceValueCents / 100).toString();
   const modeCol = process.env.MONDIAL_RELAY_MODE_COL || "CCC";
   const modeLiv = process.env.MONDIAL_RELAY_MODE_LIV || "24R";
-
+  // NClient : identifiant client alphanumérique max 9 caractères (contrainte Mondial Relay v5.11)
+  const nClient = buildMondialRelayNClient(input.customerEmail);
   // Normalisation ASCII des champs expéditeur (suppression accents, apostrophes doubles, etc.)
   // DOIT être identique entre le tableau values (hash MD5) et l'enveloppe SOAP.
   const expeAd1 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise", 35);
@@ -613,7 +628,7 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
   const destPhone = normalizeMondialRelayText(input.recipient.phone || "", 20);
 
   const values = [
-    enseigne, modeCol, modeLiv, input.orderNumber, input.customerEmail,
+    enseigne, modeCol, modeLiv, input.orderNumber, nClient,
     "FR", expeAd1, "", expeAd3,
     expeAd4, expeVille, process.env.LOGISTICS_SENDER_POSTAL_CODE || "", "FR",
     expeTel1, "", expeMail,
@@ -630,7 +645,7 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
   <soap:Body>
     <WSI2_CreationExpedition xmlns="http://www.mondialrelay.fr/webservice/">
       <Enseigne>${xmlEscape(enseigne)}</Enseigne><ModeCol>${xmlEscape(modeCol)}</ModeCol><ModeLiv>${xmlEscape(modeLiv)}</ModeLiv>
-      <NDossier>${xmlEscape(input.orderNumber)}</NDossier><NClient>${xmlEscape(input.customerEmail)}</NClient><Expe_Langage>FR</Expe_Langage>
+      <NDossier>${xmlEscape(input.orderNumber)}</NDossier><NClient>${xmlEscape(nClient)}</NClient><Expe_Langage>FR</Expe_Langage>
       <Expe_Ad1>${xmlEscape(expeAd1)}</Expe_Ad1><Expe_Ad2></Expe_Ad2><Expe_Ad3>${xmlEscape(expeAd3)}</Expe_Ad3><Expe_Ad4>${xmlEscape(expeAd4)}</Expe_Ad4>
       <Expe_Ville>${xmlEscape(expeVille)}</Expe_Ville><Expe_CP>${xmlEscape(process.env.LOGISTICS_SENDER_POSTAL_CODE || "")}</Expe_CP><Expe_Pays>FR</Expe_Pays><Expe_Tel1>${xmlEscape(expeTel1)}</Expe_Tel1><Expe_Tel2></Expe_Tel2><Expe_Mail>${xmlEscape(expeMail)}</Expe_Mail>
       <Dest_Langage>FR</Dest_Langage><Dest_Ad1>${xmlEscape(destName)}</Dest_Ad1><Dest_Ad2></Dest_Ad2><Dest_Ad3>${xmlEscape(destAd3)}</Dest_Ad3><Dest_Ad4>${xmlEscape(destAd4)}</Dest_Ad4>
