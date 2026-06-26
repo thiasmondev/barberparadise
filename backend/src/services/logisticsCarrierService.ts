@@ -165,7 +165,8 @@ const DEFAULT_TARIFFS: Record<LogisticsCarrier, TariffStep[]> = {
 
 const COLISSIMO_INSURANCE_LEVELS = [0, 15000, 30000, 50000, 100000, 200000, 500000];
 const COLISSIMO_MIN_INSURANCE_VALUE_CENTS = COLISSIMO_INSURANCE_LEVELS[1];
-const COLISSIMO_INSURANCE_COMPATIBLE_PRODUCT_CODES = new Set(["DOM", "COLI"]);
+// Codes produits Colissimo compatibles avec l'option valeur assurée (doc SLS v3.0)
+const COLISSIMO_INSURANCE_COMPATIBLE_PRODUCT_CODES = new Set(["DOM", "DOS", "COM", "CDS", "COLI"]);
 const MONDIAL_RELAY_INSURANCE_LEVELS = [0, 2500, 5000, 12500, 25000, 50000];
 const DEFAULT_CARRIER_VAT_RATE = 0.2;
 
@@ -492,7 +493,14 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
 
   const now = new Date();
   const depositDate = now.toISOString().slice(0, 10);
-  const productCode = input.carrier === "colissimo_international" ? "COLI" : "DOM";
+  // Codes produits Colissimo (doc SLS v3.0) :
+  //   DOM = France sans signature, DOS = France avec signature
+  //   COM = International sans signature, CDS = International avec signature
+  //   COLI = ancien code international (déprécié, interdit pour nouveaux clients)
+  const isFranceDom = input.carrier === "colissimo";
+  const productCode = isFranceDom
+    ? (input.signatureRequired ? "DOS" : "DOM")
+    : (input.signatureRequired ? "CDS" : "COM");
   const countryCode = normalizeCountryCode(input.recipient.country);
   const rawInsuranceValue = input.insuranceValueCents;
   const insuranceValue = normalizeColissimoInsuranceValueCents(rawInsuranceValue);
