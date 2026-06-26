@@ -213,6 +213,32 @@ function xmlEscape(value: string | number | null | undefined) {
     .replace(/'/g, "&apos;");
 }
 
+/**
+ * Normalise un champ texte pour Mondial Relay (hash MD5 + body SOAP).
+ * - Décompose les caractères accentués (NFD) et supprime les diacritiques
+ * - Remplace les apostrophes doubles ('') par une apostrophe simple (')
+ * - Supprime les caractères hors plage ASCII 32-126
+ * - Tronque à la longueur maximale si spécifiée
+ * DOIT être appliqué de manière identique sur les valeurs du hash MD5
+ * ET sur les valeurs du body SOAP pour garantir la cohérence.
+ */
+function normalizeMondialRelayText(value: string | number | null | undefined, maxLen?: number): string {
+  let s = String(value ?? "");
+  // Décomposition Unicode NFD : é -> e + combining accent
+  s = s.normalize("NFD");
+  // Suppression des diacritiques (marques de combinaison Unicode U+0300–U+036F)
+  s = s.replace(/[\u0300-\u036f]/g, "");
+  // Remplacement des apostrophes doubles par une apostrophe simple
+  s = s.replace(/''/g, "'");
+  // Suppression des caractères hors ASCII 32-126
+  // eslint-disable-next-line no-control-regex
+  s = s.replace(/[^\x20-\x7E]/g, "");
+  // Normalisation des espaces multiples
+  s = s.replace(/\s+/g, " ").trim();
+  if (maxLen !== undefined && s.length > maxLen) s = s.slice(0, maxLen);
+  return s;
+}
+
 function getXmlValue(xml: string, tag: string) {
   const match = xml.match(new RegExp(`<(?:\\w+:)?${tag}[^>]*>([\\s\\S]*?)</(?:\\w+:)?${tag}>`, "i"));
   return match?.[1]?.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim() || null;
@@ -568,18 +594,26 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
   const expValeur = Math.round(input.insuranceValueCents / 100).toString();
   const modeCol = process.env.MONDIAL_RELAY_MODE_COL || "CCC";
   const modeLiv = process.env.MONDIAL_RELAY_MODE_LIV || "24R";
+
+  // Normalisation ASCII des champs texte destinataire (suppression accents, apostrophes doubles, etc.)
+  // DOIT être identique entre le tableau values (hash MD5) et l'enveloppe SOAP.
+  const destName = normalizeMondialRelayText(`${input.recipient.firstName} ${input.recipient.lastName}`.trim(), 35);
+  const destAd3 = normalizeMondialRelayText(input.recipient.address, 35);
+  const destAd4 = normalizeMondialRelayText(input.recipient.extension || "", 35);
+  const destVille = normalizeMondialRelayText(input.recipient.city, 35);
+  const destPhone = normalizeMondialRelayText(input.recipient.phone || "", 20);
+
   const values = [
     enseigne, modeCol, modeLiv, input.orderNumber, input.customerEmail,
     "FR", process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise", "", process.env.LOGISTICS_SENDER_ADDRESS || "",
     process.env.LOGISTICS_SENDER_ADDRESS_2 || "", process.env.LOGISTICS_SENDER_CITY || "", process.env.LOGISTICS_SENDER_POSTAL_CODE || "", "FR",
     process.env.LOGISTICS_SENDER_PHONE || "", "", process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr",
-    "FR", `${input.recipient.firstName} ${input.recipient.lastName}`.trim(), "", input.recipient.address, input.recipient.extension || "",
-    input.recipient.city, input.recipient.postalCode, countryCode, input.recipient.phone || "", "", input.customerEmail,
+    "FR", destName, "", destAd3, destAd4,
+    destVille, input.recipient.postalCode, countryCode, destPhone, "", input.customerEmail,
     poids, input.packageDimensions?.lengthCm || "", "", "1", "0", "EUR", expValeur, "EUR",
     "FR", input.relayPointId, "FR", "", "", "", "", assurance, "",
   ];
   const security = mondialRelaySecurity(values);
-
   const envelope = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
@@ -588,8 +622,8 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
       <NDossier>${xmlEscape(input.orderNumber)}</NDossier><NClient>${xmlEscape(input.customerEmail)}</NClient><Expe_Langage>FR</Expe_Langage>
       <Expe_Ad1>${xmlEscape(process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise")}</Expe_Ad1><Expe_Ad2></Expe_Ad2><Expe_Ad3>${xmlEscape(process.env.LOGISTICS_SENDER_ADDRESS || "")}</Expe_Ad3><Expe_Ad4>${xmlEscape(process.env.LOGISTICS_SENDER_ADDRESS_2 || "")}</Expe_Ad4>
       <Expe_Ville>${xmlEscape(process.env.LOGISTICS_SENDER_CITY || "")}</Expe_Ville><Expe_CP>${xmlEscape(process.env.LOGISTICS_SENDER_POSTAL_CODE || "")}</Expe_CP><Expe_Pays>FR</Expe_Pays><Expe_Tel1>${xmlEscape(process.env.LOGISTICS_SENDER_PHONE || "")}</Expe_Tel1><Expe_Tel2></Expe_Tel2><Expe_Mail>${xmlEscape(process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr")}</Expe_Mail>
-      <Dest_Langage>FR</Dest_Langage><Dest_Ad1>${xmlEscape(`${input.recipient.firstName} ${input.recipient.lastName}`.trim())}</Dest_Ad1><Dest_Ad2></Dest_Ad2><Dest_Ad3>${xmlEscape(input.recipient.address)}</Dest_Ad3><Dest_Ad4>${xmlEscape(input.recipient.extension || "")}</Dest_Ad4>
-      <Dest_Ville>${xmlEscape(input.recipient.city)}</Dest_Ville><Dest_CP>${xmlEscape(input.recipient.postalCode)}</Dest_CP><Dest_Pays>${xmlEscape(countryCode)}</Dest_Pays><Dest_Tel1>${xmlEscape(input.recipient.phone || "")}</Dest_Tel1><Dest_Tel2></Dest_Tel2><Dest_Mail>${xmlEscape(input.customerEmail)}</Dest_Mail>
+      <Dest_Langage>FR</Dest_Langage><Dest_Ad1>${xmlEscape(destName)}</Dest_Ad1><Dest_Ad2></Dest_Ad2><Dest_Ad3>${xmlEscape(destAd3)}</Dest_Ad3><Dest_Ad4>${xmlEscape(destAd4)}</Dest_Ad4>
+      <Dest_Ville>${xmlEscape(destVille)}</Dest_Ville><Dest_CP>${xmlEscape(input.recipient.postalCode)}</Dest_CP><Dest_Pays>${xmlEscape(countryCode)}</Dest_Pays><Dest_Tel1>${xmlEscape(destPhone)}</Dest_Tel1><Dest_Tel2></Dest_Tel2><Dest_Mail>${xmlEscape(input.customerEmail)}</Dest_Mail>
       <Poids>${xmlEscape(poids)}</Poids><Longueur>${xmlEscape(input.packageDimensions?.lengthCm || "")}</Longueur><Taille></Taille><NbColis>1</NbColis>
       <CRT_Valeur>0</CRT_Valeur><CRT_Devise>EUR</CRT_Devise><Exp_Valeur>${xmlEscape(expValeur)}</Exp_Valeur><Exp_Devise>EUR</Exp_Devise><COL_Rel_Pays>FR</COL_Rel_Pays><COL_Rel></COL_Rel><LIV_Rel_Pays>FR</LIV_Rel_Pays><LIV_Rel>${xmlEscape(input.relayPointId)}</LIV_Rel><TAvisage></TAvisage><TReprise></TReprise><Montage></Montage><TRDV></TRDV><Assurance>${xmlEscape(assurance)}</Assurance><Instructions></Instructions><Security>${security}</Security>
     </WSI2_CreationExpedition>
