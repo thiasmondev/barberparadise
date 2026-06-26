@@ -603,7 +603,9 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
   }
 
   const countryCode = normalizeCountryCode(input.recipient.country);
-  const poids = Math.max(input.totalWeightG, 1).toString();
+  // Poids en grammes. Mondial Relay exige un minimum de 100g (STAT 20 si < 100).
+  // Si les produits n'ont pas de poids renseigné en base, totalWeightG peut être 0.
+  const poids = Math.max(input.totalWeightG, 100).toString();
   const assurance = input.insuranceValueCents > 0 ? "1" : "0";
   const expValeur = Math.round(input.insuranceValueCents / 100).toString();
   const modeCol = process.env.MONDIAL_RELAY_MODE_COL || "CCC";
