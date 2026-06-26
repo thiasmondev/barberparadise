@@ -578,7 +578,7 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
   const labelBase64 = extractPdfBase64FromSoapResponse(soapResponse) || (pdfUrl ? await downloadPdfAsBase64(pdfUrl) : null);
 
   if (!trackingNumber) {
-    throw new Error(`Colissimo n’a pas retourné de numéro de colis. Réponse: ${xml.slice(0, 600)}`);
+    throw new Error(`Colissimo n'a pas retourné de numéro de colis. [productCode=${productCode} countryCode=${countryCode} postalCode=${input.recipient.postalCode}] Réponse: ${xml.slice(0, 600)}`);
   }
   if (!labelBase64 && !pdfUrl) {
     throw new Error("Colissimo a créé l’expédition mais n’a pas retourné d’étiquette PDF exploitable.");
