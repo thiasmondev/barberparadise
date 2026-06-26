@@ -103,6 +103,8 @@ export default function AdminLogisticsPreparationPage() {
         setCarrier(data.shipment.carrier as CarrierValue);
       if (data.shipment?.packagingId)
         setPackagingId(String(data.shipment.packagingId));
+      // Pré-remplir le point relais depuis la commande (commandes Mondial Relay existantes)
+      if (data.order.relayPointId) setRelayPointId(data.order.relayPointId);
     } catch (err: any) {
       setError(err.message || "Erreur de chargement de la préparation");
     } finally {

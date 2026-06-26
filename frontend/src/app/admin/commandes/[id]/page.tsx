@@ -326,6 +326,7 @@ export default function OrderDetailPage() {
   const [carrierSignatureRequired, setCarrierSignatureRequired] = useState<Record<string, boolean>>({});
   const [quoteRefreshingByCarrier, setQuoteRefreshingByCarrier] = useState<Record<string, boolean>>({});
   const [quoteErrorsByCarrier, setQuoteErrorsByCarrier] = useState<Record<string, string>>({});
+  const [drawerRelayPointId, setDrawerRelayPointId] = useState("");
 
   const loadOrder = async () => {
     if (!id) return;
@@ -388,6 +389,8 @@ export default function OrderDetailPage() {
       initializeWeights(detail.items);
       const recommendedId = detail.recommendation.recommendedBox?.id || detail.packagings[0]?.id || null;
       setSelectedPackagingId(recommendedId);
+      // Pré-remplir le point relais depuis la commande (commandes Mondial Relay existantes)
+      setDrawerRelayPointId(detail.order.relayPointId || order.relayPointId || "");
     } catch (err: any) {
       setDrawerError(err.message || "Impossible de charger la préparation logistique.");
     } finally {
@@ -540,6 +543,10 @@ export default function OrderDetailPage() {
       setDrawerError(selectedQuote.configurationError || "Ce devis transporteur ne peut pas être acheté.");
       return;
     }
+    if (selectedQuote.requiresRelayPoint && !drawerRelayPointId.trim()) {
+      setDrawerError("Veuillez saisir l'identifiant du point relais Mondial Relay avant d'acheter l'étiquette.");
+      return;
+    }
     setDrawerLoading(true);
     setDrawerError("");
     try {
@@ -551,6 +558,7 @@ export default function OrderDetailPage() {
         signatureRequired: selectedQuote.carrier !== "mondial_relay" ? Boolean(carrierSignatureRequired[selectedQuote.id]) : false,
         packagingId: selectedPackagingId,
         sendTrackingEmail: sendEmailToCustomer,
+        relayPointId: selectedQuote.requiresRelayPoint ? drawerRelayPointId.trim() || null : null,
       });
       setShipment(result.shipment);
       setLabelUrl(result.label?.downloadUrl || (result.shipment?.id ? getShipmentLabelPdfUrl(result.shipment.id) : getLogisticsLabelUrl(order.id)));
@@ -1413,7 +1421,7 @@ export default function OrderDetailPage() {
                   <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                     <h3 className="font-semibold text-gray-950">Résumé de l’achat</h3>
                     <div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="text-gray-500">Commande</span><span className="font-medium text-gray-950">{order.orderNumber}</span></div><div className="flex justify-between gap-3"><span className="text-gray-500">Articles</span><span>{totalItemCount}</span></div><div className="flex justify-between gap-3"><span className="text-gray-500">Emballage</span><span className="text-right">{selectedPackaging?.name || "Aucun"}</span></div><div className="flex justify-between gap-3"><span className="text-gray-500">Poids total</span><span className="font-medium text-gray-950">{formatWeight(packageWeightG)}</span></div><div className="flex justify-between gap-3"><span className="text-gray-500">Transporteur</span><span className="text-right">{selectedQuote ? `${selectedQuote.carrierLabel} · ${selectedQuote.serviceLabel}` : "À choisir"}</span></div><div className="border-t border-gray-200 pt-3"><div className="flex justify-between gap-3 text-base font-semibold"><span>Coût étiquette</span><span>{selectedQuote ? `${formatPrice(selectedQuoteTax.amountCents / 100, selectedQuoteTax.currency)} ${selectedQuoteTax.label}` : "—"}</span></div>{selectedQuote && selectedQuoteTax.label === "HT" && <div className="mt-2 space-y-1 text-xs text-gray-500"><div className="flex justify-between"><span>TVA calculée</span><span>{formatPrice(selectedQuoteTax.taxAmountCents / 100, selectedQuoteTax.currency)}</span></div><div className="flex justify-between font-semibold text-gray-700"><span>Total TTC</span><span>{formatPrice(selectedQuoteTax.totalWithTaxCents / 100, selectedQuoteTax.currency)}</span></div></div>}</div></div>
-                    <div className="mt-5 space-y-4"><label className="block text-sm font-medium text-gray-700">Date d’expédition<input type="date" value={shipDate} onChange={(event) => setShipDate(event.target.value)} className="mt-2 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10" /></label><label className="flex items-start gap-2 text-sm text-gray-600"><input type="checkbox" checked={sendEmailToCustomer} onChange={(event) => setSendEmailToCustomer(event.target.checked)} className="mt-1 rounded border-gray-300" />Envoyer un email de suivi au client après l’achat</label>{labelBlockerMessage && <p className="rounded-xl bg-amber-50 p-3 text-sm font-medium text-amber-800">{labelBlockerMessage}</p>}<button onClick={purchaseLabel} disabled={drawerLoading || !selectedQuote || hasZeroWeight || !selectedQuote.purchasable} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50">{drawerLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />} Acheter l’étiquette</button></div>
+                    <div className="mt-5 space-y-4"><label className="block text-sm font-medium text-gray-700">Date d’expédition<input type="date" value={shipDate} onChange={(event) => setShipDate(event.target.value)} className="mt-2 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10" /></label><label className="flex items-start gap-2 text-sm text-gray-600"><input type="checkbox" checked={sendEmailToCustomer} onChange={(event) => setSendEmailToCustomer(event.target.checked)} className="mt-1 rounded border-gray-300" />Envoyer un email de suivi au client après l’achat</label>{selectedQuote?.requiresRelayPoint && (<div className="rounded-xl border border-amber-200 bg-amber-50 p-4"><label className="block text-sm font-semibold text-amber-900"><MapPin className="mb-1 inline h-4 w-4" /> Identifiant point relais Mondial Relay<input type="text" value={drawerRelayPointId} onChange={(e) => setDrawerRelayPointId(e.target.value)} placeholder="Ex : 017653" className="mt-2 w-full rounded-xl border border-amber-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-400/30" /></label>{drawerRelayPointId.trim() && (<p className="mt-2 text-xs text-amber-700">Point relais : <span className="font-semibold">{drawerRelayPointId.trim()}</span></p>)}{!drawerRelayPointId.trim() && (<p className="mt-2 text-xs text-amber-700">Saisissez la référence du point relais (visible sur la fiche commande).</p>)}</div>)}{labelBlockerMessage && <p className="rounded-xl bg-amber-50 p-3 text-sm font-medium text-amber-800">{labelBlockerMessage}</p>}<button onClick={purchaseLabel} disabled={drawerLoading || !selectedQuote || hasZeroWeight || !selectedQuote.purchasable || (selectedQuote?.requiresRelayPoint && !drawerRelayPointId.trim())} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50">{drawerLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />} Acheter l’étiquette</button></div>
                   </section>
                 </aside>
               </div>

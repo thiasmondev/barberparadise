@@ -3652,6 +3652,9 @@ adminRouter.get(
           currency: order.currency,
           isB2B: order.isB2B,
           shippingAddress: order.shippingAddress,
+          relayPointId: order.relayPointId,
+          relayPointName: order.relayPointName,
+          relayPointAddress: order.relayPointAddress,
         },
         items: (order.items as LogisticsOrderItem[]).map(
           normalizeLogisticsItem
