@@ -611,7 +611,9 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
     "FR", destName, "", destAd3, destAd4,
     destVille, input.recipient.postalCode, countryCode, destPhone, "", input.customerEmail,
     poids, input.packageDimensions?.lengthCm || "", "", "1", "0", "EUR", expValeur, "EUR",
-    "FR", input.relayPointId, "FR", "", "", "", "", assurance, "",
+    // COL_Rel_Pays, COL_Rel (vide), LIV_Rel_Pays, LIV_Rel (point relais de livraison)
+    // Ordre identique à l'enveloppe SOAP : COL_Rel="", LIV_Rel=relayPointId
+    "FR", "", "FR", input.relayPointId, "", "", "", "", assurance, "",
   ];
   const security = mondialRelaySecurity(values);
   const envelope = `<?xml version="1.0" encoding="utf-8"?>
