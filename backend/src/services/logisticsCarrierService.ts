@@ -471,7 +471,9 @@ function extractPdfBase64FromSoapResponse(response: SoapBinaryResponse): string 
 }
 
 async function downloadPdfAsBase64(url: string) {
-  const response = await fetch(url);
+  // Les URLs Mondial Relay sont parfois relatives (/StickersProxy/...) — préfixer le domaine.
+  const absoluteUrl = url.startsWith("/") ? `https://api.mondialrelay.com${url}` : url;
+  const response = await fetch(absoluteUrl);
   if (!response.ok) {
     throw new Error(`Impossible de télécharger l’étiquette officielle (${response.status}).`);
   }
