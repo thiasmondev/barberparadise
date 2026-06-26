@@ -595,6 +595,15 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
   const modeCol = process.env.MONDIAL_RELAY_MODE_COL || "CCC";
   const modeLiv = process.env.MONDIAL_RELAY_MODE_LIV || "24R";
 
+  // Normalisation ASCII des champs expéditeur (suppression accents, apostrophes doubles, etc.)
+  // DOIT être identique entre le tableau values (hash MD5) et l'enveloppe SOAP.
+  const expeAd1 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise", 35);
+  const expeAd3 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_ADDRESS || "", 35);
+  const expeAd4 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_ADDRESS_2 || "", 35);
+  const expeVille = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_CITY || "", 35);
+  const expeTel1 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_PHONE || "", 20);
+  const expeMail = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr", 70);
+
   // Normalisation ASCII des champs texte destinataire (suppression accents, apostrophes doubles, etc.)
   // DOIT être identique entre le tableau values (hash MD5) et l'enveloppe SOAP.
   const destName = normalizeMondialRelayText(`${input.recipient.firstName} ${input.recipient.lastName}`.trim(), 35);
@@ -605,9 +614,9 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
 
   const values = [
     enseigne, modeCol, modeLiv, input.orderNumber, input.customerEmail,
-    "FR", process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise", "", process.env.LOGISTICS_SENDER_ADDRESS || "",
-    process.env.LOGISTICS_SENDER_ADDRESS_2 || "", process.env.LOGISTICS_SENDER_CITY || "", process.env.LOGISTICS_SENDER_POSTAL_CODE || "", "FR",
-    process.env.LOGISTICS_SENDER_PHONE || "", "", process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr",
+    "FR", expeAd1, "", expeAd3,
+    expeAd4, expeVille, process.env.LOGISTICS_SENDER_POSTAL_CODE || "", "FR",
+    expeTel1, "", expeMail,
     "FR", destName, "", destAd3, destAd4,
     destVille, input.recipient.postalCode, countryCode, destPhone, "", input.customerEmail,
     poids, input.packageDimensions?.lengthCm || "", "", "1", "0", "EUR", expValeur, "EUR",
@@ -622,8 +631,8 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
     <WSI2_CreationExpedition xmlns="http://www.mondialrelay.fr/webservice/">
       <Enseigne>${xmlEscape(enseigne)}</Enseigne><ModeCol>${xmlEscape(modeCol)}</ModeCol><ModeLiv>${xmlEscape(modeLiv)}</ModeLiv>
       <NDossier>${xmlEscape(input.orderNumber)}</NDossier><NClient>${xmlEscape(input.customerEmail)}</NClient><Expe_Langage>FR</Expe_Langage>
-      <Expe_Ad1>${xmlEscape(process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise")}</Expe_Ad1><Expe_Ad2></Expe_Ad2><Expe_Ad3>${xmlEscape(process.env.LOGISTICS_SENDER_ADDRESS || "")}</Expe_Ad3><Expe_Ad4>${xmlEscape(process.env.LOGISTICS_SENDER_ADDRESS_2 || "")}</Expe_Ad4>
-      <Expe_Ville>${xmlEscape(process.env.LOGISTICS_SENDER_CITY || "")}</Expe_Ville><Expe_CP>${xmlEscape(process.env.LOGISTICS_SENDER_POSTAL_CODE || "")}</Expe_CP><Expe_Pays>FR</Expe_Pays><Expe_Tel1>${xmlEscape(process.env.LOGISTICS_SENDER_PHONE || "")}</Expe_Tel1><Expe_Tel2></Expe_Tel2><Expe_Mail>${xmlEscape(process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr")}</Expe_Mail>
+      <Expe_Ad1>${xmlEscape(expeAd1)}</Expe_Ad1><Expe_Ad2></Expe_Ad2><Expe_Ad3>${xmlEscape(expeAd3)}</Expe_Ad3><Expe_Ad4>${xmlEscape(expeAd4)}</Expe_Ad4>
+      <Expe_Ville>${xmlEscape(expeVille)}</Expe_Ville><Expe_CP>${xmlEscape(process.env.LOGISTICS_SENDER_POSTAL_CODE || "")}</Expe_CP><Expe_Pays>FR</Expe_Pays><Expe_Tel1>${xmlEscape(expeTel1)}</Expe_Tel1><Expe_Tel2></Expe_Tel2><Expe_Mail>${xmlEscape(expeMail)}</Expe_Mail>
       <Dest_Langage>FR</Dest_Langage><Dest_Ad1>${xmlEscape(destName)}</Dest_Ad1><Dest_Ad2></Dest_Ad2><Dest_Ad3>${xmlEscape(destAd3)}</Dest_Ad3><Dest_Ad4>${xmlEscape(destAd4)}</Dest_Ad4>
       <Dest_Ville>${xmlEscape(destVille)}</Dest_Ville><Dest_CP>${xmlEscape(input.recipient.postalCode)}</Dest_CP><Dest_Pays>${xmlEscape(countryCode)}</Dest_Pays><Dest_Tel1>${xmlEscape(destPhone)}</Dest_Tel1><Dest_Tel2></Dest_Tel2><Dest_Mail>${xmlEscape(input.customerEmail)}</Dest_Mail>
       <Poids>${xmlEscape(poids)}</Poids><Longueur>${xmlEscape(input.packageDimensions?.lengthCm || "")}</Longueur><Taille></Taille><NbColis>1</NbColis>
