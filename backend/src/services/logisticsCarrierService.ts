@@ -494,13 +494,14 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
   const now = new Date();
   const depositDate = now.toISOString().slice(0, 10);
   // Codes produits Colissimo (doc SLS v3.0) :
-  //   DOM = France sans signature, DOS = France avec signature
-  //   COM = International sans signature, CDS = International avec signature
-  //   COLI = ancien code international (déprécié, interdit pour nouveaux clients)
+  //   DOM = France sans signature, DOS = France avec signature (aussi international avec signature)
+  //   COLI = International sans signature (seul code fonctionnel pour l'Europe/monde hors DOM-TOM)
+  //   COM/CDS = DOM-TOM (Overseas France : Martinique, Guadeloupe, Réunion…) uniquement
+  //   Note : COM retourne erreur 30213 pour les pays européens (BE, DE, etc.)
   const isFranceDom = input.carrier === "colissimo";
   const productCode = isFranceDom
     ? (input.signatureRequired ? "DOS" : "DOM")
-    : (input.signatureRequired ? "CDS" : "COM");
+    : (input.signatureRequired ? "DOS" : "COLI");
   const countryCode = normalizeCountryCode(input.recipient.country);
   const rawInsuranceValue = input.insuranceValueCents;
   const insuranceValue = normalizeColissimoInsuranceValueCents(rawInsuranceValue);
