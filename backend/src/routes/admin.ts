@@ -5482,8 +5482,38 @@ adminRouter.get(
     }
   }
 );
-
-
+// PATCH /api/admin/customers/:id — Modifier les informations de base d'un client (prénom, nom)
+adminRouter.patch(
+  "/customers/:id",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { firstName, lastName } = req.body as { firstName?: string; lastName?: string };
+      const updates: { firstName?: string; lastName?: string } = {};
+      if (typeof firstName === "string") updates.firstName = firstName.trim();
+      if (typeof lastName === "string") updates.lastName = lastName.trim();
+      if (Object.keys(updates).length === 0) {
+        res.status(400).json({ error: "Aucun champ \u00e0 mettre \u00e0 jour." });
+        return;
+      }
+      const updated = await prisma.customer.update({
+        where: { id: req.params.id },
+        data: updates,
+        include: {
+          orders: { include: { items: true, shippingAddress: true }, orderBy: { createdAt: "desc" } },
+          addresses: true,
+          proAccount: { select: { id: true, companyName: true, status: true, activity: true, phone: true, siret: true, vatNumber: true, approvedAt: true, approvedBy: true, rejectionReason: true } },
+          _count: { select: { orders: true, wishlist: true } },
+        },
+      });
+      const { password: _, ...safeCustomer } = updated;
+      res.json(safeCustomer);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur serveur" });
+    }
+  }
+);
 // PATCH /api/admin/customers/:id/pro-account — activation ou suspension manuelle du statut B2B d'un client
 adminRouter.patch(
   "/customers/:id/pro-account",

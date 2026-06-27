@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   getAdminCustomer,
+  updateAdminCustomerName,
   updateAdminCustomerProAccount,
   getCustomerExtraEmails,
   addCustomerExtraEmail,
@@ -30,6 +31,9 @@ import {
   Star,
   Trash2,
   Loader2,
+  Pencil,
+  X,
+  Check,
 } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof Clock }> = {
@@ -58,6 +62,12 @@ export default function CustomerDetailPage() {
   const [savingPro, setSavingPro] = useState(false);
   const [proMessage, setProMessage] = useState("");
   const [proForm, setProForm] = useState({ companyName: "", activity: "", phone: "", siret: "", vatNumber: "" });
+
+  // Édition du nom
+  const [editingName, setEditingName] = useState(false);
+  const [nameForm, setNameForm] = useState({ firstName: "", lastName: "" });
+  const [savingName, setSavingName] = useState(false);
+  const [nameError, setNameError] = useState("");
 
   // Emails secondaires
   const [extraEmails, setExtraEmails] = useState<CustomerExtraEmail[]>([]);
@@ -116,6 +126,34 @@ export default function CustomerDetailPage() {
       setProMessage(err instanceof Error ? err.message : "Impossible de modifier le compte B2B.");
     } finally {
       setSavingPro(false);
+    }
+  };
+
+  const handleEditName = () => {
+    if (!customer) return;
+    setNameForm({ firstName: customer.firstName || "", lastName: customer.lastName || "" });
+    setNameError("");
+    setEditingName(true);
+  };
+
+  const handleSaveName = async () => {
+    if (!customer || savingName) return;
+    const firstName = nameForm.firstName.trim();
+    const lastName = nameForm.lastName.trim();
+    if (!firstName && !lastName) {
+      setNameError("Le prénom ou le nom est requis.");
+      return;
+    }
+    setSavingName(true);
+    setNameError("");
+    try {
+      const updated = await updateAdminCustomerName(customer.id, { firstName, lastName });
+      setCustomer(updated);
+      setEditingName(false);
+    } catch (err: unknown) {
+      setNameError(err instanceof Error ? err.message : "Impossible de modifier le nom.");
+    } finally {
+      setSavingName(false);
     }
   };
 
@@ -217,11 +255,59 @@ export default function CustomerDetailPage() {
         <div className="space-y-6">
           <div className="bg-white rounded-xl border border-gray-100 p-5">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold text-lg">
+              <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold text-lg shrink-0">
                 {customer.firstName?.charAt(0)}{customer.lastName?.charAt(0)}
               </div>
-              <div>
-                <div className="font-heading font-semibold text-dark-800">{customer.firstName} {customer.lastName}</div>
+              <div className="flex-1 min-w-0">
+                {editingName ? (
+                  <div className="space-y-1.5">
+                    <div className="flex gap-1.5">
+                      <input
+                        className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        placeholder="Prénom"
+                        value={nameForm.firstName}
+                        onChange={(e) => setNameForm((f) => ({ ...f, firstName: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleSaveName(); if (e.key === "Escape") setEditingName(false); }}
+                        autoFocus
+                      />
+                      <input
+                        className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        placeholder="Nom"
+                        value={nameForm.lastName}
+                        onChange={(e) => setNameForm((f) => ({ ...f, lastName: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleSaveName(); if (e.key === "Escape") setEditingName(false); }}
+                      />
+                    </div>
+                    {nameError && <p className="text-xs text-red-500">{nameError}</p>}
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={handleSaveName}
+                        disabled={savingName}
+                        className="flex items-center gap-1 px-2 py-1 bg-primary text-white rounded text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        {savingName ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                        Enregistrer
+                      </button>
+                      <button
+                        onClick={() => setEditingName(false)}
+                        className="flex items-center gap-1 px-2 py-1 border border-gray-300 rounded text-xs text-gray-600 hover:bg-gray-50"
+                      >
+                        <X size={12} /> Annuler
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 group">
+                    <div className="font-heading font-semibold text-dark-800">{customer.firstName} {customer.lastName}</div>
+                    <button
+                      onClick={handleEditName}
+                      title="Modifier le nom"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+                    >
+                      <Pencil size={13} />
+                    </button>
+                  </div>
+                )}
                 <div className="text-xs text-gray-400">Client depuis {formatDate(customer.createdAt)}</div>
               </div>
             </div>

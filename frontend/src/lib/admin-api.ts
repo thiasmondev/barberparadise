@@ -673,6 +673,12 @@ export interface AdminCustomerProAccountPayload {
   vatNumber?: string;
 }
 
+export function updateAdminCustomerName(id: string, data: { firstName?: string; lastName?: string }) {
+  return adminFetch<Customer>(`/api/admin/customers/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
 export function updateAdminCustomerProAccount(id: string, data: AdminCustomerProAccountPayload) {
   return adminFetch<Customer>(`/api/admin/customers/${id}/pro-account`, {
     method: "PATCH",
