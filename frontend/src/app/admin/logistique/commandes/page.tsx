@@ -65,7 +65,7 @@ export default function AdminLogisticsOrdersPage() {
   }, [orders]);
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className="p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-cyan-600 font-semibold">
@@ -87,7 +87,7 @@ export default function AdminLogisticsOrdersPage() {
         </button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <StatCard
           icon={<PackageCheck size={20} />}
           label="À préparer"
@@ -128,61 +128,78 @@ export default function AdminLogisticsOrdersPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                <tr>
-                  <th className="px-4 py-3 text-left">Commande</th>
-                  <th className="px-4 py-3 text-left">Client</th>
-                  <th className="px-4 py-3 text-left">Articles</th>
-                  <th className="px-4 py-3 text-left">Poids estimé</th>
-                  <th className="px-4 py-3 text-left">Total</th>
-                  <th className="px-4 py-3 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {orders.map(order => (
-                  <tr key={order.id} className="hover:bg-gray-50/60">
-                    <td className="px-4 py-3">
-                      <div className="font-semibold text-gray-900">
-                        {order.orderNumber}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {formatDate(order.createdAt)}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="text-gray-900">{order.customerName}</div>
-                      <div className="text-xs text-gray-500">
-                        {order.customerEmail}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">
-                      {order.itemCount}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`rounded-full px-2 py-1 text-xs font-medium ${order.hasUnknownWeight ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}
-                      >
+          <>
+            {/* Vue tableau — masquée sur mobile */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Commande</th>
+                    <th className="px-4 py-3 text-left">Client</th>
+                    <th className="px-4 py-3 text-left hidden md:table-cell">Articles</th>
+                    <th className="px-4 py-3 text-left">Poids</th>
+                    <th className="px-4 py-3 text-left hidden lg:table-cell">Total</th>
+                    <th className="px-4 py-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {orders.map(order => (
+                    <tr key={order.id} className="hover:bg-gray-50/60">
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-gray-900">{order.orderNumber}</div>
+                        <div className="text-xs text-gray-500">{formatDate(order.createdAt)}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="text-gray-900">{order.customerName}</div>
+                        <div className="text-xs text-gray-500 hidden md:block">{order.customerEmail}</div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 hidden md:table-cell">{order.itemCount}</td>
+                      <td className="px-4 py-3">
+                        <span className={`rounded-full px-2 py-1 text-xs font-medium ${order.hasUnknownWeight ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
+                          {formatWeight(order.estimatedWeightG)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700 hidden lg:table-cell">{formatPrice(order.total, order.currency || "EUR")}</td>
+                      <td className="px-4 py-3 text-right">
+                        <Link
+                          href={`/admin/logistique/commandes/${order.id}`}
+                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-3 py-2 text-xs font-semibold text-white hover:bg-cyan-700"
+                        >
+                          Préparer
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Vue cartes — visible uniquement sur mobile */}
+            <div className="sm:hidden divide-y divide-gray-100">
+              {orders.map(order => (
+                <Link
+                  key={order.id}
+                  href={`/admin/logistique/commandes/${order.id}`}
+                  className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 active:bg-gray-100"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2 mb-0.5">
+                      <span className="font-semibold text-gray-900 text-sm">{order.orderNumber}</span>
+                      <span className="font-medium text-gray-700 text-sm tabular-nums">{formatPrice(order.total, order.currency || "EUR")}</span>
+                    </div>
+                    <div className="text-sm text-gray-700 truncate">{order.customerName}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${order.hasUnknownWeight ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
                         {formatWeight(order.estimatedWeightG)}
                       </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-700">
-                      {formatPrice(order.total, order.currency || "EUR")}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Link
-                        href={`/admin/logistique/commandes/${order.id}`}
-                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-3 py-2 text-xs font-semibold text-white hover:bg-cyan-700"
-                      >
-                        Préparer
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      <span className="text-xs text-gray-400">{order.itemCount} art.</span>
+                    </div>
+                  </div>
+                  <div className="shrink-0 rounded-lg bg-cyan-600 px-3 py-2 text-xs font-semibold text-white">Préparer</div>
+                </Link>
+              ))}
+            </div>
+          </>
         )}
       </div>
       <div className="flex justify-end">
@@ -207,14 +224,12 @@ function StatCard({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-      <div className="flex items-center gap-3">
-        <div className="rounded-xl bg-cyan-50 p-2 text-cyan-700">{icon}</div>
-        <div>
-          <div className="text-2xl font-bold text-gray-900">{value}</div>
-          <div className="text-xs uppercase tracking-wide text-gray-500">
-            {label}
-          </div>
+    <div className="rounded-2xl border border-gray-100 bg-white p-3 sm:p-4 shadow-sm">
+      <div className="flex items-center gap-2 sm:gap-3">
+        <div className="rounded-xl bg-cyan-50 p-1.5 sm:p-2 text-cyan-700 shrink-0">{icon}</div>
+        <div className="min-w-0">
+          <div className="text-xl sm:text-2xl font-bold text-gray-900">{value}</div>
+          <div className="text-xs uppercase tracking-wide text-gray-500 truncate">{label}</div>
         </div>
       </div>
     </div>

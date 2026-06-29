@@ -156,8 +156,8 @@ export default function AdminOrdersPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 text-gray-900 sm:p-6 lg:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
+    <div className="min-h-screen bg-gray-50 p-3 text-gray-900 sm:p-6 lg:p-8">
+      <div className="mx-auto max-w-7xl space-y-4 sm:space-y-6">
         <div>
           <p className="text-sm font-medium text-gray-500">Administration</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-gray-950 sm:text-3xl">Commandes</h1>
@@ -178,25 +178,25 @@ export default function AdminOrdersPage() {
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-          <div className="border-b border-gray-200 p-4">
-            <form onSubmit={handleSearch} className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="relative flex-1">
+          <div className="border-b border-gray-200 p-3 sm:p-4">
+            <form onSubmit={handleSearch} className="flex flex-col gap-2.5">
+              <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Rechercher une commande, un client ou un email"
+                  placeholder="Commande, client, email…"
                   className="w-full rounded-xl border border-gray-300 bg-white py-2.5 pl-10 pr-3 text-sm outline-none transition focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
                 />
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <select
                   value={status}
                   onChange={(event) => {
                     setStatus(event.target.value);
                     setPage(1);
                   }}
-                  className="rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
+                  className="flex-1 min-w-[130px] rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
                 >
                   <option value="">Tous les statuts</option>
                   <option value="pending">En attente</option>
@@ -213,13 +213,13 @@ export default function AdminOrdersPage() {
                     setChannel(event.target.value);
                     setPage(1);
                   }}
-                  className="rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
+                  className="flex-1 min-w-[130px] rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
                 >
                   <option value="">Tous les canaux</option>
                   <option value="online">Boutique web</option>
                   <option value="pos">Caisse POS</option>
                 </select>
-                <button className="rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800">
+                <button className="rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800 whitespace-nowrap">
                   Filtrer
                 </button>
               </div>
@@ -228,26 +228,27 @@ export default function AdminOrdersPage() {
 
           {error && <div className="m-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}
 
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
+          {/* Vue tableau — masquée sur mobile */}
+          <div className="hidden sm:block overflow-x-auto">
+            <table className="min-w-[700px] w-full divide-y divide-gray-200 text-sm">
               <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                 <tr>
                   <th className="px-4 py-3">Commande</th>
-                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3 hidden md:table-cell">Date</th>
                   <th className="px-4 py-3">Client</th>
-                  <th className="px-4 py-3">Canal</th>
+                  <th className="px-4 py-3 hidden lg:table-cell">Canal</th>
                   <th className="px-4 py-3 text-right">Total</th>
                   <th className="px-4 py-3">Paiement</th>
-                  <th className="px-4 py-3">Traitement</th>
-                  <th className="px-4 py-3 text-center">Articles</th>
-                  <th className="px-4 py-3">Livraison</th>
+                  <th className="px-4 py-3 hidden lg:table-cell">Traitement</th>
+                  <th className="px-4 py-3 text-center hidden md:table-cell">Art.</th>
+                  <th className="px-4 py-3 hidden xl:table-cell">Livraison</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
                 {loading ? (
                   <tr>
                     <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
-                      <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Chargement des commandes...</span>
+                      <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Chargement...</span>
                     </td>
                   </tr>
                 ) : orders.length === 0 ? (
@@ -262,35 +263,68 @@ export default function AdminOrdersPage() {
                     const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
                     return (
                       <tr key={order.id} className="hover:bg-gray-50">
-                        <td className="whitespace-nowrap px-4 py-4 font-semibold text-gray-950">
+                        <td className="whitespace-nowrap px-4 py-3 font-semibold text-gray-950">
                           <Link href={`/admin/commandes/${order.id}`} className="underline-offset-4 hover:underline">
                             {order.orderNumber}
                           </Link>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-4 text-gray-600">{formatDate(order.createdAt)}</td>
-                        <td className="px-4 py-4">
+                        <td className="whitespace-nowrap px-4 py-3 text-gray-600 hidden md:table-cell">{formatDate(order.createdAt)}</td>
+                        <td className="px-4 py-3">
                           <div className="font-medium text-gray-900">{customerName(order)}</div>
-                          <div className="text-xs text-gray-500">{order.customer?.email || order.customerEmail || order.email}</div>
+                          <div className="text-xs text-gray-500 hidden md:block">{order.customer?.email || order.customerEmail || order.email}</div>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-4">
+                        <td className="whitespace-nowrap px-4 py-3 hidden lg:table-cell">
                           <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${channelInfo.className}`}>{channelInfo.label}</span>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-4 text-right font-medium text-gray-950">{formatPrice(order.total, order.currency)}</td>
-                        <td className="whitespace-nowrap px-4 py-4">
+                        <td className="whitespace-nowrap px-4 py-3 text-right font-medium text-gray-950">{formatPrice(order.total, order.currency)}</td>
+                        <td className="whitespace-nowrap px-4 py-3">
                           <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${pay.className}`}>{pay.label}</span>
-                          <div className="mt-1 text-xs text-gray-400">{paymentMethodLabel(order.paymentMethod, order.paymentProvider)}</div>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-4">
+                        <td className="whitespace-nowrap px-4 py-3 hidden lg:table-cell">
                           <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${fulfillment.className}`}>{fulfillment.label}</span>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-4 text-center text-gray-700">{itemCount}</td>
-                        <td className="whitespace-nowrap px-4 py-4 text-gray-600">{shippingMode(order)}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-center text-gray-700 hidden md:table-cell">{itemCount}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-gray-600 hidden xl:table-cell">{shippingMode(order)}</td>
                       </tr>
                     );
                   })
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Vue cartes — visible uniquement sur mobile */}
+          <div className="sm:hidden divide-y divide-gray-100">
+            {loading ? (
+              <div className="py-12 text-center text-gray-500">
+                <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Chargement...</span>
+              </div>
+            ) : orders.length === 0 ? (
+              <div className="py-12 text-center text-gray-500">Aucune commande trouvée.</div>
+            ) : (
+              orders.map((order) => {
+                const pay = paymentBadge(order);
+                const fulfillment = fulfillmentBadge(order);
+                const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
+                return (
+                  <Link key={order.id} href={`/admin/commandes/${order.id}`} className="flex items-start gap-3 px-4 py-3.5 hover:bg-gray-50 active:bg-gray-100">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="font-semibold text-gray-950 text-sm">{order.orderNumber}</span>
+                        <span className="font-semibold text-gray-950 text-sm tabular-nums">{formatPrice(order.total, order.currency)}</span>
+                      </div>
+                      <div className="text-sm text-gray-700 truncate">{customerName(order)}</div>
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${pay.className}`}>{pay.label}</span>
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${fulfillment.className}`}>{fulfillment.label}</span>
+                        <span className="text-xs text-gray-400">{itemCount} art. · {formatDate(order.createdAt)}</span>
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-gray-400 shrink-0 mt-1" />
+                  </Link>
+                );
+              })
+            )}
           </div>
 
           <div className="flex flex-col gap-3 border-t border-gray-200 px-4 py-4 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between">

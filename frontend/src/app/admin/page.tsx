@@ -44,9 +44,9 @@ export default function AdminDashboard() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="bg-white rounded-xl p-5 animate-pulse">
+            <div key={i} className="bg-white rounded-xl p-3.5 sm:p-5 animate-pulse">
               <div className="h-4 bg-gray-100 rounded w-20 mb-3" />
               <div className="h-8 bg-gray-100 rounded w-16" />
             </div>
@@ -75,20 +75,20 @@ export default function AdminDashboard() {
         <p className="text-sm text-gray-500 mt-0.5">Vue d&apos;ensemble de votre boutique</p>
       </div>
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {kpis.map((kpi) => (
-          <div key={kpi.label} className="bg-white rounded-xl p-5 border border-gray-100">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">{kpi.label}</span>
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${kpi.color}`}>
-                <kpi.icon size={16} />
+          <div key={kpi.label} className="bg-white rounded-xl p-3.5 sm:p-5 border border-gray-100">
+            <div className="flex items-center justify-between mb-2 sm:mb-3">
+              <span className="text-xs font-medium text-gray-500 uppercase tracking-wide leading-tight">{kpi.label}</span>
+              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${kpi.color}`}>
+                <kpi.icon size={14} />
               </div>
             </div>
-            <div className="font-heading font-bold text-2xl text-dark-800">{kpi.value}</div>
+            <div className="font-heading font-bold text-xl sm:text-2xl text-dark-800">{kpi.value}</div>
           </div>
         ))}
       </div>
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Recent orders */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-gray-100">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
@@ -107,21 +107,21 @@ export default function AdminDashboard() {
                   <Link
                     key={order.id}
                     href={`/admin/commandes/${order.id}`}
-                    className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors cursor-pointer"
+                    className="flex items-center gap-3 px-4 sm:px-5 py-3 sm:py-3.5 hover:bg-gray-50 transition-colors cursor-pointer"
                   >
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${cfg.color}`}>
-                      <cfg.icon size={14} />
+                    <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${cfg.color}`}>
+                      <cfg.icon size={13} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-dark-800 truncate">
                         {order.orderNumber || `#${order.id.slice(-6)}`}
                       </div>
-                      <div className="text-xs text-gray-400">{formatDate(order.createdAt)}</div>
+                      <div className="text-xs text-gray-400 hidden sm:block">{formatDate(order.createdAt)}</div>
                     </div>
-                    <span className={`text-xs font-medium px-2 py-1 rounded-full ${cfg.color}`}>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full hidden sm:inline-flex ${cfg.color}`}>
                       {cfg.label}
                     </span>
-                    <span className="text-sm font-semibold text-dark-800 tabular-nums">
+                    <span className="text-sm font-semibold text-dark-800 tabular-nums shrink-0">
                       {formatPrice(order.total)}
                     </span>
                   </Link>
@@ -165,7 +165,7 @@ export default function AdminDashboard() {
         </div>
       </div>
       {/* Quick actions */}
-      <div className="grid sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         <Link
           href="/admin/produits"
           className="bg-white rounded-xl border border-gray-100 p-5 hover:border-primary/30 hover:shadow-sm transition-all group"

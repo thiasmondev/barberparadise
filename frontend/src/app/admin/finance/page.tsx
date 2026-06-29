@@ -151,16 +151,14 @@ export default function AdminFinancePage() {
       </div>
 
       <section className="rounded-2xl border border-gray-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-4 border-b border-gray-100 p-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex flex-col gap-4 border-b border-gray-100 p-4 sm:p-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="text-lg font-bold text-dark-900">Bilan mensuel Indy</h2>
             <p className="mt-1 text-sm text-gray-500">
-              Période chargée : {formatMonth(month)}. Les commandes `paid` et
-              `shipped` alimentent les ventes ; les statuts `cancelled` et
-              `refunded` sont listés séparément.
+              Période : {formatMonth(month)}.
             </p>
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="flex flex-wrap gap-2 sm:gap-3 sm:items-center">
             <label className="text-sm font-medium text-gray-700">
               Mois
               <input
@@ -213,14 +211,14 @@ export default function AdminFinancePage() {
         )}
 
         {isLoading ? (
-          <div className="grid gap-4 p-5 md:grid-cols-4">
+          <div className="grid gap-4 p-4 sm:p-5 grid-cols-2 md:grid-cols-4">
             {[0, 1, 2, 3].map(item => (
               <div key={item} className="h-28 animate-pulse rounded-2xl bg-gray-100" />
             ))}
           </div>
         ) : report ? (
-          <div className="space-y-6 p-5">
-            <div className="grid gap-4 md:grid-cols-4">
+          <div className="space-y-4 sm:space-y-6 p-4 sm:p-5">
+            <div className="grid gap-3 sm:gap-4 grid-cols-2 md:grid-cols-4">
               <MetricCard label="CA HT" value={formatCurrency(report.summary.caHTTotal)} />
               <MetricCard label="TVA collectée" value={formatCurrency(report.summary.tvaCollecteeTotal)} />
               <MetricCard label="CA TTC" value={formatCurrency(report.summary.caTTCTotal)} />
@@ -228,7 +226,7 @@ export default function AdminFinancePage() {
             </div>
 
             {Boolean(report.summary.productsWithPurchasePriceCount) && (
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2">
                 <MetricCard
                   label="Valorisation stock au prix d’achat"
                   value={formatCurrency(report.summary.stockPurchaseValue || 0)}

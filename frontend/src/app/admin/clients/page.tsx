@@ -172,7 +172,7 @@ export default function AdminClientsPage() {
       </div>
 
       {/* Search */}
-      <div className="relative max-w-md">
+      <div className="relative">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
           type="text"
@@ -185,14 +185,15 @@ export default function AdminClientsPage() {
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Vue tableau — masquée sur mobile */}
+        <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/50">
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Client</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500 hidden sm:table-cell">Email</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500 hidden lg:table-cell">Inscrit le</th>
-                <th className="text-center px-4 py-3 font-medium text-gray-500">Commandes</th>
+                <th className="text-center px-4 py-3 font-medium text-gray-500">Cmd.</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-500 hidden md:table-cell">Total dépensé</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-500">Actions</th>
               </tr>
@@ -224,9 +225,7 @@ export default function AdminClientsPage() {
                         <div className="min-w-0">
                           <div className="font-medium text-dark-800 truncate">{formatCustomerName(c)}</div>
                           {c.proAccount && (
-                            <span className="inline-flex mt-1 px-2 py-0.5 rounded-full bg-dark-800 text-white text-[10px] font-bold uppercase tracking-wide">
-                              B2B
-                            </span>
+                            <span className="inline-flex mt-1 px-2 py-0.5 rounded-full bg-dark-800 text-white text-[10px] font-bold uppercase tracking-wide">B2B</span>
                           )}
                         </div>
                       </div>
@@ -234,23 +233,13 @@ export default function AdminClientsPage() {
                     <td className="px-4 py-3 text-gray-600 hidden sm:table-cell text-xs">{c.email}</td>
                     <td className="px-4 py-3 text-gray-500 hidden lg:table-cell text-xs">{formatDate(c.createdAt)}</td>
                     <td className="px-4 py-3 text-center">
-                      <span className="inline-flex items-center gap-1 text-xs text-gray-600">
-                        <ShoppingCart size={12} />
-                        {c._count?.orders || 0}
-                      </span>
+                      <span className="inline-flex items-center gap-1 text-xs text-gray-600"><ShoppingCart size={12} />{c._count?.orders || 0}</span>
                     </td>
                     <td className="px-4 py-3 text-right text-gray-600 hidden md:table-cell text-xs tabular-nums">
-                      <span className="inline-flex items-center gap-1 justify-end">
-                        <Euro size={12} />
-                        {formatPrice(c.totalSpent || 0)}
-                      </span>
+                      <span className="inline-flex items-center gap-1 justify-end"><Euro size={12} />{formatPrice(c.totalSpent || 0)}</span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Link
-                        href={`/admin/clients/${c.id}`}
-                        className="p-1.5 text-gray-400 hover:text-primary hover:bg-primary/5 rounded-lg inline-flex"
-                        title="Voir le détail"
-                      >
+                      <Link href={`/admin/clients/${c.id}`} className="p-1.5 text-gray-400 hover:text-primary hover:bg-primary/5 rounded-lg inline-flex" title="Voir le détail">
                         <Eye size={14} />
                       </Link>
                     </td>
@@ -259,6 +248,42 @@ export default function AdminClientsPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Vue cartes — visible uniquement sur mobile */}
+        <div className="sm:hidden divide-y divide-gray-50">
+          {loading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="px-4 py-3">
+                <div className="h-5 bg-gray-100 rounded animate-pulse" />
+              </div>
+            ))
+          ) : customers.length === 0 ? (
+            <div className="px-4 py-12 text-center text-gray-400">
+              <Users size={32} className="mx-auto mb-2 text-gray-300" />
+              Aucun client trouvé
+            </div>
+          ) : (
+            customers.map((c) => (
+              <Link key={c.id} href={`/admin/clients/${c.id}`} className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50/50 active:bg-gray-100">
+                <div className="w-9 h-9 bg-primary/10 rounded-full flex items-center justify-center text-primary text-xs font-bold shrink-0">
+                  {getCustomerInitials(c)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-dark-800 truncate">{formatCustomerName(c)}</span>
+                    {c.proAccount && <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-dark-800 text-white text-[10px] font-bold uppercase">B2B</span>}
+                  </div>
+                  <div className="text-xs text-gray-500 truncate mt-0.5">{c.email}</div>
+                  <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
+                    <span className="inline-flex items-center gap-1"><ShoppingCart size={11} />{c._count?.orders || 0} cmd.</span>
+                    <span className="inline-flex items-center gap-1"><Euro size={11} />{formatPrice(c.totalSpent || 0)}</span>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-gray-400 shrink-0" />
+              </Link>
+            ))
+          )}
         </div>
         {pages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
