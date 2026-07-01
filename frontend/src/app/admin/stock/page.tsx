@@ -415,8 +415,30 @@ export default function AdminStockPage() {
         </div>
       </section>
 
+      {/* Sélecteur de marque — dropdown sur mobile, sidebar sur desktop */}
+      <div className="xl:hidden bg-white rounded-2xl border border-gray-100 p-3 flex items-center gap-3">
+        <label className="text-sm font-semibold text-dark-800 shrink-0">Marque</label>
+        <select
+          value={selectedBrandKey}
+          onChange={event => setSelectedBrandKey(event.target.value)}
+          className="flex-1 min-w-0 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
+        >
+          {brands.map(brand => {
+            const key = brand.brandId != null ? `id:${brand.brandId}` : `name:${brand.brand}`;
+            return (
+              <option key={key} value={key}>
+                {brand.brand} ({brand.totalStockCount} unités · {brand.outOfStockCount} rupture(s))
+              </option>
+            );
+          })}
+        </select>
+        <button onClick={loadBrands} className="p-2.5 text-gray-400 hover:text-primary rounded-xl hover:bg-gray-50 shrink-0" title="Rafraîchir">
+          <RefreshCw size={16} />
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 xl:grid-cols-[260px_minmax(0,1fr)] gap-5 min-w-0">
-        <aside className="bg-white rounded-2xl border border-gray-100 overflow-hidden h-fit min-w-0">
+        <aside className="hidden xl:block bg-white rounded-2xl border border-gray-100 overflow-hidden h-fit min-w-0">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
             <div>
               <h2 className="font-semibold text-dark-800">Marques</h2>
