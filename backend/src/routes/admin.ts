@@ -1520,7 +1520,9 @@ adminRouter.get(
         ordersByStatus,
       ] = await Promise.all([
         prisma.product.count({ where: { status: "active" } }),
-        prisma.order.count(),
+        prisma.order.count({
+          where: { status: { notIn: ["pending", "draft", "cancelled"] } }
+        }),
         prisma.customer.count(),
         prisma.order.findMany({
           select: { id: true, orderNumber: true, total: true, status: true, createdAt: true },
@@ -1535,7 +1537,10 @@ adminRouter.get(
       ]);
 
       let totalRevenue = 0;
-      await prisma.order.findMany({ select: { total: true } }).then(orders => {
+      await prisma.order.findMany({
+        where: { status: { in: ["paid", "processing", "shipped", "delivered"] } },
+        select: { total: true }
+      }).then(orders => {
         totalRevenue = orders.reduce((sum, o) => sum + (o.total || 0), 0);
       });
 

@@ -787,7 +787,26 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       const orderTotalTTC = money(checkoutDraft.totalTTC || checkoutDraft.total);
       const draftShippingOptions = await calculateShippingOptions(country, checkoutDraft.isB2B ? checkoutDraft.subtotal : Math.max(0, orderTotalTTC - checkoutDraft.shipping), checkoutDraft.isB2B);
       const draftShippingOption = resolveShippingOptionForPaidOrder(draftShippingOptions, body.shippingOptionId, checkoutDraft.shipping);
-      const order = await prisma.order.create({
+
+      // --- DÉTECTION DE DOUBLON (FLUX DRAFT) ---
+      const recentPendingOrder = await prisma.order.findFirst({
+        where: {
+          customerEmail: body.customerEmail,
+          totalTTC: orderTotalTTC,
+          status: "pending",
+          createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) },
+        },
+        include: { items: true },
+        orderBy: { createdAt: "desc" },
+      });
+
+      let order;
+
+      if (recentPendingOrder && normalizeDraftItemsSignature(recentPendingOrder.items) === normalizeDraftItemsSignature(checkoutDraft.items)) {
+        console.log(`[checkout] Réutilisation de la commande existante (draft) : ${recentPendingOrder.orderNumber}`);
+        order = recentPendingOrder;
+      } else {
+        order = await prisma.order.create({
         data: {
           orderNumber: generateOrderNumber(),
           email: body.customerEmail,
@@ -851,6 +870,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
           },
         },
       });
+      }
 
       if (body.cartSessionId) {
         await prisma.abandonedCartSession.updateMany({
@@ -1017,7 +1037,25 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
     const totalTTC = money(Math.max(0, totalHT + vatAmount + chargedShipping - (isB2B ? 0 : productDiscount)));
     const provider = getProvider(body.paymentMethod, country);
 
-    const order = await prisma.order.create({
+    // --- DÉTECTION DE DOUBLON (FLUX STANDARD) ---
+    const recentPendingOrder = await prisma.order.findFirst({
+      where: {
+        customerEmail: body.customerEmail,
+        totalTTC: totalTTC,
+        status: "pending",
+        createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) },
+      },
+      include: { items: true },
+      orderBy: { createdAt: "desc" },
+    });
+
+    let order;
+
+    if (recentPendingOrder && normalizeDraftItemsSignature(recentPendingOrder.items) === normalizeCheckoutItemsSignature(body.cartItems)) {
+      console.log(`[checkout] Réutilisation de la commande existante (standard) : ${recentPendingOrder.orderNumber}`);
+      order = recentPendingOrder;
+    } else {
+      order = await prisma.order.create({
       data: {
         orderNumber: generateOrderNumber(),
         email: body.customerEmail,
@@ -1063,6 +1101,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         },
       },
     });
+    }
 
     if (body.cartSessionId) {
       await prisma.abandonedCartSession.updateMany({
