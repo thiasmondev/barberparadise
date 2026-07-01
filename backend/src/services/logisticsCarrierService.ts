@@ -534,7 +534,7 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
           <parcel>${insuranceBlock}
             <weight>${Math.max(input.totalWeightG / 1000, 0.01).toFixed(3)}</weight>
             <nonMachinable>false</nonMachinable>
-            <ftd>${signatureRequired ? "true" : "false"}</ftd>
+            ${isFranceDom ? "" : "<ftd>false</ftd>"}
           </parcel>
           <sender>
             <senderParcelRef>${xmlEscape(input.orderNumber)}</senderParcelRef>
