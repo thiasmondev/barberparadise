@@ -34,15 +34,17 @@ const PAYMENT_BADGES: Record<string, { label: string; className: string }> = {
 };
 
 // ─── Couleurs de fond de ligne par statut ─────────────────────────────────────
-// "active"   = commandes à traiter (paid, processing, pending) → fond blanc
-// "done"     = commandes terminées (shipped, delivered) ou POS → fond noir
+// "active"   = commandes à traiter (paid, pending) → fond blanc
+// "done"     = commandes traitées/expédiées/livrées (processing, shipped, delivered) ou POS → fond noir
 // "muted"    = commandes annulées/remboursées → fond gris clair
 type RowVariant = "active" | "done" | "muted";
+
+const DONE_STATUSES = new Set(["processing", "shipped", "delivered"]);
 
 function getRowVariant(order: Order): RowVariant {
   const { status, channel } = order;
   if (status === "cancelled") return "muted";
-  if (channel === "pos" || status === "shipped" || status === "delivered") return "done";
+  if (channel === "pos" || DONE_STATUSES.has(status)) return "done";
   return "active";
 }
 
