@@ -2,11 +2,11 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Loader2, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Search, Trash2 } from "lucide-react";
 import AdminOrdersTabs from "@/components/admin/AdminOrdersTabs";
-import { getAdminOrders } from "@/lib/admin-api";
+import { getAdminOrders, deleteAdminOrder } from "@/lib/admin-api";
 import type { Order } from "@/types";
 
 type OrdersSummary = {
@@ -31,6 +31,41 @@ const PAYMENT_BADGES: Record<string, { label: string; className: string }> = {
   pending_payment: { label: "En attente", className: "bg-amber-50 text-amber-700 ring-amber-200" },
   pending: { label: "En attente", className: "bg-amber-50 text-amber-700 ring-amber-200" },
   cancelled: { label: "Remboursée", className: "bg-rose-50 text-rose-700 ring-rose-200" },
+};
+
+// ─── Couleurs de fond de ligne par statut ─────────────────────────────────────
+// "active"   = commandes à traiter (paid, processing, pending) → fond blanc
+// "done"     = commandes terminées (shipped, delivered) ou POS → fond noir
+// "muted"    = commandes annulées/remboursées → fond gris clair
+type RowVariant = "active" | "done" | "muted";
+
+function getRowVariant(order: Order): RowVariant {
+  const { status, channel } = order;
+  if (status === "cancelled") return "muted";
+  if (channel === "pos" || status === "shipped" || status === "delivered") return "done";
+  return "active";
+}
+
+// Classes Tailwind pour chaque variante (fond + texte + hover)
+const ROW_VARIANT_CLASSES: Record<RowVariant, { row: string; text: string; subtext: string; badge: string }> = {
+  active: {
+    row: "bg-white hover:bg-gray-50",
+    text: "text-gray-950",
+    subtext: "text-gray-500",
+    badge: "",
+  },
+  done: {
+    row: "bg-[#1a1a1a] hover:bg-[#222]",
+    text: "text-white",
+    subtext: "text-gray-400",
+    badge: "opacity-90",
+  },
+  muted: {
+    row: "bg-[#f0f0f0] hover:bg-[#e8e8e8]",
+    text: "text-gray-500",
+    subtext: "text-gray-400",
+    badge: "opacity-70",
+  },
 };
 
 function formatDate(value: string) {
@@ -113,6 +148,34 @@ export default function AdminOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  // ─── Sélection multiple ───────────────────────────────────────────────────
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+
+  const allVisibleIds = useMemo(() => orders.map((o) => o.id), [orders]);
+  const allSelected = allVisibleIds.length > 0 && allVisibleIds.every((id) => selected.has(id));
+  const someSelected = selected.size > 0;
+
+  const toggleAll = useCallback(() => {
+    if (allSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(allVisibleIds));
+    }
+  }, [allSelected, allVisibleIds]);
+
+  const toggleOne = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
   const loadOrders = async () => {
     setLoading(true);
     setError("");
@@ -128,8 +191,11 @@ export default function AdminOrdersPage() {
       setTotal(result.total);
       setPages(result.pages || 1);
       setSummary(result.summary || DEFAULT_SUMMARY);
-    } catch (err: any) {
-      setError(err.message || "Impossible de charger les commandes");
+      // Réinitialiser la sélection à chaque rechargement
+      setSelected(new Set());
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Impossible de charger les commandes";
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -137,6 +203,7 @@ export default function AdminOrdersPage() {
 
   useEffect(() => {
     loadOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, status, channel]);
 
   const kpis = useMemo(
@@ -153,6 +220,31 @@ export default function AdminOrdersPage() {
     event.preventDefault();
     setPage(1);
     loadOrders();
+  };
+
+  const handleBulkDelete = async () => {
+    const count = selected.size;
+    const confirmed = window.confirm(
+      `Supprimer ${count} commande${count > 1 ? "s" : ""} ? Cette action est définitive.`
+    );
+    if (!confirmed) return;
+
+    setDeleting(true);
+    let failCount = 0;
+    for (const id of Array.from(selected)) {
+      try {
+        await deleteAdminOrder(id);
+      } catch {
+        failCount++;
+      }
+    }
+    setDeleting(false);
+
+    if (failCount > 0) {
+      setError(`${failCount} commande${failCount > 1 ? "s" : ""} n'ont pas pu être supprimée${failCount > 1 ? "s" : ""}.`);
+    }
+
+    await loadOrders();
   };
 
   return (
@@ -226,6 +318,27 @@ export default function AdminOrdersPage() {
             </form>
           </div>
 
+          {/* Barre d'actions de sélection — visible uniquement quand au moins une commande est sélectionnée */}
+          {someSelected && (
+            <div className="flex items-center justify-between gap-3 border-b border-rose-200 bg-rose-50 px-4 py-3">
+              <span className="text-sm font-medium text-rose-800">
+                {selected.size} commande{selected.size > 1 ? "s" : ""} sélectionnée{selected.size > 1 ? "s" : ""}
+              </span>
+              <button
+                onClick={handleBulkDelete}
+                disabled={deleting}
+                className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deleting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
+                Supprimer la sélection
+              </button>
+            </div>
+          )}
+
           {error && <div className="m-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div>}
 
           {/* Vue tableau — masquée sur mobile */}
@@ -233,6 +346,15 @@ export default function AdminOrdersPage() {
             <table className="min-w-[700px] w-full divide-y divide-gray-200 text-sm">
               <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                 <tr>
+                  <th className="px-4 py-3 w-10">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleAll}
+                      aria-label="Tout sélectionner"
+                      className="h-4 w-4 cursor-pointer rounded border-gray-300 accent-gray-950"
+                    />
+                  </th>
                   <th className="px-4 py-3">Commande</th>
                   <th className="px-4 py-3 hidden md:table-cell">Date</th>
                   <th className="px-4 py-3">Client</th>
@@ -244,16 +366,16 @@ export default function AdminOrdersPage() {
                   <th className="px-4 py-3 hidden xl:table-cell">Livraison</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
+              <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
+                    <td colSpan={10} className="px-4 py-12 text-center text-gray-500">
                       <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Chargement...</span>
                     </td>
                   </tr>
                 ) : orders.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-12 text-center text-gray-500">Aucune commande trouvée.</td>
+                    <td colSpan={10} className="px-4 py-12 text-center text-gray-500">Aucune commande trouvée.</td>
                   </tr>
                 ) : (
                   orders.map((order) => {
@@ -261,30 +383,46 @@ export default function AdminOrdersPage() {
                     const fulfillment = fulfillmentBadge(order);
                     const channelInfo = channelBadge(order);
                     const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
+                    const variant = getRowVariant(order);
+                    const vc = ROW_VARIANT_CLASSES[variant];
+                    const isChecked = selected.has(order.id);
                     return (
-                      <tr key={order.id} className="hover:bg-gray-50">
-                        <td className="whitespace-nowrap px-4 py-3 font-semibold text-gray-950">
+                      <tr
+                        key={order.id}
+                        className={`transition-colors ${vc.row} ${isChecked ? "ring-2 ring-inset ring-rose-400" : ""}`}
+                      >
+                        <td className="px-4 py-3 w-10">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleOne(order.id)}
+                            aria-label={`Sélectionner la commande ${order.orderNumber}`}
+                            className="h-4 w-4 cursor-pointer rounded border-gray-300 accent-gray-950"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </td>
+                        <td className={`whitespace-nowrap px-4 py-3 font-semibold ${vc.text}`}>
                           <Link href={`/admin/commandes/${order.id}`} className="underline-offset-4 hover:underline">
                             {order.orderNumber}
                           </Link>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-gray-600 hidden md:table-cell">{formatDate(order.createdAt)}</td>
+                        <td className={`whitespace-nowrap px-4 py-3 hidden md:table-cell ${vc.subtext}`}>{formatDate(order.createdAt)}</td>
                         <td className="px-4 py-3">
-                          <div className="font-medium text-gray-900">{customerName(order)}</div>
-                          <div className="text-xs text-gray-500 hidden md:block">{order.customer?.email || order.customerEmail || order.email}</div>
+                          <div className={`font-medium ${vc.text}`}>{customerName(order)}</div>
+                          <div className={`text-xs hidden md:block ${vc.subtext}`}>{order.customer?.email || order.customerEmail || order.email}</div>
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 hidden lg:table-cell">
-                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${channelInfo.className}`}>{channelInfo.label}</span>
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${channelInfo.className} ${vc.badge}`}>{channelInfo.label}</span>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-right font-medium text-gray-950">{formatPrice(order.total, order.currency)}</td>
+                        <td className={`whitespace-nowrap px-4 py-3 text-right font-medium ${vc.text}`}>{formatPrice(order.total, order.currency)}</td>
                         <td className="whitespace-nowrap px-4 py-3">
-                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${pay.className}`}>{pay.label}</span>
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${pay.className} ${vc.badge}`}>{pay.label}</span>
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 hidden lg:table-cell">
-                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${fulfillment.className}`}>{fulfillment.label}</span>
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${fulfillment.className} ${vc.badge}`}>{fulfillment.label}</span>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-center text-gray-700 hidden md:table-cell">{itemCount}</td>
-                        <td className="whitespace-nowrap px-4 py-3 text-gray-600 hidden xl:table-cell">{shippingMode(order)}</td>
+                        <td className={`whitespace-nowrap px-4 py-3 text-center hidden md:table-cell ${vc.subtext}`}>{itemCount}</td>
+                        <td className={`whitespace-nowrap px-4 py-3 hidden xl:table-cell ${vc.subtext}`}>{shippingMode(order)}</td>
                       </tr>
                     );
                   })
@@ -306,22 +444,40 @@ export default function AdminOrdersPage() {
                 const pay = paymentBadge(order);
                 const fulfillment = fulfillmentBadge(order);
                 const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
+                const variant = getRowVariant(order);
+                const vc = ROW_VARIANT_CLASSES[variant];
+                const isChecked = selected.has(order.id);
                 return (
-                  <Link key={order.id} href={`/admin/commandes/${order.id}`} className="flex items-start gap-3 px-4 py-3.5 hover:bg-gray-50 active:bg-gray-100">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="font-semibold text-gray-950 text-sm">{order.orderNumber}</span>
-                        <span className="font-semibold text-gray-950 text-sm tabular-nums">{formatPrice(order.total, order.currency)}</span>
-                      </div>
-                      <div className="text-sm text-gray-700 truncate">{customerName(order)}</div>
-                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${pay.className}`}>{pay.label}</span>
-                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${fulfillment.className}`}>{fulfillment.label}</span>
-                        <span className="text-xs text-gray-400">{itemCount} art. · {formatDate(order.createdAt)}</span>
-                      </div>
+                  <div
+                    key={order.id}
+                    className={`flex items-start gap-3 px-4 py-3.5 transition-colors ${vc.row} ${isChecked ? "ring-2 ring-inset ring-rose-400" : ""}`}
+                  >
+                    {/* Checkbox mobile */}
+                    <div className="flex items-center pt-0.5 shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleOne(order.id)}
+                        aria-label={`Sélectionner la commande ${order.orderNumber}`}
+                        className="h-4 w-4 cursor-pointer rounded border-gray-300 accent-gray-950"
+                      />
                     </div>
-                    <ChevronRight className="h-4 w-4 text-gray-400 shrink-0 mt-1" />
-                  </Link>
+                    <Link href={`/admin/commandes/${order.id}`} className="flex flex-1 min-w-0 items-start gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className={`font-semibold text-sm ${vc.text}`}>{order.orderNumber}</span>
+                          <span className={`font-semibold text-sm tabular-nums ${vc.text}`}>{formatPrice(order.total, order.currency)}</span>
+                        </div>
+                        <div className={`text-sm truncate ${vc.text}`}>{customerName(order)}</div>
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${pay.className} ${vc.badge}`}>{pay.label}</span>
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${fulfillment.className} ${vc.badge}`}>{fulfillment.label}</span>
+                          <span className={`text-xs ${vc.subtext}`}>{itemCount} art. · {formatDate(order.createdAt)}</span>
+                        </div>
+                      </div>
+                      <ChevronRight className={`h-4 w-4 shrink-0 mt-1 ${vc.subtext}`} />
+                    </Link>
+                  </div>
                 );
               })
             )}
