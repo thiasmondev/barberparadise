@@ -2385,6 +2385,7 @@ adminRouter.get(
           subcategory: true,
           price: true,
           priceProEur: true,
+          purchasePrice: true,
           originalPrice: true,
           images: true,
           inStock: true,
@@ -2463,6 +2464,7 @@ adminRouter.patch(
         data: {
           price: req.body.price !== undefined ? nextPublicPrice : undefined,
           priceProEur: nextProPrice,
+          purchasePrice: toOptionalFloat(req.body.purchasePrice as NumericInput),
           stockCount: nextStockCount,
           inStock:
             req.body.inStock !== undefined

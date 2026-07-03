@@ -60,6 +60,7 @@ function productDraft(product: StockProductRow) {
   return {
     price: String((product as any).pricePublic ?? product.price ?? ""),
     priceProEur: product.priceProEur != null ? String(product.priceProEur) : "",
+    purchasePrice: (product as any).purchasePrice != null ? String((product as any).purchasePrice) : "",
     stockCount: String(product.stockCount ?? 0),
     inStock: Boolean(product.inStock),
     status: String(product.status || "active"),
@@ -210,13 +211,14 @@ export default function AdminStockPage() {
         return updateStockProduct(product.id, {
           price: Number(draft.price),
           priceProEur: draft.priceProEur === "" ? null : Number(draft.priceProEur),
+          purchasePrice: (draft as any).purchasePrice === "" ? null : (draft as any).purchasePrice !== undefined ? Number((draft as any).purchasePrice) : undefined,
           // Pour les produits à variantes, ne pas écraser le stockCount parent
           ...(hasVariants ? {} : {
             stockCount: Number(draft.stockCount),
             inStock: isStockAvailable(draft.stockCount),
           }),
           status: draft.status,
-        } as any);
+        });
       });
 
       const variantUpdates = products.flatMap(product => (product.variants || []).map(variant => {
@@ -692,7 +694,17 @@ function FragmentRows({
         </td>
         <td className="px-3 py-3 text-right"><NumberInput value={form.price} onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, price: value } }))} /></td>
         <td className="px-3 py-3 text-right"><NumberInput value={form.priceProEur} placeholder="—" onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, priceProEur: value } }))} /></td>
-        <td className="px-3 py-3 text-right text-gray-400 text-xs">Produit</td>
+        <td className="px-3 py-3 text-right">
+          {hasVariants ? (
+            <span className="text-gray-400 text-xs" title="Prix de revient géré par variante">—</span>
+          ) : (
+            <NumberInput
+              value={(form as any).purchasePrice ?? ""}
+              placeholder="—"
+              onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, purchasePrice: value } as any }))}
+            />
+          )}
+        </td>
         {hasVariants ? (
           <td className="px-3 py-3 text-center text-gray-400 text-xs" title="Stock géré par variante">—</td>
         ) : (

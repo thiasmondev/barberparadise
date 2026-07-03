@@ -1655,7 +1655,7 @@ export function updateStockProduct(
   data: Partial<
     Pick<
       StockProductRow,
-      "price" | "priceProEur" | "stockCount" | "inStock" | "status"
+      "price" | "priceProEur" | "purchasePrice" | "stockCount" | "inStock" | "status"
     >
   >
 ) {
