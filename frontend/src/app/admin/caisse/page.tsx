@@ -441,22 +441,22 @@ export default function AdminCaissePage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="space-y-4 overflow-x-hidden">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-medium text-gray-500">Administration</p>
-          <h1 className="mt-1 flex items-center gap-2 text-2xl font-black tracking-tight text-gray-950 sm:text-3xl">
-            <Store className="h-7 w-7 text-primary" /> Caisse POS
+          <h1 className="mt-1 flex items-center gap-2 text-xl font-black tracking-tight text-gray-950 sm:text-2xl">
+            <Store className="h-6 w-6 text-primary" /> Caisse POS
           </h1>
-          <p className="mt-2 max-w-2xl text-sm text-gray-600">
+          <p className="mt-1 hidden sm:block max-w-2xl text-sm text-gray-600">
             Encaissez les ventes physiques Barber Paradise avec terminal de paiement sécurisé, décrémentation du stock, historique et rattachement client facultatif.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/admin/caisse/historique" className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:border-primary/40 hover:text-primary">
+          <Link href="/admin/caisse/historique" className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:border-primary/40 hover:text-primary min-h-[44px]">
             <History size={16} /> Historique
           </Link>
-          <Link href="/admin/caisse/stats" className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:border-primary/40 hover:text-primary">
+          <Link href="/admin/caisse/stats" className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:border-primary/40 hover:text-primary min-h-[44px]">
             <Banknote size={16} /> Statistiques
           </Link>
         </div>
@@ -473,9 +473,9 @@ export default function AdminCaissePage() {
         </div>
       )}
 
-      <section className="grid gap-4 xl:grid-cols-[1.4fr_0.9fr]">
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+      <section className="grid gap-4 xl:grid-cols-[1.4fr_0.9fr] min-w-0">
+        <div className="space-y-4 min-w-0">
+          <div className="rounded-2xl border border-gray-100 bg-white p-3 sm:p-4 shadow-sm">
             <div className="grid gap-3 lg:grid-cols-[1fr_220px_180px]">
               <div>
                 <label className="mb-1 block text-xs font-bold uppercase tracking-[0.2em] text-gray-400">Recherche produit</label>
@@ -501,7 +501,7 @@ export default function AdminCaissePage() {
 
           <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
             {catalog.map((product) => (
-              <article key={product.id} className="rounded-2xl border border-gray-100 bg-white p-3 shadow-sm">
+              <article key={product.id} className="rounded-2xl border border-gray-100 bg-white p-3 shadow-sm min-w-0">
                 <div className="flex gap-3">
                   <img src={product.image || "/placeholder-product.png"} alt="" className="h-20 w-20 rounded-xl border border-gray-100 object-contain" />
                   <div className="min-w-0 flex-1">
@@ -532,23 +532,23 @@ export default function AdminCaissePage() {
           </div>
         </div>
 
-        <aside className="space-y-4">
-          <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="flex items-center gap-2 text-base font-black text-gray-950"><CreditCard size={18} /> Terminal</h2>
-              <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${sessionId ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>{sessionId ? "Session ouverte" : "Session fermée"}</span>
+        <aside className="space-y-4 min-w-0">
+          <div className="rounded-2xl border border-gray-100 bg-white p-3 sm:p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-black text-gray-950"><CreditCard size={16} /> Terminal</h2>
+              <span className={`rounded-full px-2 py-0.5 text-xs font-bold shrink-0 ${sessionId ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>{sessionId ? "Ouverte" : "Fermée"}</span>
             </div>
-            <select value={terminalId} onChange={(event) => setTerminalId(event.target.value)} className="mt-3 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary">
+            <select value={terminalId} onChange={(event) => setTerminalId(event.target.value)} className="mt-2 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary min-w-0">
               <option value="">Sélectionner un terminal</option>
               {terminals.map((terminal) => <option key={terminal.id} value={terminal.id}>{terminal.description || terminal.id} · {terminal.status}</option>)}
             </select>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button type="button" onClick={handleStartSession} disabled={!terminalId || Boolean(sessionId)} className="rounded-xl bg-gray-950 px-3 py-2 text-sm font-bold text-white disabled:opacity-40">Ouvrir</button>
-              <button type="button" onClick={handleCloseSession} disabled={!sessionId} className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold text-gray-700 disabled:opacity-40">Clôturer</button>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button type="button" onClick={handleStartSession} disabled={!terminalId || Boolean(sessionId)} className="rounded-xl bg-gray-950 px-3 py-2.5 text-sm font-bold text-white disabled:opacity-40 min-h-[44px]">Ouvrir</button>
+              <button type="button" onClick={handleCloseSession} disabled={!sessionId} className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-bold text-gray-700 disabled:opacity-40 min-h-[44px]">Clôturer</button>
             </div>
           </div>
 
-          <form onSubmit={handleCheckout} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <form onSubmit={handleCheckout} className="rounded-2xl border border-gray-100 bg-white p-3 sm:p-4 shadow-sm min-w-0">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-base font-black text-gray-950"><ShoppingBag size={18} /> Panier</h2>
               <button type="button" onClick={() => setCart([])} className="text-xs font-bold text-gray-400 hover:text-red-500">Vider</button>
@@ -566,18 +566,18 @@ export default function AdminCaissePage() {
                     </div>
                     <button type="button" onClick={() => updateQuantity(line.key, 0)} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
                   </div>
-                  <div className="mt-3 grid grid-cols-[110px_1fr] gap-2">
-                    <div className="flex items-center justify-between rounded-lg border border-gray-200 px-2 py-1">
-                      <button type="button" onClick={() => updateQuantity(line.key, line.quantity - 1)}><Minus size={14} /></button>
-                      <span className="text-sm font-bold">{line.quantity}</span>
-                      <button type="button" onClick={() => updateQuantity(line.key, line.quantity + 1)}><Plus size={14} /></button>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="flex items-center justify-between rounded-lg border border-gray-200 px-2 py-1 min-h-[44px] min-w-[110px]">
+                      <button type="button" onClick={() => updateQuantity(line.key, line.quantity - 1)} className="p-1"><Minus size={14} /></button>
+                      <span className="text-sm font-bold px-2">{line.quantity}</span>
+                      <button type="button" onClick={() => updateQuantity(line.key, line.quantity + 1)} className="p-1"><Plus size={14} /></button>
                     </div>
-                    <div className="grid grid-cols-[76px_1fr] gap-2">
-                      <select value={line.lineDiscountType} onChange={(event) => updateLineDiscount(line.key, event.target.value as DiscountType, line.lineDiscountValue)} className="rounded-lg border border-gray-200 px-2 py-1 text-sm outline-none focus:border-primary">
+                    <div className="flex flex-1 min-w-[140px] gap-2">
+                      <select value={line.lineDiscountType} onChange={(event) => updateLineDiscount(line.key, event.target.value as DiscountType, line.lineDiscountValue)} className="w-16 rounded-lg border border-gray-200 px-2 py-1 text-sm outline-none focus:border-primary min-h-[44px]">
                         <option value="fixed">€</option>
                         <option value="percent">%</option>
                       </select>
-                      <input type="number" min="0" step="0.01" value={line.lineDiscountValue} onChange={(event) => updateLineDiscount(line.key, line.lineDiscountType, event.target.value)} onFocus={(event) => event.currentTarget.select()} className="rounded-lg border border-gray-200 px-2 py-1 text-sm outline-none focus:border-primary" placeholder="Remise" />
+                      <input type="number" min="0" step="0.01" value={line.lineDiscountValue} onChange={(event) => updateLineDiscount(line.key, line.lineDiscountType, event.target.value)} onFocus={(event) => event.currentTarget.select()} className="flex-1 min-w-0 rounded-lg border border-gray-200 px-2 py-1 text-sm outline-none focus:border-primary min-h-[44px]" placeholder="Remise" />
                     </div>
                   </div>
                   {lineDiscountAmount(line) > 0 ? <p className="mt-2 text-right text-xs font-semibold text-emerald-700">Remise ligne : - {formatPrice(lineDiscountAmount(line))}</p> : null}
@@ -661,22 +661,22 @@ export default function AdminCaissePage() {
                   </button>
                 </div>
               )}
-              <div className="grid grid-cols-[96px_1fr] gap-2">
-                <select value={orderDiscountType} onChange={(event) => updateOrderDiscount(event.target.value as DiscountType, orderDiscountValue)} className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary">
+              <div className="flex gap-2">
+                <select value={orderDiscountType} onChange={(event) => updateOrderDiscount(event.target.value as DiscountType, orderDiscountValue)} className="w-20 shrink-0 rounded-xl border border-gray-200 px-2 py-2.5 text-sm outline-none focus:border-primary min-h-[44px]">
                   <option value="fixed">€ fixe</option>
                   <option value="percent">%</option>
                 </select>
-                <input type="number" min="0" step="0.01" value={orderDiscountValue} onChange={(event) => updateOrderDiscount(orderDiscountType, event.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary" placeholder="Remise commande" />
+                <input type="number" min="0" step="0.01" value={orderDiscountValue} onChange={(event) => updateOrderDiscount(orderDiscountType, event.target.value)} className="flex-1 min-w-0 rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary min-h-[44px]" placeholder="Remise commande" />
               </div>
               <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary" placeholder="Notes internes de vente" />
             </div>
 
             <div className="mt-4 space-y-3 rounded-2xl border border-gray-100 bg-gray-50 p-3">
               <label className="block text-xs font-bold uppercase tracking-[0.2em] text-gray-400">Moyen de paiement</label>
-              <div className="grid grid-cols-3 gap-2">
-                <button type="button" onClick={() => setPaymentMethod("card")} className={`rounded-xl border px-3 py-2 text-sm font-black ${paymentMethod === "card" ? "border-primary bg-primary text-white" : "border-gray-200 bg-white text-gray-700 hover:border-primary/40"}`}>Carte · Tap to Pay</button>
-                <button type="button" onClick={() => setPaymentMethod("cash")} className={`rounded-xl border px-3 py-2 text-sm font-black ${paymentMethod === "cash" ? "border-emerald-600 bg-emerald-600 text-white" : "border-gray-200 bg-white text-gray-700 hover:border-emerald-300"}`}>Espèces</button>
-                <button type="button" onClick={() => setPaymentMethod("manual")} className={`rounded-xl border px-3 py-2 text-sm font-black ${paymentMethod === "manual" ? "border-violet-600 bg-violet-600 text-white" : "border-gray-200 bg-white text-gray-700 hover:border-violet-300"}`}>Marquer payé</button>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button type="button" onClick={() => setPaymentMethod("card")} className={`rounded-xl border px-3 py-3 text-sm font-black min-h-[44px] ${paymentMethod === "card" ? "border-primary bg-primary text-white" : "border-gray-200 bg-white text-gray-700 hover:border-primary/40"}`}>Carte · Tap to Pay</button>
+                <button type="button" onClick={() => setPaymentMethod("cash")} className={`rounded-xl border px-3 py-3 text-sm font-black min-h-[44px] ${paymentMethod === "cash" ? "border-emerald-600 bg-emerald-600 text-white" : "border-gray-200 bg-white text-gray-700 hover:border-emerald-300"}`}>Espèces</button>
+                <button type="button" onClick={() => setPaymentMethod("manual")} className={`rounded-xl border px-3 py-3 text-sm font-black min-h-[44px] ${paymentMethod === "manual" ? "border-violet-600 bg-violet-600 text-white" : "border-gray-200 bg-white text-gray-700 hover:border-violet-300"}`}>Marquer payé</button>
               </div>
               {paymentMethod === "cash" ? (
                 <div className="grid gap-2 sm:grid-cols-[1fr_1fr]">
@@ -692,28 +692,30 @@ export default function AdminCaissePage() {
               ) : null}
             </div>
 
-            <div className="mt-4 rounded-2xl bg-gray-950 p-4 text-white">
-              <div className="space-y-1 text-sm text-gray-300">
-                <div className="flex justify-between"><span>Sous-total</span><span>{formatPrice(subtotal)}</span></div>
-                {lineDiscount > 0 ? <div className="flex justify-between"><span>Remises articles</span><span>- {formatPrice(lineDiscount)}</span></div> : null}
-                {orderDiscount > 0 ? <div className="flex justify-between"><span>Remise commande</span><span>- {formatPrice(orderDiscount)}</span></div> : null}
-                {discount <= 0 ? <div className="flex justify-between"><span>Remises</span><span>- {formatPrice(0)}</span></div> : null}
-                <div className="flex justify-between"><span>TVA incluse estimée</span><span>{formatPrice(vat)}</span></div>
+            <div className="mt-4 rounded-2xl bg-gray-950 p-3 sm:p-4 text-white min-w-0">
+              <div className="space-y-1.5 text-sm text-gray-300">
+                <div className="flex items-center justify-between gap-2"><span className="shrink-0">Sous-total</span><span className="tabular-nums">{formatPrice(subtotal)}</span></div>
+                {lineDiscount > 0 ? <div className="flex items-center justify-between gap-2"><span className="shrink-0">Remises articles</span><span className="tabular-nums">- {formatPrice(lineDiscount)}</span></div> : null}
+                {orderDiscount > 0 ? <div className="flex items-center justify-between gap-2"><span className="shrink-0">Remise commande</span><span className="tabular-nums">- {formatPrice(orderDiscount)}</span></div> : null}
+                {discount <= 0 ? <div className="flex items-center justify-between gap-2"><span className="shrink-0">Remises</span><span className="tabular-nums">- {formatPrice(0)}</span></div> : null}
+                <div className="flex items-center justify-between gap-2"><span className="shrink-0">TVA estimée</span><span className="tabular-nums">{formatPrice(vat)}</span></div>
               </div>
-              <div className="mt-3 flex justify-between text-xl font-black"><span>Total</span><span>{formatPrice(total)}</span></div>
+              <div className="mt-3 flex items-center justify-between gap-2 text-xl font-black"><span>Total</span><span className="tabular-nums">{formatPrice(total)}</span></div>
             </div>
 
-            <button type="submit" disabled={submitting || (paymentMethod === "card" && !terminalId) || !cart.length || Boolean(paymentId)} className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-black uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-50 ${paymentMethod === "cash" ? "bg-emerald-600 hover:bg-emerald-700" : paymentMethod === "manual" ? "bg-violet-600 hover:bg-violet-700" : "bg-primary hover:bg-primary/90"}`}>
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : paymentMethod === "cash" ? <Banknote size={16} /> : paymentMethod === "manual" ? <CheckCircle2 size={16} /> : <CreditCard size={16} />} {paymentMethod === "cash" ? "Valider l'encaissement espèces" : paymentMethod === "manual" ? "Marquer comme payé" : "Encaisser sur terminal"}
+            <button type="submit" disabled={submitting || (paymentMethod === "card" && !terminalId) || !cart.length || Boolean(paymentId)} className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-black uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:opacity-50 min-h-[52px] ${paymentMethod === "cash" ? "bg-emerald-600 hover:bg-emerald-700" : paymentMethod === "manual" ? "bg-violet-600 hover:bg-violet-700" : "bg-primary hover:bg-primary/90"}`}>
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : paymentMethod === "cash" ? <Banknote size={16} /> : paymentMethod === "manual" ? <CheckCircle2 size={16} /> : <CreditCard size={16} />}
+              <span className="sm:hidden">{paymentMethod === "cash" ? "Encaisser espèces" : paymentMethod === "manual" ? "Marquer payé" : "Encaisser"}</span>
+              <span className="hidden sm:inline">{paymentMethod === "cash" ? "Valider l'encaissement espèces" : paymentMethod === "manual" ? "Marquer comme payé" : "Encaisser sur terminal"}</span>
             </button>
           </form>
 
-          <form onSubmit={handleQuickSale} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <form onSubmit={handleQuickSale} className="rounded-2xl border border-gray-100 bg-white p-3 sm:p-4 shadow-sm min-w-0">
             <h2 className="text-base font-black text-gray-950">Vente rapide</h2>
             <p className="mt-1 text-xs text-gray-500">Pour une prestation ou un article non catalogué.</p>
-            <div className="mt-3 grid grid-cols-[1fr_1.5fr] gap-2">
-              <input value={quickAmount} onChange={(event) => setQuickAmount(event.target.value)} inputMode="decimal" className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary" placeholder="Montant" />
-              <input value={quickDescription} onChange={(event) => setQuickDescription(event.target.value)} className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary" placeholder="Libellé" />
+            <div className="mt-3 flex flex-col sm:flex-row gap-2">
+              <input value={quickAmount} onChange={(event) => setQuickAmount(event.target.value)} inputMode="decimal" className="w-full sm:w-32 rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary min-h-[44px]" placeholder="Montant (€)" />
+              <input value={quickDescription} onChange={(event) => setQuickDescription(event.target.value)} className="flex-1 min-w-0 rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary min-h-[44px]" placeholder="Libellé" />
             </div>
             <button type="submit" disabled={submitting || (paymentMethod === "card" && !terminalId) || Boolean(paymentId)} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-bold text-gray-800 hover:border-primary/40 hover:text-primary disabled:opacity-40">
               <Banknote size={16} /> {paymentMethod === "cash" ? "Valider la vente rapide espèces" : paymentMethod === "manual" ? "Vente rapide — Marquer comme payé" : "Encaisser une vente rapide"}
