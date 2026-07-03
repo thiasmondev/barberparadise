@@ -519,15 +519,63 @@ export async function extractProductSourceFromUrl(url: string): Promise<ProductU
     throw new Error("Seules les URLs http(s) sont acceptées");
   }
 
-  const response = await fetch(parsedUrl.toString(), {
-    headers: {
-      "user-agent": "Mozilla/5.0 (compatible; BarberParadiseSEOAgent/1.0; +https://barberparadise.fr)",
-      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    },
-  });
-  if (!response.ok) throw new Error(`Impossible de lire la fiche produit source (${response.status})`);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  let html = "";
+  let finalStatus = 0;
 
-  const html = (await response.text()).slice(0, 2_500_000);
+  try {
+    // Custom fetch with manual redirect handling to support cookies (required for Demandware/Salesforce Commerce Cloud like Babyliss)
+    let currentUrl = parsedUrl.toString();
+    const cookies: Record<string, string> = {};
+    let redirectCount = 0;
+    const MAX_REDIRECTS = 5;
+
+    while (redirectCount <= MAX_REDIRECTS) {
+      const cookieHeader = Object.entries(cookies).map(([k, v]) => `${k}=${v}`).join("; ");
+      const response = await fetch(currentUrl, {
+        signal: controller.signal,
+        redirect: "manual",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+          "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+          ...(cookieHeader ? { "Cookie": cookieHeader } : {}),
+        },
+      });
+
+      finalStatus = response.status;
+
+      // Collect cookies
+      const setCookies = response.headers.getSetCookie ? response.headers.getSetCookie() : [];
+      for (const c of setCookies) {
+        const [kv] = c.split(";");
+        const [k, v] = kv.split("=");
+        if (k && v) cookies[k.trim()] = v.trim();
+      }
+
+      if (response.status >= 300 && response.status < 400) {
+        const loc = response.headers.get("location");
+        if (!loc) break;
+        currentUrl = new URL(loc, currentUrl).toString();
+        redirectCount++;
+      } else {
+        if (!response.ok) throw new Error(`Erreur HTTP ${response.status}`);
+        html = (await response.text()).slice(0, 2_500_000);
+        break;
+      }
+    }
+    
+    if (redirectCount > MAX_REDIRECTS) {
+      throw new Error("Trop de redirections");
+    }
+  } catch (err: any) {
+    console.error("SEO Scraping Error:", err.message, "| cause:", err.cause?.message || err.cause);
+    if (err.name === "AbortError") throw new Error("Délai d'attente dépassé (timeout 15s) lors de l'accès au site source");
+    throw new Error(`Impossible de lire la fiche produit source : ${err.message || "Erreur réseau"}`);
+  } finally {
+    clearTimeout(timeoutId);
+  }
   const metaDescription = extractMetaContent(html, "description") || extractMetaContent(html, "og:description") || extractMetaContent(html, "twitter:description");
 
   return {
