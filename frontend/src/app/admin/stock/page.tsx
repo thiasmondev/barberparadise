@@ -221,15 +221,24 @@ export default function AdminStockPage() {
         });
       });
 
-      const variantUpdates = products.flatMap(product => (product.variants || []).map(variant => {
-        const draft = variantForms[variant.id] || variantDraft(variant);
-        return updateStockVariant(variant.id, {
-          stock: Number(draft.stock),
-          inStock: isStockAvailable(draft.stock),
-          priceProEur: draft.priceProEur === "" ? null : Number(draft.priceProEur),
-          purchasePrice: draft.purchasePrice === "" ? null : Number(draft.purchasePrice),
+      const variantUpdates = products.flatMap(product => {
+        const productDraftData = productForms[product.id] || productDraft(product);
+        const productPurchasePrice = (productDraftData as any).purchasePrice;
+        return (product.variants || []).map(variant => {
+          const draft = variantForms[variant.id] || variantDraft(variant);
+          // Si le prix de revient a été saisi sur la ligne produit, le propager à toutes les variantes
+          // sauf si la variante a elle-même une valeur saisie dans variantForms
+          const effectivePurchasePrice = variantForms[variant.id]
+            ? (draft.purchasePrice === "" ? null : Number(draft.purchasePrice))
+            : (productPurchasePrice === "" ? null : productPurchasePrice !== undefined ? Number(productPurchasePrice) : (draft.purchasePrice === "" ? null : Number(draft.purchasePrice)));
+          return updateStockVariant(variant.id, {
+            stock: Number(draft.stock),
+            inStock: isStockAvailable(draft.stock),
+            priceProEur: draft.priceProEur === "" ? null : Number(draft.priceProEur),
+            purchasePrice: effectivePurchasePrice,
+          });
         });
-      }));
+      });
 
       await Promise.all([...productUpdates, ...variantUpdates]);
       const savedCount = productUpdates.length + variantUpdates.length;
@@ -695,15 +704,12 @@ function FragmentRows({
         <td className="px-3 py-3 text-right"><NumberInput value={form.price} onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, price: value } }))} /></td>
         <td className="px-3 py-3 text-right"><NumberInput value={form.priceProEur} placeholder="—" onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, priceProEur: value } }))} /></td>
         <td className="px-3 py-3 text-right">
-          {hasVariants ? (
-            <span className="text-gray-400 text-xs" title="Prix de revient géré par variante">—</span>
-          ) : (
-            <NumberInput
-              value={(form as any).purchasePrice ?? ""}
-              placeholder="—"
-              onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, purchasePrice: value } as any }))}
-            />
-          )}
+          <NumberInput
+            value={(form as any).purchasePrice ?? ""}
+            placeholder="—"
+            onChange={value => setProductForms(current => ({ ...current, [product.id]: { ...form, purchasePrice: value } as any }))}
+          />
+          {hasVariants && <div className="text-[10px] text-gray-400 mt-0.5 text-right">toutes variantes</div>}
         </td>
         {hasVariants ? (
           <td className="px-3 py-3 text-center text-gray-400 text-xs" title="Stock géré par variante">—</td>
