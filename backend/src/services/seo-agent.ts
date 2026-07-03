@@ -538,8 +538,16 @@ export async function extractProductSourceFromUrl(url: string): Promise<ProductU
         redirect: "manual",
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
           "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+          "Accept-Encoding": "gzip, deflate, br",
+          "Connection": "keep-alive",
+          "Upgrade-Insecure-Requests": "1",
+          "Sec-Fetch-Dest": "document",
+          "Sec-Fetch-Mode": "navigate",
+          "Sec-Fetch-Site": "none",
+          "Sec-Fetch-User": "?1",
+          "Cache-Control": "max-age=0",
           ...(cookieHeader ? { "Cookie": cookieHeader } : {}),
         },
       });
@@ -560,7 +568,15 @@ export async function extractProductSourceFromUrl(url: string): Promise<ProductU
         currentUrl = new URL(loc, currentUrl).toString();
         redirectCount++;
       } else {
-        if (!response.ok) throw new Error(`Erreur HTTP ${response.status}`);
+        if (!response.ok) {
+          if (response.status === 403 || response.status === 503) {
+            throw new Error(`Le site source bloque les accès automatiques (HTTP ${response.status}) — essayez de copier-coller le contenu manuellement`);
+          }
+          if (response.status === 404) {
+            throw new Error(`Page introuvable (HTTP 404) — vérifiez l'URL et réessayez`);
+          }
+          throw new Error(`Erreur HTTP ${response.status} lors de l'accès au site source`);
+        }
         html = (await response.text()).slice(0, 2_500_000);
         break;
       }
@@ -572,6 +588,12 @@ export async function extractProductSourceFromUrl(url: string): Promise<ProductU
   } catch (err: any) {
     console.error("SEO Scraping Error:", err.message, "| cause:", err.cause?.message || err.cause);
     if (err.name === "AbortError") throw new Error("Délai d'attente dépassé (timeout 15s) lors de l'accès au site source");
+    // Rethrow errors that already have a clear user-facing message
+    if (err.message && (err.message.includes("HTTP") || err.message.includes("bloque") || err.message.includes("introuvable") || err.message.includes("redirections"))) {
+      throw err;
+    }
+    const cause = err.cause?.message || err.cause;
+    if (cause && String(cause).includes("SSL")) throw new Error("Erreur de certificat SSL sur le site source — le site n'est pas accessible en HTTPS");
     throw new Error(`Impossible de lire la fiche produit source : ${err.message || "Erreur réseau"}`);
   } finally {
     clearTimeout(timeoutId);
