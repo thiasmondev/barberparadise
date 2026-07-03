@@ -570,6 +570,17 @@ export async function extractProductSourceFromUrl(url: string): Promise<ProductU
       } else {
         if (!response.ok) {
           if (response.status === 403 || response.status === 503) {
+            // Tentative de fallback via Jina.ai Reader API pour contourner le blocage
+            console.log(`Fallback Jina.ai activé suite à HTTP ${response.status} sur ${currentUrl}`);
+            const jinaUrl = `https://r.jina.ai/${currentUrl}`;
+            const jinaResponse = await fetch(jinaUrl, {
+              signal: controller.signal,
+              headers: { "Accept": "text/html" } // Demander du HTML si possible, sinon Jina renvoie du Markdown encapsulé
+            });
+            if (jinaResponse.ok) {
+              html = (await jinaResponse.text()).slice(0, 2_500_000);
+              break;
+            }
             throw new Error(`Le site source bloque les accès automatiques (HTTP ${response.status}) — essayez de copier-coller le contenu manuellement`);
           }
           if (response.status === 404) {
