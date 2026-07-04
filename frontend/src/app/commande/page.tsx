@@ -634,7 +634,7 @@ export default function CheckoutPage() {
     setPaymentError("");
     setIsSubmittingPayment(true);
 
-    const checkoutPaymentMethod: PaymentMethod = effectiveIsB2B ? "paybybank" : paymentMethod;
+    const checkoutPaymentMethod: PaymentMethod = paymentMethod;
 
     try {
       const res = await fetch(`${API_URL}/api/checkout/initiate`, {
@@ -828,12 +828,7 @@ export default function CheckoutPage() {
                   <div><label className={labelClass}>Complément (optionnel)</label><input type="text" value={form.complement} onChange={(e) => updateForm("complement", e.target.value)} placeholder="Appartement, bâtiment..." className={inputClass} /></div>
                   <div className="grid grid-cols-2 gap-6"><div><label className={labelClass}>Code postal</label><input type="text" value={form.codePostal} onChange={(e) => updateForm("codePostal", e.target.value)} placeholder="75001" className={inputClass} /></div><div><label className={labelClass}>Ville</label><input type="text" value={form.ville} onChange={(e) => updateForm("ville", e.target.value)} placeholder="Paris" className={inputClass} /></div></div>
                   <div><label className={labelClass}>Téléphone</label><input type="tel" value={form.telephone} onChange={(e) => updateForm("telephone", e.target.value)} placeholder="+33 6 12 34 56 78" className={inputClass} /></div>
-                  <div className="border border-white/10 bg-[#1c1b1b] p-5">
-                    <label className="flex items-start gap-3 cursor-pointer">
-                      <input type="checkbox" checked={effectiveIsB2B} onChange={(e) => setIsB2B(e.target.checked)} disabled={isApprovedPro} className="mt-1 h-4 w-4 accent-[#ff4a8d] disabled:cursor-not-allowed" />
-                      <span><span className="block text-xs font-black uppercase tracking-widest text-white">Commande professionnelle B2B</span><span className="mt-2 block text-[11px] leading-5 text-gray-500">Activez cette option pour une facturation entreprise et, hors France dans l’Union européenne, l’autoliquidation si votre numéro TVA est renseigné.</span></span>
-                    </label>
-                  </div>
+
                   {effectiveIsB2B && countryCode !== "FR" && EU_COUNTRIES.includes(countryCode) && (
                     <div className="vat-number-field">
                       <label className={labelClass}>Numéro TVA intracommunautaire</label>

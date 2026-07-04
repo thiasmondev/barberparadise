@@ -106,10 +106,9 @@ export function getAvailableMethods(country: string, isB2B: boolean): PaymentMet
     return ["paybybank"];
   }
 
-  // B2C : carte + PayPal standard + PayPal 4x + Apple Pay + Google Pay (conditionnel côté client)
-  // paybybank / pay_by_bank (virement) : B2B uniquement
+  // B2C : carte + Pay by Bank + PayPal standard + PayPal 4x + Apple Pay + Google Pay (conditionnel côté client)
   // sepa (prélèvement) : retiré
-  const commonMethods: PaymentMethod[] = ["card", "paypal", "paypal_4x", "apple_pay", "google_pay"];
+  const commonMethods: PaymentMethod[] = ["card", "paybybank", "paypal", "paypal_4x", "apple_pay", "google_pay"];
   const localMethods = LOCAL_METHODS_BY_COUNTRY[normalizedCountry] || [];
   return [...commonMethods, ...localMethods];
 }
