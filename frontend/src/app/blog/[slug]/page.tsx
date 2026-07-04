@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CalendarDays, Clock, Eye, ArrowLeft, ShoppingBag } from "lucide-react";
+import { CalendarDays, Clock, Eye, ChevronRight, ShoppingBag } from "lucide-react";
 import { getBlogArticle, type BlogArticle } from "@/lib/api";
 import ProductCard from "@/components/ProductCard";
 
@@ -26,15 +26,23 @@ function renderMarkdown(content: string) {
   const flushParagraph = () => {
     if (!paragraph.length) return;
     const text = paragraph.join(" ").trim();
-    if (text) blocks.push(<p key={`p-${blocks.length}`} className="my-6 text-lg leading-9 text-gray-700">{text}</p>);
+    if (text) blocks.push(
+      <p key={`p-${blocks.length}`} className="my-6 text-base leading-9 text-white/70">
+        {text}
+      </p>
+    );
     paragraph = [];
   };
 
   const flushList = () => {
     if (!list.length) return;
     blocks.push(
-      <ul key={`ul-${blocks.length}`} className="my-6 space-y-3 pl-6 text-lg leading-8 text-gray-700">
-        {list.map((item, index) => <li key={index} className="list-disc">{item}</li>)}
+      <ul key={`ul-${blocks.length}`} className="my-6 space-y-3 pl-6 text-base leading-8 text-white/70">
+        {list.map((item, index) => (
+          <li key={index} className="relative pl-4 before:absolute before:left-0 before:top-3 before:h-1 before:w-1 before:bg-[#ff4a8d]">
+            {item}
+          </li>
+        ))}
       </ul>
     );
     list = [];
@@ -50,13 +58,21 @@ function renderMarkdown(content: string) {
     if (trimmed.startsWith("### ")) {
       flushParagraph();
       flushList();
-      blocks.push(<h3 key={`h3-${blocks.length}`} className="mb-4 mt-10 text-2xl font-black text-dark-900">{trimmed.replace(/^###\s+/, "")}</h3>);
+      blocks.push(
+        <h3 key={`h3-${blocks.length}`} className="mb-4 mt-10 text-xl font-black uppercase italic tracking-tight text-white">
+          <span className="text-[#ff4a8d]">—</span> {trimmed.replace(/^###\s+/, "")}
+        </h3>
+      );
       return;
     }
     if (trimmed.startsWith("## ")) {
       flushParagraph();
       flushList();
-      blocks.push(<h2 key={`h2-${blocks.length}`} className="mb-5 mt-12 text-3xl font-black text-dark-900">{trimmed.replace(/^##\s+/, "")}</h2>);
+      blocks.push(
+        <h2 key={`h2-${blocks.length}`} className="mb-5 mt-12 text-2xl font-black uppercase italic tracking-tighter text-white border-l-2 border-[#ff4a8d] pl-4">
+          {trimmed.replace(/^##\s+/, "")}
+        </h2>
+      );
       return;
     }
     if (trimmed.startsWith("# ")) {
@@ -130,83 +146,143 @@ export default async function BlogArticlePage({ params }: ArticlePageProps) {
   const { article, linkedProducts, relatedArticles } = data;
 
   return (
-    <main className="bg-[#fbf8f4]">
+    <main className="bg-[#131313] text-[#e5e2e1] min-h-screen">
       <ArticleJsonLd article={article} />
-      <article>
-        <section className="relative overflow-hidden bg-dark-950 px-4 py-16 text-white sm:px-6 lg:px-8">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(214,162,92,0.34),transparent_42%)]" />
-          <div className="relative mx-auto max-w-4xl">
-            <Link href="/blog" className="mb-8 inline-flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-primary transition hover:text-white">
-              <ArrowLeft size={16} /> Retour au blog
-            </Link>
-            <p className="text-sm font-black uppercase tracking-[0.28em] text-primary">{article.category}</p>
-            <h1 className="mt-5 text-4xl font-black leading-tight sm:text-5xl lg:text-6xl">{article.title}</h1>
-            <p className="mt-6 text-xl leading-9 text-gray-300">{article.excerpt}</p>
-            <div className="mt-8 flex flex-wrap items-center gap-5 text-sm font-semibold uppercase tracking-[0.16em] text-gray-300">
-              <span className="inline-flex items-center gap-2"><CalendarDays size={16} />{formatDate(article.publishedAt)}</span>
-              <span className="inline-flex items-center gap-2"><Clock size={16} />{article.readTime} min</span>
-              <span className="inline-flex items-center gap-2"><Eye size={16} />{article.viewCount} vues</span>
+
+      {/* ── HEADER ARTICLE : image pleine largeur avec titre en overlay ── */}
+      <header className="relative overflow-hidden">
+        {/* Image de couverture */}
+        <div className="relative aspect-[16/7] w-full min-h-[320px] sm:min-h-[420px] lg:min-h-[520px]">
+          {article.coverImage ? (
+            <Image
+              src={article.coverImage}
+              alt={article.title}
+              fill
+              priority
+              className="object-cover"
+              sizes="100vw"
+            />
+          ) : (
+            <div className="absolute inset-0 bg-gradient-to-br from-[#0a0820] via-[#131313] to-[#0a0a0a]" />
+          )}
+          {/* Dégradé sombre pour lisibilité overlay */}
+          <div className="absolute inset-0 bg-gradient-to-t from-[#131313] via-black/60 to-black/20" />
+
+          {/* Fil d'Ariane */}
+          <nav className="absolute left-4 top-6 sm:left-8 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-white/50" aria-label="Fil d'Ariane">
+            <Link href="/" className="transition-colors hover:text-[#ff4a8d]">Accueil</Link>
+            <ChevronRight size={10} className="text-white/30" />
+            <Link href="/blog" className="transition-colors hover:text-[#ff4a8d]">Magazine</Link>
+            <ChevronRight size={10} className="text-white/30" />
+            <span className="text-white/30 line-clamp-1 max-w-[120px] sm:max-w-xs">{article.title}</span>
+          </nav>
+
+          {/* Contenu overlay */}
+          <div className="absolute bottom-0 left-0 right-0 px-4 pb-8 sm:px-8 sm:pb-12 lg:px-16 lg:pb-14">
+            {/* Badge catégorie */}
+            <div className="mb-4 inline-block bg-[#ff4a8d] px-3 py-1 text-[9px] font-black uppercase tracking-[0.25em] text-white">
+              {article.category}
+            </div>
+            <h1 className="max-w-4xl text-3xl font-black uppercase italic leading-tight tracking-tighter text-white sm:text-4xl lg:text-6xl">
+              {article.title}
+            </h1>
+            <p className="mt-4 max-w-2xl text-sm leading-7 text-white/60">{article.excerpt}</p>
+            <div className="mt-5 flex flex-wrap items-center gap-5 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/50">
+              <span className="inline-flex items-center gap-1.5"><CalendarDays size={12} />{formatDate(article.publishedAt)}</span>
+              <span className="inline-flex items-center gap-1.5"><Clock size={12} />{article.readTime} min de lecture</span>
+              <span className="inline-flex items-center gap-1.5"><Eye size={12} />{article.viewCount} vues</span>
             </div>
           </div>
-        </section>
+        </div>
+      </header>
 
-        {article.coverImage && (
-          <div className="mx-auto -mt-10 max-w-5xl px-4 sm:px-6 lg:px-8">
-            <div className="relative aspect-[16/8] overflow-hidden rounded-3xl bg-gray-100 shadow-2xl">
-              <Image src={article.coverImage} alt={article.title} fill priority className="object-cover" sizes="(max-width: 1024px) 100vw, 1024px" />
-            </div>
+      {/* ── CORPS DE L'ARTICLE ── */}
+      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:px-8 lg:py-16">
+        {/* Contenu principal */}
+        <article>
+          <div className="border border-white/5 bg-[#1c1b1b] p-6 sm:p-10 lg:p-12">
+            {renderMarkdown(article.content)}
           </div>
-        )}
 
-        <section className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:px-8">
-          <div className="rounded-3xl bg-white p-6 shadow-sm sm:p-10 lg:p-12">
-            <div className="prose max-w-none">{renderMarkdown(article.content)}</div>
-            <div className="mt-10 flex flex-wrap gap-2 border-t border-gray-100 pt-8">
+          {/* Tags */}
+          {article.tags.length > 0 && (
+            <div className="mt-6 flex flex-wrap gap-2 border-t border-white/5 pt-6">
               {article.tags.map((tag) => (
-                <Link key={tag} href={`/blog?tag=${encodeURIComponent(tag)}`} className="rounded-full bg-gray-50 px-4 py-2 text-sm font-bold text-gray-600 transition hover:bg-primary hover:text-white">
+                <Link
+                  key={tag}
+                  href={`/blog?tag=${encodeURIComponent(tag)}`}
+                  className="border border-white/10 bg-[#1c1b1b] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-white/50 transition-colors hover:border-[#ff4a8d]/50 hover:text-[#ff4a8d]"
+                >
                   #{tag}
                 </Link>
               ))}
             </div>
+          )}
+        </article>
+
+        {/* Sidebar */}
+        <aside className="space-y-6">
+          {/* CTA catalogue */}
+          <div className="border border-white/5 bg-[#1c1b1b] p-6">
+            <p className="text-[9px] font-black uppercase tracking-[0.3em] text-[#ff4a8d]">Conseil pro</p>
+            <h2 className="mt-3 text-xl font-black uppercase italic tracking-tight text-white">Besoin du bon matériel ?</h2>
+            <p className="mt-3 text-sm leading-7 text-white/50">
+              Explorez le catalogue Barber Paradise pour trouver des tondeuses, soins, accessoires et consommables adaptés à votre usage.
+            </p>
+            <Link
+              href="/catalogue"
+              className="mt-6 inline-flex items-center gap-2 bg-[#ff4a8d] px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white transition-colors hover:bg-[#ff1f70]"
+            >
+              <ShoppingBag size={14} /> Catalogue
+            </Link>
           </div>
 
-          <aside className="space-y-6">
-            <div className="rounded-3xl bg-dark-900 p-6 text-white shadow-sm">
-              <p className="text-sm font-black uppercase tracking-[0.24em] text-primary">Conseil pro</p>
-              <h2 className="mt-3 text-2xl font-black">Besoin du bon matériel ?</h2>
-              <p className="mt-3 text-sm leading-7 text-gray-300">Explorez le catalogue Barber Paradise pour trouver des tondeuses, soins, accessoires et consommables adaptés à votre usage.</p>
-              <Link href="/catalogue" className="mt-6 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-black uppercase tracking-[0.16em] text-white transition hover:bg-primary-600">
-                <ShoppingBag size={16} /> Catalogue
+          {/* Articles liés */}
+          {relatedArticles.length > 0 && (
+            <div className="border border-white/5 bg-[#1c1b1b] p-6">
+              <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-[#ff4a8d]">À lire aussi</h2>
+              <div className="mt-5 space-y-0 divide-y divide-white/5">
+                {relatedArticles.map((related) => (
+                  <Link
+                    key={related.id}
+                    href={`/blog/${related.slug}`}
+                    className="group block py-5 first:pt-0 last:pb-0"
+                  >
+                    <p className="text-[9px] font-black uppercase tracking-[0.22em] text-[#ff4a8d]">{related.category}</p>
+                    <h3 className="mt-2 text-sm font-black uppercase italic leading-snug tracking-tight text-white transition-colors group-hover:text-[#ff4a8d]">
+                      {related.title}
+                    </h3>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+        </aside>
+      </div>
+
+      {/* ── PRODUITS RECOMMANDÉS ── */}
+      {linkedProducts.length > 0 && (
+        <section className="border-t border-white/5 px-4 py-14 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-7xl">
+            <div className="mb-8 flex items-end justify-between gap-4">
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-[0.35em] text-[#ff4a8d]">Sélection associée</p>
+                <h2 className="mt-2 text-2xl font-black uppercase italic tracking-tighter text-white">
+                  Produits recommandés
+                </h2>
+              </div>
+              <Link
+                href="/catalogue"
+                className="hidden text-[10px] font-black uppercase tracking-[0.2em] text-white/40 transition-colors hover:text-[#ff4a8d] sm:inline-flex"
+              >
+                Voir tout
               </Link>
             </div>
-            {relatedArticles.length > 0 && (
-              <div className="rounded-3xl bg-white p-6 shadow-sm">
-                <h2 className="text-xl font-black text-dark-900">À lire aussi</h2>
-                <div className="mt-5 space-y-5">
-                  {relatedArticles.map((related) => (
-                    <Link key={related.id} href={`/blog/${related.slug}`} className="block border-b border-gray-100 pb-5 last:border-0 last:pb-0">
-                      <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">{related.category}</p>
-                      <h3 className="mt-2 font-black leading-snug text-dark-900 transition hover:text-primary">{related.title}</h3>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
-          </aside>
-        </section>
-      </article>
-
-      {linkedProducts.length > 0 && (
-        <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6 lg:px-8">
-          <div className="mb-8 flex items-end justify-between gap-4">
-            <div>
-              <p className="text-sm font-black uppercase tracking-[0.24em] text-primary">Sélection associée</p>
-              <h2 className="mt-2 text-3xl font-black text-dark-900">Produits recommandés dans cet article</h2>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 lg:gap-6">
+              {linkedProducts.map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
             </div>
-            <Link href="/catalogue" className="hidden text-sm font-black uppercase tracking-[0.16em] text-primary hover:text-dark-900 sm:inline-flex">Voir tout</Link>
-          </div>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 lg:gap-6">
-            {linkedProducts.map((product) => <ProductCard key={product.id} product={product} />)}
           </div>
         </section>
       )}
