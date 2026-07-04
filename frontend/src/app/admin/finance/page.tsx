@@ -9,7 +9,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import {
-  downloadIndyCsv,
+  downloadFinanceXlsx,
   getIndyReport,
   IndyReport,
   sendIndyReportEmail,
@@ -88,23 +88,23 @@ export default function AdminFinancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month]);
 
-  const handleDownloadCsv = async () => {
+  const handleDownloadXlsx = async () => {
     setIsDownloading(true);
     setError(null);
     setSuccess(null);
     try {
-      const blob = await downloadIndyCsv(month);
+      const blob = await downloadFinanceXlsx(month);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `barberparadise-indy-${month}.csv`;
+      link.download = `barberparadise-finance-${month}.xlsx`;
       document.body.appendChild(link);
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      setSuccess("CSV Indy téléchargé avec succès.");
+      setSuccess("Export Excel téléchargé avec succès.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Téléchargement CSV impossible");
+      setError(err instanceof Error ? err.message : "Téléchargement Excel impossible");
     } finally {
       setIsDownloading(false);
     }
@@ -179,12 +179,12 @@ export default function AdminFinancePage() {
             </button>
             <button
               type="button"
-              onClick={handleDownloadCsv}
-              disabled={!report || isDownloading}
+              onClick={handleDownloadXlsx}
+              disabled={isDownloading}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-dark-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-dark-800 disabled:opacity-60"
             >
               <Download size={16} />
-              Télécharger CSV
+              {isDownloading ? "Génération..." : "Télécharger Excel"}
             </button>
             <button
               type="button"

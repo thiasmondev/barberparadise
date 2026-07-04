@@ -2031,6 +2031,36 @@ export async function downloadIndyCsv(month: string): Promise<Blob> {
   return res.blob();
 }
 
+export async function downloadFinanceXlsx(month: string): Promise<Blob> {
+  const token = getToken();
+  if (!token) throw new Error("Non authentifié");
+
+  const res = await fetch(
+    `${API_URL}/api/admin/finance/export-xlsx?month=${encodeURIComponent(month)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  if (res.status === 401) {
+    localStorage.removeItem("admin-token");
+    localStorage.removeItem("admin-user");
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("admin-session-expired"));
+    }
+    throw new Error("Session expirée");
+  }
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error((data as { error?: string }).error || `Erreur ${res.status}`);
+  }
+
+  return res.blob();
+}
+
 export function sendIndyReportEmail(month: string) {
   return adminFetch<{
     sent: boolean;

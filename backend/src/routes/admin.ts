@@ -27,7 +27,9 @@ import {
   buildIndyReport,
   IndyReport,
   previousMonthKey,
+  parseIndyMonth,
 } from "../services/indyReportService";
+import { generateFinanceExcel } from "../services/exportExcelService";
 import {
   buildShipmentQuotes,
   createOfficialShipmentLabel,
@@ -1450,6 +1452,25 @@ adminRouter.get(
     } catch (error) {
       console.error("[indy-report] CSV impossible", error);
       res.status(400).json({ error: error instanceof Error ? error.message : "CSV Indy impossible" });
+    }
+  }
+);
+
+// GET /api/admin/finance/export-xlsx?month=YYYY-MM — Export Excel complet 4 onglets
+adminRouter.get(
+  "/finance/export-xlsx",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { month } = parseIndyMonth(req.query.month);
+      const buffer = await generateFinanceExcel(req.query.month);
+      
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename=\"barberparadise-finance-${month}.xlsx\"`);
+      res.send(buffer);
+    } catch (error) {
+      console.error("[finance-export] Excel impossible", error);
+      res.status(400).json({ error: error instanceof Error ? error.message : "Export Excel impossible" });
     }
   }
 );
