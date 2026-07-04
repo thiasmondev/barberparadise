@@ -554,12 +554,16 @@ export async function extractProductSourceFromUrl(url: string): Promise<ProductU
 
       finalStatus = response.status;
 
-      // Collect cookies
+      // Collect cookies — utiliser indexOf pour ne pas tronquer les valeurs contenant '=' (ex: base64)
       const setCookies = response.headers.getSetCookie ? response.headers.getSetCookie() : [];
       for (const c of setCookies) {
         const [kv] = c.split(";");
-        const [k, v] = kv.split("=");
-        if (k && v) cookies[k.trim()] = v.trim();
+        const eqIdx = kv.indexOf("=");
+        if (eqIdx > 0) {
+          const k = kv.slice(0, eqIdx).trim();
+          const v = kv.slice(eqIdx + 1).trim();
+          if (k) cookies[k] = v;
+        }
       }
 
       if (response.status >= 300 && response.status < 400) {
@@ -569,17 +573,30 @@ export async function extractProductSourceFromUrl(url: string): Promise<ProductU
         redirectCount++;
       } else {
         if (!response.ok) {
-          if (response.status === 403 || response.status === 503) {
+          if (response.status === 400 || response.status === 403 || response.status === 503) {
+            // Logger le body de la réponse pour traçabilité (utile pour diagnostiquer les 400 Demandware)
+            const errorBody = await response.text().catch(() => "");
+            console.error(`SEO Scraping HTTP ${response.status} body:`, errorBody.slice(0, 500));
             // Tentative de fallback via Jina.ai Reader API pour contourner le blocage
             console.log(`Fallback Jina.ai activé suite à HTTP ${response.status} sur ${currentUrl}`);
             const jinaUrl = `https://r.jina.ai/${currentUrl}`;
-            const jinaResponse = await fetch(jinaUrl, {
-              signal: controller.signal,
-              headers: { "Accept": "text/html" } // Demander du HTML si possible, sinon Jina renvoie du Markdown encapsulé
-            });
-            if (jinaResponse.ok) {
-              html = (await jinaResponse.text()).slice(0, 2_500_000);
-              break;
+            const jinaController = new AbortController();
+            const jinaTimeout = setTimeout(() => jinaController.abort(), 30000);
+            try {
+              const jinaResponse = await fetch(jinaUrl, {
+                signal: jinaController.signal,
+                headers: { "Accept": "text/html" },
+              });
+              if (jinaResponse.ok) {
+                html = (await jinaResponse.text()).slice(0, 2_500_000);
+                console.log(`Fallback Jina.ai réussi pour ${currentUrl}`);
+                break;
+              }
+            } finally {
+              clearTimeout(jinaTimeout);
+            }
+            if (response.status === 400) {
+              throw new Error(`Requête rejetée par le site source (HTTP 400) — le site n'a pas accepté la requête automatique`);
             }
             throw new Error(`Le site source bloque les accès automatiques (HTTP ${response.status}) — essayez de copier-coller le contenu manuellement`);
           }
