@@ -1475,7 +1475,7 @@ adminRouter.get(
   }
 );
 
-// POST /api/admin/finance/indy-report/send-email — Envoi manuel ou mensuel du CSV Indy
+// POST /api/admin/finance/indy-report/send-email — Envoi manuel du bilan mensuel avec pièce jointe Excel
 adminRouter.post(
   "/finance/indy-report/send-email",
   requireAdmin,
@@ -1485,20 +1485,19 @@ adminRouter.post(
       const month = body?.month || (body?.monthly === true ? previousMonthKey() : undefined);
       const report = await buildIndyReport(month);
       const cfoAnalysis = await generateIndyCfoAnalysis(report);
-      const csv = buildIndyCsv(report);
+      const xlsxBuffer = await generateFinanceExcel(month);
       const to = getIndyEmailRecipient(req);
       const emailResult = await sendEmail({
         to,
-        subject: `Bilan mensuel Indy Barber Paradise — ${report.month}`,
+        subject: `Bilan mensuel Barber Paradise — ${report.month}`,
         html: buildIndyEmailHtml(report, cfoAnalysis),
         attachments: [
           {
-            filename: `barberparadise-indy-${report.month}.csv`,
-            content: Buffer.from(csv, "utf8").toString("base64"),
+            filename: `barberparadise-finance-${report.month}.xlsx`,
+            content: xlsxBuffer.toString("base64"),
           },
         ],
       });
-
       res.json({ sent: emailResult.sent, skipped: emailResult.skipped || false, id: emailResult.id, month: report.month, to, cfoAnalysis });
     } catch (error) {
       console.error("[indy-report] Email impossible", error);
@@ -1513,15 +1512,16 @@ adminRouter.post(
   requireAdmin,
   async (req: AuthRequest, res: Response): Promise<void> => {
     req.body = { ...(req.body || {}), monthly: true };
-    const report = await buildIndyReport(previousMonthKey());
+    const prevMonth = previousMonthKey();
+    const report = await buildIndyReport(prevMonth);
     const cfoAnalysis = await generateIndyCfoAnalysis(report);
-    const csv = buildIndyCsv(report);
+    const xlsxBuffer = await generateFinanceExcel(prevMonth);
     const to = getIndyEmailRecipient(req);
     const emailResult = await sendEmail({
       to,
-      subject: `Bilan mensuel Indy Barber Paradise — ${report.month}`,
+      subject: `Bilan mensuel Barber Paradise — ${report.month}`,
       html: buildIndyEmailHtml(report, cfoAnalysis),
-      attachments: [{ filename: `barberparadise-indy-${report.month}.csv`, content: Buffer.from(csv, "utf8").toString("base64") }],
+      attachments: [{ filename: `barberparadise-finance-${report.month}.xlsx`, content: xlsxBuffer.toString("base64") }],
     });
     res.json({ sent: emailResult.sent, skipped: emailResult.skipped || false, id: emailResult.id, month: report.month, to, cfoAnalysis });
   }
