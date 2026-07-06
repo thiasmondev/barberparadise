@@ -437,6 +437,7 @@ checkoutRouter.get("/draft/:token", async (req: Request, res: Response): Promise
     }
 
     const tokenHash = hashDraftShareToken(token);
+    const { promotions, categoryTargets } = await getActiveAutomaticProductPromotions();
     const draft = await prisma.order.findFirst({
       where: {
         status: "draft",
@@ -484,7 +485,7 @@ checkoutRouter.get("/draft/:token", async (req: Request, res: Response): Promise
             variantId: item.variantId,
             variantLabel: item.variantLabel,
             name: item.name,
-            price: item.price,
+            price: getBestAutomaticPromotionForProduct(item.product as any, item.price, promotions, categoryTargets, draft.isB2B)?.price ?? item.price,
             quantity: item.quantity,
             discountAmount: item.discountAmount,
             lineDiscountType: item.lineDiscountType,
@@ -502,7 +503,7 @@ checkoutRouter.get("/draft/:token", async (req: Request, res: Response): Promise
               color: variant.color || "",
               colorHex: variant.colorHex || "",
               size: variant.size || "",
-              price: variant.price,
+              price: getBestAutomaticPromotionForProduct(item.product as any, variant.price ?? item.product?.price ?? item.price, promotions, categoryTargets, draft.isB2B)?.price ?? variant.price,
               priceProEur: variant.priceProEur,
               pricePublic: variant.price ?? item.product?.price ?? item.price,
               stock: variant.stock,
@@ -547,6 +548,7 @@ checkoutRouter.get("/abandoned-cart/restore", async (req: Request, res: Response
           .filter((id): id is string => Boolean(id))
       : [];
 
+    const { promotions, categoryTargets } = await getActiveAutomaticProductPromotions();
     const products = productIds.length
       ? await prisma.product.findMany({ where: { id: { in: productIds } }, include: { variants: { orderBy: { order: "asc" } } } })
       : [];
@@ -576,7 +578,7 @@ checkoutRouter.get("/abandoned-cart/restore", async (req: Request, res: Response
               category: product?.category || "",
               subcategory: product?.subcategory || "",
               subsubcategory: product?.subsubcategory || "",
-              price: product?.price ?? item.price,
+              price: product ? (getBestAutomaticPromotionForProduct(product as any, product.price ?? item.price, promotions, categoryTargets, false)?.price ?? product.price) : item.price,
               pricePublic: product?.price || item.price,
               priceProEur: product?.priceProEur ?? null,
               originalPrice: product?.originalPrice ?? null,
@@ -603,9 +605,9 @@ checkoutRouter.get("/abandoned-cart/restore", async (req: Request, res: Response
                 color: variant.color || "",
                 colorHex: variant.colorHex || "",
                 size: variant.size || "",
-                price: variant.price,
-                priceProEur: variant.priceProEur,
-                pricePublic: variant.price ?? product.price,
+              price: product ? (getBestAutomaticPromotionForProduct(product as any, variant.price ?? product.price ?? item.price, promotions, categoryTargets, false)?.price ?? variant.price) : variant.price,
+              priceProEur: variant.priceProEur,
+              pricePublic: variant.price ?? product.price,
                 stock: variant.stock,
                 inStock: variant.inStock,
                 sku: variant.sku || "",
