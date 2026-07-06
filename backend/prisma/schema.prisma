@@ -318,10 +318,13 @@ model Order {
   orderNumber       String   @unique
   customerId        String?
   email             String
-  status            String   @default("pending") // draft, pending, pending_payment, paid, processing, shipped, delivered, cancelled
+  status            String   @default("pending") // draft, pending, pending_payment, paid, processing, shipped, delivered, cancelled, refunded, partially_refunded
   paymentMethod     String   @default("card")
   paymentProvider   String?
   providerPaymentId String?
+  refundedAmount    Float    @default(0)
+  refundedAt        DateTime?
+  refundMode        String?
   subtotal          Float
   shipping          Float    @default(0)
   total             Float

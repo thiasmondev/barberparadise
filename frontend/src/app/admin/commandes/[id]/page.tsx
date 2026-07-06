@@ -19,6 +19,7 @@ import {
   Pencil,
   Phone,
   RefreshCw,
+  RotateCcw,
   Scale,
   Save,
   Send,
@@ -45,6 +46,7 @@ import {
   getLogisticsOrder,
   getShipmentLabelPdfUrl,
   purchaseLogisticsLabel,
+  refundAdminOrder,
   resendOrderConfirmation,
   resendOrderTracking,
   updateAdminOrder,
@@ -286,6 +288,11 @@ export default function OrderDetailPage() {
   const [resendingConfirmation, setResendingConfirmation] = useState(false);
   const [resendingTracking, setResendingTracking] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
+  const [isRefunding, setIsRefunding] = useState(false);
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundMode, setRefundMode] = useState<"real" | "manual">("real");
+  const [refundError, setRefundError] = useState("");
+  const [refundSuccess, setRefundSuccess] = useState("");
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
   const [isSendingInvoice, setIsSendingInvoice] = useState(false);
   const [invoiceSentSuccess, setInvoiceSentSuccess] = useState(false);
@@ -844,6 +851,40 @@ export default function OrderDetailPage() {
     }
   };
 
+  const handleRefund = async () => {
+    if (!order) return;
+    setRefundError("");
+    setRefundSuccess("");
+    const amount = parseFloat(refundAmount.replace(",", "."));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setRefundError("Veuillez saisir un montant valide.");
+      return;
+    }
+    const totalPaid = order.totalTTC || order.total;
+    const maxRefundable = totalPaid - (order.refundedAmount || 0);
+    if (amount > maxRefundable + 0.01) {
+      setRefundError(`Le montant dépasse le remboursable restant (${formatPrice(maxRefundable, order.currency)}).`);
+      return;
+    }
+    const modeLabel = refundMode === "real" ? "réel (via " + (order.paymentProvider || "passerelle") + ")" : "manuel (enregistrement uniquement)";
+    const confirmed = window.confirm(
+      `Rembourser ${formatPrice(amount, order.currency)} sur la commande ${order.orderNumber} ?\n\nMode : ${modeLabel}\n\nCette action est irréversible.`
+    );
+    if (!confirmed) return;
+    setIsRefunding(true);
+    try {
+      const result = await refundAdminOrder(order.id, { amount, mode: refundMode });
+      setOrder((prev) => prev ? { ...prev, status: result.status, refundedAmount: result.refundedAmount } : prev);
+      setRefundSuccess(`Remboursement de ${formatPrice(amount, order.currency)} enregistré avec succès.`);
+      setRefundAmount("");
+      setTimeout(() => setRefundSuccess(""), 6000);
+    } catch (err: any) {
+      setRefundError(err.message || "Impossible d'effectuer le remboursement.");
+    } finally {
+      setIsRefunding(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
@@ -1102,6 +1143,81 @@ export default function OrderDetailPage() {
                 </div>
               </div>
             </section>
+
+            {/* Bloc Remboursement — visible uniquement si la commande a été payée et n'est pas encore totalement remboursée */}
+            {["paid", "processing", "shipped", "delivered", "partially_refunded"].includes(order.status) && (
+              <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <RotateCcw className="mt-0.5 h-5 w-5 text-amber-600" />
+                  <div className="flex-1">
+                    <h2 className="font-semibold text-amber-950">Remboursement</h2>
+                    {order.refundedAmount && order.refundedAmount > 0 ? (
+                      <p className="mt-1 text-sm text-amber-700">
+                        Déjà remboursé : <strong>{formatPrice(order.refundedAmount, order.currency)}</strong> — Restant remboursable : <strong>{formatPrice((order.totalTTC || order.total) - order.refundedAmount, order.currency)}</strong>
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-sm text-amber-700">Remboursez tout ou partie du montant payé. Choisissez le mode selon la passerelle utilisée.</p>
+                    )}
+
+                    <div className="mt-4 space-y-3">
+                      {/* Montant */}
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-amber-900">Montant à rembourser (€)</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            max={(order.totalTTC || order.total) - (order.refundedAmount || 0)}
+                            value={refundAmount}
+                            onChange={(e) => setRefundAmount(e.target.value)}
+                            placeholder={`Max. ${formatPrice((order.totalTTC || order.total) - (order.refundedAmount || 0), order.currency)}`}
+                            className="flex-1 rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setRefundAmount(((order.totalTTC || order.total) - (order.refundedAmount || 0)).toFixed(2))}
+                            className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-medium text-amber-700 hover:bg-amber-100"
+                          >
+                            Tout
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Mode */}
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-amber-900">Mode de remboursement</label>
+                        <select
+                          value={refundMode}
+                          onChange={(e) => setRefundMode(e.target.value as "real" | "manual")}
+                          className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                        >
+                          <option value="real">Réel — via {order.paymentProvider === "paypal" ? "PayPal" : "Mollie"}</option>
+                          <option value="manual">Manuel — enregistrement uniquement</option>
+                        </select>
+                        {refundMode === "real" && !order.providerPaymentId && (
+                          <p className="mt-1 text-xs text-amber-600">⚠️ Aucun ID de paiement — le remboursement réel sera impossible.</p>
+                        )}
+                      </div>
+
+                      {/* Messages */}
+                      {refundError && <p className="rounded-lg bg-rose-100 px-3 py-2 text-xs text-rose-700">{refundError}</p>}
+                      {refundSuccess && <p className="rounded-lg bg-emerald-100 px-3 py-2 text-xs text-emerald-700">{refundSuccess}</p>}
+
+                      {/* Bouton */}
+                      <button
+                        onClick={handleRefund}
+                        disabled={isRefunding || !refundAmount}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isRefunding ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                        Effectuer le remboursement
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
 
             <section className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm">
               <div className="flex items-start gap-3">

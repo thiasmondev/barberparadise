@@ -963,6 +963,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         return;
       }
       if (selectedVariant) {
+        // Vérification stricte : le stock doit être > 0 ET inStock = true
         if (!selectedVariant.inStock || selectedVariant.stock <= 0) {
           res.status(400).json({ error: `Variante indisponible : ${product.name} - ${selectedVariant.name}` });
           return;
@@ -976,7 +977,13 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
           res.status(400).json({ error: `Produit indisponible : ${product.name}` });
           return;
         }
-        if (product.stockCount > 0 && product.stockCount < item.quantity) {
+        // Correction : stockCount === 0 doit aussi bloquer la commande
+        // (avant : la condition "stockCount > 0" laissait passer les stocks à 0)
+        if (product.stockCount !== null && product.stockCount <= 0) {
+          res.status(400).json({ error: `Produit hors-stock : ${product.name}` });
+          return;
+        }
+        if (product.stockCount !== null && product.stockCount < item.quantity) {
           res.status(400).json({ error: `Stock insuffisant pour ${product.name}` });
           return;
         }

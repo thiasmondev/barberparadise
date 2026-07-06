@@ -5073,6 +5073,179 @@ adminRouter.get(
   }
 );
 
+// POST /api/admin/orders/:id/refund — Rembourser une commande
+adminRouter.post("/orders/:id/refund", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { amount, mode } = req.body;
+
+    if (!amount || amount <= 0) {
+      res.status(400).json({ error: "Le montant du remboursement doit être supérieur à 0." });
+      return;
+    }
+
+    if (!["real", "manual"].includes(mode)) {
+      res.status(400).json({ error: "Mode de remboursement invalide." });
+      return;
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: { items: true },
+    });
+
+    if (!order) {
+      res.status(404).json({ error: "Commande introuvable." });
+      return;
+    }
+
+    const totalPaid = order.totalTTC || order.total;
+    const maxRefundable = totalPaid - order.refundedAmount;
+
+    if (amount > maxRefundable) {
+      res.status(400).json({ error: `Le montant demandé (${amount}€) dépasse le montant remboursable restant (${maxRefundable}€).` });
+      return;
+    }
+
+    // Effectuer le remboursement réel si demandé
+    if (mode === "real") {
+      if (!order.providerPaymentId) {
+        res.status(400).json({ error: "Impossible de faire un remboursement réel : aucun ID de paiement trouvé sur cette commande." });
+        return;
+      }
+
+      if (order.paymentProvider === "mollie") {
+        try {
+          const { createMollieClient } = await import("@mollie/api-client");
+          const mollieClient = createMollieClient({ apiKey: process.env.MOLLIE_API_KEY! });
+          await mollieClient.paymentRefunds.create({
+            paymentId: order.providerPaymentId,
+            amount: {
+              value: amount.toFixed(2),
+              currency: "EUR",
+            },
+          });
+        } catch (error: any) {
+          console.error("Erreur API Mollie Refund:", error);
+          res.status(500).json({ error: "Échec du remboursement via Mollie: " + (error.message || "Erreur inconnue") });
+          return;
+        }
+      } else if (order.paymentProvider === "paypal") {
+        try {
+          const fetch = (await import("node-fetch")).default;
+          // Obtenir un token PayPal
+          const auth = Buffer.from(`${process.env.PAYPAL_CLIENT_ID}:${process.env.PAYPAL_CLIENT_SECRET}`).toString("base64");
+          const tokenRes = await fetch("https://api-m.paypal.com/v1/oauth2/token", {
+            method: "POST",
+            headers: {
+              Authorization: `Basic ${auth}`,
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: "grant_type=client_credentials",
+          });
+          const tokenData = await tokenRes.json();
+          if (!tokenData.access_token) throw new Error("Impossible d'obtenir un token PayPal");
+
+          // Rembourser
+          const refundRes = await fetch(`https://api-m.paypal.com/v2/payments/captures/${order.providerPaymentId}/refund`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${tokenData.access_token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              amount: {
+                value: amount.toFixed(2),
+                currency_code: "EUR",
+              },
+            }),
+          });
+          
+          if (!refundRes.ok) {
+            const errorData = await refundRes.json();
+            throw new Error(errorData.message || JSON.stringify(errorData));
+          }
+        } catch (error: any) {
+          console.error("Erreur API PayPal Refund:", error);
+          res.status(500).json({ error: "Échec du remboursement via PayPal: " + (error.message || "Erreur inconnue") });
+          return;
+        }
+      } else {
+        res.status(400).json({ error: `Le remboursement réel n'est pas supporté pour le prestataire : ${order.paymentProvider}` });
+        return;
+      }
+    }
+
+    const newRefundedAmount = order.refundedAmount + amount;
+    // Tolérance de 1 centime pour les erreurs d'arrondi
+    const isTotalRefund = newRefundedAmount >= totalPaid - 0.01;
+    const newStatus = isTotalRefund ? "refunded" : "partially_refunded";
+
+    // Mise à jour de la commande
+    await prisma.order.update({
+      where: { id },
+      data: {
+        status: newStatus,
+        refundedAmount: newRefundedAmount,
+        refundedAt: new Date(),
+        refundMode: mode,
+      },
+    });
+
+    // Ajouter un événement dans la timeline (via une note pour le moment)
+    const refundNote = `Remboursement de ${amount}€ effectué le ${new Date().toLocaleDateString("fr-FR")} (Mode: ${mode})`;
+    await prisma.order.update({
+      where: { id },
+      data: {
+        notes: order.notes ? `${order.notes}\n${refundNote}` : refundNote,
+      },
+    });
+
+    // Réintégration du stock si remboursement total et non déjà réintégré
+    if (isTotalRefund && !order.stockRestored) {
+      await prisma.$transaction(async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => {
+        for (const item of order.items) {
+          if (!item.productId) continue;
+
+          if (item.variantId) {
+            await tx.productVariant.update({
+              where: { id: item.variantId },
+              data: {
+                stock: { increment: item.quantity },
+                inStock: true,
+              },
+            });
+
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { inStock: true },
+            });
+            continue;
+          }
+
+          await tx.product.update({
+            where: { id: item.productId },
+            data: {
+              stockCount: { increment: item.quantity },
+              inStock: true,
+            },
+          });
+        }
+
+        await tx.order.update({
+          where: { id },
+          data: { stockRestored: true },
+        });
+      });
+    }
+
+    res.json({ success: true, status: newStatus, refundedAmount: newRefundedAmount });
+  } catch (error) {
+    console.error("Erreur lors du remboursement:", error);
+    res.status(500).json({ error: "Une erreur est survenue lors du remboursement." });
+  }
+});
+
 // GET /api/admin/orders/:id — Détail d'une commande
 adminRouter.get(
   "/orders/:id",

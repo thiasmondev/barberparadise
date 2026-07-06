@@ -209,6 +209,9 @@ export interface Order {
   relayPointId?: string | null;
   relayPointName?: string | null;
   relayPointAddress?: string | null;
+  refundedAmount?: number;
+  refundedAt?: string | null;
+  refundMode?: string | null;
   createdAt: string;
   updatedAt: string;
   customer?: {

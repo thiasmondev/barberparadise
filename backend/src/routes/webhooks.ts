@@ -110,6 +110,11 @@ async function markOrderPaid(orderId: string, provider: WebhookProvider, provide
         if (item.variantId) {
           const variant = await tx.productVariant.findUnique({ where: { id: item.variantId } });
           if (!variant) continue;
+          // Vérification atomique anti-race-condition : si le stock est insuffisant au moment
+          // de la décrémentation, on log l'anomalie mais on ne bloque pas (le paiement est déjà confirmé)
+          if (variant.stock < item.quantity) {
+            console.warn(`[stock] Race condition détectée : commande ${orderId}, variante ${item.variantId}, stock=${variant.stock}, qté=${item.quantity}`);
+          }
           const nextVariantStock = Math.max(0, variant.stock - item.quantity);
           await tx.productVariant.update({
             where: { id: item.variantId },

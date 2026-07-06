@@ -402,6 +402,13 @@ export function deleteAdminOrder(id: string) {
   return adminFetch<{ success: boolean }>(`/api/admin/orders/${id}`, { method: "DELETE" });
 }
 
+export function refundAdminOrder(id: string, payload: { amount: number; mode: "real" | "manual" }) {
+  return adminFetch<{ success: boolean; status: string; refundedAmount: number }>(`/api/admin/orders/${id}/refund`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export interface AdminShipmentLabelItem {
   id: string;
   orderId: string;
