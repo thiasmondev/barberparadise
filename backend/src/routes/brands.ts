@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
 import jwt from "jsonwebtoken";
+import { getActiveAutomaticProductPromotions, getBestAutomaticPromotionForProduct } from "../services/productPricingService";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -37,20 +38,37 @@ async function isApprovedProRequest(req: Request): Promise<boolean> {
   }
 }
 
-function serializeBrandProduct<T extends BrandProduct>(product: T, isApprovedPro: boolean) {
+function serializeBrandProduct<T extends BrandProduct>(product: T, isApprovedPro: boolean, promotions: any[] = [], categoryTargets: any = { categoryIds: new Set(), categorySlugs: new Set() }) {
   const hasPriceProEur = typeof product.priceProEur === "number" && product.priceProEur > 0;
   const pricePublic = product.price;
   const price = isApprovedPro && hasPriceProEur ? product.priceProEur! : pricePublic;
+  
+  const productForPromotion = product as any;
+  const automaticPromotion = getBestAutomaticPromotionForProduct(productForPromotion, pricePublic, promotions, categoryTargets, isApprovedPro);
+  
   const variants = product.variants?.map((variant) => {
     const variantPublicPrice = variant.price ?? pricePublic;
     const variantHasPriceProEur = typeof variant.priceProEur === "number" && variant.priceProEur > 0;
+    
+    const variantAutomaticPromotion = !isApprovedPro
+      ? getBestAutomaticPromotionForProduct(productForPromotion, variantPublicPrice, promotions, categoryTargets, isApprovedPro)
+      : null;
+      
     const variantPrice = isApprovedPro
       ? (variantHasPriceProEur ? variant.priceProEur! : (hasPriceProEur ? product.priceProEur! : variantPublicPrice))
-      : variantPublicPrice;
+      : (variantAutomaticPromotion ? variantAutomaticPromotion.price : variantPublicPrice);
+      
     const serializedVariant = {
       ...variant,
       price: variantPrice,
       pricePublic: variantPublicPrice,
+      compareAtPrice: variantAutomaticPromotion ? variantAutomaticPromotion.compareAtPrice : null,
+      originalPrice: variantAutomaticPromotion ? variantAutomaticPromotion.compareAtPrice : null,
+      isPromo: Boolean(variantAutomaticPromotion),
+      ...(variantAutomaticPromotion ? {
+        automaticPromotionName: variantAutomaticPromotion.promotionName,
+        automaticPromotionDiscountPercent: variantAutomaticPromotion.discountPercent,
+      } : {}),
       hasPriceProEur: variantHasPriceProEur || (isApprovedPro && hasPriceProEur),
     };
     if (!isApprovedPro) {
@@ -59,11 +77,24 @@ function serializeBrandProduct<T extends BrandProduct>(product: T, isApprovedPro
     }
     return serializedVariant;
   });
+  const existingCompareAtPrice = (product as any).compareAtPrice ?? (product as any).originalPrice ?? null;
+  const salePrice = automaticPromotion && !isApprovedPro ? automaticPromotion.price : price;
+  const compareAtPrice = automaticPromotion && !isApprovedPro
+    ? automaticPromotion.compareAtPrice
+    : existingCompareAtPrice;
+    
   const serialized = {
     ...product,
     ...(variants ? { variants } : {}),
-    price,
+    price: salePrice,
     pricePublic,
+    compareAtPrice,
+    originalPrice: compareAtPrice,
+    isPromo: Boolean((product as any).isPromo || (compareAtPrice && compareAtPrice > salePrice)),
+    ...(automaticPromotion && !isApprovedPro ? {
+      automaticPromotionName: automaticPromotion.promotionName,
+      automaticPromotionDiscountPercent: automaticPromotion.discountPercent,
+    } : {}),
     isPro: isApprovedPro,
     hasPriceProEur,
   };
@@ -142,7 +173,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
 
     const where = { brandId: brand.id, status: "active" };
 
-    const [products, total, isApprovedPro] = await Promise.all([
+    const [products, total, isApprovedPro, promotionData] = await Promise.all([
       prisma.product.findMany({
         where,
         orderBy,
@@ -172,6 +203,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
       }),
       prisma.product.count({ where }),
       isApprovedProRequest(req),
+      getActiveAutomaticProductPromotions(),
     ]);
 
     res.json({
@@ -184,7 +216,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
         bannerImage: brand.bannerImage,
         website: brand.website,
       },
-      products: products.map((product) => serializeBrandProduct(product, isApprovedPro)),
+      products: products.map((product) => serializeBrandProduct(product, isApprovedPro, promotionData.promotions, promotionData.categoryTargets)),
       pagination: {
         total,
         pages: Math.ceil(total / limit),

@@ -20,6 +20,7 @@ import {
   normalizeAbandonedCartItems,
   verifyAbandonedCartToken,
 } from "../services/abandonedCartReminderService";
+import { getActiveAutomaticProductPromotions, getBestAutomaticPromotionForProduct } from "../services/productPricingService";
 
 export const checkoutRouter = Router();
 
@@ -931,6 +932,9 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
     const promotionCartItems: Array<{ productId: string; categoryId?: string | null; quantity: number; price: number }> = [];
     let subtotalTTC = 0;
     let subtotalHT = 0;
+    
+    const promotionData = await getActiveAutomaticProductPromotions();
+    
     for (const item of body.cartItems) {
       const productId = item.productId || item.id;
       const variantId = typeof item.variantId === "string" && item.variantId.trim() ? item.variantId.trim() : null;
@@ -979,9 +983,20 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       }
 
       const publicTtcPrice = selectedVariant?.price ?? product.price;
+      
+      const automaticPromotion = !isB2B ? getBestAutomaticPromotionForProduct(
+        product as any,
+        publicTtcPrice,
+        promotionData.promotions,
+        promotionData.categoryTargets,
+        isB2B
+      ) : null;
+      
+      const effectivePublicTtcPrice = automaticPromotion ? automaticPromotion.price : publicTtcPrice;
+      
       const proHtPrice = selectedVariant?.priceProEur ?? product.priceProEur ?? publicTtcPrice / (1 + STANDARD_VAT_RATE / 100);
-      const unitHT = isB2B ? money(proHtPrice) : money(publicTtcPrice / (1 + STANDARD_VAT_RATE / 100));
-      const unitTTC = isB2B ? money(unitHT * (1 + getVatRate(country, true, vatNumber) / 100)) : publicTtcPrice;
+      const unitHT = isB2B ? money(proHtPrice) : money(effectivePublicTtcPrice / (1 + STANDARD_VAT_RATE / 100));
+      const unitTTC = isB2B ? money(unitHT * (1 + getVatRate(country, true, vatNumber) / 100)) : effectivePublicTtcPrice;
       subtotalHT += unitHT * item.quantity;
       subtotalTTC += unitTTC * item.quantity;
 
@@ -991,7 +1006,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         variantId: selectedVariant?.id || null,
         variantLabel: selectedVariant?.name || null,
         name: selectedVariant ? `${product.name} - ${selectedVariant.name}` : product.name,
-        price: isB2B ? unitHT : publicTtcPrice,
+        price: isB2B ? unitHT : effectivePublicTtcPrice,
         quantity: item.quantity,
         image: selectedVariant?.image || productImages[0] || "",
       });
@@ -999,7 +1014,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         productId: product.id,
         categoryId: product.category || null,
         quantity: item.quantity,
-        price: isB2B ? unitHT : publicTtcPrice,
+        price: isB2B ? unitHT : effectivePublicTtcPrice,
       });
     }
 
