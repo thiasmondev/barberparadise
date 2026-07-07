@@ -71,6 +71,21 @@ export async function runPostPaymentEffectsFromCapture(orderId: string, orderNum
 }
 
 async function markOrderCanceled(orderId: string, providerPaymentId?: string): Promise<void> {
+  const order = await prisma.order.findUnique({ where: { id: orderId }, select: { status: true, providerPaymentId: true, orderNumber: true } });
+  if (!order) return;
+  
+  // Règle 1: Ne jamais écraser une commande déjà payée, expédiée, livrée ou remboursée
+  if (["paid", "processing", "shipped", "delivered", "refunded", "partially_refunded"].includes(order.status)) {
+    console.log(`[webhook] markOrderCanceled IGNORÉ — Commande ${order.orderNumber} est déjà au statut '${order.status}' (paymentId reçu: ${providerPaymentId}, paymentId actif: ${order.providerPaymentId})`);
+    return;
+  }
+
+  // Règle 2: Ne traiter l'annulation que si le webhook concerne le dernier paiement initié (ou si aucun n'est stocké)
+  if (providerPaymentId && order.providerPaymentId && providerPaymentId !== order.providerPaymentId) {
+    console.log(`[webhook] markOrderCanceled IGNORÉ — Le paymentId reçu (${providerPaymentId}) ne correspond pas au paymentId actif de la commande (${order.providerPaymentId})`);
+    return;
+  }
+
   await prisma.order.update({
     where: { id: orderId },
     data: { status: "cancelled", providerPaymentId, posPaymentStatus: "canceled" },
@@ -349,6 +364,14 @@ webhooksRouter.post("/mollie", async (req: Request, res: Response): Promise<void
   const orderId = payment.metadata?.orderId || (await findOrderIdByProviderPaymentId(payment.id));
 
   if (payment.status === "paid" && orderId) {
+    // Vérification de sécurité: le paymentId du webhook correspond-il à la commande ?
+    const orderRef = await prisma.order.findUnique({ where: { id: orderId }, select: { providerPaymentId: true, orderNumber: true } });
+    if (orderRef && orderRef.providerPaymentId && orderRef.providerPaymentId !== payment.id) {
+      console.log(`[webhook][mollie] Paiement 'paid' IGNORÉ — Le paymentId reçu (${payment.id}) ne correspond pas au paymentId actif de la commande ${orderRef.orderNumber} (${orderRef.providerPaymentId})`);
+      res.json({ received: true });
+      return;
+    }
+
     // Étape 3 : Marquer comme payé (critique — si ça échoue, renvoyer 500 pour que Mollie retente)
     let result: { changed: boolean; channel: string | null };
     let orderNumber = orderId;
