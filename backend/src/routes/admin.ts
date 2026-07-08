@@ -338,12 +338,16 @@ async function calculateAdminDraftTotals(params: {
     if (!product) throw new Error(`Produit introuvable : ${item.productId}`);
     if (!params.allowInactiveProducts && product.status !== "active") throw new Error(`Produit indisponible : ${product.name}`);
     const selectedVariant = item.variantId ? product.variants.find((variant) => variant.id === item.variantId) : null;
-    if (product.variants.length > 0 && !selectedVariant) throw new Error(`Sélectionnez une variante disponible pour ${product.name}`);
-    if (selectedVariant) {
-      if (!selectedVariant.inStock || selectedVariant.stock <= 0) throw new Error(`Variante indisponible : ${product.name} - ${selectedVariant.name}`);
-      if (selectedVariant.stock < item.quantity) throw new Error(`Stock insuffisant pour ${product.name} - ${selectedVariant.name}`);
-    } else if (product.stockCount > 0 && product.stockCount < item.quantity) {
-      throw new Error(`Stock insuffisant pour ${product.name}`);
+    // En mode modification de commande existante (allowInactiveProducts: true), on tolère les variantes
+    // historiques supprimées ou inactives — on ne bloque pas la sauvegarde de l'adresse.
+    if (!params.allowInactiveProducts) {
+      if (product.variants.length > 0 && !selectedVariant) throw new Error(`Sélectionnez une variante disponible pour ${product.name}`);
+      if (selectedVariant) {
+        if (!selectedVariant.inStock || selectedVariant.stock <= 0) throw new Error(`Variante indisponible : ${product.name} - ${selectedVariant.name}`);
+        if (selectedVariant.stock < item.quantity) throw new Error(`Stock insuffisant pour ${product.name} - ${selectedVariant.name}`);
+      } else if (product.stockCount > 0 && product.stockCount < item.quantity) {
+        throw new Error(`Stock insuffisant pour ${product.name}`);
+      }
     }
 
     const publicTtcPrice = selectedVariant?.price ?? product.price;

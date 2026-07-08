@@ -673,7 +673,7 @@ export default function OrderDetailPage() {
         notes: editForm.notes,
         shippingAddress: sanitizeEditableAddress(editForm.shippingAddress),
         billingAddress: sanitizeEditableAddress(editForm.billingAddress),
-        items: order.items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+        items: order.items.map((item) => ({ productId: item.productId, variantId: item.variantId ?? null, quantity: item.quantity })),
       };
       const updated = await updateAdminOrder(order.id, payload);
       setOrder(updated);
