@@ -664,6 +664,7 @@ checkoutRouter.post("/cart-session", async (req: Request, res: Response): Promis
     const body = req.body as {
       sessionId?: string;
       email?: string;
+      customerId?: string; // Optionnel : ID du client connecté, pour résoudre l'email même si non saisi dans le formulaire
       cartItems?: CheckoutCartItem[];
     };
 
@@ -710,12 +711,25 @@ checkoutRouter.post("/cart-session", async (req: Request, res: Response): Promis
 
     const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
     const total = money(items.reduce((sum, item) => sum + item.price * item.quantity, 0));
-    const email = typeof body.email === "string" && body.email.includes("@") ? body.email.trim().toLowerCase() : null;
+    let email = typeof body.email === "string" && body.email.includes("@") ? body.email.trim().toLowerCase() : null;
 
+    // Si l'email n'est pas fourni mais qu'un customerId est présent, résoudre l'email depuis le compte client
+    // Cela couvre le cas d'un client connecté qui abandonne son panier avant d'atteindre l'étape contact
+    if (!email && typeof body.customerId === "string" && body.customerId.trim()) {
+      const customer = await prisma.customer.findUnique({
+        where: { id: body.customerId.trim() },
+        select: { email: true },
+      });
+      if (customer?.email) {
+        email = customer.email.toLowerCase();
+      }
+    }
+
+    // Ne mettre à jour l'email que s'il est non nul (ne pas écraser un email existant avec null)
     await prisma.abandonedCartSession.upsert({
       where: { id: sessionId },
       update: {
-        email: email || undefined,
+        ...(email ? { email } : {}),
         items,
         itemCount,
         total,

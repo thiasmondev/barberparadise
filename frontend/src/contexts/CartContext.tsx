@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import { Product, CartItem, ProductVariant } from "@/types";
 
 interface CartContextType {
@@ -15,6 +15,12 @@ interface CartContextType {
   clearRemovedInvalidVariantLines: () => void;
   itemCount: number;
   total: number;
+  /**
+   * Permet aux composants enfants (ex: CustomerAuthProvider) d'enrichir la session panier
+   * avec l'email du client connecté, sans créer de dépendance circulaire entre providers.
+   * Appelé dès que l'authentification client est disponible.
+   */
+  updateCartEmail: (email: string) => void;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
@@ -73,6 +79,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [cartSessionId, setCartSessionId] = useState("");
   const [removedInvalidVariantLines, setRemovedInvalidVariantLines] = useState<string[]>([]);
+  // Email du client connecté — enrichit la session panier pour les paniers abandonnés
+  const cartEmailRef = useRef<string>("");
 
   const registerRemovedLines = useCallback((removed: string[]) => {
     if (removed.length === 0) return;
@@ -108,7 +116,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("barberparadise-cart", JSON.stringify(items));
   }, [items]);
 
-  // Synchroniser le panier avec le backend pour l’onglet admin Paniers abandonnés.
+  // Synchroniser le panier avec le backend pour l'onglet admin Paniers abandonnés.
+  // L'email du client connecté (cartEmailRef) est inclus s'il est disponible,
+  // ce qui permet de l'associer à la session même avant l'étape contact du checkout.
   useEffect(() => {
     if (!cartSessionId) return;
     const controller = new AbortController();
@@ -118,6 +128,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         sessionId: cartSessionId,
+        ...(cartEmailRef.current ? { email: cartEmailRef.current } : {}),
         cartItems: items.map((item) => ({
           productId: item.product.id,
           variantId: getCartItemVariantId(item),
@@ -126,11 +137,40 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }),
       signal: controller.signal,
     }).catch(() => {
-      // Le suivi des paniers abandonnés ne doit jamais bloquer l’expérience d’achat.
+      // Le suivi des paniers abandonnés ne doit jamais bloquer l'expérience d'achat.
     });
 
     return () => controller.abort();
   }, [cartSessionId, items]);
+
+  /**
+   * Met à jour l'email associé à la session panier courante.
+   * Appelé par les composants enfants qui ont accès au contexte d'authentification client
+   * (ex: un useEffect dans ClientLayout ou dans un composant qui utilise useCustomerAuth).
+   * Envoie immédiatement une requête au backend pour enrichir la session existante.
+   */
+  const updateCartEmail = useCallback((email: string) => {
+    if (!email || !email.includes("@")) return;
+    const normalizedEmail = email.trim().toLowerCase();
+    if (cartEmailRef.current === normalizedEmail) return; // Déjà enregistré
+    cartEmailRef.current = normalizedEmail;
+
+    const sessionId = localStorage.getItem(CART_SESSION_KEY);
+    if (!sessionId) return;
+
+    // Envoyer immédiatement l'email au backend pour enrichir la session existante
+    fetch(`${API_URL}/api/checkout/cart-session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId,
+        email: normalizedEmail,
+        cartItems: [], // Pas de mise à jour des items, juste l'email
+      }),
+    }).catch(() => {
+      // Non bloquant
+    });
+  }, []);
 
   const addItem = useCallback((product: Product, quantity = 1, variant: ProductVariant | null = null) => {
     if (hasProductVariants(product)) {
@@ -184,6 +224,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const clearCart = useCallback(() => {
     setItems([]);
     setRemovedInvalidVariantLines([]);
+    cartEmailRef.current = "";
     const nextSessionId = createCartSessionId();
     localStorage.setItem(CART_SESSION_KEY, nextSessionId);
     setCartSessionId(nextSessionId);
@@ -197,7 +238,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   return (
     <CartContext.Provider
-      value={{ items, cartSessionId, addItem, removeItem, updateQuantity, replaceItems, clearCart, removedInvalidVariantLines, clearRemovedInvalidVariantLines, itemCount, total }}
+      value={{ items, cartSessionId, addItem, removeItem, updateQuantity, replaceItems, clearCart, removedInvalidVariantLines, clearRemovedInvalidVariantLines, itemCount, total, updateCartEmail }}
     >
       {children}
     </CartContext.Provider>

@@ -4499,12 +4499,39 @@ adminRouter.get(
         take: 100,
       });
 
+      // Pour les sessions sans email, tenter de résoudre l'email depuis les commandes liées.
+      // Cas typique : client connecté qui abandonne avant l'étape contact (l'email n'est jamais
+      // envoyé par CartContext car il n'a pas accès au contexte d'authentification).
+      // On cherche une commande récente dont l'ID correspond au convertedOrderId de la session,
+      // ou une commande récente créée dans la même fenêtre de temps que la session.
+      const cartsWithoutEmail = carts.filter((cart) => !cart.email);
+      const resolvedEmails = new Map<string, string>();
+      if (cartsWithoutEmail.length > 0) {
+        // Chercher les commandes liées via convertedOrderId (cas où la session a été convertie puis annulée)
+        const convertedOrderIds = cartsWithoutEmail.map((cart) => cart.convertedOrderId).filter(Boolean) as string[];
+        if (convertedOrderIds.length > 0) {
+          const linkedOrders = await prisma.order.findMany({
+            where: { id: { in: convertedOrderIds } },
+            select: { id: true, email: true, customerEmail: true },
+          });
+          for (const order of linkedOrders) {
+            const resolvedEmail = order.email || order.customerEmail || "";
+            if (resolvedEmail.includes("@")) {
+              // Trouver la session qui pointe vers cette commande
+              const matchingCart = cartsWithoutEmail.find((cart) => cart.convertedOrderId === order.id);
+              if (matchingCart) resolvedEmails.set(matchingCart.id, resolvedEmail.toLowerCase());
+            }
+          }
+        }
+      }
+
       res.json({
         carts: carts.map((cart) => {
           const items = Array.isArray(cart.items) ? cart.items : [];
+          const resolvedEmail = cart.email || resolvedEmails.get(cart.id) || null;
           return {
             id: cart.id,
-            email: cart.email || "Email non renseigné",
+            email: resolvedEmail || "Email non renseigné",
             itemCount: cart.itemCount,
             total: cart.total,
             abandonedAt: cart.lastSeenAt,
@@ -4906,9 +4933,13 @@ adminRouter.post(
           return { productId: line.productId || line.id, quantity: line.quantity };
         }).filter(Boolean)
       );
-      const email = (cart.email || asOptionalString(req.body?.email)).toLowerCase();
+      // Résoudre l'email : 1) depuis la session (email enregistré lors du suivi panier)
+      // 2) depuis le body (admin override — l'admin peut saisir l'email manuellement dans l'interface)
+      // Note : la résolution automatique par items de commande n'est pas utilisée car trop imprécise
+      // (un produit populaire peut correspondre à plusieurs clients différents).
+      const email = (cart.email || asOptionalString(req.body?.email) || "").toLowerCase();
       if (!email || !email.includes("@")) {
-        res.status(400).json({ error: "Ce panier ne contient pas d’email client exploitable" });
+        res.status(400).json({ error: "Ce panier ne contient pas d'email client exploitable. Saisissez l'email du client dans le champ prévu à cet effet." });
         return;
       }
       const customer = await prisma.customer.findUnique({ where: { email }, include: { proAccount: true, addresses: true } });

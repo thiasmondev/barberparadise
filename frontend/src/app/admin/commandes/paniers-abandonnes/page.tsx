@@ -10,7 +10,7 @@ import {
   getAdminAbandonedCarts,
   type AdminAbandonedCartItem,
 } from "@/lib/admin-api";
-import { FileText, Loader2, ShoppingCart } from "lucide-react";
+import { FileText, Loader2, Mail, ShoppingCart } from "lucide-react";
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("fr-FR", {
@@ -36,6 +36,8 @@ function getReminderBadgeClass(status: AdminAbandonedCartItem["reminderStatus"])
   return "border-pink-200 bg-pink-50 text-pink-700";
 }
 
+const EMAIL_MISSING_PLACEHOLDER = "Email non renseigné";
+
 export default function AdminAbandonedCartsPage() {
   const router = useRouter();
   const [carts, setCarts] = useState<AdminAbandonedCartItem[]>([]);
@@ -43,6 +45,8 @@ export default function AdminAbandonedCartsPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [convertingId, setConvertingId] = useState<string | null>(null);
+  // Map cartId -> email saisi manuellement par l'admin (pour les paniers sans email)
+  const [manualEmails, setManualEmails] = useState<Record<string, string>>({});
 
   const loadCarts = useCallback(async () => {
     setLoading(true);
@@ -62,16 +66,25 @@ export default function AdminAbandonedCartsPage() {
   }, [loadCarts]);
 
   const handleExportToDraft = async (cart: AdminAbandonedCartItem) => {
+    const emailMissing = !cart.email || cart.email === EMAIL_MISSING_PLACEHOLDER;
+    const overrideEmail = emailMissing ? (manualEmails[cart.id] || "").trim() : undefined;
+
+    // Si l'email est manquant et qu'aucun email manuel n'a été saisi, bloquer
+    if (emailMissing && (!overrideEmail || !overrideEmail.includes("@"))) {
+      setError(`Veuillez saisir l'email du client pour le panier ${cart.id.slice(-6)} avant de l'exporter.`);
+      return;
+    }
+
     setConvertingId(cart.id);
     setError("");
     setSuccess("");
     try {
-      const data = await exportAbandonedCartToDraft(cart.id);
+      const data = await exportAbandonedCartToDraft(cart.id, overrideEmail ? { email: overrideEmail } : undefined);
       setSuccess(`Panier exporté en brouillon ${data.draft.orderNumber}.`);
       await loadCarts();
       router.push("/admin/commandes/brouillons");
     } catch (err: any) {
-      setError(err.message || "Erreur lors de l’export du panier en brouillon");
+      setError(err.message || "Erreur lors de l'export du panier en brouillon");
     } finally {
       setConvertingId(null);
     }
@@ -81,7 +94,7 @@ export default function AdminAbandonedCartsPage() {
     <div className="space-y-5">
       <div>
         <h1 className="font-heading font-bold text-xl text-dark-800">Commandes</h1>
-        <p className="text-sm text-gray-500">Sessions avec panier non converti depuis plus d’une heure</p>
+        <p className="text-sm text-gray-500">Sessions avec panier non converti depuis plus d'une heure</p>
       </div>
       <AdminOrdersTabs />
 
@@ -103,7 +116,7 @@ export default function AdminAbandonedCartsPage() {
           <div className="px-4 py-16 text-center text-gray-400">
             <ShoppingCart size={36} className="mx-auto mb-3 text-gray-300" />
             <p className="font-medium text-dark-700">Aucun panier abandonné</p>
-            <p className="mt-1 text-sm text-gray-500">Les paniers non convertis de plus d’une heure apparaîtront ici.</p>
+            <p className="mt-1 text-sm text-gray-500">Les paniers non convertis de plus d'une heure apparaîtront ici.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -114,44 +127,69 @@ export default function AdminAbandonedCartsPage() {
                   <th className="px-4 py-3 text-left font-medium text-gray-500">Produits</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-500">Articles</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-500">Montant</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500">Date d’abandon</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500">Date d'abandon</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-500">Statut relance</th>
                   <th className="px-4 py-3 text-right font-medium text-gray-500">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {carts.map((cart) => (
-                  <tr key={cart.id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                    <td className="px-4 py-3 font-medium text-dark-800">{cart.email}</td>
-                    <td className="px-4 py-3 text-gray-600">
-                      <div className="max-w-md truncate" title={cart.products.join(", ") || "—"}>
-                        {cart.products.join(", ") || "—"}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">{cart.itemCount}</td>
-                    <td className="px-4 py-3 font-medium text-dark-800">{formatMoney(cart.total)}</td>
-                    <td className="px-4 py-3 text-gray-500">{formatDate(cart.abandonedAt)}</td>
-                    <td className="px-4 py-3 text-gray-600">
-                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getReminderBadgeClass(cart.reminderStatus)}`}>
-                        {cart.reminderStatus}
-                      </span>
-                      {cart.lastReminderAt && (
-                        <p className="mt-1 text-[11px] text-gray-400">Dernier email : {formatDate(cart.lastReminderAt)}</p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => handleExportToDraft(cart)}
-                        disabled={convertingId === cart.id}
-                        className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-dark-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {convertingId === cart.id ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
-                        Exporter en brouillon
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {carts.map((cart) => {
+                  const emailMissing = !cart.email || cart.email === EMAIL_MISSING_PLACEHOLDER;
+                  return (
+                    <tr key={cart.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                      <td className="px-4 py-3">
+                        {emailMissing ? (
+                          // Email absent : afficher un champ de saisie manuelle pour l'admin
+                          <div className="space-y-1">
+                            <p className="text-xs text-amber-600 flex items-center gap-1">
+                              <Mail size={12} />
+                              Email non enregistré
+                            </p>
+                            <input
+                              type="email"
+                              placeholder="Saisir l'email client"
+                              value={manualEmails[cart.id] || ""}
+                              onChange={(e) =>
+                                setManualEmails((prev) => ({ ...prev, [cart.id]: e.target.value }))
+                              }
+                              className="w-full rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-dark-800 placeholder-gray-400 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-200"
+                            />
+                          </div>
+                        ) : (
+                          <span className="font-medium text-dark-800">{cart.email}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">
+                        <div className="max-w-md truncate" title={cart.products.join(", ") || "—"}>
+                          {cart.products.join(", ") || "—"}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">{cart.itemCount}</td>
+                      <td className="px-4 py-3 font-medium text-dark-800">{formatMoney(cart.total)}</td>
+                      <td className="px-4 py-3 text-gray-500">{formatDate(cart.abandonedAt)}</td>
+                      <td className="px-4 py-3 text-gray-600">
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getReminderBadgeClass(cart.reminderStatus)}`}>
+                          {cart.reminderStatus}
+                        </span>
+                        {cart.lastReminderAt && (
+                          <p className="mt-1 text-[11px] text-gray-400">Dernier email : {formatDate(cart.lastReminderAt)}</p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleExportToDraft(cart)}
+                          disabled={convertingId === cart.id || (emailMissing && !(manualEmails[cart.id] || "").includes("@"))}
+                          title={emailMissing && !(manualEmails[cart.id] || "").includes("@") ? "Saisissez l'email du client pour activer l'export" : undefined}
+                          className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-dark-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {convertingId === cart.id ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+                          Exporter en brouillon
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
