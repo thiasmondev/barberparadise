@@ -673,6 +673,13 @@ export default function CheckoutPage() {
           setPaymentError(`${data.error || "Un article de votre panier est incomplet."} Retournez au panier pour retirer cet article puis ajoutez-le à nouveau depuis sa fiche produit avec une variante.`);
           return;
         }
+        if (data?.code === "PAYPAL_4X_INELIGIBLE") {
+          // PayPal 4x non éligible pour cette transaction — basculer vers PayPal standard et afficher un message clair
+          setPaymentMethod("paypal");
+          setPaymentError("Le paiement en 4 fois PayPal n'est pas disponible pour cette transaction (compte PayPal non éligible ou conditions non remplies). Vous avez été redirigé vers le paiement PayPal standard. Vous pouvez également choisir un autre moyen de paiement.");
+          setIsSubmittingPayment(false);
+          return;
+        }
         throw new Error(data?.error || "Impossible d'initialiser le paiement");
       }
       if (!data.checkoutUrl) throw new Error("URL de paiement indisponible");

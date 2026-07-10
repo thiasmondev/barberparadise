@@ -215,6 +215,13 @@ async function parseJsonResponse<T>(response: globalThis.Response, provider: Pay
   const text = await response.text();
   const data = text ? JSON.parse(text) : {};
   if (!response.ok) {
+    // Logger la réponse complète pour diagnostic (surtout pour PayPal qui retourne des détails riches)
+    if (provider === "paypal") {
+      const debugId = data?.debug_id || "(non fourni)";
+      const errorName = data?.name || "(inconnu)";
+      const details = Array.isArray(data?.details) ? data.details.map((d: { issue?: string; description?: string; field?: string }) => `[${d.issue || "?"}] ${d.description || ""} (champ: ${d.field || "N/A"})`).join(" | ") : JSON.stringify(data?.details || {});
+      console.error(`[paypal] Erreur API — HTTP ${response.status}, debug_id: ${debugId}, name: ${errorName}, details: ${details}`);
+    }
     const message = typeof data?.detail === "string" ? data.detail : typeof data?.message === "string" ? data.message : text;
     throw new Error(`Erreur ${provider}: ${message || response.statusText}`);
   }
@@ -303,10 +310,16 @@ async function createPaypalCheckout(params: { orderId: string; orderNumber: stri
   const paymentSource = isPayLater
     ? {
         pay_later: {
+          // country_code requis pour Pay Later France (Pay in 4X)
+          country_code: "FR",
           experience_context: {
+            payment_method_preference: "IMMEDIATE_PAYMENT_REQUIRED",
             brand_name: "Barber Paradise",
             locale: "fr-FR",
-            shipping_preference: "GET_FROM_FILE",
+            // NO_SHIPPING évite que PayPal tente de récupérer une adresse depuis le compte PayPal
+            // (ce qui peut échouer si le compte est nouveau ou sans adresse vérifiée)
+            // L'adresse de livraison est déjà collectée par notre formulaire
+            shipping_preference: "NO_SHIPPING",
             user_action: "PAY_NOW",
             return_url: captureReturnUrl,
             cancel_url: `${params.frontendUrl}/commande/annulation?orderId=${params.orderId}`,
@@ -1188,6 +1201,18 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
   } catch (err) {
     console.error("Erreur initialisation checkout", err);
     const message = err instanceof Error ? err.message : "Erreur initialisation paiement";
+    // Détecter les erreurs PayPal 4x liées à l'éligibilité Pay Later pour afficher un message clair au client
+    // Note: body est dans le scope try, on utilise req.body directement dans le catch
+    const isPaypal4xError = (req.body as CheckoutRequestBody)?.paymentMethod === "paypal_4x" && message.includes("Erreur paypal:");
+    if (isPaypal4xError) {
+      console.error(`[paypal] Erreur PayPal 4x (Pay Later) — le paiement en 4x n'est pas éligible pour cette transaction`);
+      res.status(422).json({
+        error: "Le paiement en 4 fois PayPal n'est pas disponible pour cette transaction. Veuillez choisir un autre moyen de paiement (PayPal standard, carte bancaire, etc.).",
+        code: "PAYPAL_4X_INELIGIBLE",
+        originalError: message,
+      });
+      return;
+    }
     const status = message.includes("Variable d'environnement manquante") ? 503 : 500;
     res.status(status).json({ error: message });
   }
