@@ -94,6 +94,14 @@ export function normalizeCountry(country?: string): string {
   return (country || "FR").trim().toUpperCase();
 }
 
+// PayPal Pay Later (4x sans frais) est conditionné à l'activation du compte marchand PayPal.
+// Le compte marchand doit avoir Pay Later / Pay in 4X France activé par PayPal.
+// Sans cette activation, PayPal retourne NO_PAYMENT_SOURCE_PROVIDED sur /payment_source.
+// Pour activer : se connecter au compte marchand PayPal → Paramètres → Pay Later,
+// ou contacter le support PayPal marchand pour demander l'activation de Pay in 4X France.
+// Une fois activé, mettre PAYPAL_PAY_LATER_ENABLED=true dans les variables d'environnement Render.
+const PAYPAL_PAY_LATER_ENABLED = process.env.PAYPAL_PAY_LATER_ENABLED === "true";
+
 export function getAvailableMethods(country: string, isB2B: boolean): PaymentMethod[] {
   const normalizedCountry = normalizeCountry(country);
 
@@ -106,9 +114,10 @@ export function getAvailableMethods(country: string, isB2B: boolean): PaymentMet
     return ["paybybank"];
   }
 
-  // B2C : carte + Pay by Bank + PayPal standard + PayPal 4x + Apple Pay + Google Pay (conditionnel côté client)
+  // B2C : carte + Pay by Bank + PayPal standard + Apple Pay + Google Pay (conditionnel côté client)
+  // PayPal 4x (Pay Later) : uniquement si le compte marchand PayPal est activé Pay Later France
   // sepa (prélèvement) : retiré
-  const commonMethods: PaymentMethod[] = ["card", "paybybank", "paypal", "paypal_4x", "apple_pay", "google_pay"];
+  const commonMethods: PaymentMethod[] = ["card", "paybybank", "paypal", ...(PAYPAL_PAY_LATER_ENABLED ? ["paypal_4x" as PaymentMethod] : []), "apple_pay", "google_pay"];
   const localMethods = LOCAL_METHODS_BY_COUNTRY[normalizedCountry] || [];
   return [...commonMethods, ...localMethods];
 }
