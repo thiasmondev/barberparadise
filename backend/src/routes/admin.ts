@@ -233,6 +233,29 @@ function getVatRate(country: string, isB2B: boolean, vatNumber?: string | null):
   return STANDARD_VAT_RATE;
 }
 
+/**
+ * Détermine si une commande/brouillon doit appliquer la tarification B2B.
+ *
+ * Règle : un client avec un compte pro approuvé est TOUJOURS B2B, même si le frontend
+ * ne transmet pas explicitement `isB2B: true` (ex: export de panier abandonné).
+ * L'admin peut forcer `isB2B: false` en passant explicitement `false` dans le body
+ * (ex: commande exceptionnelle au tarif B2C pour un client pro).
+ *
+ * @param requestedB2B - Valeur transmise par le frontend (undefined si absent)
+ * @param customer - Compte client avec son proAccount (ou null si client inconnu)
+ */
+function resolveIsB2B(
+  requestedB2B: boolean | undefined,
+  customer: { proAccount?: { status: string } | null } | null | undefined,
+): boolean {
+  // Si l'admin force explicitement false, respecter ce choix
+  if (requestedB2B === false) return false;
+  // Si le client a un compte pro approuvé, activer B2B automatiquement
+  if (customer?.proAccount?.status === "approved") return true;
+  // Sinon, utiliser la valeur demandée (true si l'admin a coché B2B manuellement, false sinon)
+  return Boolean(requestedB2B);
+}
+
 function generateAdminDraftOrderNumber(): string {
   const date = new Date();
   const year = date.getFullYear();
@@ -4643,7 +4666,7 @@ adminRouter.post(
         country: normalizeCountry(req.body?.shippingAddress?.country),
         phone: "",
       };
-      const isB2B = requestedB2B;
+      const isB2B = resolveIsB2B(requestedB2B, customer);
       const vatNumber = asOptionalString(req.body?.vatNumber, customer?.proAccount?.vatNumber || "").toUpperCase() || null;
       const totals = await calculateAdminDraftTotals({
         items,
@@ -4816,7 +4839,7 @@ adminRouter.patch(
         return;
       }
 
-      const isB2B = Boolean(req.body?.isB2B);
+      const isB2B = resolveIsB2B(req.body?.isB2B, customer);
       const vatNumber = asOptionalString(req.body?.vatNumber, customer?.proAccount?.vatNumber || "").toUpperCase() || null;
       const totals = await calculateAdminDraftTotals({
         items,
@@ -4965,7 +4988,10 @@ adminRouter.post(
             country: "FR",
             phone: customer?.phone || "",
           };
-      const isB2B = Boolean(req.body?.isB2B) && customer?.proAccount?.status === "approved";
+      // resolveIsB2B détecte automatiquement le statut B2B depuis le compte pro du client.
+      // Avant ce fix, isB2B était toujours false car req.body.isB2B n'était pas envoyé
+      // par le frontend lors de l'export depuis la page paniers abandonnés.
+      const isB2B = resolveIsB2B(req.body?.isB2B, customer);
       const vatNumber = customer?.proAccount?.vatNumber || null;
       const totals = await calculateAdminDraftTotals({
         items,
@@ -5318,13 +5344,12 @@ adminRouter.patch(
     try {
       const current = await prisma.order.findUnique({
         where: { id: req.params.id },
-        include: { items: true, shippingAddress: true, customer: true },
+        include: { items: true, shippingAddress: true, customer: { include: { proAccount: true } } },
       });
       if (!current) {
         res.status(404).json({ error: "Commande non trouvée" });
         return;
       }
-
       const items = normalizeDraftItems(req.body?.items);
       const customerId = typeof req.body?.customerId === "string" && req.body.customerId ? req.body.customerId : null;
       const customer = customerId
@@ -5342,7 +5367,10 @@ adminRouter.patch(
         return;
       }
 
-      const isB2B = Boolean(req.body?.isB2B);
+      // Pour PATCH /orders/:id : utiliser resolveIsB2B avec fallback sur current.isB2B
+      // si aucun customerId n'est fourni dans le body (client non modifié).
+      const effectiveCustomer = customer || (current.customer?.proAccount ? current.customer : null);
+      const isB2B = resolveIsB2B(req.body?.isB2B, effectiveCustomer);
       const vatNumber = asOptionalString(req.body?.vatNumber, customer?.proAccount?.vatNumber || current.vatNumber || "").toUpperCase() || null;
       const totals = await calculateAdminDraftTotals({
         items,
