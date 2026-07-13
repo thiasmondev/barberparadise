@@ -443,6 +443,34 @@ webhooksRouter.post("/mollie", async (req: Request, res: Response): Promise<void
   }
 
   if (["failed", "canceled", "expired"].includes(payment.status || "") && orderId) {
+    // —— Vérifier si ce paiement est un complément en attente ——
+    // CRITIQUE : ne jamais toucher à paidAmount ni au statut principal si c'est un complément expiré
+    try {
+      const orderForComplement = await prisma.order.findUnique({
+        where: { id: orderId },
+        select: { orderNumber: true, pendingComplementPaymentId: true, notes: true },
+      });
+
+      if (orderForComplement && orderForComplement.pendingComplementPaymentId === payment.id) {
+        // C'est l'expiration/échec du lien de complément — nettoyer uniquement les champs pendingComplement
+        const expiryNote = `[Lien de complément expiré/échoué — ${new Date().toLocaleDateString("fr-FR")} — Non payé par le client (paymentId: ${payment.id})]`;
+        await prisma.order.update({
+          where: { id: orderId },
+          data: {
+            pendingComplementAmount: null,
+            pendingComplementPaymentId: null,
+            notes: orderForComplement.notes ? `${orderForComplement.notes}\n${expiryNote}` : expiryNote,
+          },
+        });
+        console.log(`[webhook][mollie] Complément expiré/échoué — orderId=${orderId} orderNumber=${orderForComplement.orderNumber} paymentId=${payment.id} — pendingComplement nettoyé, paidAmount et statut INCHANGÉS`);
+        res.json({ received: true });
+        return;
+      }
+    } catch (err) {
+      console.error(`[webhook][mollie] Erreur vérification complément expiré — orderId=${orderId}:`, err instanceof Error ? err.message : err);
+    }
+
+    // Paiement initial échoué/annulé/expiré — comportement standard
     try {
       await markOrderCanceled(orderId, payment.id);
       console.log(`[webhook][mollie] Commande annulée — orderId=${orderId} status=${payment.status}`);

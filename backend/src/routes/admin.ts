@@ -5242,7 +5242,9 @@ adminRouter.post("/orders/:id/refund", requireAdmin, async (req: Request, res: R
     const isTotalRefund = newRefundedAmount >= totalPaid - 0.01;
     const newStatus = isTotalRefund ? "refunded" : "partially_refunded";
 
-    // Mise à jour de la commande
+    // Mise à jour de la commande + paidAmount (montant net réellement détenu après remboursement)
+    const currentPaidAmount = order.paidAmount ?? (order.totalTTC || order.total);
+    const newPaidAmount = Math.max(0, currentPaidAmount - amount);
     await prisma.order.update({
       where: { id },
       data: {
@@ -5250,11 +5252,12 @@ adminRouter.post("/orders/:id/refund", requireAdmin, async (req: Request, res: R
         refundedAmount: newRefundedAmount,
         refundedAt: new Date(),
         refundMode: mode,
+        paidAmount: newPaidAmount,
       },
     });
 
     // Ajouter un événement dans la timeline (via une note pour le moment)
-    const refundNote = `Remboursement de ${amount}€ effectué le ${new Date().toLocaleDateString("fr-FR")} (Mode: ${mode})`;
+    const refundNote = `Remboursement de ${amount}€ effectué le ${new Date().toLocaleDateString("fr-FR")} (Mode: ${mode}) — Payé net : ${newPaidAmount.toFixed(2)}€`;
     await prisma.order.update({
       where: { id },
       data: {
@@ -5731,10 +5734,13 @@ adminRouter.post(
           return;
         }
 
-        // Mettre à jour les montants de remboursement en base
+        // Mettre à jour les montants de remboursement en base + paidAmount (montant net réellement détenu)
         const newRefundedAmount = money((order.refundedAmount || 0) + amount);
         const isTotalRefund = newRefundedAmount >= money(order.total) - 0.01;
         const newStatus = isTotalRefund ? "refunded" : "partially_refunded";
+        const currentPaidAmountAdj = order.paidAmount ?? (order.totalTTC || order.total);
+        const newPaidAmountAdj = Math.max(0, currentPaidAmountAdj - amount);
+        const refundAdjNote = `[Remboursement partiel suite à modification d'articles — ${new Date().toLocaleDateString("fr-FR")} — -${amount.toFixed(2)}€ — Payé net : ${newPaidAmountAdj.toFixed(2)}€]`;
         await prisma.order.update({
           where: { id },
           data: {
@@ -5742,9 +5748,11 @@ adminRouter.post(
             refundedAmount: newRefundedAmount,
             refundedAt: new Date(),
             refundMode: "real",
+            paidAmount: newPaidAmountAdj,
+            notes: order.notes ? `${order.notes}\n${refundAdjNote}` : refundAdjNote,
           },
         });
-        res.json({ success: true, mode: "real", diff, newStatus, refundedAmount: newRefundedAmount });
+        res.json({ success: true, mode: "real", diff, newStatus, refundedAmount: newRefundedAmount, paidAmount: newPaidAmountAdj });
         return;
       }
     } catch (err: any) {
