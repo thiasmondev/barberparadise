@@ -211,6 +211,9 @@ export interface Order {
   relayPointAddress?: string | null;
   itemsLastModifiedAt?: string | null; // Date de dernière modification des articles (pour badge "Facture à régénérer")
   refundedAmount?: number;
+  paidAmount?: number | null; // Montant réellement encaissé (initialisé au paiement, mis à jour par webhook complément)
+  pendingComplementAmount?: number | null; // Complément en attente de paiement (mode real)
+  pendingComplementPaymentId?: string | null; // ID du lien de paiement Mollie pour le complément
   refundedAt?: string | null;
   refundMode?: string | null;
   createdAt: string;

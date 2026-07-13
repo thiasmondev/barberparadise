@@ -367,6 +367,9 @@ model Order {
   itemsLastModifiedAt DateTime? // Date de dernière modification des articles (pour badge "Facture à régénérer")
   commercialDiscountAmount Float?   // Montant de la remise commerciale appliquée (mode gift)
   commercialDiscountLabel  String?  // Libellé de la remise commerciale (ex: "Remise commerciale")
+  paidAmount               Float    @default(0) // Montant réellement encaissé (paiement initial + compléments confirmés via webhook)
+  pendingComplementAmount  Float?   // Montant du complément en attente de paiement (lien Mollie envoyé, non encore payé)
+  pendingComplementPaymentId String? // ID du paiement Mollie du complément en attente
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

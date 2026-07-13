@@ -1249,7 +1249,18 @@ export default function OrderDetailPage() {
                 <div className="flex justify-between"><span className="text-gray-500">{isPosOrder ? "Expédition" : shipmentSummary(order)}</span><span>{isPosOrder ? "Non applicable" : order.shipping === 0 ? "Gratuite" : formatPrice(order.shipping, order.currency)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Taxes</span><span>{formatPrice(totals.taxes, order.currency)}</span></div>
                 <div className="flex justify-between border-t border-gray-200 pt-3 text-base font-semibold text-gray-950"><span>Total</span><span>{formatPrice(order.total, order.currency)}</span></div>
-                <div className="flex justify-between text-sm font-medium text-emerald-700"><span>Payé</span><span>{paymentBadge(order).label === "Payée" ? formatPrice(order.total, order.currency) : formatPrice(0, order.currency)}</span></div>
+                {/* Payé à ce jour — utilise paidAmount si disponible, sinon fallback binaire */}
+                <div className="flex justify-between text-sm font-medium text-emerald-700">
+                  <span>Payé à ce jour</span>
+                  <span>{order.paidAmount != null ? formatPrice(order.paidAmount, order.currency) : (paymentBadge(order).label === "Payée" ? formatPrice(order.total, order.currency) : formatPrice(0, order.currency))}</span>
+                </div>
+                {/* Complément en attente — affiché si un paiement complémentaire est en cours */}
+                {order.pendingComplementAmount != null && (
+                  <div className="flex justify-between text-sm font-medium text-amber-600">
+                    <span>Complément en attente</span>
+                    <span>{formatPrice(order.pendingComplementAmount, order.currency)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between border-t border-gray-100 pt-3 text-sm"><span className="text-gray-500">Moyen de paiement</span><span className="font-medium text-gray-800">{paymentMethodLabel(order.paymentMethod, order.paymentProvider)}</span></div>
               </div>
             </section>

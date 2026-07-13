@@ -5656,6 +5656,15 @@ adminRouter.post(
           }
           const payment = await response.json() as { id: string; _links?: { checkout?: { href?: string } } };
           const paymentLinkUrl = payment._links?.checkout?.href;
+          // Enregistrer le complément en attente — paidAmount reste inchangé jusqu'à confirmation webhook
+          await prisma.order.update({
+            where: { id },
+            data: {
+              pendingComplementAmount: diff,
+              pendingComplementPaymentId: payment.id,
+            },
+          });
+          console.log(`[payment-adjustment] Complément Mollie créé — orderId=${id} paymentId=${payment.id} montant=${diff}€ (en attente de confirmation webhook)`);
           res.json({ success: true, mode: "real", diff, paymentLinkUrl, paymentId: payment.id });
           return;
         } else if (order.paymentProvider === "paypal") {

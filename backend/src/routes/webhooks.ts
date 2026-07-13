@@ -166,6 +166,8 @@ async function markOrderPaid(orderId: string, provider: WebhookProvider, provide
           providerPaymentId: providerPaymentId || order.providerPaymentId,
           posPaymentStatus: order.channel === "pos" ? "paid" : order.posPaymentStatus,
           posPaidAt: order.channel === "pos" ? new Date() : order.posPaidAt,
+          // Initialiser paidAmount au total de la commande lors du premier paiement
+          paidAmount: order.totalTTC || order.total || 0,
         },
       });
 
@@ -362,8 +364,48 @@ webhooksRouter.post("/mollie", async (req: Request, res: Response): Promise<void
 
   // Étape 2 : Trouver la commande
   const orderId = payment.metadata?.orderId || (await findOrderIdByProviderPaymentId(payment.id));
+  const isComplement = (payment as { metadata?: { orderId?: string; type?: string } }).metadata?.type === "complement";
+
+  if (payment.status === "paid" && orderId && isComplement) {
+    // ── Paiement COMPLÉMENTAIRE confirmé ──────────────────────────────────────
+    // Mettre à jour paidAmount et effacer le complément en attente
+    try {
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        select: { orderNumber: true, paidAmount: true, pendingComplementAmount: true, pendingComplementPaymentId: true, notes: true },
+      });
+      if (!order) throw new Error(`Commande introuvable : ${orderId}`);
+
+      // Vérifier que le paymentId correspond bien au complément en attente
+      if (order.pendingComplementPaymentId !== payment.id) {
+        console.warn(`[webhook][mollie] Complément IGNORÉ — paymentId=${payment.id} ne correspond pas au complément en attente (${order.pendingComplementPaymentId}) pour commande ${order.orderNumber}`);
+        res.json({ received: true });
+        return;
+      }
+
+      const newPaidAmount = (order.paidAmount || 0) + (order.pendingComplementAmount || 0);
+      const complementNote = `[Complément de paiement confirmé — ${new Date().toLocaleDateString("fr-FR")} — +${(order.pendingComplementAmount || 0).toFixed(2)}€ — Total payé : ${newPaidAmount.toFixed(2)}€]`;
+      await prisma.order.update({
+        where: { id: orderId },
+        data: {
+          paidAmount: newPaidAmount,
+          pendingComplementAmount: null,
+          pendingComplementPaymentId: null,
+          notes: order.notes ? `${order.notes}\n${complementNote}` : complementNote,
+        },
+      });
+      console.log(`[webhook][mollie] Complément confirmé — orderId=${orderId} orderNumber=${order.orderNumber} +${order.pendingComplementAmount}€ → paidAmount=${newPaidAmount}€`);
+    } catch (err) {
+      console.error(`[webhook][mollie] Erreur traitement complément — orderId=${orderId}:`, err instanceof Error ? err.stack : err);
+      res.status(500).json({ error: "Erreur traitement complément de paiement" });
+      return;
+    }
+    res.json({ received: true });
+    return;
+  }
 
   if (payment.status === "paid" && orderId) {
+    // ── Paiement INITIAL ──────────────────────────────────────────────────────
     // Vérification de sécurité: le paymentId du webhook correspond-il à la commande ?
     const orderRef = await prisma.order.findUnique({ where: { id: orderId }, select: { providerPaymentId: true, orderNumber: true } });
     if (orderRef && orderRef.providerPaymentId && orderRef.providerPaymentId !== payment.id) {
