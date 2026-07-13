@@ -5321,8 +5321,8 @@ adminRouter.patch(
       notifyClient?: boolean;
     };
 
-    if (!adjustmentMode || !["real", "internal"].includes(adjustmentMode)) {
-      res.status(400).json({ error: "adjustmentMode doit être 'real' ou 'internal'" });
+    if (!adjustmentMode || !["real", "internal", "gift"].includes(adjustmentMode)) {
+      res.status(400).json({ error: "adjustmentMode doit être 'real', 'internal' ou 'gift'" });
       return;
     }
 
@@ -5504,7 +5504,11 @@ adminRouter.patch(
         const addedItems = stockDeltas.filter((d) => d.delta > 0).map((d) => `+${d.delta} (${d.variantId ?? d.productId})`).join(", ");
         const removedItems = stockDeltas.filter((d) => d.delta < 0).map((d) => `${d.delta} (${d.variantId ?? d.productId})`).join(", ");
         const diffLabel = diff > 0 ? `+${diff.toFixed(2)}€` : `${diff.toFixed(2)}€`;
-        const modeLabel = adjustmentMode === "real" ? "via prestataire de paiement" : "ajustement interne (hors prestataire)";
+        const modeLabel = adjustmentMode === "real"
+          ? "via prestataire de paiement"
+          : adjustmentMode === "gift"
+          ? "remise commerciale offerte (aucun paiement complémentaire)"
+          : "ajustement interne (hors prestataire)";
         const noteLines = [
           `[Modification articles — ${new Date().toLocaleDateString("fr-FR")}]`,
           `Ancien total : ${oldTotal.toFixed(2)}€ → Nouveau total : ${newTotal.toFixed(2)}€ (différence : ${diffLabel})`,
@@ -5512,6 +5516,7 @@ adminRouter.patch(
           removedItems ? `Articles retirés : ${removedItems}` : null,
           `Mode de gestion de la différence : ${modeLabel}`,
           adjustmentMode === "internal" && diff !== 0 ? `Ajustement interne — différence de ${diffLabel} non traitée via prestataire de paiement.` : null,
+          adjustmentMode === "gift" && diff !== 0 ? `Remise commerciale de ${diffLabel} sera appliquée via l'ajustement de paiement.` : null,
         ].filter(Boolean).join("\n");
         await tx.order.update({
           where: { id },
@@ -5611,7 +5616,7 @@ adminRouter.post(
           },
         });
         console.log(`[payment-adjustment] Remise commerciale appliquée sur commande ${id} — ${giftAmount.toFixed(2)}€ offerts`);
-        res.json({ success: true, mode: "gift", diff, giftAmount, newTotal });
+        res.json({ success: true, mode: "gift", giftApplied: true, diff, giftAmount, newTotal });
         return;
       }
 
