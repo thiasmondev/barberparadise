@@ -5307,6 +5307,407 @@ adminRouter.post("/orders/:id/refund", requireAdmin, async (req: Request, res: R
   }
 });
 
+// PATCH /api/admin/orders/:id/items — Modifier les articles d'une commande payée
+// Accepte: { items: [{productId, variantId?, quantity}], adjustmentMode: "real"|"internal", notifyClient?: boolean }
+// Retourne: { order, oldTotal, newTotal, diff, paymentLinkUrl? }
+adminRouter.patch(
+  "/orders/:id/items",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    const { id } = req.params;
+    const { items: rawItems, adjustmentMode, notifyClient } = req.body as {
+      items?: unknown[];
+      adjustmentMode?: string;
+      notifyClient?: boolean;
+    };
+
+    if (!adjustmentMode || !["real", "internal"].includes(adjustmentMode)) {
+      res.status(400).json({ error: "adjustmentMode doit être 'real' ou 'internal'" });
+      return;
+    }
+
+    try {
+      // 1. Charger la commande existante avec ses articles et le client
+      const order = await prisma.order.findUnique({
+        where: { id },
+        include: {
+          items: true,
+          shippingAddress: true,
+          customer: { include: { proAccount: true } },
+        },
+      });
+      if (!order) {
+        res.status(404).json({ error: "Commande introuvable" });
+        return;
+      }
+      // Seules les commandes payées (ou en cours de traitement) peuvent être modifiées
+      const modifiableStatuses = new Set(["paid", "processing", "shipped", "delivered", "partially_refunded"]);
+      if (!modifiableStatuses.has(order.status)) {
+        res.status(400).json({ error: `Impossible de modifier les articles d'une commande avec le statut '${order.status}'. Seules les commandes payées, en traitement, expédiées, livrées ou partiellement remboursées peuvent être modifiées.` });
+        return;
+      }
+
+      // 2. Normaliser et valider les nouveaux articles
+      const newItems = normalizeDraftItems(rawItems);
+      if (newItems.length === 0) {
+        res.status(400).json({ error: "La commande doit contenir au moins un article" });
+        return;
+      }
+
+      // 3. Résoudre le statut B2B depuis le compte client (cohérent avec resolveIsB2B)
+      const isB2B = resolveIsB2B(order.isB2B ? true : undefined, order.customer);
+      const country = order.shippingAddress?.country || "FR";
+      const vatNumber = order.vatNumber || null;
+
+      // 4. Recalculer les totaux avec le service centralisé
+      // allowInactiveProducts: true — on tolère les produits/variantes historiques
+      const totals = await calculateAdminDraftTotals({
+        items: newItems,
+        isB2B,
+        country,
+        vatNumber,
+        shippingOverride: order.shipping, // Conserver le même frais de port
+        orderDiscountType: order.orderDiscountType,
+        orderDiscountValue: order.orderDiscountValue,
+        enforceProMinimum: false,
+        allowInactiveProducts: true,
+      });
+
+      const oldTotal = money(order.total);
+      const newTotal = money(totals.total);
+      const diff = money(newTotal - oldTotal); // positif = client doit plus, négatif = remboursement
+
+      // 5. Calculer les deltas de stock (article par article)
+      // Construire une map des anciens articles: clé = "productId:variantId"
+      const oldItemMap = new Map<string, { quantity: number; productId: string; variantId: string | null }>();
+      for (const item of order.items) {
+        const key = `${item.productId}:${item.variantId ?? ""}`;
+        const existing = oldItemMap.get(key);
+        if (existing) {
+          existing.quantity += item.quantity;
+        } else {
+          oldItemMap.set(key, { quantity: item.quantity, productId: item.productId!, variantId: item.variantId ?? null });
+        }
+      }
+      // Construire une map des nouveaux articles
+      const newItemMap = new Map<string, { quantity: number; productId: string; variantId: string | null }>();
+      for (const item of newItems) {
+        const key = `${item.productId}:${item.variantId ?? ""}`;
+        const existing = newItemMap.get(key);
+        if (existing) {
+          existing.quantity += item.quantity;
+        } else {
+          newItemMap.set(key, { quantity: item.quantity, productId: item.productId, variantId: item.variantId ?? null });
+        }
+      }
+      // Calculer les deltas: delta > 0 = stock à décrémenter, delta < 0 = stock à réincrémenter
+      const stockDeltas: { productId: string; variantId: string | null; delta: number }[] = [];
+      const allKeys = new Set([...oldItemMap.keys(), ...newItemMap.keys()]);
+      for (const key of allKeys) {
+        const oldQty = oldItemMap.get(key)?.quantity ?? 0;
+        const newQty = newItemMap.get(key)?.quantity ?? 0;
+        const delta = newQty - oldQty; // positif = on ajoute des articles (stock diminue), négatif = on retire (stock augmente)
+        if (delta !== 0) {
+          const ref = oldItemMap.get(key) ?? newItemMap.get(key)!;
+          stockDeltas.push({ productId: ref.productId, variantId: ref.variantId, delta });
+        }
+      }
+
+      // 6. Vérifier la disponibilité du stock pour les ajouts (delta > 0)
+      for (const delta of stockDeltas) {
+        if (delta.delta <= 0) continue; // Retrait ou inchangé — pas de vérification nécessaire
+        if (delta.variantId) {
+          const variant = await prisma.productVariant.findUnique({ where: { id: delta.variantId } });
+          if (!variant) continue; // Variante supprimée — on tolère (allowInactiveProducts)
+          if (variant.stock < delta.delta) {
+            const product = await prisma.product.findUnique({ where: { id: delta.productId } });
+            res.status(400).json({ error: `Stock insuffisant pour ${product?.name ?? delta.productId} (variante) : ${variant.stock} disponible(s), ${delta.delta} demandé(s)` });
+            return;
+          }
+        } else {
+          const product = await prisma.product.findUnique({ where: { id: delta.productId } });
+          if (!product) continue;
+          if (product.stockCount < delta.delta) {
+            res.status(400).json({ error: `Stock insuffisant pour ${product.name} : ${product.stockCount} disponible(s), ${delta.delta} demandé(s)` });
+            return;
+          }
+        }
+      }
+
+      // 7. Appliquer les modifications dans une transaction Prisma
+      await prisma.$transaction(async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => {
+        // 7a. Supprimer les anciens articles et créer les nouveaux
+        await tx.orderItem.deleteMany({ where: { orderId: id } });
+        await tx.orderItem.createMany({
+          data: totals.orderItems.map((item) => ({
+            orderId: id,
+            productId: item.productId,
+            variantId: item.variantId ?? null,
+            variantLabel: item.variantLabel ?? null,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            image: item.image ?? "",
+            discountAmount: item.discountAmount ?? 0,
+            lineDiscountType: item.lineDiscountType ?? null,
+            lineDiscountValue: item.lineDiscountValue ?? null,
+          })),
+        });
+
+        // 7b. Mettre à jour les totaux de la commande
+        await tx.order.update({
+          where: { id },
+          data: {
+            subtotal: totals.subtotal,
+            shipping: totals.shipping,
+            total: totals.total,
+            totalHT: totals.totalHT,
+            vatRate: totals.vatRate,
+            vatAmount: totals.vatAmount,
+            totalTTC: totals.totalTTC,
+            discountAmount: totals.discountTotal,
+            discountTotal: totals.discountTotal,
+            orderDiscountType: totals.orderDiscountType ?? null,
+            orderDiscountValue: totals.orderDiscountValue ?? null,
+          },
+        });
+
+        // 7c. Ajuster le stock transactionnellement
+        for (const delta of stockDeltas) {
+          if (delta.variantId) {
+            await tx.productVariant.update({
+              where: { id: delta.variantId },
+              data: {
+                stock: { decrement: delta.delta }, // decrement d'un delta négatif = incrément
+                inStock: true, // sera recalculé par le cron ou le prochain accès
+              },
+            }).catch(() => {
+              // Variante supprimée — on ignore silencieusement
+            });
+            await tx.product.update({
+              where: { id: delta.productId },
+              data: { inStock: true },
+            }).catch(() => {});
+          } else {
+            await tx.product.update({
+              where: { id: delta.productId },
+              data: {
+                stockCount: { decrement: delta.delta },
+                inStock: true,
+              },
+            }).catch(() => {});
+          }
+        }
+
+        // 7d. Logger une note interne automatique
+        const addedItems = stockDeltas.filter((d) => d.delta > 0).map((d) => `+${d.delta} (${d.variantId ?? d.productId})`).join(", ");
+        const removedItems = stockDeltas.filter((d) => d.delta < 0).map((d) => `${d.delta} (${d.variantId ?? d.productId})`).join(", ");
+        const diffLabel = diff > 0 ? `+${diff.toFixed(2)}€` : `${diff.toFixed(2)}€`;
+        const modeLabel = adjustmentMode === "real" ? "via prestataire de paiement" : "ajustement interne (hors prestataire)";
+        const noteLines = [
+          `[Modification articles — ${new Date().toLocaleDateString("fr-FR")}]`,
+          `Ancien total : ${oldTotal.toFixed(2)}€ → Nouveau total : ${newTotal.toFixed(2)}€ (différence : ${diffLabel})`,
+          addedItems ? `Articles ajoutés : ${addedItems}` : null,
+          removedItems ? `Articles retirés : ${removedItems}` : null,
+          `Mode de gestion de la différence : ${modeLabel}`,
+          adjustmentMode === "internal" && diff !== 0 ? `Ajustement interne — différence de ${diffLabel} non traitée via prestataire de paiement.` : null,
+        ].filter(Boolean).join("\n");
+        await tx.order.update({
+          where: { id },
+          data: { notes: order.notes ? `${order.notes}\n\n${noteLines}` : noteLines },
+        });
+      });
+
+      // 8. Recharger la commande mise à jour
+      const updatedOrder = await prisma.order.findUnique({
+        where: { id },
+        include: {
+          items: true,
+          shippingAddress: true,
+          customer: { include: { proAccount: true, addresses: true, _count: { select: { orders: true } } } },
+        },
+      });
+
+      // 9. Notification client (si demandée)
+      // La notification est gérée côté frontend ou par une route dédiée — on retourne juste le flag
+      // pour que le frontend puisse déclencher l'envoi d'email si notifyClient === true
+
+      res.json({
+        order: updatedOrder,
+        oldTotal,
+        newTotal,
+        diff,
+        adjustmentMode,
+        notifyClient: Boolean(notifyClient),
+      });
+    } catch (err: any) {
+      console.error("[modify-items] Erreur:", err);
+      res.status(500).json({ error: err.message || "Erreur lors de la modification des articles" });
+    }
+  }
+);
+
+// POST /api/admin/orders/:id/payment-adjustment — Paiement complémentaire ou remboursement partiel suite à modification d'articles
+// Accepte: { diff: number, mode: "real"|"internal" }
+// Si diff > 0 et mode "real" : crée un lien de paiement Mollie (ou PayPal si paymentProvider === "paypal")
+// Si diff < 0 et mode "real" : déclenche un remboursement partiel via le prestataire
+// Si mode "internal" : met à jour uniquement les montants en base (pas d'appel API de paiement)
+adminRouter.post(
+  "/orders/:id/payment-adjustment",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    const { id } = req.params;
+    const { diff: rawDiff, mode } = req.body as { diff?: number; mode?: string };
+
+    if (!mode || !["real", "internal"].includes(mode)) {
+      res.status(400).json({ error: "mode doit être 'real' ou 'internal'" });
+      return;
+    }
+    const diff = typeof rawDiff === "number" ? money(rawDiff) : null;
+    if (diff === null || diff === 0) {
+      res.status(400).json({ error: "diff doit être un nombre non nul" });
+      return;
+    }
+
+    try {
+      const order = await prisma.order.findUnique({ where: { id } });
+      if (!order) {
+        res.status(404).json({ error: "Commande introuvable" });
+        return;
+      }
+
+      if (mode === "internal") {
+        // Ajustement interne uniquement — pas d'appel API de paiement
+        // La note interne a déjà été ajoutée par PATCH /orders/:id/items
+        res.json({ success: true, mode: "internal", diff });
+        return;
+      }
+
+      // Mode "real" — appel API de paiement
+      if (!order.providerPaymentId) {
+        res.status(400).json({ error: "Impossible de traiter le paiement : aucun ID de paiement trouvé sur cette commande." });
+        return;
+      }
+
+      const frontendUrl = process.env.FRONTEND_URL || "https://barberparadise.fr";
+      const backendUrl = process.env.BACKEND_URL || "https://api.barberparadise.fr";
+
+      if (diff > 0) {
+        // Paiement complémentaire — créer un lien de paiement
+        if (order.paymentProvider === "mollie") {
+          const requestBody = {
+            amount: { currency: "EUR", value: diff.toFixed(2) },
+            description: `Complément de paiement — Commande Barber Paradise #${order.orderNumber}`,
+            redirectUrl: `${frontendUrl}/commande/succes?orderId=${order.id}&complement=1`,
+            cancelUrl: `${frontendUrl}/commande/annulation?orderId=${order.id}`,
+            webhookUrl: `${backendUrl}/api/webhooks/mollie`,
+            metadata: { orderId: order.id, type: "complement" },
+          };
+          const response = await fetch("https://api.mollie.com/v2/payments", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${process.env.MOLLIE_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(requestBody),
+          });
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => "(erreur inconnue)");
+            console.error("[payment-adjustment] Erreur Mollie:", errorText);
+            res.status(500).json({ error: "Impossible de créer le lien de paiement complémentaire via Mollie." });
+            return;
+          }
+          const payment = await response.json() as { id: string; _links?: { checkout?: { href?: string } } };
+          const paymentLinkUrl = payment._links?.checkout?.href;
+          res.json({ success: true, mode: "real", diff, paymentLinkUrl, paymentId: payment.id });
+          return;
+        } else if (order.paymentProvider === "paypal") {
+          // PayPal ne supporte pas les paiements complémentaires directs — retourner un message explicatif
+          res.status(400).json({
+            error: "Le paiement complémentaire réel n'est pas disponible pour les commandes PayPal. Utilisez l'ajustement interne et gérez la différence manuellement.",
+            fallbackToInternal: true,
+          });
+          return;
+        } else {
+          res.status(400).json({ error: `Paiement complémentaire non supporté pour le prestataire : ${order.paymentProvider}` });
+          return;
+        }
+      } else {
+        // Remboursement partiel (diff < 0)
+        const amount = Math.abs(diff);
+        const totalPaid = money(order.total + (order.refundedAmount || 0));
+        const maxRefundable = money(totalPaid - (order.refundedAmount || 0));
+        if (amount > maxRefundable + 0.01) {
+          res.status(400).json({ error: `Montant de remboursement (${amount}€) supérieur au montant remboursable (${maxRefundable}€)` });
+          return;
+        }
+
+        if (order.paymentProvider === "mollie") {
+          try {
+            const { createMollieClient } = await import("@mollie/api-client");
+            const mollieClient = createMollieClient({ apiKey: process.env.MOLLIE_API_KEY! });
+            await mollieClient.paymentRefunds.create({
+              paymentId: order.providerPaymentId,
+              amount: { value: amount.toFixed(2), currency: "EUR" },
+            });
+          } catch (error: any) {
+            console.error("[payment-adjustment] Erreur Mollie Refund:", error);
+            res.status(500).json({ error: "Remboursement Mollie échoué : " + (error.message || "Erreur inconnue") });
+            return;
+          }
+        } else if (order.paymentProvider === "paypal") {
+          try {
+            const fetchFn = (await import("node-fetch")).default;
+            const auth = Buffer.from(`${process.env.PAYPAL_CLIENT_ID}:${process.env.PAYPAL_CLIENT_SECRET}`).toString("base64");
+            const tokenRes = await fetchFn("https://api-m.paypal.com/v1/oauth2/token", {
+              method: "POST",
+              headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
+              body: "grant_type=client_credentials",
+            });
+            const tokenData = await tokenRes.json() as { access_token?: string };
+            if (!tokenData.access_token) throw new Error("Impossible d'obtenir un token PayPal");
+            const refundRes = await fetchFn(`https://api-m.paypal.com/v2/payments/captures/${order.providerPaymentId}/refund`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${tokenData.access_token}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ amount: { value: amount.toFixed(2), currency_code: "EUR" } }),
+            });
+            if (!refundRes.ok) {
+              const errorData = await refundRes.json() as { message?: string };
+              throw new Error(errorData.message || JSON.stringify(errorData));
+            }
+          } catch (error: any) {
+            console.error("[payment-adjustment] Erreur PayPal Refund:", error);
+            res.status(500).json({ error: "Remboursement PayPal échoué : " + (error.message || "Erreur inconnue") });
+            return;
+          }
+        } else {
+          res.status(400).json({ error: `Remboursement non supporté pour le prestataire : ${order.paymentProvider}` });
+          return;
+        }
+
+        // Mettre à jour les montants de remboursement en base
+        const newRefundedAmount = money((order.refundedAmount || 0) + amount);
+        const isTotalRefund = newRefundedAmount >= money(order.total) - 0.01;
+        const newStatus = isTotalRefund ? "refunded" : "partially_refunded";
+        await prisma.order.update({
+          where: { id },
+          data: {
+            status: newStatus,
+            refundedAmount: newRefundedAmount,
+            refundedAt: new Date(),
+            refundMode: "real",
+          },
+        });
+        res.json({ success: true, mode: "real", diff, newStatus, refundedAmount: newRefundedAmount });
+        return;
+      }
+    } catch (err: any) {
+      console.error("[payment-adjustment] Erreur:", err);
+      res.status(500).json({ error: err.message || "Erreur lors de l'ajustement de paiement" });
+    }
+  }
+);
+
 // GET /api/admin/orders/:id — Détail d'une commande
 adminRouter.get(
   "/orders/:id",

@@ -402,6 +402,46 @@ export function deleteAdminOrder(id: string) {
   return adminFetch<{ success: boolean }>(`/api/admin/orders/${id}`, { method: "DELETE" });
 }
 
+export function modifyOrderItems(
+  id: string,
+  payload: {
+    items: { productId: string; variantId?: string | null; quantity: number }[];
+    adjustmentMode: "real" | "internal";
+    notifyClient?: boolean;
+  }
+) {
+  return adminFetch<{
+    order: Order;
+    oldTotal: number;
+    newTotal: number;
+    diff: number;
+    adjustmentMode: string;
+    notifyClient: boolean;
+  }>(`/api/admin/orders/${id}/items`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function createPaymentAdjustment(
+  id: string,
+  payload: { diff: number; mode: "real" | "internal" }
+) {
+  return adminFetch<{
+    success: boolean;
+    mode: string;
+    diff: number;
+    paymentLinkUrl?: string;
+    paymentId?: string;
+    newStatus?: string;
+    refundedAmount?: number;
+    fallbackToInternal?: boolean;
+  }>(`/api/admin/orders/${id}/payment-adjustment`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function refundAdminOrder(id: string, payload: { amount: number; mode: "real" | "manual" }) {
   return adminFetch<{ success: boolean; status: string; refundedAmount: number }>(`/api/admin/orders/${id}/refund`, {
     method: "POST",

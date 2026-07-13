@@ -29,6 +29,10 @@ import {
   Truck,
   User,
   X,
+  ShoppingCart,
+  Plus,
+  Minus,
+  Search,
 } from "lucide-react";
 import {
   getAdminOrder,
@@ -51,12 +55,15 @@ import {
   resendOrderTracking,
   updateAdminOrder,
   updateOrderStatus,
+  modifyOrderItems,
+  createPaymentAdjustment,
+  getAdminProducts,
   type LogisticsCarrierQuote,
   type LogisticsPreparationDetail,
   type LogisticsPreparationItem,
   type ShipmentRecord,
 } from "@/lib/admin-api";
-import type { Order, Packaging, ShippingAddress } from "@/types";
+import type { Order, Packaging, ShippingAddress, Product, ProductVariant } from "@/types";
 import { EmailPickerModal, type EmailOption } from "@/components/admin/EmailPickerModal";
 
 const PAYMENT_BADGES: Record<string, { label: string; className: string }> = {
@@ -334,6 +341,30 @@ export default function OrderDetailPage() {
   const [quoteRefreshingByCarrier, setQuoteRefreshingByCarrier] = useState<Record<string, boolean>>({});
   const [quoteErrorsByCarrier, setQuoteErrorsByCarrier] = useState<Record<string, string>>({});
   const [drawerRelayPointId, setDrawerRelayPointId] = useState("");
+
+  // ─── États : panel modification articles ───────────────────────────────────
+  type EditableItem = {
+    productId: string;
+    variantId: string | null;
+    name: string;
+    variantLabel: string | null;
+    image: string;
+    price: number;
+    quantity: number;
+  };
+  const [showModifyItemsPanel, setShowModifyItemsPanel] = useState(false);
+  const [editableItems, setEditableItems] = useState<EditableItem[]>([]);
+  const [modifyItemsStep, setModifyItemsStep] = useState<"edit" | "confirm" | "adjustment" | "done">("edit");
+  const [modifyItemsLoading, setModifyItemsLoading] = useState(false);
+  const [modifyItemsError, setModifyItemsError] = useState("");
+  const [modifyItemsResult, setModifyItemsResult] = useState<{ oldTotal: number; newTotal: number; diff: number } | null>(null);
+  const [modifyAdjustmentMode, setModifyAdjustmentMode] = useState<"real" | "internal">("real");
+  const [modifyPaymentLinkUrl, setModifyPaymentLinkUrl] = useState("");
+  const [modifyDoneMessage, setModifyDoneMessage] = useState("");
+  // Recherche produit pour ajout
+  const [productSearch, setProductSearch] = useState("");
+  const [productSearchResults, setProductSearchResults] = useState<Product[]>([]);
+  const [productSearchLoading, setProductSearchLoading] = useState(false);
 
   const loadOrder = async () => {
     if (!id) return;
@@ -840,6 +871,134 @@ export default function OrderDetailPage() {
     doResendTracking();
   };
 
+  // ─── Handlers : modification articles ─────────────────────────────────────
+  const openModifyItemsPanel = () => {
+    if (!order) return;
+    // Initialiser les articles éditables depuis la commande actuelle
+    const items: EditableItem[] = order.items.map((item) => ({
+      productId: item.productId || "",
+      variantId: item.variantId || null,
+      name: item.name,
+      variantLabel: item.variantLabel || null,
+      image: item.image || "",
+      price: item.price,
+      quantity: item.quantity,
+    }));
+    setEditableItems(items);
+    setModifyItemsStep("edit");
+    setModifyItemsError("");
+    setModifyItemsResult(null);
+    setModifyPaymentLinkUrl("");
+    setModifyDoneMessage("");
+    setProductSearch("");
+    setProductSearchResults([]);
+    setShowModifyItemsPanel(true);
+  };
+
+  const handleProductSearch = async (query: string) => {
+    setProductSearch(query);
+    if (query.trim().length < 2) {
+      setProductSearchResults([]);
+      return;
+    }
+    setProductSearchLoading(true);
+    try {
+      const result = await getAdminProducts({ search: query.trim(), limit: 8, status: "active" });
+      setProductSearchResults(result.products);
+    } catch {
+      setProductSearchResults([]);
+    } finally {
+      setProductSearchLoading(false);
+    }
+  };
+
+  const addProductToEditableItems = (product: Product, variant?: ProductVariant) => {
+    const key = `${product.id}:${variant?.id ?? ""}`;
+    const existing = editableItems.find((i) => `${i.productId}:${i.variantId ?? ""}` === key);
+    if (existing) {
+      setEditableItems((prev) => prev.map((i) => `${i.productId}:${i.variantId ?? ""}` === key ? { ...i, quantity: i.quantity + 1 } : i));
+    } else {
+      const images = Array.isArray(product.images) ? product.images : (typeof product.images === "string" ? JSON.parse(product.images || "[]") : []);
+      setEditableItems((prev) => [
+        ...prev,
+        {
+          productId: product.id,
+          variantId: variant?.id || null,
+          name: variant ? `${product.name} - ${variant.name}` : product.name,
+          variantLabel: variant?.name || null,
+          image: variant?.image || images[0] || "",
+          price: variant?.price ?? product.price,
+          quantity: 1,
+        },
+      ]);
+    }
+    setProductSearch("");
+    setProductSearchResults([]);
+  };
+
+  const updateEditableItemQty = (index: number, delta: number) => {
+    setEditableItems((prev) => {
+      const updated = [...prev];
+      const newQty = updated[index].quantity + delta;
+      if (newQty <= 0) {
+        return updated.filter((_, i) => i !== index);
+      }
+      updated[index] = { ...updated[index], quantity: newQty };
+      return updated;
+    });
+  };
+
+  const removeEditableItem = (index: number) => {
+    setEditableItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleModifyItemsSubmit = async () => {
+    if (!order || editableItems.length === 0) return;
+    setModifyItemsLoading(true);
+    setModifyItemsError("");
+    try {
+      const result = await modifyOrderItems(order.id, {
+        items: editableItems.map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity })),
+        adjustmentMode: modifyAdjustmentMode,
+      });
+      setModifyItemsResult({ oldTotal: result.oldTotal, newTotal: result.newTotal, diff: result.diff });
+      setOrder(result.order);
+      if (Math.abs(result.diff) < 0.01) {
+        // Pas de différence — on passe directement à done
+        setModifyDoneMessage("Articles modifiés avec succès. Le total de la commande est inchangé.");
+        setModifyItemsStep("done");
+      } else {
+        setModifyItemsStep("adjustment");
+      }
+    } catch (err: unknown) {
+      setModifyItemsError(err instanceof Error ? err.message : "Erreur lors de la modification des articles");
+    } finally {
+      setModifyItemsLoading(false);
+    }
+  };
+
+  const handlePaymentAdjustment = async () => {
+    if (!order || !modifyItemsResult) return;
+    setModifyItemsLoading(true);
+    setModifyItemsError("");
+    try {
+      const result = await createPaymentAdjustment(order.id, { diff: modifyItemsResult.diff, mode: modifyAdjustmentMode });
+      if (result.paymentLinkUrl) {
+        setModifyPaymentLinkUrl(result.paymentLinkUrl);
+        setModifyDoneMessage(`Lien de paiement complémentaire créé (${formatPrice(modifyItemsResult.diff, order.currency)}). Envoyez-le au client.`);
+      } else if (result.newStatus) {
+        setModifyDoneMessage(`Remboursement de ${formatPrice(Math.abs(modifyItemsResult.diff), order.currency)} effectué avec succès.`);
+      } else {
+        setModifyDoneMessage(`Ajustement interne enregistré (${formatPrice(modifyItemsResult.diff, order.currency)}).`);
+      }
+      setModifyItemsStep("done");
+    } catch (err: unknown) {
+      setModifyItemsError(err instanceof Error ? err.message : "Erreur lors de l'ajustement de paiement");
+    } finally {
+      setModifyItemsLoading(false);
+    }
+  };
+
   const markAsProcessed = async () => {
     if (!order) return;
     setUpdating(true);
@@ -943,8 +1102,16 @@ export default function OrderDetailPage() {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
           <main className="space-y-6">
             <section className="rounded-2xl border border-gray-200 bg-white shadow-sm">
-              <div className="border-b border-gray-200 px-5 py-4">
+              <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
                 <h2 className="font-semibold text-gray-950">Articles</h2>
+                {["paid", "processing", "shipped", "delivered", "partially_refunded"].includes(order.status) && !isPosOrder && (
+                  <button
+                    onClick={openModifyItemsPanel}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50"
+                  >
+                    <Pencil className="h-3.5 w-3.5" /> Modifier les articles
+                  </button>
+                )}
               </div>
               <div className="divide-y divide-gray-100">
                 {order.items.map((item) => (
@@ -1559,6 +1726,237 @@ export default function OrderDetailPage() {
       )}
 
       {/* Modal sélecteur d'email — confirmation et suivi */}
+      {/* Panel de modification des articles d'une commande payée */}
+      {showModifyItemsPanel && order && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={(e) => { if (e.target === e.currentTarget) setShowModifyItemsPanel(false); }}>
+          <div className="relative flex w-full max-w-2xl flex-col rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl" style={{ maxHeight: "90vh" }}>
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+              <div className="flex items-center gap-2">
+                <ShoppingCart className="h-5 w-5 text-gray-700" />
+                <h2 className="font-semibold text-gray-950">Modifier les articles</h2>
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">#{order.orderNumber}</span>
+              </div>
+              <button onClick={() => setShowModifyItemsPanel(false)} className="rounded-xl p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {/* Étape 1 : Édition des articles */}
+              {modifyItemsStep === "edit" && (
+                <div className="space-y-4">
+                  {/* Liste des articles éditables */}
+                  <div className="divide-y divide-gray-100 rounded-xl border border-gray-200">
+                    {editableItems.length === 0 && (
+                      <div className="px-4 py-6 text-center text-sm text-gray-400">Aucun article. Ajoutez des produits ci-dessous.</div>
+                    )}
+                    {editableItems.map((item, index) => (
+                      <div key={`${item.productId}:${item.variantId ?? ""}:${index}`} className="flex items-center gap-3 px-4 py-3">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                          {item.image ? <img src={item.image} alt="" className="h-full w-full object-cover" /> : <Package className="h-4 w-4 text-gray-300" />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-gray-950">{item.name}</p>
+                          <p className="text-xs text-gray-500">{formatPrice(item.price, order.currency)}</p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => updateEditableItemQty(index, -1)} className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">
+                            <Minus className="h-3.5 w-3.5" />
+                          </button>
+                          <span className="w-8 text-center text-sm font-semibold text-gray-950">{item.quantity}</span>
+                          <button onClick={() => updateEditableItemQty(index, 1)} className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">
+                            <Plus className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <button onClick={() => removeEditableItem(index)} className="ml-1 flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 hover:bg-rose-50 hover:text-rose-600">
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Recherche produit */}
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-700">Ajouter un produit</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        value={productSearch}
+                        onChange={(e) => handleProductSearch(e.target.value)}
+                        placeholder="Rechercher un produit…"
+                        className="w-full rounded-xl border border-gray-300 py-2.5 pl-9 pr-4 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
+                      />
+                      {productSearchLoading && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-gray-400" />}
+                    </div>
+                    {productSearchResults.length > 0 && (
+                      <div className="mt-1 rounded-xl border border-gray-200 bg-white shadow-lg">
+                        {productSearchResults.map((product) => (
+                          <div key={product.id}>
+                            {product.variants && product.variants.length > 0 ? (
+                              product.variants.map((variant) => (
+                                <button
+                                  key={variant.id}
+                                  onClick={() => addProductToEditableItems(product, variant)}
+                                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50"
+                                >
+                                  <div className="h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-gray-100 bg-gray-50">
+                                    {variant.image ? <img src={variant.image} alt="" className="h-full w-full object-cover" /> : null}
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-sm font-medium text-gray-950">{product.name} — {variant.name}</p>
+                                    <p className="text-xs text-gray-500">{formatPrice(variant.price ?? product.price, "EUR")}</p>
+                                  </div>
+                                </button>
+                              ))
+                            ) : (
+                              <button
+                                onClick={() => addProductToEditableItems(product)}
+                                className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50"
+                              >
+                                <div className="h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-gray-100 bg-gray-50">
+                                  {(() => { const imgs = Array.isArray(product.images) ? product.images : []; return imgs[0] ? <img src={imgs[0]} alt="" className="h-full w-full object-cover" /> : null; })()}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-medium text-gray-950">{product.name}</p>
+                                  <p className="text-xs text-gray-500">{formatPrice(product.price, "EUR")}</p>
+                                </div>
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {modifyItemsError && (
+                    <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{modifyItemsError}</div>
+                  )}
+                </div>
+              )}
+
+              {/* Étape 2 : Ajustement de paiement */}
+              {modifyItemsStep === "adjustment" && modifyItemsResult && (
+                <div className="space-y-4">
+                  <div className="rounded-xl bg-gray-50 p-4">
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between"><span className="text-gray-500">Ancien total</span><span className="font-medium">{formatPrice(modifyItemsResult.oldTotal, order.currency)}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">Nouveau total</span><span className="font-medium">{formatPrice(modifyItemsResult.newTotal, order.currency)}</span></div>
+                      <div className="flex justify-between border-t border-gray-200 pt-2">
+                        <span className="font-semibold text-gray-950">Différence</span>
+                        <span className={`font-semibold ${modifyItemsResult.diff > 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                          {modifyItemsResult.diff > 0 ? "+" : ""}{formatPrice(modifyItemsResult.diff, order.currency)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-700">
+                      {modifyItemsResult.diff > 0 ? "Le client doit payer un complément. Comment souhaitez-vous le gérer ?" : "Un remboursement est dû au client. Comment souhaitez-vous le gérer ?"}
+                    </p>
+                    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 p-3 hover:bg-gray-50 has-[:checked]:border-gray-950 has-[:checked]:bg-gray-50">
+                      <input type="radio" name="adjustmentMode" value="real" checked={modifyAdjustmentMode === "real"} onChange={() => setModifyAdjustmentMode("real")} className="mt-0.5" />
+                      <div>
+                        <p className="text-sm font-semibold text-gray-950">{modifyItemsResult.diff > 0 ? "Envoyer un lien de paiement complémentaire" : "Rembourser via le prestataire de paiement"}</p>
+                        <p className="text-xs text-gray-500">{modifyItemsResult.diff > 0 ? "Un lien Mollie sera généré — à envoyer au client par email ou SMS." : "Remboursement réel via Mollie ou PayPal."}</p>
+                      </div>
+                    </label>
+                    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 p-3 hover:bg-gray-50 has-[:checked]:border-gray-950 has-[:checked]:bg-gray-50">
+                      <input type="radio" name="adjustmentMode" value="internal" checked={modifyAdjustmentMode === "internal"} onChange={() => setModifyAdjustmentMode("internal")} className="mt-0.5" />
+                      <div>
+                        <p className="text-sm font-semibold text-gray-950">Ajustement interne uniquement</p>
+                        <p className="text-xs text-gray-500">La différence est notée dans la commande sans transaction de paiement.</p>
+                      </div>
+                    </label>
+                  </div>
+
+                  {modifyItemsError && (
+                    <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{modifyItemsError}</div>
+                  )}
+                </div>
+              )}
+
+              {/* Étape 3 : Confirmation finale */}
+              {modifyItemsStep === "done" && (
+                <div className="space-y-4">
+                  <div className="flex items-start gap-3 rounded-xl bg-emerald-50 p-4">
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                    <p className="text-sm text-emerald-800">{modifyDoneMessage}</p>
+                  </div>
+                  {modifyPaymentLinkUrl && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                      <p className="mb-2 text-sm font-medium text-amber-900">Lien de paiement complémentaire :</p>
+                      <div className="flex items-center gap-2">
+                        <input readOnly value={modifyPaymentLinkUrl} className="flex-1 rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs text-gray-700 outline-none" />
+                        <button onClick={() => { navigator.clipboard.writeText(modifyPaymentLinkUrl); }} className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100">
+                          <Copy className="h-4 w-4" />
+                        </button>
+                        <a href={modifyPaymentLinkUrl} target="_blank" rel="noopener noreferrer" className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100">
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer avec boutons d'action */}
+            <div className="flex justify-end gap-2 border-t border-gray-200 px-6 py-4">
+              {modifyItemsStep === "edit" && (
+                <>
+                  <button onClick={() => setShowModifyItemsPanel(false)} className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                    Annuler
+                  </button>
+                  <button
+                    onClick={() => setModifyItemsStep("confirm")}
+                    disabled={editableItems.length === 0 || modifyItemsLoading}
+                    className="inline-flex items-center gap-2 rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Continuer
+                  </button>
+                </>
+              )}
+              {modifyItemsStep === "confirm" && (
+                <>
+                  <button onClick={() => setModifyItemsStep("edit")} className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                    Retour
+                  </button>
+                  <button
+                    onClick={handleModifyItemsSubmit}
+                    disabled={modifyItemsLoading}
+                    className="inline-flex items-center gap-2 rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {modifyItemsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Confirmer la modification
+                  </button>
+                </>
+              )}
+              {modifyItemsStep === "adjustment" && (
+                <>
+                  <button onClick={() => setModifyItemsStep("edit")} className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                    Retour
+                  </button>
+                  <button
+                    onClick={handlePaymentAdjustment}
+                    disabled={modifyItemsLoading}
+                    className="inline-flex items-center gap-2 rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {modifyItemsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Valider
+                  </button>
+                </>
+              )}
+              {modifyItemsStep === "done" && (
+                <button onClick={() => setShowModifyItemsPanel(false)} className="rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800">
+                  Fermer
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {emailPickerAction && (
         <EmailPickerModal
           options={emailPickerOrderOptions}
