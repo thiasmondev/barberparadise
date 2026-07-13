@@ -12,6 +12,7 @@ import {
   sendOrderConfirmationEmail,
   sendOrderShippedEmail,
   sendPasswordResetEmail,
+  sendPaymentDueReminderEmail,
 } from "../services/emailService";
 import { ensureB2CInvoiceForOrder, generateB2CInvoicePdfBuffer } from "../services/b2cInvoiceService";
 import { ensureProInvoiceForOrder } from "../services/proInvoiceService";
@@ -4678,8 +4679,9 @@ adminRouter.post(
         orderDiscountValue: req.body?.orderDiscountValue,
         enforceProMinimum: false,
       });
-      const paymentLater = Boolean(req.body?.paymentLater);
-
+            const paymentLater = Boolean(req.body?.paymentLater);
+      const rawDueDate = req.body?.paymentDueDate;
+      const paymentDueDate = rawDueDate ? new Date(rawDueDate) : null;
       const order = await prisma.order.create({
         data: {
           orderNumber: generateAdminDraftOrderNumber(),
@@ -4705,6 +4707,7 @@ adminRouter.post(
           vatNumber,
           billingAddress: ((req.body?.billingAddress || shippingAddress) as Prisma.InputJsonValue),
           notes: asOptionalString(req.body?.notes),
+          paymentDueDate: paymentDueDate && !isNaN(paymentDueDate.getTime()) ? paymentDueDate : null,
           items: { create: totals.orderItems },
           shippingAddress: { create: shippingAddress },
         },
@@ -4851,8 +4854,11 @@ adminRouter.patch(
         orderDiscountValue: req.body?.orderDiscountValue,
         enforceProMinimum: false,
       });
-      const paymentLater = Boolean(req.body?.paymentLater);
-
+            const paymentLater = Boolean(req.body?.paymentLater);
+      const rawDueDatePatch = req.body?.paymentDueDate;
+      const paymentDueDatePatch = rawDueDatePatch !== undefined
+        ? (rawDueDatePatch ? new Date(rawDueDatePatch) : null)
+        : undefined; // undefined = ne pas modifier
       await prisma.$transaction([
         prisma.orderItem.deleteMany({ where: { orderId: current.id } }),
         prisma.shippingAddress.deleteMany({ where: { orderId: current.id } }),
@@ -4879,6 +4885,12 @@ adminRouter.patch(
             vatNumber,
             billingAddress: ((req.body?.billingAddress || shippingAddress) as Prisma.InputJsonValue),
             notes: asOptionalString(req.body?.notes),
+            ...(paymentDueDatePatch !== undefined && {
+              paymentDueDate: paymentDueDatePatch && !isNaN(paymentDueDatePatch.getTime()) ? paymentDueDatePatch : null,
+              // Réinitialiser le stage de relance si la date d'échéance change
+              paymentReminderStage: 0,
+              lastPaymentReminderAt: null,
+            }),
             items: { create: totals.orderItems },
             shippingAddress: { create: shippingAddress },
           },
@@ -4912,10 +4924,7 @@ adminRouter.post(
         res.status(400).json({ error: "Adresse de livraison requise avant confirmation" });
         return;
       }
-      if (draft.isB2B && draft.totalHT < PRO_MINIMUM_ORDER_HT) {
-        res.status(400).json({ error: `Le minimum de commande professionnel est de ${PRO_MINIMUM_ORDER_HT} € HT` });
-        return;
-      }
+      // Note : le minimum de commande professionnel (200€ HT) ne s'applique PAS aux commandes créées manuellement par l'admin.
 
       const paymentMethod = typeof req.body?.paymentMethod === "string" ? req.body.paymentMethod : draft.paymentMethod;
       const status = paymentMethod === "b2b_deferred" ? "pending_payment" : "pending";
@@ -4932,6 +4941,78 @@ adminRouter.post(
       res.json({ order });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erreur confirmation brouillon";
+      res.status(400).json({ error: message });
+    }
+  }
+);
+
+// POST /api/admin/orders/drafts/:id/send-payment-reminder — Envoyer une relance de paiement manuelle
+adminRouter.post(
+  "/orders/drafts/:id/send-payment-reminder",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const order = await prisma.order.findUnique({
+        where: { id: req.params.id },
+        include: { items: true, customer: true },
+      });
+      if (!order || !['draft', 'pending', 'pending_payment'].includes(order.status)) {
+        res.status(404).json({ error: "Commande/brouillon non trouvé ou déjà payé" });
+        return;
+      }
+      const email = (order.email || order.customerEmail || order.customer?.email || "").trim();
+      if (!email || !email.includes("@")) {
+        res.status(400).json({ error: "Email client requis pour envoyer une relance" });
+        return;
+      }
+      if (!order.paymentDueDate) {
+        res.status(400).json({ error: "Aucune date d'échéance définie sur cette commande" });
+        return;
+      }
+      // Générer un nouveau rawToken (le hash stocké ne peut pas être envoyé au client)
+      const now = new Date();
+      const existingExpiresAt = order.draftShareExpiresAt && order.draftShareExpiresAt > now ? order.draftShareExpiresAt : null;
+      const expiresAt = existingExpiresAt || getDraftShareExpiresAt(now);
+      const rawToken = createDraftShareRawToken(order.id, expiresAt);
+      const tokenHash = hashDraftShareToken(rawToken);
+      // Mettre à jour le token de partage en base
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { draftShareTokenHash: tokenHash, draftShareExpiresAt: expiresAt, draftShareConvertedAt: null },
+      });
+      const resumeUrl = `${getFrontendUrl()}/commande?draftToken=${encodeURIComponent(rawToken)}`;
+      const customerName = [order.customer?.firstName, order.customer?.lastName].filter(Boolean).join(" ") || email;
+      // Déterminer le stage à utiliser : prochain stage ou stage 3 (retard) si déjà au max
+      const nextStage = Math.min(3, (order.paymentReminderStage || 0) + 1) as 1 | 2 | 3;
+      const result = await sendPaymentDueReminderEmail({
+        to: email,
+        customerName,
+        orderNumber: order.orderNumber,
+        resumeUrl,
+        expiresAt,
+        dueDate: order.paymentDueDate,
+        stage: nextStage,
+        items: order.items.map((item) => ({ name: item.name, quantity: item.quantity, price: item.price })),
+        total: order.totalTTC || order.total,
+      });
+      if (!result.sent && !result.skipped) {
+        res.status(502).json({ error: "L'email de relance n'a pas pu être envoyé" });
+        return;
+      }
+      const dueDateLabel = order.paymentDueDate.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const noteEntry = `[Relance paiement manuelle envoyée — Stage ${nextStage} — Échéance : ${dueDateLabel} — ${now.toLocaleDateString('fr-FR')} ${now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}]`;
+      const updatedOrder = await prisma.order.update({
+        where: { id: order.id },
+        data: {
+          paymentReminderStage: nextStage,
+          lastPaymentReminderAt: now,
+          notes: order.notes ? `${order.notes}\n${noteEntry}` : noteEntry,
+        },
+        include: { items: true, customer: true },
+      });
+      res.json({ ok: true, stage: nextStage, sentTo: email, order: updatedOrder });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur envoi relance paiement";
       res.status(400).json({ error: message });
     }
   }

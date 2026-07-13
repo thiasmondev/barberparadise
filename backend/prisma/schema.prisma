@@ -370,6 +370,9 @@ model Order {
   paidAmount               Float    @default(0) // Montant réellement encaissé (paiement initial + compléments confirmés via webhook)
   pendingComplementAmount  Float?   // Montant du complément en attente de paiement (lien Mollie envoyé, non encore payé)
   pendingComplementPaymentId String? // ID du paiement Mollie du complément en attente
+  paymentDueDate    DateTime? // Date d'échéance de paiement fixée par l'admin sur les brouillons/commandes en attente
+  paymentReminderStage Int @default(0) // Stade de relance : 0=aucune, 1=J-3, 2=jour J, 3=J+3
+  lastPaymentReminderAt DateTime? // Date d'envoi de la dernière relance de paiement
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -390,6 +393,7 @@ model Order {
   @@index([posSessionId])
   @@index([promoCodeId])
   @@index([promotionId])
+  @@index([paymentDueDate])
 }
 
 model OrderItem {

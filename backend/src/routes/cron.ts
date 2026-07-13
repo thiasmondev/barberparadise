@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { sendEmail } from "../services/emailService";
 import { runAbandonedCartReminderJob } from "../services/abandonedCartReminderService";
+import { runPaymentDueReminderJob } from "../services/paymentDueReminderService";
 import {
   buildIndyCsv,
   buildIndyEmailHtml,
@@ -66,6 +67,21 @@ cronRouter.post("/abandoned-cart-reminders", async (req: Request, res: Response)
   } catch (error) {
     console.error("[cron-abandoned-cart-reminders] Exécution impossible", error);
     res.status(500).json({ error: error instanceof Error ? error.message : "Relance paniers abandonnés impossible" });
+  }
+});
+
+cronRouter.post("/payment-due-reminders", async (req: Request, res: Response): Promise<void> => {
+  if (!isCronAuthorized(req)) {
+    res.status(401).json({ error: "Cron non autorisé" });
+    return;
+  }
+
+  try {
+    const result = await runPaymentDueReminderJob();
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    console.error("[cron-payment-due-reminders] Exécution impossible", error);
+    res.status(500).json({ error: error instanceof Error ? error.message : "Relances échéances paiement impossibles" });
   }
 });
 

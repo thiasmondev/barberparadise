@@ -530,6 +530,7 @@ export interface AdminOrderDraftPayload {
   notes?: string;
   orderDiscountType?: DiscountType | null;
   orderDiscountValue?: number | null;
+  paymentDueDate?: string | null; // ISO date string (YYYY-MM-DD) ou null pour effacer
   items: Array<{
     productId: string;
     quantity: number;
@@ -609,6 +610,13 @@ export function sendAdminOrderDraftEmail(id: string, overrideEmail?: string) {
     method: "POST",
     body: JSON.stringify(overrideEmail ? { overrideEmail } : {}),
   });
+}
+
+export function sendAdminPaymentReminder(id: string) {
+  return adminFetch<{ ok: boolean; stage: number; sentTo: string; order: Order }>(
+    `/api/admin/orders/drafts/${id}/send-payment-reminder`,
+    { method: "POST" }
+  );
 }
 
 export function exportAbandonedCartToDraft(id: string, options?: { isB2B?: boolean; email?: string }) {

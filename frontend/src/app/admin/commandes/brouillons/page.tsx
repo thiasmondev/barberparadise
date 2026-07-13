@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, FileText, Loader2, Mail, PackagePlus, Plus, Save, Search, Trash2, UserPlus } from "lucide-react";
+import { Bell, CheckCircle2, FileText, Loader2, Mail, PackagePlus, Plus, Save, Search, Trash2, UserPlus } from "lucide-react";
 
 import AdminOrdersTabs from "@/components/admin/AdminOrdersTabs";
 import { EmailPickerModal, type EmailOption } from "@/components/admin/EmailPickerModal";
@@ -18,6 +18,7 @@ import {
   getAdminProducts,
   getCustomerExtraEmails,
   sendAdminOrderDraftEmail,
+  sendAdminPaymentReminder,
   updateAdminOrderDraft,
 } from "@/lib/admin-api";
 import type { Customer, OrderItem, Product } from "@/types";
@@ -56,6 +57,7 @@ type DraftForm = {
   notes: string;
   orderDiscountType: DiscountType;
   orderDiscountValue: string;
+  paymentDueDate: string; // YYYY-MM-DD ou vide
   shippingAddress: AdminDraftAddressPayload;
   items: DraftLine[];
 };
@@ -70,6 +72,7 @@ const initialForm: DraftForm = {
   notes: "",
   orderDiscountType: "fixed",
   orderDiscountValue: "",
+  paymentDueDate: "",
   shippingAddress: emptyAddress,
   items: [],
 };
@@ -144,6 +147,7 @@ function draftToForm(draft: AdminOrderDraft): DraftForm {
     notes: draft.notes || "",
     orderDiscountType: (draft.orderDiscountType as DiscountType) || (Number(draft.discountAmount || 0) > 0 ? "fixed" : "fixed"),
     orderDiscountValue: String(draft.orderDiscountValue ?? draft.discountAmount ?? ""),
+    paymentDueDate: draft.paymentDueDate ? draft.paymentDueDate.slice(0, 10) : "",
     shippingAddress: address,
     items: (draft.items || []).map((item: OrderItem) => ({
       productId: item.productId,
@@ -183,6 +187,7 @@ export default function AdminOrderDraftsPage() {
   const [productSearch, setProductSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [sendingDraftEmailId, setSendingDraftEmailId] = useState<string | null>(null);
+  const [sendingReminderId, setSendingReminderId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Modal sélecteur d'email
@@ -306,6 +311,7 @@ export default function AdminOrderDraftsPage() {
       notes: form.notes,
       orderDiscountType: numericValue(form.orderDiscountValue) > 0 ? form.orderDiscountType : null,
       orderDiscountValue: numericValue(form.orderDiscountValue) > 0 ? numericValue(form.orderDiscountValue) : null,
+      paymentDueDate: form.paymentDueDate || null,
       shippingAddress: form.shippingAddress,
       billingAddress: form.shippingAddress,
       items: form.items.map((line) => ({
@@ -376,6 +382,23 @@ export default function AdminOrderDraftsPage() {
       setError(err instanceof Error ? err.message : "Erreur envoi email brouillon");
     } finally {
       setSendingDraftEmailId(null);
+    }
+  }
+
+  async function sendPaymentReminder(draftId = editingId) {
+    if (!draftId) return;
+    setSendingReminderId(draftId);
+    setError(null);
+    setMessage(null);
+    try {
+      const data = await sendAdminPaymentReminder(draftId);
+      setDrafts((current) => current.map((d) => (d.id === draftId ? { ...d, ...data.order } : d)));
+      if (editingId === draftId && data.order) setForm((current) => ({ ...current, paymentDueDate: data.order.paymentDueDate ? data.order.paymentDueDate.slice(0, 10) : current.paymentDueDate }));
+      setMessage(`Relance stage ${data.stage} envoyée à ${data.sentTo}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur envoi relance paiement");
+    } finally {
+      setSendingReminderId(null);
     }
   }
 
@@ -569,11 +592,35 @@ export default function AdminOrderDraftsPage() {
             <div className="mt-4"><label className="text-sm font-medium text-gray-700">Livraison</label><input type="number" min="0" step="0.01" value={form.shipping} onChange={(event) => setForm({ ...form, shipping: event.target.value })} placeholder="Auto si vide" className="mt-2 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-dark-800" /></div>
             <div className="mt-4"><label className="text-sm font-medium text-gray-700">Remise commande totale</label><div className="mt-2 grid grid-cols-[92px_1fr] gap-2"><select value={form.orderDiscountType} onChange={(event) => updateOrderDiscount(event.target.value as DiscountType, form.orderDiscountValue)} className="rounded-xl border border-gray-200 px-2 py-2.5 text-sm outline-none focus:border-dark-800"><option value="fixed">€ fixe</option><option value="percent">%</option></select><input type="number" min="0" step="0.01" value={form.orderDiscountValue} onChange={(event) => updateOrderDiscount(form.orderDiscountType, event.target.value)} placeholder="0" className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-dark-800" /></div></div>
             <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Notes internes" rows={4} className="mt-4 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-dark-800" />
+            <div className="mt-4">
+              <label className="text-sm font-medium text-gray-700">Date d'échéance de paiement</label>
+              <input
+                type="date"
+                value={form.paymentDueDate}
+                onChange={(event) => setForm({ ...form, paymentDueDate: event.target.value })}
+                className="mt-2 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-dark-800"
+              />
+              {form.paymentDueDate && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Relances automatiques : J-3, jour J, J+3 (9h00).
+                </p>
+              )}
+            </div>
             <div className="mt-5 space-y-3 border-t border-gray-100 pt-4 text-sm"><div className="flex justify-between"><span>Sous-total {form.isB2B ? "HT" : "TTC"}</span><strong>{eur(totals.subtotal)}</strong></div>{totals.lineDiscount > 0 ? <div className="flex justify-between text-emerald-700"><span>Remises articles</span><strong>- {eur(totals.lineDiscount)}</strong></div> : null}{totals.orderDiscount > 0 ? <div className="flex justify-between text-emerald-700"><span>Remise commande</span><strong>- {eur(totals.orderDiscount)}</strong></div> : null}<div className="flex justify-between"><span>TVA estimée</span><strong>{eur(totals.vat)}</strong></div><div className="flex justify-between"><span>Livraison</span><strong>{form.shipping === "" ? "Auto" : eur(totals.shipping)}</strong></div><div className="flex justify-between border-t border-gray-100 pt-3 text-base"><span>Total</span><strong>{eur(totals.total)}</strong></div></div>
             <button type="button" onClick={saveDraft} disabled={saving} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-dark-800 px-4 py-3 text-sm font-semibold text-white hover:bg-dark-900 disabled:opacity-60">{saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Enregistrer</button>
             <button type="button" onClick={() => sendDraftEmail()} disabled={!editingId || sendingDraftEmailId === editingId || !form.email} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-dark-800 px-4 py-3 text-sm font-semibold text-dark-800 hover:bg-gray-50 disabled:opacity-50">{sendingDraftEmailId === editingId ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />} Envoyer au client</button>
             <button type="button" onClick={confirmDraft} disabled={!editingId || saving} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"><CheckCircle2 size={16} /> Créer la commande</button>
-            <p className="mt-3 text-xs text-gray-500">Le minimum professionnel de 200 € HT est appliqué au moment de créer la commande.</p>
+            {editingId && form.paymentDueDate && (
+              <button
+                type="button"
+                onClick={() => sendPaymentReminder()}
+                disabled={sendingReminderId === editingId}
+                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-amber-400 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+              >
+                {sendingReminderId === editingId ? <Loader2 size={16} className="animate-spin" /> : <Bell size={16} />}
+                Envoyer une relance de paiement
+              </button>
+            )}
           </aside>
         </section>
       </div>

@@ -12,6 +12,11 @@ import {
   type AbandonedCartReminderStage,
   type AbandonedCartReminderItem,
 } from "../emails/abandonedCartReminderEmail";
+import {
+  paymentDueReminderEmail,
+  getPaymentDueReminderSubject,
+  type PaymentDueReminderStage,
+} from "../emails/paymentDueReminderEmail";
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const brevo = process.env.BREVO_API_KEY ? new BrevoClient({ apiKey: process.env.BREVO_API_KEY }) : null;
@@ -214,5 +219,23 @@ export async function sendStockAlertEmail(params: Parameters<typeof stockAlertEm
     to: params.to,
     subject: `Bonne nouvelle ! ${params.productName} est de retour en stock 🎉`,
     html: stockAlertEmail(params),
+  });
+}
+
+export async function sendPaymentDueReminderEmail(params: {
+  to: string;
+  customerName: string;
+  orderNumber: string;
+  resumeUrl: string;
+  expiresAt: Date;
+  dueDate: Date;
+  stage: PaymentDueReminderStage;
+  items: Array<{ name: string; quantity: number; price: number }>;
+  total: number;
+}) {
+  return sendResendEmailOnly({
+    to: params.to,
+    subject: getPaymentDueReminderSubject(params.stage, params.orderNumber),
+    html: paymentDueReminderEmail(params),
   });
 }

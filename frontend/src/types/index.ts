@@ -214,6 +214,9 @@ export interface Order {
   paidAmount?: number | null; // Montant réellement encaissé (initialisé au paiement, mis à jour par webhook complément)
   pendingComplementAmount?: number | null; // Complément en attente de paiement (mode real)
   pendingComplementPaymentId?: string | null; // ID du lien de paiement Mollie pour le complément
+  paymentDueDate?: string | null; // Date d'échéance de paiement fixée par l'admin
+  paymentReminderStage?: number; // Stade de relance : 0=aucune, 1=J-3, 2=jour J, 3=J+3
+  lastPaymentReminderAt?: string | null; // Date d'envoi de la dernière relance
   refundedAt?: string | null;
   refundMode?: string | null;
   createdAt: string;
