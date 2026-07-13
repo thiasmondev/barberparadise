@@ -47,16 +47,14 @@ services:
       url: docker.io/curlimages/curl:latest
     schedule: "0 7 * * *"
     dockerCommand: >
-      sh -c '
-        set -e;
-        echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Relances paiement → $BACKEND_URL/api/cron/payment-due-reminders";
-        curl --silent --show-error --fail --max-time 30 --retry 2 --retry-delay 5
-          -X POST "$BACKEND_URL/api/cron/payment-due-reminders"
-          -H "Authorization: Bearer $CRON_SECRET"
-          -H "Content-Type: application/json"
-          -w "\n[HTTP_STATUS:%{http_code}]";
-        echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Terminé."
-      '
+      set -e &&
+      echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Relances paiement → $BACKEND_URL/api/cron/payment-due-reminders" &&
+      curl --silent --show-error --fail --max-time 30 --retry 2 --retry-delay 5
+        -X POST "$BACKEND_URL/api/cron/payment-due-reminders"
+        -H "Authorization: Bearer $CRON_SECRET"
+        -H "Content-Type: application/json"
+        -w "\n[HTTP_STATUS:%{http_code}]" &&
+      echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Terminé."
     envVars:
       - key: BACKEND_URL
         value: https://barberparadise-backend.onrender.com
