@@ -58,6 +58,7 @@ import {
   modifyOrderItems,
   createPaymentAdjustment,
   getAdminProducts,
+  getProductVariants,
   type LogisticsCarrierQuote,
   type LogisticsPreparationDetail,
   type LogisticsPreparationItem,
@@ -361,6 +362,8 @@ export default function OrderDetailPage() {
   const [modifyAdjustmentMode, setModifyAdjustmentMode] = useState<"real" | "internal">("real");
   const [modifyPaymentLinkUrl, setModifyPaymentLinkUrl] = useState("");
   const [modifyDoneMessage, setModifyDoneMessage] = useState("");
+  // Cache des variantes par productId (pour le sélecteur de variante inline)
+  const [productVariantsCache, setProductVariantsCache] = useState<Record<string, ProductVariant[]>>({});
   // Recherche produit pour ajout
   const [productSearch, setProductSearch] = useState("");
   const [productSearchResults, setProductSearchResults] = useState<Product[]>([]);
@@ -893,6 +896,19 @@ export default function OrderDetailPage() {
     setProductSearch("");
     setProductSearchResults([]);
     setShowModifyItemsPanel(true);
+    // Charger les variantes disponibles pour chaque produit (en arrière-plan)
+    const productIds = Array.from(new Set(order.items.map((i) => i.productId).filter(Boolean)));
+    productIds.forEach(async (productId) => {
+      if (!productId || productVariantsCache[productId]) return; // Déjà en cache
+      try {
+        const variants = await getProductVariants(productId);
+        if (variants.length > 0) {
+          setProductVariantsCache((prev) => ({ ...prev, [productId]: variants }));
+        }
+      } catch {
+        // Silencieux : si les variantes ne se chargent pas, le sélecteur n'apparaît pas
+      }
+    });
   };
 
   const handleProductSearch = async (query: string) => {
@@ -951,6 +967,23 @@ export default function OrderDetailPage() {
   const removeEditableItem = (index: number) => {
     setEditableItems((prev) => prev.filter((_, i) => i !== index));
   };
+  const changeEditableItemVariant = (index: number, variantId: string) => {
+    const item = editableItems[index];
+    const variants = productVariantsCache[item.productId] || [];
+    const variant = variants.find((v) => v.id === variantId);
+    if (!variant) return;
+    setEditableItems((prev) => {
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        variantId: variant.id,
+        variantLabel: variant.name,
+        price: variant.price ?? updated[index].price,
+        image: variant.image || updated[index].image,
+      };
+      return updated;
+    });
+  };
 
   const handleModifyItemsSubmit = async () => {
     if (!order || editableItems.length === 0) return;
@@ -983,6 +1016,30 @@ export default function OrderDetailPage() {
     setModifyItemsError("");
     try {
       const result = await createPaymentAdjustment(order.id, { diff: modifyItemsResult.diff, mode: modifyAdjustmentMode });
+
+      // Cas PayPal : complément de paiement non disponible — basculer automatiquement en interne
+      if (!result.success && result.fallbackToInternal) {
+        // Basculer en mode internal et notifier l'admin
+        const internalResult = await createPaymentAdjustment(order.id, { diff: modifyItemsResult.diff, mode: "internal" });
+        if (!internalResult.success) {
+          setModifyItemsError(internalResult.error || "Erreur lors de l'ajustement interne");
+          return;
+        }
+        setModifyDoneMessage(
+          `⚠️ Complément de paiement automatique non disponible pour PayPal.\n` +
+          `Un ajustement interne de ${formatPrice(modifyItemsResult.diff, order.currency)} a été enregistré dans les notes de la commande.\n` +
+          `Vous devez gérer ce complément manuellement (lien PayPal.me, virement, etc.).`
+        );
+        setModifyItemsStep("done");
+        return;
+      }
+
+      // Cas erreur non-fallback
+      if (!result.success && result.error) {
+        setModifyItemsError(result.error);
+        return;
+      }
+
       if (result.paymentLinkUrl) {
         setModifyPaymentLinkUrl(result.paymentLinkUrl);
         setModifyDoneMessage(`Lien de paiement complémentaire créé (${formatPrice(modifyItemsResult.diff, order.currency)}). Envoyez-le au client.`);
@@ -1093,6 +1150,18 @@ export default function OrderDetailPage() {
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${pay.className}`}>{pay.label}</span>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${fulfillment.className}`}>{fulfillment.label}</span>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${channelInfo.className}`}>{channelInfo.label}</span>
+                {/* Badge "Facture à régénérer" :
+                     - itemsLastModifiedAt est mis à jour à chaque modification des articles
+                     - Il est réinitialisé à null lors de la génération de facture
+                     - Donc si itemsLastModifiedAt est non-null ET qu'une facture existe → badge */}
+                {order.itemsLastModifiedAt && (order.isB2B ? Boolean(order.proInvoiceUrl) : Boolean(order.invoiceUrl)) && (
+                  <span
+                    title={`Articles modifiés le ${new Date(order.itemsLastModifiedAt).toLocaleDateString("fr-FR")}. Régénérez la facture depuis la section Facture ci-dessous.`}
+                    className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-300"
+                  >
+                    ⚠️ Facture à régénérer
+                  </span>
+                )}
               </div>
               <p className="mt-1 text-sm text-gray-500">Créée le {formatDate(order.createdAt)}</p>
             </div>
@@ -1758,7 +1827,20 @@ export default function OrderDetailPage() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium text-gray-950">{item.name}</p>
-                          <p className="text-xs text-gray-500">{formatPrice(item.price, order.currency)}</p>
+                          {/* Sélecteur de variante inline si le produit a plusieurs variantes */}
+                          {productVariantsCache[item.productId] && productVariantsCache[item.productId].length > 1 ? (
+                            <select
+                              value={item.variantId || ""}
+                              onChange={(e) => changeEditableItemVariant(index, e.target.value)}
+                              className="mt-0.5 w-full rounded-md border border-gray-200 bg-white py-0.5 pl-1.5 pr-6 text-xs text-gray-700 outline-none focus:border-gray-900"
+                            >
+                              {productVariantsCache[item.productId].map((v) => (
+                                <option key={v.id} value={v.id}>{v.name}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <p className="text-xs text-gray-500">{formatPrice(item.price, order.currency)}</p>
+                          )}
                         </div>
                         <div className="flex items-center gap-1">
                           <button onClick={() => updateEditableItemQty(index, -1)} className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">

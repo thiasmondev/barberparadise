@@ -5454,7 +5454,7 @@ adminRouter.patch(
           })),
         });
 
-        // 7b. Mettre à jour les totaux de la commande
+        // 7b. Mettre à jour les totaux de la commande + marquer la date de modification des articles
         await tx.order.update({
           where: { id },
           data: {
@@ -5469,6 +5469,7 @@ adminRouter.patch(
             discountTotal: totals.discountTotal,
             orderDiscountType: totals.orderDiscountType ?? null,
             orderDiscountValue: totals.orderDiscountValue ?? null,
+            itemsLastModifiedAt: new Date(), // Pour badge "Facture à régénérer"
           },
         });
 

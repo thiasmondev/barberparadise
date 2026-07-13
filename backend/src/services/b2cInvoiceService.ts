@@ -442,9 +442,9 @@ export async function ensureB2CInvoiceForOrder(orderId: string): Promise<B2CInvo
 
   await prisma.order.update({
     where: { id: order.id },
-    data: { invoiceNumber, invoiceUrl },
+    // Réinitialiser itemsLastModifiedAt pour masquer le badge "Facture à régénérer" après régénération
+    data: { invoiceNumber, invoiceUrl, itemsLastModifiedAt: null },
   });
-
   return { invoiceNumber, invoiceUrl, pdfBuffer };
 }
 

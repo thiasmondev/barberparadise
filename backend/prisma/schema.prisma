@@ -364,6 +364,7 @@ model Order {
   relayPointId      String?  // ID du point relais Mondial Relay sélectionné au checkout
   relayPointName    String?  // Nom du point relais (ex. "TABAC PRESSE DU MARCHE")
   relayPointAddress String?  // Adresse complète du point relais (ex. "12 RUE DU MARCHE, 75001 PARIS")
+  itemsLastModifiedAt DateTime? // Date de dernière modification des articles (pour badge "Facture à régénérer")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

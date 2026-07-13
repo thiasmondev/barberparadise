@@ -511,7 +511,8 @@ export async function ensureProInvoiceForOrder(
 
   await prisma.order.update({
     where: { id: order.id },
-    data: { proInvoiceNumber: invoiceNumber, proInvoiceUrl: invoiceUrl },
+    // Réinitialiser itemsLastModifiedAt pour masquer le badge "Facture à régénérer" après régénération
+    data: { proInvoiceNumber: invoiceNumber, proInvoiceUrl: invoiceUrl, itemsLastModifiedAt: null },
   });
 
   if (shouldSendEmail) {

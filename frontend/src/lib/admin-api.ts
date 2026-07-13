@@ -423,11 +423,39 @@ export function modifyOrderItems(
   });
 }
 
-export function createPaymentAdjustment(
+export async function createPaymentAdjustment(
   id: string,
   payload: { diff: number; mode: "real" | "internal" }
-) {
-  return adminFetch<{
+): Promise<{
+  success: boolean;
+  mode: string;
+  diff: number;
+  paymentLinkUrl?: string;
+  paymentId?: string;
+  newStatus?: string;
+  refundedAmount?: number;
+  fallbackToInternal?: boolean;
+  error?: string;
+}> {
+  const token = getToken();
+  if (!token) throw new Error("Non authentifié");
+  const res = await fetch(`${API_URL}/api/admin/orders/${id}/payment-adjustment`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+  if (!res.ok) {
+    // Préserver fallbackToInternal même en cas d'erreur 400
+    return {
+      success: false,
+      mode: payload.mode,
+      diff: payload.diff,
+      fallbackToInternal: Boolean(data.fallbackToInternal),
+      error: (data.error as string) || `Erreur ${res.status}`,
+    };
+  }
+  return data as {
     success: boolean;
     mode: string;
     diff: number;
@@ -436,10 +464,7 @@ export function createPaymentAdjustment(
     newStatus?: string;
     refundedAmount?: number;
     fallbackToInternal?: boolean;
-  }>(`/api/admin/orders/${id}/payment-adjustment`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  };
 }
 
 export function refundAdminOrder(id: string, payload: { amount: number; mode: "real" | "manual" }) {
