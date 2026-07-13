@@ -42,19 +42,10 @@ services:
   # Ajuster le schedule à "0 8 * * *" en hiver si l'heure exacte est critique.
   - type: cron
     name: bp-payment-reminders
-    runtime: image
-    image:
-      url: docker.io/curlimages/curl:latest
+    runtime: node
     schedule: "0 7 * * *"
-    dockerCommand: >
-      set -e &&
-      echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Relances paiement → $BACKEND_URL/api/cron/payment-due-reminders" &&
-      curl --silent --show-error --fail --max-time 30 --retry 2 --retry-delay 5
-        -X POST "$BACKEND_URL/api/cron/payment-due-reminders"
-        -H "Authorization: Bearer $CRON_SECRET"
-        -H "Content-Type: application/json"
-        -w "\n[HTTP_STATUS:%{http_code}]" &&
-      echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Terminé."
+    buildCommand: echo "No build needed"
+    startCommand: node scripts/trigger-payment-reminders.js
     envVars:
       - key: BACKEND_URL
         value: https://barberparadise-backend.onrender.com
