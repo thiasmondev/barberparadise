@@ -35,6 +35,34 @@ services:
       - key: BREVO_API_KEY
         sync: false
 
+  # ─── Cron Job : Relances paiement quotidiennes ─────────────────────────────
+  # Déclenche POST /api/cron/payment-due-reminders tous les jours à 07:00 UTC
+  # = 09:00 heure de Paris en été (UTC+2).
+  # En hiver (UTC+1, fin octobre → fin mars), l'appel arrive à 08:00 Paris.
+  # Ajuster le schedule à "0 8 * * *" en hiver si l'heure exacte est critique.
+  - type: cron
+    name: bp-payment-reminders
+    runtime: image
+    image:
+      url: docker.io/curlimages/curl:latest
+    schedule: "0 7 * * *"
+    command: >
+      sh -c '
+        set -e;
+        echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Relances paiement → $BACKEND_URL/api/cron/payment-due-reminders";
+        curl --silent --show-error --fail --max-time 30 --retry 2 --retry-delay 5
+          -X POST "$BACKEND_URL/api/cron/payment-due-reminders"
+          -H "Authorization: Bearer $CRON_SECRET"
+          -H "Content-Type: application/json"
+          -w "\n[HTTP_STATUS:%{http_code}]";
+        echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Terminé."
+      '
+    envVars:
+      - key: BACKEND_URL
+        value: https://barberparadise-backend.onrender.com
+      - key: CRON_SECRET
+        sync: false
+
 databases:
   - name: barberparadise-db
     databaseName: barberparadise
