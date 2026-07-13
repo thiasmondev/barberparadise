@@ -13,10 +13,30 @@
  */
 
 import cron from "node-cron";
+import crypto from "crypto";
 import { prisma } from "../utils/prisma";
 import { getFrontendUrl } from "../utils/frontendUrl";
 import { sendPaymentDueReminderEmail } from "./emailService";
 import type { PaymentDueReminderStage } from "../emails/paymentDueReminderEmail";
+
+// ─── HELPERS TOKEN (dupliqués ici pour éviter une dépendance circulaire avec admin.ts) ──────────
+const DRAFT_SHARE_EXPIRY_DAYS = 7;
+
+function hashDraftShareToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function getDraftShareExpiresAt(from: Date = new Date()): Date {
+  return new Date(from.getTime() + DRAFT_SHARE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+}
+
+function createDraftShareRawToken(orderId: string, expiresAt: Date): string {
+  const payload = `${orderId}.${expiresAt.getTime()}`;
+  const secret = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET || "barber-paradise-draft-share";
+  const signature = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+  return Buffer.from(`${payload}.${signature}`).toString("base64url");
+}
+// ─────────────────────────────────────────────────────────────────────────────────────────────
 
 // ─── DÉLAIS CONFIGURABLES ─────────────────────────────────────────────────────
 /** Nombre de jours AVANT l'échéance pour envoyer la relance préventive (stage 1) */
@@ -27,11 +47,13 @@ const DAYS_AFTER_DUE_STAGE3 = 3;
 
 let scheduled = false;
 
-function getDraftShareUrl(orderId: string, rawToken: string | null): string {
-  if (rawToken) {
-    return `${getFrontendUrl()}/commande?draftToken=${encodeURIComponent(rawToken)}`;
-  }
-  return `${getFrontendUrl()}/commande`;
+function buildResumeUrl(orderId: string, now: Date): { resumeUrl: string; tokenHash: string; expiresAt: Date } {
+  const existingExpiresAt: Date | null = null; // Le service n'a pas accès au token existant sans requête supplémentaire
+  const expiresAt = existingExpiresAt || getDraftShareExpiresAt(now);
+  const rawToken = createDraftShareRawToken(orderId, expiresAt);
+  const tokenHash = hashDraftShareToken(rawToken);
+  const resumeUrl = `${getFrontendUrl()}/commande?draftToken=${encodeURIComponent(rawToken)}`;
+  return { resumeUrl, tokenHash, expiresAt };
 }
 
 function formatDateFr(date: Date): string {
@@ -121,12 +143,14 @@ export async function runPaymentDueReminderJob(now = new Date()): Promise<{
       continue;
     }
 
-    // Construire l'URL de reprise (utiliser le token de partage existant si disponible)
-    const resumeUrl = order.draftShareTokenHash
-      ? `${getFrontendUrl()}/commande?draftToken=${encodeURIComponent(order.draftShareTokenHash)}`
-      : `${getFrontendUrl()}/commande`;
+    // Générer un nouveau rawToken (le hash stocké ne peut jamais être envoyé au client)
+    const { resumeUrl, tokenHash, expiresAt } = buildResumeUrl(order.id, now);
+    // Mettre à jour le token de partage en base avant l'envoi
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { draftShareTokenHash: tokenHash, draftShareExpiresAt: expiresAt, draftShareConvertedAt: null },
+    });
 
-    const expiresAt = order.draftShareExpiresAt || new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
     const customerName = [order.customer?.firstName, order.customer?.lastName].filter(Boolean).join(" ") || email;
 
     const result = await sendPaymentDueReminderEmail({
@@ -171,9 +195,27 @@ export async function runPaymentDueReminderJob(now = new Date()): Promise<{
 
 /**
  * Planifie le job de relance une fois par jour à 9h00 (heure de Paris).
+ *
+ * IMPORTANT — Fiabilité sur Render :
+ * Ce scheduler est in-process (node-cron). Si le service Render redémarre entre 8h55 et 9h05,
+ * l'exécution de ce jour est silencieusement manquée (node-cron ne rattrape pas les échéances passées).
+ *
+ * RECOMMANDATION : utiliser un déclencheur externe fiable :
+ *   - VPS Hermès (cron existant) : curl -X POST https://[backend]/api/cron/payment-due-reminders -H "Authorization: Bearer $CRON_SECRET"
+ *   - Render Cron Jobs (si disponible sur le plan) : même URL
+ *
+ * Pour désactiver le scheduler in-process et ne dépendre que du déclencheur externe :
+ *   Définir DISABLE_INTERNAL_CRON=true dans les variables d'environnement Render.
  */
 export function schedulePaymentDueReminderJob(): void {
   if (scheduled) return;
+
+  if (process.env.DISABLE_INTERNAL_CRON === "true") {
+    console.log("[payment-due-reminders] Scheduler in-process désactivé (DISABLE_INTERNAL_CRON=true). Déclenchement externe attendu via POST /api/cron/payment-due-reminders.");
+    scheduled = true;
+    return;
+  }
+
   cron.schedule(
     "0 9 * * *",
     async () => {
@@ -186,5 +228,5 @@ export function schedulePaymentDueReminderJob(): void {
     { timezone: process.env.TZ || "Europe/Paris" }
   );
   scheduled = true;
-  console.log("[payment-due-reminders] Relances automatiques planifiées tous les jours à 9h00 (Europe/Paris).");
+  console.log("[payment-due-reminders] Relances automatiques planifiées tous les jours à 9h00 (Europe/Paris). Pour un déclenchement externe fiable, définir DISABLE_INTERNAL_CRON=true.");
 }
