@@ -359,7 +359,9 @@ export default function OrderDetailPage() {
   const [modifyItemsLoading, setModifyItemsLoading] = useState(false);
   const [modifyItemsError, setModifyItemsError] = useState("");
   const [modifyItemsResult, setModifyItemsResult] = useState<{ oldTotal: number; newTotal: number; diff: number } | null>(null);
-  const [modifyAdjustmentMode, setModifyAdjustmentMode] = useState<"real" | "internal">("real");
+  const [modifyAdjustmentMode, setModifyAdjustmentMode] = useState<"real" | "internal" | "gift">("real");
+  const [modifyGiftNotifyClient, setModifyGiftNotifyClient] = useState(false);
+  const [modifyGiftEmailText, setModifyGiftEmailText] = useState("");
   const [modifyPaymentLinkUrl, setModifyPaymentLinkUrl] = useState("");
   const [modifyDoneMessage, setModifyDoneMessage] = useState("");
   // Cache des variantes par productId (pour le sélecteur de variante inline)
@@ -1015,7 +1017,14 @@ export default function OrderDetailPage() {
     setModifyItemsLoading(true);
     setModifyItemsError("");
     try {
-      const result = await createPaymentAdjustment(order.id, { diff: modifyItemsResult.diff, mode: modifyAdjustmentMode });
+      const result = await createPaymentAdjustment(order.id, {
+        diff: modifyItemsResult.diff,
+        mode: modifyAdjustmentMode,
+        ...(modifyAdjustmentMode === "gift" ? {
+          notifyClient: modifyGiftNotifyClient,
+          giftEmailText: modifyGiftNotifyClient ? modifyGiftEmailText : undefined,
+        } : {}),
+      });
 
       // Cas PayPal : complément de paiement non disponible — basculer automatiquement en interne
       if (!result.success && result.fallbackToInternal) {
@@ -1043,6 +1052,12 @@ export default function OrderDetailPage() {
       if (result.paymentLinkUrl) {
         setModifyPaymentLinkUrl(result.paymentLinkUrl);
         setModifyDoneMessage(`Lien de paiement complémentaire créé (${formatPrice(modifyItemsResult.diff, order.currency)}). Envoyez-le au client.`);
+      } else if (result.giftApplied) {
+        const absAmount = formatPrice(Math.abs(modifyItemsResult.diff), order.currency);
+        setModifyDoneMessage(
+          `Remise commerciale de ${absAmount} appliquée avec succès.` +
+          (modifyGiftNotifyClient ? ` Un email a été envoyé au client.` : ` Aucun email envoyé au client.`)
+        );
       } else if (result.newStatus) {
         setModifyDoneMessage(`Remboursement de ${formatPrice(Math.abs(modifyItemsResult.diff), order.currency)} effectué avec succès.`);
       } else {
@@ -1952,7 +1967,47 @@ export default function OrderDetailPage() {
                         <p className="text-xs text-gray-500">La différence est notée dans la commande sans transaction de paiement.</p>
                       </div>
                     </label>
+                    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 hover:bg-amber-100 has-[:checked]:border-amber-500 has-[:checked]:bg-amber-50">
+                      <input type="radio" name="adjustmentMode" value="gift" checked={modifyAdjustmentMode === "gift"} onChange={() => {
+                        setModifyAdjustmentMode("gift");
+                        if (!modifyGiftEmailText) {
+                          const addedNames = editableItems.map(i => i.name).join(", ");
+                          setModifyGiftEmailText(`Nous avons ajouté ${addedNames} à votre commande à titre de geste commercial, sans frais supplémentaire pour vous.`);
+                        }
+                      }} className="mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-amber-900">Offrir la différence (remise commerciale)</p>
+                        <p className="text-xs text-amber-700">La différence est offerte au client. Une ligne « Remise commerciale » apparaîtra sur la prochaine facture générée.</p>
+                      </div>
+                    </label>
                   </div>
+
+                  {/* Section notification client pour le mode gift */}
+                  {modifyAdjustmentMode === "gift" && (
+                    <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                      <label className="flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={modifyGiftNotifyClient}
+                          onChange={e => setModifyGiftNotifyClient(e.target.checked)}
+                          className="h-4 w-4 rounded border-amber-300"
+                        />
+                        <span className="text-sm font-medium text-amber-900">Envoyer un email au client</span>
+                      </label>
+                      {modifyGiftNotifyClient && (
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-amber-800">Texte de l’email (personnalisable)</label>
+                          <textarea
+                            value={modifyGiftEmailText}
+                            onChange={e => setModifyGiftEmailText(e.target.value)}
+                            rows={3}
+                            className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-amber-400"
+                            placeholder="Message à envoyer au client..."
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {modifyItemsError && (
                     <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{modifyItemsError}</div>

@@ -411,6 +411,16 @@ async function generateInvoicePdf(order: LoadedOrder, invoiceNumber: string): Pr
   currentPage(ctx).drawText(euro(order.vatAmount), { x: totalsValX, y: ctx.y, size: 10, font: regular, color: accent });
   ctx.y -= 18;
 
+  // Ligne remise commerciale (mode gift) — affichée si présente
+  if (order.commercialDiscountAmount && order.commercialDiscountAmount > 0) {
+    const discountLabel = order.commercialDiscountLabel || "Remise commerciale";
+    currentPage(ctx).drawText(discountLabel, { x: totalsX, y: ctx.y, size: 10, font: bold, color: rgb(0.8, 0.2, 0.2) });
+    currentPage(ctx).drawText(`-${euro(order.commercialDiscountAmount)}`, { x: totalsValX, y: ctx.y, size: 10, font: regular, color: rgb(0.8, 0.2, 0.2) });
+    ctx.y -= 18;
+  }
+
+  ctx.y -= 4;
+
   // Ligne de total
   currentPage(ctx).drawRectangle({ x: totalsX - 5, y: ctx.y - 6, width: PAGE_WIDTH - MARGIN - totalsX + 5, height: 22, color: rgb(0.06, 0.06, 0.06) });
   currentPage(ctx).drawText("Montant TTC", { x: totalsX, y: ctx.y + 2, size: 11, font: bold, color: rgb(1, 1, 1) });

@@ -406,7 +406,7 @@ export function modifyOrderItems(
   id: string,
   payload: {
     items: { productId: string; variantId?: string | null; quantity: number }[];
-    adjustmentMode: "real" | "internal";
+    adjustmentMode: "real" | "internal" | "gift";
     notifyClient?: boolean;
   }
 ) {
@@ -425,7 +425,7 @@ export function modifyOrderItems(
 
 export async function createPaymentAdjustment(
   id: string,
-  payload: { diff: number; mode: "real" | "internal" }
+  payload: { diff: number; mode: "real" | "internal" | "gift"; notifyClient?: boolean; giftEmailText?: string }
 ): Promise<{
   success: boolean;
   mode: string;
@@ -434,6 +434,7 @@ export async function createPaymentAdjustment(
   paymentId?: string;
   newStatus?: string;
   refundedAmount?: number;
+  giftApplied?: boolean;
   fallbackToInternal?: boolean;
   error?: string;
 }> {

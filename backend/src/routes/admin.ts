@@ -5549,10 +5549,11 @@ adminRouter.patch(
 );
 
 // POST /api/admin/orders/:id/payment-adjustment — Paiement complémentaire ou remboursement partiel suite à modification d'articles
-// Accepte: { diff: number, mode: "real"|"internal" }
+// Accepte: { diff: number, mode: "real"|"internal"|"gift" }
 // Si diff > 0 et mode "real" : crée un lien de paiement Mollie (ou PayPal si paymentProvider === "paypal")
 // Si diff < 0 et mode "real" : déclenche un remboursement partiel via le prestataire
 // Si mode "internal" : met à jour uniquement les montants en base (pas d'appel API de paiement)
+// Si mode "gift" : applique une remise commerciale (égale à |diff|) — total ramené au montant payé, visible sur facture
 adminRouter.post(
   "/orders/:id/payment-adjustment",
   requireAdmin,
@@ -5560,8 +5561,8 @@ adminRouter.post(
     const { id } = req.params;
     const { diff: rawDiff, mode } = req.body as { diff?: number; mode?: string };
 
-    if (!mode || !["real", "internal"].includes(mode)) {
-      res.status(400).json({ error: "mode doit être 'real' ou 'internal'" });
+    if (!mode || !["real", "internal", "gift"].includes(mode)) {
+      res.status(400).json({ error: "mode doit être 'real', 'internal' ou 'gift'" });
       return;
     }
     const diff = typeof rawDiff === "number" ? money(rawDiff) : null;
@@ -5581,6 +5582,36 @@ adminRouter.post(
         // Ajustement interne uniquement — pas d'appel API de paiement
         // La note interne a déjà été ajoutée par PATCH /orders/:id/items
         res.json({ success: true, mode: "internal", diff });
+        return;
+      }
+
+      if (mode === "gift") {
+        // Remise commerciale — le total est ramené au montant déjà payé
+        // Aucun appel API de paiement — la différence est offerte au client
+        const giftAmount = Math.abs(diff);
+        const giftLabel = "Remise commerciale";
+        const now = new Date();
+        const dateStr = now.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+        const timeStr = now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+        const oldTotal = money(order.total);
+        const newTotal = money(Math.max(0, order.total - giftAmount));
+        const paidTotal = money(order.total + (order.refundedAmount || 0));
+        const giftNote = `[${dateStr} ${timeStr}] Remise commerciale appliquée suite à modification d'articles — montant offert : ${giftAmount.toFixed(2)}€ (ancien total : ${oldTotal.toFixed(2)}€, nouveau total après remise : ${newTotal.toFixed(2)}€, payé : ${paidTotal.toFixed(2)}€).`;
+        const existingNotes = order.notes ? order.notes.trim() : "";
+        const updatedNotes = existingNotes ? `${existingNotes}\n${giftNote}` : giftNote;
+        await prisma.order.update({
+          where: { id },
+          data: {
+            commercialDiscountAmount: giftAmount,
+            commercialDiscountLabel: giftLabel,
+            total: newTotal,
+            totalTTC: newTotal,
+            notes: updatedNotes,
+            itemsLastModifiedAt: now,
+          },
+        });
+        console.log(`[payment-adjustment] Remise commerciale appliquée sur commande ${id} — ${giftAmount.toFixed(2)}€ offerts`);
+        res.json({ success: true, mode: "gift", diff, giftAmount, newTotal });
         return;
       }
 
