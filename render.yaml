@@ -10,10 +10,10 @@ services:
         value: production
       - key: PORT
         value: 4000
+      # DATABASE_URL est géré manuellement dans le dashboard Render (base bp-database-prod).
+      # sync: false garantit que ce Blueprint ne l'écrase JAMAIS lors d'un sync automatique.
       - key: DATABASE_URL
-        fromDatabase:
-          name: barberparadise-db
-          property: connectionString
+        sync: false
       - key: JWT_SECRET
         generateValue: true
       - key: ADMIN_JWT_SECRET
@@ -52,8 +52,7 @@ services:
       - key: CRON_SECRET
         sync: false
 
-databases:
-  - name: barberparadise-db
-    databaseName: barberparadise
-    user: barberparadise
-    plan: free
+# NOTE : la section "databases" a été intentionnellement supprimée.
+# La base "barberparadise-db" (vide, créée par erreur lors du premier Blueprint)
+# n'est plus référencée. La vraie base de production "bp-database-prod" est gérée
+# manuellement dans le dashboard Render et ne doit JAMAIS être définie ici.
