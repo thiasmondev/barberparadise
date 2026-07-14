@@ -19,9 +19,9 @@ services:
       - key: ADMIN_JWT_SECRET
         generateValue: true
       - key: CORS_ORIGIN
-        value: https://barberparadise.fr
+        value: https://www.barberparadise.fr,https://barberparadise.fr
       - key: FRONTEND_URL
-        value: https://barberparadise.fr
+        value: https://www.barberparadise.fr
       - key: FROM_EMAIL
         value: noreply@barberparadise.fr
       - key: FROM_NAME
