@@ -131,7 +131,7 @@ databases:
     plan: free
     databaseName: bp_staging
     user: bp_staging_user
-    region: frankfurt
+    region: oregon
 
 # NOTE : la section "databases" a été intentionnellement supprimée pour la PRODUCTION.
 # La vraie base de production "bp-database-prod" est gérée
