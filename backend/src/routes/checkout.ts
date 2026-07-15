@@ -1302,3 +1302,368 @@ checkoutRouter.get("/paypal/capture", async (req: Request, res: Response): Promi
     res.redirect(`${safeFrontendUrl}/commande/annulation?orderId=${orderId}&error=internal_error`);
   }
 });
+
+// ─── PayPal Advanced Checkout v2 (popup SDK JS) ──────────────────────────────
+// Ces routes sont actives uniquement si PAYPAL_CHECKOUT_V2_ENABLED=true.
+// Le flux v1 (redirection pleine page) reste intact et opérationnel en parallèle.
+// Pour revenir en arrière : retirer PAYPAL_CHECKOUT_V2_ENABLED de Render → le frontend
+// bascule automatiquement vers le bouton "PAYER" classique.
+
+/**
+ * GET /api/checkout/paypal/v2/config
+ * Expose la configuration PayPal publique au frontend.
+ * Le frontend charge le SDK JS uniquement si v2Enabled === true.
+ */
+checkoutRouter.get("/paypal/v2/config", (_req: Request, res: Response): void => {
+  const v2Enabled = process.env.PAYPAL_CHECKOUT_V2_ENABLED === "true";
+  const clientId = process.env.PAYPAL_CLIENT_ID || "";
+  const payLaterEnabled = process.env.PAYPAL_PAY_LATER_ENABLED === "true";
+  const env = process.env.PAYPAL_ENV === "live" ? "production" : "sandbox";
+  res.json({ v2Enabled, clientId, payLaterEnabled, env });
+});
+
+/**
+ * POST /api/checkout/paypal/v2/create-order
+ * Crée la commande en base + la commande PayPal Orders API v2.
+ * Retourne { orderId, paypalOrderId } au frontend.
+ * Le frontend passe ensuite paypalOrderId au SDK JS pour ouvrir le popup.
+ *
+ * Body : même format que POST /api/checkout/initiate, sans checkoutUrl attendu.
+ */
+checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Response): Promise<void> => {
+  if (process.env.PAYPAL_CHECKOUT_V2_ENABLED !== "true") {
+    res.status(404).json({ error: "PayPal Advanced Checkout non activé" });
+    return;
+  }
+
+  try {
+    const body = req.body as CheckoutRequestBody;
+    assertSupportedPaymentMethod(body.paymentMethod);
+
+    if (!["paypal", "paypal_4x"].includes(body.paymentMethod)) {
+      res.status(400).json({ error: "Cette route est réservée aux méthodes PayPal" });
+      return;
+    }
+
+    if (!body.customerEmail || !Array.isArray(body.cartItems) || body.cartItems.length === 0) {
+      res.status(400).json({ error: "Email client et panier requis" });
+      return;
+    }
+
+    const shippingAddress = body.shippingAddress;
+    if (!shippingAddress?.firstName || !shippingAddress?.lastName || !shippingAddress?.address || !shippingAddress?.city || !shippingAddress?.postalCode) {
+      res.status(400).json({ error: "Adresse de livraison incomplète" });
+      return;
+    }
+
+    const country = normalizeCountry(shippingAddress.country);
+    const requestedB2B = Boolean(body.isB2B);
+    const proAccount = body.customerId
+      ? await prisma.proAccount.findUnique({ where: { customerId: body.customerId } })
+      : null;
+    const isApprovedPro = proAccount?.status === "approved";
+
+    if (requestedB2B && !isApprovedPro) {
+      res.status(403).json({ error: "Compte professionnel non approuvé" });
+      return;
+    }
+
+    const isB2B = isApprovedPro;
+    const vatNumber = typeof body.vatNumber === "string" ? body.vatNumber.trim().toUpperCase() : proAccount?.vatNumber || undefined;
+    const allowedMethods = getAvailableMethods(country, isB2B);
+    if (!allowedMethods.includes(body.paymentMethod)) {
+      res.status(400).json({ error: "Méthode non disponible pour ce pays/profil" });
+      return;
+    }
+
+    // Résolution du brouillon (même logique que /initiate)
+    const draftTokenValue = typeof body.draftToken === "string" ? body.draftToken.trim() : "";
+    const draftTokenHash = draftTokenValue ? hashDraftShareToken(draftTokenValue) : "";
+    const checkoutDraft = draftTokenHash
+      ? await prisma.order.findFirst({
+          where: {
+            status: "draft",
+            draftShareTokenHash: draftTokenHash,
+            draftShareExpiresAt: { gt: new Date() },
+            draftShareConvertedAt: null,
+          },
+          include: { items: true, shipment: true },
+        })
+      : null;
+    const shouldUseDraftPricing = Boolean(
+      checkoutDraft && normalizeCheckoutItemsSignature(body.cartItems) === normalizeDraftItemsSignature(checkoutDraft.items),
+    );
+
+    let orderId: string;
+    let orderNumber: string;
+    let totalTTC: number;
+    let discountAmount = 0;
+
+    if (checkoutDraft && shouldUseDraftPricing) {
+      // Flux brouillon
+      const orderTotalTTC = money(checkoutDraft.totalTTC || checkoutDraft.total);
+      totalTTC = orderTotalTTC;
+      discountAmount = checkoutDraft.discountTotal || 0;
+
+      const recentPendingOrder = await prisma.order.findFirst({
+        where: { customerEmail: body.customerEmail, totalTTC: orderTotalTTC, status: "pending", createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) } },
+        include: { items: true },
+        orderBy: { createdAt: "desc" },
+      });
+
+      let order;
+      if (recentPendingOrder && normalizeDraftItemsSignature(recentPendingOrder.items) === normalizeDraftItemsSignature(checkoutDraft.items)) {
+        order = recentPendingOrder;
+      } else {
+        const draftShippingOptions = await calculateShippingOptions(country, checkoutDraft.isB2B ? checkoutDraft.subtotal : Math.max(0, orderTotalTTC - checkoutDraft.shipping), checkoutDraft.isB2B);
+        const draftShippingOption = resolveShippingOptionForPaidOrder(draftShippingOptions, body.shippingOptionId, checkoutDraft.shipping);
+        order = await prisma.order.create({
+          data: {
+            orderNumber: generateOrderNumber(),
+            email: body.customerEmail,
+            customerEmail: body.customerEmail,
+            customerId: body.customerId || null,
+            status: "pending",
+            paymentMethod: body.paymentMethod,
+            paymentProvider: "paypal",
+            isB2B: checkoutDraft.isB2B,
+            subtotal: checkoutDraft.subtotal,
+            shipping: checkoutDraft.shipping,
+            total: checkoutDraft.total,
+            totalHT: checkoutDraft.totalHT,
+            vatRate: checkoutDraft.vatRate,
+            vatAmount: checkoutDraft.vatAmount,
+            totalTTC: orderTotalTTC,
+            currency: CURRENCY,
+            vatNumber: vatNumber || checkoutDraft.vatNumber || null,
+            discountAmount: checkoutDraft.discountAmount,
+            orderDiscountType: checkoutDraft.orderDiscountType,
+            orderDiscountValue: checkoutDraft.orderDiscountValue,
+            discountTotal: checkoutDraft.discountTotal,
+            billingAddress: (body.billingAddress || shippingAddress) as object,
+            notes: checkoutDraft.notes || null,
+            items: { create: checkoutDraft.items.map((item) => ({ productId: item.productId, variantId: item.variantId, variantLabel: item.variantLabel, name: item.name, price: item.price, quantity: item.quantity, image: item.image, discountAmount: item.discountAmount, lineDiscountType: item.lineDiscountType, lineDiscountValue: item.lineDiscountValue, isCustomSale: item.isCustomSale })) },
+            shippingAddress: { create: { firstName: shippingAddress.firstName, lastName: shippingAddress.lastName, address: shippingAddress.address, extension: shippingAddress.extension || "", city: shippingAddress.city, postalCode: shippingAddress.postalCode, country, phone: shippingAddress.phone || "" } },
+            relayPointId: body.relayPointId || null,
+            relayPointName: body.relayPointName || null,
+            relayPointAddress: body.relayPointAddress || null,
+            shipment: { create: { carrier: normalizeShipmentCarrier(draftShippingOption) || checkoutDraft.shipment?.carrier || "livraison_standard", totalWeightG: checkoutDraft.shipment?.totalWeightG || null } },
+          },
+        });
+      }
+
+      await prisma.order.update({ where: { id: checkoutDraft.id }, data: { draftShareConvertedAt: new Date() } });
+      if (body.cartSessionId) await prisma.abandonedCartSession.updateMany({ where: { id: body.cartSessionId }, data: { convertedOrderId: order.id, convertedAt: new Date(), itemCount: 0 } });
+
+      orderId = order.id;
+      orderNumber = order.orderNumber;
+    } else {
+      // Flux standard
+      const orderItems = [];
+      const promotionCartItems: Array<{ productId: string; categoryId?: string | null; quantity: number; price: number }> = [];
+      let subtotalTTC = 0;
+      let subtotalHT = 0;
+      const promotionData = await getActiveAutomaticProductPromotions();
+
+      for (const item of body.cartItems) {
+        const productId = item.productId || item.id;
+        const variantId = typeof item.variantId === "string" && item.variantId.trim() ? item.variantId.trim() : null;
+        if (!productId || !Number.isInteger(item.quantity) || item.quantity <= 0) { res.status(400).json({ error: "Article de panier invalide" }); return; }
+        const product = await prisma.product.findUnique({ where: { id: productId }, include: { variants: { orderBy: { order: "asc" } } } });
+        if (!product || product.status !== "active") { res.status(400).json({ error: `Produit indisponible : ${productId}` }); return; }
+        const hasVariants = product.variants.length > 0;
+        const selectedVariant = variantId ? product.variants.find((v) => v.id === variantId) : null;
+        if (hasVariants && !selectedVariant) { res.status(400).json({ error: `L'article ${product.name} est incomplet.`, code: "VARIANT_SELECTION_REQUIRED", productId: product.id, productName: product.name }); return; }
+        if (selectedVariant && (!selectedVariant.inStock || selectedVariant.stock <= 0)) { res.status(400).json({ error: `Variante indisponible : ${product.name} - ${selectedVariant.name}` }); return; }
+        const publicTtcPrice = selectedVariant?.price ?? product.price;
+        const bestPromo = getBestAutomaticPromotionForProduct(product as Parameters<typeof getBestAutomaticPromotionForProduct>[0], publicTtcPrice, promotionData.promotions, promotionData.categoryTargets, false);
+        const effectivePublicTtcPrice = bestPromo?.price ?? publicTtcPrice;
+        const unitHT = isB2B && product.priceProEur ? product.priceProEur : effectivePublicTtcPrice / 1.2;
+        subtotalTTC = money(subtotalTTC + effectivePublicTtcPrice * item.quantity);
+        subtotalHT = money(subtotalHT + unitHT * item.quantity);
+        orderItems.push({ productId: product.id, variantId: selectedVariant?.id || null, variantLabel: selectedVariant?.name || null, name: product.name, price: isB2B ? unitHT : effectivePublicTtcPrice, quantity: item.quantity, image: undefined, discountAmount: bestPromo ? money((publicTtcPrice - effectivePublicTtcPrice) * item.quantity) : 0, lineDiscountType: null, lineDiscountValue: null, isCustomSale: false });
+        promotionCartItems.push({ productId: product.id, categoryId: product.category || null, quantity: item.quantity, price: isB2B ? unitHT : effectivePublicTtcPrice });
+      }
+
+      if (isB2B && subtotalHT < PRO_MINIMUM_ORDER_HT) { res.status(400).json({ error: `Le minimum de commande professionnel est de ${PRO_MINIMUM_ORDER_HT} € HT` }); return; }
+
+      const shippingOptions = await calculateShippingOptions(country, isB2B ? subtotalHT : subtotalTTC, isB2B);
+      const selectedShippingOption = shippingOptions.find((o) => o.id === body.shippingOptionId) || shippingOptions[0];
+      if (!selectedShippingOption) { res.status(400).json({ error: "Aucune option de livraison disponible" }); return; }
+      const shipping = selectedShippingOption.price;
+      const promoResolution = await resolveCheckoutPromotion({ code: body.promoCode, baseAmount: isB2B ? subtotalHT : subtotalTTC, shipping, cartItems: promotionCartItems, customerId: body.customerId, customerEmail: body.customerEmail, customerType: isB2B ? "b2b" : "b2c" });
+      discountAmount = promoResolution.discountAmount;
+      const shippingDiscount = promoResolution.discountType === "free_shipping" ? Math.min(shipping, discountAmount) : 0;
+      const productDiscount = promoResolution.discountType === "free_shipping" ? 0 : discountAmount;
+      const chargedShipping = money(Math.max(0, shipping - shippingDiscount));
+      const totalHT = money(isB2B ? Math.max(0, subtotalHT - productDiscount) : subtotalHT);
+      const vatRate = getVatRate(country, isB2B, vatNumber);
+      const vatAmount = money(totalHT * (vatRate / 100));
+      totalTTC = money(Math.max(0, totalHT + vatAmount + chargedShipping - (isB2B ? 0 : productDiscount)));
+
+      const recentPendingOrder = await prisma.order.findFirst({ where: { customerEmail: body.customerEmail, totalTTC, status: "pending", createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) } }, include: { items: true }, orderBy: { createdAt: "desc" } });
+      let order;
+      if (recentPendingOrder && normalizeDraftItemsSignature(recentPendingOrder.items) === normalizeCheckoutItemsSignature(body.cartItems)) {
+        order = recentPendingOrder;
+      } else {
+        order = await prisma.order.create({ data: { orderNumber: generateOrderNumber(), email: body.customerEmail, customerEmail: body.customerEmail, customerId: body.customerId || null, status: "pending", paymentMethod: body.paymentMethod, paymentProvider: "paypal", isB2B, subtotal: isB2B ? subtotalHT : subtotalTTC, shipping: chargedShipping, total: totalTTC, totalHT, promoCodeId: promoResolution.promoCode?.id || null, promotionId: promoResolution.promotion?.promotionId || null, discountAmount, vatRate, vatAmount, totalTTC, currency: CURRENCY, vatNumber: vatNumber || null, billingAddress: (body.billingAddress || shippingAddress) as object, items: { create: orderItems }, shippingAddress: { create: { firstName: shippingAddress.firstName, lastName: shippingAddress.lastName, address: shippingAddress.address, extension: shippingAddress.extension || "", city: shippingAddress.city, postalCode: shippingAddress.postalCode, country, phone: shippingAddress.phone || "" } }, relayPointId: body.relayPointId || null, relayPointName: body.relayPointName || null, relayPointAddress: body.relayPointAddress || null, shipment: { create: { carrier: normalizeShipmentCarrier(selectedShippingOption) || "livraison_standard" } } } });
+      }
+
+      if (body.cartSessionId) await prisma.abandonedCartSession.updateMany({ where: { id: body.cartSessionId }, data: { convertedOrderId: order.id, convertedAt: new Date(), itemCount: 0 } });
+      if (promoResolution.promoCode) await prisma.promoCode.update({ where: { id: promoResolution.promoCode.id }, data: { usedCount: { increment: 1 } } });
+
+      orderId = order.id;
+      orderNumber = order.orderNumber;
+    }
+
+    // Créer la commande PayPal Orders API v2 (sans return_url — le popup gère le flux)
+    const baseUrl = process.env.PAYPAL_ENV === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+    const accessToken = await getPaypalAccessToken();
+    const isPayLater = body.paymentMethod === "paypal_4x";
+
+    const paymentSource = isPayLater
+      ? {
+          pay_later: {
+            country_code: "FR",
+            experience_context: {
+              payment_method_preference: "IMMEDIATE_PAYMENT_REQUIRED",
+              brand_name: "Barber Paradise",
+              locale: "fr-FR",
+              shipping_preference: "NO_SHIPPING",
+              user_action: "PAY_NOW",
+              // Pas de return_url/cancel_url : le popup SDK gère le flux
+            },
+          },
+        }
+      : {
+          paypal: {
+            experience_context: {
+              payment_method_preference: "IMMEDIATE_PAYMENT_REQUIRED",
+              brand_name: "Barber Paradise",
+              locale: "fr-FR",
+              landing_page: "LOGIN",
+              shipping_preference: "GET_FROM_FILE",
+              user_action: "PAY_NOW",
+              // Pas de return_url/cancel_url : le popup SDK gère le flux
+            },
+          },
+        };
+
+    console.log(`[paypal-v2] Création commande PayPal — méthode: ${body.paymentMethod}, montant: ${totalTTC}€, orderId: ${orderId}`);
+
+    const paypalResponse = await fetch(`${baseUrl}/v2/checkout/orders`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "PayPal-Request-Id": `v2-${orderId}`,
+      },
+      body: JSON.stringify({
+        intent: "CAPTURE",
+        purchase_units: [
+          {
+            reference_id: orderId,
+            description: `Commande Barber Paradise #${orderNumber}`,
+            amount: { currency_code: CURRENCY, value: totalTTC.toFixed(2) },
+          },
+        ],
+        payment_source: paymentSource,
+      }),
+    });
+
+    const paypalOrder = await parseJsonResponse<{ id: string }>(paypalResponse, "paypal");
+    const paypalOrderId = paypalOrder.id;
+
+    // Stocker le paypalOrderId en base
+    await prisma.order.update({ where: { id: orderId }, data: { providerPaymentId: paypalOrderId } });
+
+    console.log(`[paypal-v2] Commande PayPal créée — paypalOrderId: ${paypalOrderId}, orderId: ${orderId}`);
+
+    res.status(201).json({ orderId, orderNumber, paypalOrderId, discountAmount });
+  } catch (err) {
+    console.error("[paypal-v2][create-order] Erreur:", err);
+    const message = err instanceof Error ? err.message : "Erreur création commande PayPal";
+    const isPaypal4xError = (req.body as CheckoutRequestBody)?.paymentMethod === "paypal_4x" && message.includes("Erreur paypal:");
+    if (isPaypal4xError) {
+      res.status(422).json({ error: "Le paiement en 4 fois PayPal n'est pas disponible pour cette transaction.", code: "PAYPAL_4X_INELIGIBLE", originalError: message });
+      return;
+    }
+    res.status(500).json({ error: message });
+  }
+});
+
+/**
+ * POST /api/checkout/paypal/v2/capture-order
+ * Capture le paiement PayPal après approbation dans le popup SDK.
+ * Body : { paypalOrderId: string, orderId: string }
+ * Retourne { success: true, orderId } ou une erreur.
+ */
+checkoutRouter.post("/paypal/v2/capture-order", async (req: Request, res: Response): Promise<void> => {
+  if (process.env.PAYPAL_CHECKOUT_V2_ENABLED !== "true") {
+    res.status(404).json({ error: "PayPal Advanced Checkout non activé" });
+    return;
+  }
+
+  const { paypalOrderId, orderId } = req.body as { paypalOrderId?: string; orderId?: string };
+
+  if (!paypalOrderId || !orderId) {
+    res.status(400).json({ error: "paypalOrderId et orderId requis" });
+    return;
+  }
+
+  try {
+    const baseUrl = process.env.PAYPAL_ENV === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+    const accessToken = await getPaypalAccessToken();
+
+    console.log(`[paypal-v2][capture] Appel API capture — paypalOrderId=${paypalOrderId} orderId=${orderId}`);
+
+    const captureResponse = await fetch(`${baseUrl}/v2/checkout/orders/${paypalOrderId}/capture`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "PayPal-Request-Id": `v2-capture-${orderId}`,
+      },
+    });
+
+    const captureData = await captureResponse.json() as {
+      status?: string;
+      id?: string;
+      purchase_units?: Array<{ payments?: { captures?: Array<{ id: string; status: string }> } }>;
+      details?: Array<{ issue?: string; description?: string }>;
+    };
+
+    console.log(`[paypal-v2][capture] Réponse PayPal — status=${captureResponse.status} paypalStatus=${captureData.status}`);
+
+    if (!captureResponse.ok || captureData.status !== "COMPLETED") {
+      const detail = captureData.details?.[0];
+      const errMsg = detail?.issue || detail?.description || captureData.status || "Capture échouée";
+      console.error(`[paypal-v2][capture] Échec — orderId=${orderId} paypalOrderId=${paypalOrderId} erreur=${errMsg}`);
+      res.status(422).json({ error: `Paiement non capturé : ${errMsg}` });
+      return;
+    }
+
+    const captureId = captureData.purchase_units?.[0]?.payments?.captures?.[0]?.id || paypalOrderId;
+    console.log(`[paypal-v2][capture] Capture réussie — captureId=${captureId} orderId=${orderId}`);
+
+    // Marquer la commande comme payée (même logique que le flux v1)
+    const { markOrderPaidFromCapture, runPostPaymentEffectsFromCapture } = await import("./webhooks");
+    const result = await markOrderPaidFromCapture(orderId, "paypal", captureId);
+    const orderRef = await prisma.order.findUnique({ where: { id: orderId }, select: { orderNumber: true } });
+    const orderNumber = orderRef?.orderNumber || orderId;
+    console.log(`[paypal-v2][capture] Commande marquée payée — orderId=${orderId} orderNumber=${orderNumber} changed=${result.changed}`);
+
+    // Répondre immédiatement au frontend
+    res.json({ success: true, orderId, orderNumber });
+
+    // Effets secondaires non bloquants
+    try {
+      await runPostPaymentEffectsFromCapture(orderId, orderNumber, result.channel, result.changed);
+    } catch (err) {
+      console.error(`[paypal-v2][capture] Erreur runPostPaymentEffects — orderId=${orderId}:`, err instanceof Error ? err.stack : err);
+    }
+  } catch (err) {
+    console.error(`[paypal-v2][capture] Erreur inattendue — orderId=${orderId}:`, err instanceof Error ? err.stack : err);
+    res.status(500).json({ error: "Erreur interne lors de la capture PayPal" });
+  }
+});

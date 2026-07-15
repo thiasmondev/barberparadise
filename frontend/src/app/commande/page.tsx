@@ -226,6 +226,13 @@ export default function CheckoutPage() {
   const [relaySearched, setRelaySearched] = useState(false);
   const [expandedRelayId, setExpandedRelayId] = useState<string | null>(null);
 
+  // ─── PayPal Advanced Checkout v2 (popup SDK JS) ───────────────────────────
+  const [paypalV2Config, setPaypalV2Config] = useState<{ v2Enabled: boolean; clientId: string; payLaterEnabled: boolean } | null>(null);
+  const [paypalSdkLoaded, setPaypalSdkLoaded] = useState(false);
+  const [paypalButtonsRendered, setPaypalButtonsRendered] = useState(false);
+  const paypalContainerRef = (typeof window !== 'undefined' ? { current: null } : { current: null }) as React.MutableRefObject<HTMLDivElement | null>;
+  const paypalButtonsRef = { current: null as unknown };
+
   const [form, setForm] = useState({
     email: "",
     newsletter: false,
@@ -504,6 +511,136 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (isApprovedPro) setIsB2B(true);
   }, [isApprovedPro]);
+
+  // Charger la config PayPal v2 au montage
+  useEffect(() => {
+    fetch(`${API_URL}/api/checkout/paypal/v2/config`)
+      .then((r) => r.json())
+      .then((data: { v2Enabled?: boolean; clientId?: string; payLaterEnabled?: boolean }) => {
+        if (data.v2Enabled && data.clientId) {
+          setPaypalV2Config({ v2Enabled: true, clientId: data.clientId, payLaterEnabled: Boolean(data.payLaterEnabled) });
+        } else {
+          setPaypalV2Config({ v2Enabled: false, clientId: "", payLaterEnabled: false });
+        }
+      })
+      .catch(() => setPaypalV2Config({ v2Enabled: false, clientId: "", payLaterEnabled: false }));
+  }, []);
+
+  // Charger le SDK PayPal JS quand la config est disponible et que la méthode est PayPal
+  useEffect(() => {
+    if (!paypalV2Config?.v2Enabled || !paypalV2Config.clientId) return;
+    if (paypalSdkLoaded) return;
+    if (typeof window === "undefined") return;
+
+    const existing = document.getElementById("paypal-sdk-script");
+    if (existing) { setPaypalSdkLoaded(true); return; }
+
+    const components = "buttons";
+    const enableFunding = paypalV2Config.payLaterEnabled ? "paylater" : "";
+    const src = `https://www.paypal.com/sdk/js?client-id=${paypalV2Config.clientId}&currency=EUR&components=${components}${enableFunding ? `&enable-funding=${enableFunding}` : ""}`;
+
+    const script = document.createElement("script");
+    script.id = "paypal-sdk-script";
+    script.src = src;
+    script.async = true;
+    script.onload = () => setPaypalSdkLoaded(true);
+    script.onerror = () => console.error("[PayPal SDK] Échec du chargement");
+    document.head.appendChild(script);
+  }, [paypalV2Config, paypalSdkLoaded]);
+
+  // Rendre les Smart Buttons quand le SDK est chargé et la méthode PayPal est sélectionnée
+  useEffect(() => {
+    const isPaypalMethod = paymentMethod === "paypal" || paymentMethod === "paypal_4x";
+    if (!paypalV2Config?.v2Enabled || !paypalSdkLoaded || !isPaypalMethod || step !== "paiement") return;
+
+    const container = document.getElementById("paypal-button-container");
+    if (!container) return;
+
+    // Nettoyer les boutons précédents
+    container.innerHTML = "";
+    setPaypalButtonsRendered(false);
+
+    const win = window as unknown as { paypal?: { Buttons?: (opts: unknown) => { render: (el: HTMLElement) => Promise<void>; close?: () => void } } };
+    if (!win.paypal?.Buttons) return;
+
+    const buildPayload = () => ({
+      cartItems: items.map((item) => ({ productId: item.product.id, variantId: item.variantId || item.variant?.id || null, quantity: item.quantity })),
+      customerEmail: form.email,
+      customerId: isAuthenticated && customer ? customer.id : undefined,
+      cartSessionId,
+      draftToken: draftToken || undefined,
+      shippingAddress: { firstName: form.prenom, lastName: form.nom, address: form.adresse, extension: form.complement, city: form.ville, postalCode: form.codePostal, country: countryCode, phone: form.telephone },
+      paymentMethod,
+      shippingOptionId: selectedShippingOption?.id,
+      isB2B: effectiveIsB2B,
+      vatNumber: vatNumber.trim() || undefined,
+      promoCode: promoCode.trim() || undefined,
+      relayPointId: relayPointId || undefined,
+      relayPointName: relayPointName || undefined,
+      relayPointAddress: relayPointAddress || undefined,
+    });
+
+    const buttons = win.paypal.Buttons({
+      fundingSource: paymentMethod === "paypal_4x" ? "paylater" : "paypal",
+      style: { layout: "vertical", color: "black", shape: "rect", label: "pay", height: 48 },
+      createOrder: async () => {
+        setPaymentError("");
+        setIsSubmittingPayment(true);
+        try {
+          const res = await fetch(`${API_URL}/api/checkout/paypal/v2/create-order`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildPayload()) });
+          const data = await res.json() as { paypalOrderId?: string; orderId?: string; error?: string; code?: string };
+          if (!res.ok) {
+            if (data.code === "PAYPAL_4X_INELIGIBLE") {
+              setPaymentMethod("paypal");
+              setPaymentError("Le paiement en 4 fois n'est pas disponible pour cette transaction. Vous avez été redirigé vers le paiement standard.");
+              setIsSubmittingPayment(false);
+              throw new Error(data.error || "PAYPAL_4X_INELIGIBLE");
+            }
+            throw new Error(data.error || "Impossible d'initialiser le paiement");
+          }
+          if (!data.paypalOrderId) throw new Error("ID de commande PayPal manquant");
+          // Stocker l'orderId pour la capture
+          sessionStorage.setItem("paypal-v2-order-id", data.orderId || "");
+          return data.paypalOrderId;
+        } catch (err) {
+          setPaymentError(err instanceof Error ? err.message : "Erreur initialisation paiement");
+          setIsSubmittingPayment(false);
+          throw err;
+        }
+      },
+      onApprove: async (approveData: { orderID: string }) => {
+        const orderId = sessionStorage.getItem("paypal-v2-order-id") || "";
+        try {
+          const res = await fetch(`${API_URL}/api/checkout/paypal/v2/capture-order`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paypalOrderId: approveData.orderID, orderId }) });
+          const data = await res.json() as { success?: boolean; orderId?: string; error?: string };
+          if (!res.ok || !data.success) throw new Error(data.error || "Capture échouée");
+          sessionStorage.removeItem("paypal-v2-order-id");
+          window.location.href = `/commande/succes?orderId=${data.orderId || orderId}`;
+        } catch (err) {
+          setPaymentError(err instanceof Error ? err.message : "Erreur lors de la confirmation du paiement");
+          setIsSubmittingPayment(false);
+        }
+      },
+      onCancel: () => {
+        sessionStorage.removeItem("paypal-v2-order-id");
+        setIsSubmittingPayment(false);
+        setPaymentError("Paiement annulé. Vous pouvez réessayer ou choisir un autre moyen de paiement.");
+      },
+      onError: (err: unknown) => {
+        console.error("[PayPal SDK] Erreur:", err);
+        sessionStorage.removeItem("paypal-v2-order-id");
+        setIsSubmittingPayment(false);
+        setPaymentError("Une erreur est survenue lors du paiement. Veuillez réessayer.");
+      },
+    });
+
+    buttons.render(container).then(() => setPaypalButtonsRendered(true)).catch((err: unknown) => {
+      console.error("[PayPal SDK] Erreur rendu boutons:", err);
+    });
+
+    return () => { container.innerHTML = ""; setPaypalButtonsRendered(false); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paypalV2Config, paypalSdkLoaded, paymentMethod, step, discountedGrandTotal]);
 
   useEffect(() => {
     const storedMethod = sessionStorage.getItem("barberparadise-payment-method") as PaymentMethod | null;
@@ -1052,7 +1189,16 @@ export default function CheckoutPage() {
                   {promoLoading ? "Vérification du code promo..." : promoResult?.valid ? `Code ${promoCode} appliqué · -${formatPrice(promoDiscount)}` : promoError || `Code ${promoCode} transmis pour vérification serveur.`}
                 </div>
               )}
-              <button onClick={handleCheckout} disabled={isSubmittingPayment || displayMethods.length === 0 || methodsLoading || shippingLoading || (!draftPricingActive && !selectedShippingOption)} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-wait text-white py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 transition-colors"><Lock size={12} />{isSubmittingPayment ? "REDIRECTION EN COURS..." : `PAYER ${formatPrice(discountedGrandTotal)}`}</button>
+              {/* PayPal Advanced Checkout v2 : Smart Buttons popup */}
+              {paypalV2Config?.v2Enabled && (paymentMethod === "paypal" || paymentMethod === "paypal_4x") ? (
+                <div>
+                  {!paypalSdkLoaded && <div className="w-full bg-white/5 text-gray-600 py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2"><Loader2 size={12} className="animate-spin" />CHARGEMENT...</div>}
+                  <div id="paypal-button-container" className={paypalSdkLoaded ? "" : "hidden"} />
+                  {paypalSdkLoaded && !paypalButtonsRendered && <div className="w-full bg-white/5 text-gray-600 py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2"><Loader2 size={12} className="animate-spin" />INITIALISATION...</div>}
+                </div>
+              ) : (
+                <button onClick={handleCheckout} disabled={isSubmittingPayment || displayMethods.length === 0 || methodsLoading || shippingLoading || (!draftPricingActive && !selectedShippingOption)} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-wait text-white py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 transition-colors"><Lock size={12} />{isSubmittingPayment ? "REDIRECTION EN COURS..." : `PAYER ${formatPrice(discountedGrandTotal)}`}</button>
+              )}
               <button onClick={() => setStep("livraison")} className="w-full text-center text-xs text-gray-500 hover:text-white transition-colors uppercase tracking-widest font-black">← Retour à la livraison</button>
             </div>
           )}
