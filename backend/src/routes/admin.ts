@@ -5849,14 +5849,14 @@ adminRouter.get(
   requireAdmin,
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const order = await prisma.order.findUnique({
+            const order = await prisma.order.findUnique({
         where: { id: req.params.id },
         include: {
           items: true,
           shippingAddress: true,
           shipment: true,
           customer: {
-            include: { _count: { select: { orders: true } } },
+            include: { addresses: true, _count: { select: { orders: true } } },
           },
         },
       });
@@ -5871,7 +5871,6 @@ adminRouter.get(
     }
   }
 );
-
 // PATCH /api/admin/orders/:id — Modifier une commande
 adminRouter.patch(
   "/orders/:id",

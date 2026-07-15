@@ -1315,6 +1315,41 @@ export default function OrderDetailPage() {
                     />
                   </div>
 
+                  {/* Sélecteur d'adresses existantes du client */}
+                  {order.customer?.addresses && order.customer.addresses.length > 0 && (
+                    <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-700">Adresses enregistrées du client</p>
+                      <div className="space-y-2">
+                        {order.customer.addresses.map((addr) => (
+                          <button
+                            key={addr.id}
+                            type="button"
+                            onClick={() => {
+                              const filled = {
+                                firstName: addr.firstName || "",
+                                lastName: addr.lastName || "",
+                                address: addr.address || "",
+                                extension: "",
+                                city: addr.city || "",
+                                postalCode: addr.postalCode || "",
+                                country: addr.country || "France",
+                                phone: addr.phone || "",
+                              };
+                              setEditForm((current) => ({ ...current, shippingAddress: filled, billingAddress: filled }));
+                            }}
+                            className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-left text-sm transition hover:border-blue-400 hover:bg-blue-50"
+                          >
+                            <span className="font-semibold text-gray-900">{addr.firstName} {addr.lastName}</span>
+                            {addr.isDefault && <span className="ml-2 rounded-full bg-blue-100 px-1.5 py-0.5 text-xs font-semibold text-blue-700">Par défaut</span>}
+                            <br />
+                            <span className="text-gray-500">{addr.address}, {addr.postalCode} {addr.city}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-xs text-blue-600">Cliquer sur une adresse pour la sélectionner et pré-remplir le formulaire ci-dessous.</p>
+                    </div>
+                  )}
+
                   {(["shippingAddress", "billingAddress"] as const).map((addressType) => (
                     <div key={addressType} className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
                       <h3 className="text-sm font-semibold text-gray-950">{addressType === "shippingAddress" ? "Adresse de livraison" : "Adresse de facturation"}</h3>

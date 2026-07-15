@@ -227,6 +227,18 @@ export interface Order {
     email: string;
     phone?: string | null;
     _count?: { orders: number };
+    addresses?: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      address: string;
+      extension?: string;
+      city: string;
+      postalCode: string;
+      country: string;
+      isDefault: boolean;
+      phone?: string;
+    }[];
   } | null;
   items: OrderItem[];
   shippingAddress?: ShippingAddress | null;
