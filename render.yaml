@@ -52,7 +52,87 @@ services:
       - key: CRON_SECRET
         sync: false
 
-# NOTE : la section "databases" a été intentionnellement supprimée.
-# La base "barberparadise-db" (vide, créée par erreur lors du premier Blueprint)
-# n'est plus référencée. La vraie base de production "bp-database-prod" est gérée
+# ─── Service de staging : test PayPal Advanced Checkout v2 ───────────────────
+# Ce service est isolé de la production :
+#   - Base de données séparée (bp-database-staging, tier gratuit)
+#   - PAYPAL_ENV=sandbox (garde-fou : aucune vraie transaction possible)
+#   - PAYPAL_CHECKOUT_V2_ENABLED=true (flux popup activé)
+#   - CORS_ORIGIN limité au frontend de staging uniquement
+#
+# Variables à définir MANUELLEMENT dans le dashboard Render après création :
+#   PAYPAL_CLIENT_ID      → Client ID sandbox (developer.paypal.com)
+#   PAYPAL_CLIENT_SECRET  → Client Secret sandbox
+#   RESEND_API_KEY        → Peut être la même clé que prod (emails de test)
+#   MOLLIE_API_KEY        → Clé test Mollie (optionnel pour ce test)
+#   JWT_SECRET            → Généré automatiquement par Render
+#   ADMIN_JWT_SECRET      → Généré automatiquement par Render
+  - type: web
+    name: barberparadise-backend-staging
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install --include=dev && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && node dist/index.js
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: staging
+      - key: PORT
+        value: 4000
+      # DATABASE_URL est injecté automatiquement depuis la base bp-database-staging ci-dessous
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bp-database-staging
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_JWT_SECRET
+        generateValue: true
+      # CORS : autoriser localhost (dev local) + éventuel frontend Vercel preview
+      - key: CORS_ORIGIN
+        value: http://localhost:3000,http://localhost:3001
+      - key: FRONTEND_URL
+        value: http://localhost:3000
+      - key: FROM_EMAIL
+        value: noreply@barberparadise.fr
+      - key: FROM_NAME
+        value: Barber Paradise (Staging)
+      - key: BREVO_SENDER_EMAIL
+        value: noreply@barberparadise.fr
+      - key: BREVO_SENDER_NAME
+        value: Barber Paradise (Staging)
+      # ─── PayPal sandbox (garde-fous impératifs) ───────────────────────────
+      - key: PAYPAL_ENV
+        value: sandbox
+      - key: PAYPAL_CHECKOUT_V2_ENABLED
+        value: "true"
+      - key: PAYPAL_PAY_LATER_ENABLED
+        value: "true"
+      # PAYPAL_CLIENT_ID et PAYPAL_CLIENT_SECRET : à définir manuellement
+      # dans le dashboard Render avec les credentials sandbox
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      # ─── Clés API : à définir manuellement dans le dashboard ─────────────
+      - key: RESEND_API_KEY
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: DISABLE_INTERNAL_CRON
+        value: "true"
+
+# ─── Bases de données ─────────────────────────────────────────────────────────
+# PRODUCTION : bp-database-prod est gérée manuellement dans le dashboard Render
+# (plan Basic-256mb, jamais définie ici pour éviter tout écrasement accidentel).
+#
+# STAGING : base séparée sur le tier gratuit, exclusivement pour les tests.
+databases:
+  - name: bp-database-staging
+    plan: free
+    databaseName: bp_staging
+    user: bp_staging_user
+    region: frankfurt
+
+# NOTE : la section "databases" a été intentionnellement supprimée pour la PRODUCTION.
+# La vraie base de production "bp-database-prod" est gérée
 # manuellement dans le dashboard Render et ne doit JAMAIS être définie ici.
