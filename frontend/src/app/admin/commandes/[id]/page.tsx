@@ -1303,7 +1303,7 @@ export default function OrderDetailPage() {
               </div>
 
               {editMode ? (
-                <div className="mt-5 space-y-5">
+                <div id="edit-address-section" className="mt-5 space-y-5">
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Notes internes</label>
                     <textarea
@@ -1632,7 +1632,17 @@ export default function OrderDetailPage() {
             ) : (
               <>
                 <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                  <div className="mb-3 flex items-center gap-2"><MapPin className="h-4 w-4 text-gray-500" /><h2 className="font-semibold text-gray-950">Adresse de livraison</h2></div>
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-gray-500" /><h2 className="font-semibold text-gray-950">Adresse de livraison</h2></div>
+                    {!editMode && !isPosOrder && (
+                      <button
+                        onClick={() => { startEditOrder(); setTimeout(() => { document.getElementById("edit-address-section")?.scrollIntoView({ behavior: "smooth", block: "start" }); }, 100); }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50"
+                      >
+                        <Pencil className="h-3 w-3" /> Modifier
+                      </button>
+                    )}
+                  </div>
                   {order.shipment?.carrier === "mondial_relay" ? (
                     <div className="mb-3 space-y-2">
                       <div className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">
