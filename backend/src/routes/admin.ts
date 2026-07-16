@@ -3888,7 +3888,8 @@ adminRouter.post(
       const isB2BBankTransfer = order.isB2B && BANK_TRANSFER_METHODS.includes((order.paymentMethod || "").toLowerCase());
       const isB2BDeferred = order.paymentMethod === "b2b_deferred";
       const ELIGIBLE_STATUSES = ["paid", "processing", "shipped"];
-      const isPendingB2BPreShip = (isB2BBankTransfer || isB2BDeferred) && ["pending", "pending_payment", "open"].includes(order.status);
+      // "draft" est inclus pour les brouillons b2b_deferred non encore confirmés (statut non encore promu)
+      const isPendingB2BPreShip = (isB2BBankTransfer || isB2BDeferred) && ["draft", "pending", "pending_payment", "open"].includes(order.status);
 
       if (!ELIGIBLE_STATUSES.includes(order.status) && !isPendingB2BPreShip) {
         res.status(400).json({ error: "Commande non éligible à l'achat d'étiquette" });
