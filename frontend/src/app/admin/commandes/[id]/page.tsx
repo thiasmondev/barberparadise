@@ -631,24 +631,36 @@ export default function OrderDetailPage() {
     URL.revokeObjectURL(url);
   };
 
-  const printLabel = () => {
+  const printLabel = async () => {
     if (!activeLabelUrl) return;
-    const printWindow = window.open(activeLabelUrl, "_blank");
-    if (!printWindow) {
-      setDrawerError("Veuillez autoriser les pop-ups pour imprimer l'étiquette");
-      return;
+    try {
+      const token = getAdminToken();
+      const response = await fetch(activeLabelUrl, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) throw new Error("Téléchargement du PDF impossible");
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const printWindow = window.open(blobUrl, "_blank");
+      if (!printWindow) {
+        setDrawerError("Veuillez autoriser les pop-ups pour imprimer l'étiquette");
+        URL.revokeObjectURL(blobUrl);
+        return;
+      }
+      let hasTriggeredPrint = false;
+      const triggerPrint = () => {
+        if (hasTriggeredPrint || printWindow.closed) return;
+        hasTriggeredPrint = true;
+        printWindow.focus();
+        printWindow.print();
+        // Libérer le blob après un délai pour laisser le temps à l'impression
+        window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      };
+      printWindow.onload = triggerPrint;
+      window.setTimeout(triggerPrint, 1000);
+    } catch (err: any) {
+      setDrawerError(err.message || "Impossible d'ouvrir l'étiquette pour impression");
     }
-
-    let hasTriggeredPrint = false;
-    const triggerPrint = () => {
-      if (hasTriggeredPrint || printWindow.closed) return;
-      hasTriggeredPrint = true;
-      printWindow.focus();
-      printWindow.print();
-    };
-
-    printWindow.onload = triggerPrint;
-    window.setTimeout(triggerPrint, 1000);
   };
 
   const cancelLabel = async () => {
