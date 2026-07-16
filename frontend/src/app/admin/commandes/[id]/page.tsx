@@ -671,9 +671,12 @@ export default function OrderDetailPage() {
     setDrawerError("");
     try {
       const result = await cancelShipmentLabel(activeShipment.id);
-      setShipment(result.shipment);
-      setLabelStep("confirmation");
-      alert(result.message || "L’étiquette a été annulée. Le remboursement sera crédité sous 48h.");
+      // Après annulation : revenir à l'étape formulaire pour permettre de créer une nouvelle étiquette
+      setShipment(null);
+      setLabelStep("form");
+      setSelectedQuoteId("");
+      setQuotes([]);
+      alert(result.message || "L'étiquette a été annulée. Le remboursement sera crédité sous 48h. Vous pouvez maintenant créer une nouvelle étiquette.");
       await loadOrder();
     } catch (err: any) {
       setDrawerError(err.message || "Impossible d’annuler l’étiquette.");
