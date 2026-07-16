@@ -704,15 +704,20 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
     throw new Error(`Mondial Relay n’a pas retourné de numéro d’expédition. Réponse: ${xml.slice(0, 600)}`);
   }
 
-  let labelUrl = labelUrlDirect;
-  if (!labelUrl) {
+  // Toujours appeler WSI3_GetEtiquettes pour obtenir URL_PDF_10x15 (format 100x150mm natif).
+  // URL_Etiquette retournée par WSI2_CreationExpedition est au format A4 — ne pas l'utiliser
+  // comme source principale car elle produit une étiquette positionnée sur une page A4.
+  let labelUrl: string | null = null;
+  {
     const getLabelValues = [enseigne, expeditionNum, "FR"];
     const getLabelSecurity = mondialRelaySecurity(getLabelValues);
     const getLabelEnvelope = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><WSI3_GetEtiquettes xmlns="http://www.mondialrelay.fr/webservice/"><Enseigne>${xmlEscape(enseigne)}</Enseigne><Expeditions>${xmlEscape(expeditionNum)}</Expeditions><Langue>FR</Langue><Security>${getLabelSecurity}</Security></WSI3_GetEtiquettes></soap:Body></soap:Envelope>`;
     const labelXml = await postSoap("https://api.mondialrelay.com/Web_Services.asmx", "http://www.mondialrelay.fr/webservice/WSI3_GetEtiquettes", getLabelEnvelope);
-    labelUrl = getXmlValue(labelXml, "URL_PDF_10x15");
+    labelUrl = getXmlValue(labelXml, "URL_PDF_10x15") || getXmlValue(labelXml, "URL_PDF_A5") || getXmlValue(labelXml, "URL_PDF_A4");
   }
+  // Fallback : URL_Etiquette de WSI2 si WSI3 n'a rien retourné
+  if (!labelUrl) labelUrl = labelUrlDirect;
   if (!labelUrl) {
     throw new Error("Mondial Relay a créé l’expédition mais n’a pas retourné d’URL d’étiquette PDF.");
   }

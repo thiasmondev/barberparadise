@@ -641,16 +641,14 @@ export default function OrderDetailPage() {
       if (!response.ok) throw new Error("Téléchargement du PDF impossible");
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
-      // Ouvrir dans une page HTML intermédiaire pour forcer le format papier via CSS @page
-      const pageSize = labelPrintFormat === "100x150" ? "100mm 150mm" : "A4";
-      const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Impression étiquette</title><style>@page{size:${pageSize};margin:0}body,html{margin:0;padding:0}embed,iframe,object{width:100%;height:100vh;border:none}</style></head><body><embed src="${blobUrl}" type="application/pdf" width="100%" height="100%" /></body></html>`;
-      const htmlBlob = new Blob([htmlContent], { type: "text/html" });
-      const htmlUrl = URL.createObjectURL(htmlBlob);
-      const printWindow = window.open(htmlUrl, "_blank");
+      // Ouvrir le PDF blob directement dans une nouvelle fenêtre.
+      // Ne pas utiliser de page HTML intermédiaire avec <embed> : le CSS @page ne peut pas
+      // forcer le format interne d'un PDF rendu dans un embed Chrome. Le PDF 10x15 natif
+      // (URL_PDF_10x15 de Mondial Relay) s'imprime correctement si ouvert directement.
+      const printWindow = window.open(blobUrl, "_blank");
       if (!printWindow) {
         setDrawerError("Veuillez autoriser les pop-ups pour imprimer l'étiquette");
         URL.revokeObjectURL(blobUrl);
-        URL.revokeObjectURL(htmlUrl);
         return;
       }
       let hasTriggeredPrint = false;
@@ -659,14 +657,13 @@ export default function OrderDetailPage() {
         hasTriggeredPrint = true;
         printWindow.focus();
         printWindow.print();
-        // Libérer les blobs après un délai pour laisser le temps à l'impression
+        // Libérer le blob après un délai pour laisser le temps à l'impression
         window.setTimeout(() => {
           URL.revokeObjectURL(blobUrl);
-          URL.revokeObjectURL(htmlUrl);
         }, 60000);
       };
       printWindow.onload = triggerPrint;
-      window.setTimeout(triggerPrint, 1500);
+      window.setTimeout(triggerPrint, 2000);
     } catch (err: any) {
       setDrawerError(err.message || "Impossible d'ouvrir l'étiquette pour impression");
     }
