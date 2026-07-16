@@ -1148,6 +1148,9 @@ export default function OrderDetailPage() {
     order.isB2B &&
     BANK_TRANSFER_METHODS.includes((order.paymentMethod || "").toLowerCase()) &&
     ["pending", "pending_payment", "open"].includes(order.status);
+  const isB2BDeferredPending =
+    order.paymentMethod === "b2b_deferred" &&
+    ["pending", "pending_payment", "open"].includes(order.status);
   const labelBlockerMessage = hasZeroWeight ? "Veuillez renseigner le poids des articles" : "";
   const totalItemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -1744,6 +1747,21 @@ export default function OrderDetailPage() {
                       <div>
                         <p className="font-semibold">Virement bancaire en attente de réception</p>
                         <p className="mt-1">Cette commande B2B est en attente de virement. Vous pouvez créer l'étiquette dès maintenant — la décision d'expédition avant réception des fonds est sous votre responsabilité.</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {isB2BDeferredPending && (
+                    <div className="flex gap-3 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-800">
+                      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-orange-600" />
+                      <div>
+                        <p className="font-semibold">Commande en paiement différé — non encore payée</p>
+                        <p className="mt-1">
+                          {order.paymentDueDate
+                            ? `Échéance de paiement : ${new Date(order.paymentDueDate).toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })}. `
+                            : ""}
+                          Vous pouvez créer l'étiquette et expédier avant paiement — la décision d'expédition est sous votre responsabilité.
+                        </p>
                       </div>
                     </div>
                   )}
