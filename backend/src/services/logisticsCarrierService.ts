@@ -223,7 +223,7 @@ function xmlEscape(value: string | number | null | undefined) {
  * DOIT être appliqué de manière identique sur les valeurs du hash MD5
  * ET sur les valeurs du body SOAP pour garantir la cohérence.
  */
-function normalizeMondialRelayText(value: string | number | null | undefined, maxLen?: number): string {
+function normalizeMondialRelayText(value: string | number | null | undefined, maxLen?: number, uppercase = true): string {
   let s = String(value ?? "");
   // Décomposition Unicode NFD : é -> e + combining accent
   s = s.normalize("NFD");
@@ -236,6 +236,10 @@ function normalizeMondialRelayText(value: string | number | null | undefined, ma
   s = s.replace(/[^\x20-\x7E]/g, "");
   // Normalisation des espaces multiples
   s = s.replace(/\s+/g, " ").trim();
+  // Conversion en majuscules : Mondial Relay n'accepte que [A-Z] dans les champs adresse
+  // (regex ^[0-9A-Z\_\-'., /]{2,32}$). Sans toUpperCase, les minuscules déclenchent STAT 33.
+  // Ne pas mettre en majuscules les emails (STAT 39) ni les téléphones.
+  if (uppercase) s = s.toUpperCase();
   if (maxLen !== undefined && s.length > maxLen) s = s.slice(0, maxLen);
   return s;
 }
@@ -641,20 +645,20 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
   const nClient = buildMondialRelayNClient(input.customerEmail);
   // Normalisation ASCII des champs expéditeur (suppression accents, apostrophes doubles, etc.)
   // DOIT être identique entre le tableau values (hash MD5) et l'enveloppe SOAP.
-  const expeAd1 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise", 35);
-  const expeAd3 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_ADDRESS || "", 35);
-  const expeAd4 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_ADDRESS_2 || "", 35);
-  const expeVille = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_CITY || "", 35);
-  const expeTel1 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_PHONE || "", 20);
-  const expeMail = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr", 70);
+  const expeAd1 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise", 32);
+  const expeAd3 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_ADDRESS || "", 32);
+  const expeAd4 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_ADDRESS_2 || "", 32);
+  const expeVille = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_CITY || "", 26);
+  const expeTel1 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_PHONE || "", 20, false);
+  const expeMail = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr", 70, false);
 
   // Normalisation ASCII des champs texte destinataire (suppression accents, apostrophes doubles, etc.)
   // DOIT être identique entre le tableau values (hash MD5) et l'enveloppe SOAP.
-  const destName = normalizeMondialRelayText(`${input.recipient.firstName} ${input.recipient.lastName}`.trim(), 35);
-  const destAd3 = normalizeMondialRelayText(input.recipient.address, 35);
-  const destAd4 = normalizeMondialRelayText(input.recipient.extension || "", 35);
-  const destVille = normalizeMondialRelayText(input.recipient.city, 35);
-  const destPhone = normalizeMondialRelayText(input.recipient.phone || "", 20);
+  const destName = normalizeMondialRelayText(`${input.recipient.firstName} ${input.recipient.lastName}`.trim(), 32);
+  const destAd3 = normalizeMondialRelayText(input.recipient.address, 32);
+  const destAd4 = normalizeMondialRelayText(input.recipient.extension || "", 32);
+  const destVille = normalizeMondialRelayText(input.recipient.city, 26);
+  const destPhone = normalizeMondialRelayText(input.recipient.phone || "", 20, false);
 
   const values = [
     enseigne, modeCol, modeLiv, nDossier, nClient,
