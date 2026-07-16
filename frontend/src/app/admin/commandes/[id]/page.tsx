@@ -641,10 +641,16 @@ export default function OrderDetailPage() {
       if (!response.ok) throw new Error("Téléchargement du PDF impossible");
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
-      const printWindow = window.open(blobUrl, "_blank");
+      // Ouvrir dans une page HTML intermédiaire pour forcer le format papier via CSS @page
+      const pageSize = labelPrintFormat === "100x150" ? "100mm 150mm" : "A4";
+      const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Impression étiquette</title><style>@page{size:${pageSize};margin:0}body,html{margin:0;padding:0}embed,iframe,object{width:100%;height:100vh;border:none}</style></head><body><embed src="${blobUrl}" type="application/pdf" width="100%" height="100%" /></body></html>`;
+      const htmlBlob = new Blob([htmlContent], { type: "text/html" });
+      const htmlUrl = URL.createObjectURL(htmlBlob);
+      const printWindow = window.open(htmlUrl, "_blank");
       if (!printWindow) {
         setDrawerError("Veuillez autoriser les pop-ups pour imprimer l'étiquette");
         URL.revokeObjectURL(blobUrl);
+        URL.revokeObjectURL(htmlUrl);
         return;
       }
       let hasTriggeredPrint = false;
@@ -653,11 +659,14 @@ export default function OrderDetailPage() {
         hasTriggeredPrint = true;
         printWindow.focus();
         printWindow.print();
-        // Libérer le blob après un délai pour laisser le temps à l'impression
-        window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+        // Libérer les blobs après un délai pour laisser le temps à l'impression
+        window.setTimeout(() => {
+          URL.revokeObjectURL(blobUrl);
+          URL.revokeObjectURL(htmlUrl);
+        }, 60000);
       };
       printWindow.onload = triggerPrint;
-      window.setTimeout(triggerPrint, 1000);
+      window.setTimeout(triggerPrint, 1500);
     } catch (err: any) {
       setDrawerError(err.message || "Impossible d'ouvrir l'étiquette pour impression");
     }
@@ -1783,26 +1792,34 @@ export default function OrderDetailPage() {
 
                   <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                     <div className="mb-4 flex items-center gap-2"><MapPin className="h-5 w-5 text-gray-500" /><h3 className="font-semibold text-gray-950">Adresse de livraison</h3></div>
-                    {activeShipment?.carrier === "mondial_relay" ? (
+                    {(selectedQuote?.carrier === "mondial_relay" || (!selectedQuote && activeShipment?.carrier === "mondial_relay")) ? (
                       <div className="mb-4 space-y-2">
                         <div className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">
                           <span className="rounded bg-red-600 px-1.5 py-0.5 text-white">MR</span> Mondial Relay — Point relais
                         </div>
-                        {(order.relayPointName || order.relayPointId) ? (
+                        {(order.relayPointName || order.relayPointId || drawerRelayPointId.trim()) ? (
                           <div className="rounded-xl border border-red-100 bg-red-50/60 p-3 text-sm">
                             {order.relayPointName && <p className="font-semibold text-gray-900">{order.relayPointName}</p>}
                             {order.relayPointAddress && <p className="text-gray-600">{order.relayPointAddress}</p>}
-                            {order.relayPointId && <p className="mt-1 text-xs text-gray-400">Réf. : {order.relayPointId}</p>}
+                            {(order.relayPointId || drawerRelayPointId.trim()) && <p className="mt-1 text-xs text-gray-400">Réf. : {order.relayPointId || drawerRelayPointId.trim()}</p>}
                           </div>
                         ) : (
-                          <p className="text-xs text-amber-600">Point relais non renseigné (commande antérieure)</p>
+                          <p className="text-xs text-amber-600">Point relais non renseigné — saisissez l'identifiant ci-dessous</p>
                         )}
                         <p className="text-xs text-gray-400">Adresse personnelle :</p>
                         {renderAddress(order.shippingAddress)}
                       </div>
                     ) : (
                       <>
-                        <div className="mb-4 inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">Colissimo à domicile</div>
+                        <div className="mb-4 inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
+                          {(() => {
+                            const c = selectedQuote?.carrier || activeShipment?.carrier || "";
+                            if (c === "colissimo_international") return "Colissimo International";
+                            if (c === "colissimo") return "Colissimo à domicile";
+                            if (c) return carrierLabel(c);
+                            return "Livraison à domicile";
+                          })()}
+                        </div>
                         {renderAddress(order.shippingAddress)}
                       </>
                     )}
