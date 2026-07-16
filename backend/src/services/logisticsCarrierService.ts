@@ -669,6 +669,10 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
     "FR", "", "FR", input.relayPointId, "", "", "", "", assurance, "",
   ];
   const security = mondialRelaySecurity(values);
+  // LOG DIAGNOSTIC STAT 33 — à retirer après résolution
+  console.log("[MondialRelay][DIAG] Expéditeur:", JSON.stringify({ expeAd1, expeAd3, expeAd4, expeVille, expeCP: process.env.LOGISTICS_SENDER_POSTAL_CODE || "", expeTel1, expeMail }));
+  console.log("[MondialRelay][DIAG] Destinataire:", JSON.stringify({ destName, destAd3, destAd4, destVille, destCP: input.recipient.postalCode, countryCode, destPhone }));
+  console.log("[MondialRelay][DIAG] Autres:", JSON.stringify({ enseigne, nDossier, nClient, poids, relayPointId: input.relayPointId, assurance }));
   const envelope = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
