@@ -602,6 +602,10 @@ export default function OrderDetailPage() {
         packagingId: selectedPackagingId,
         sendTrackingEmail: sendEmailToCustomer,
         relayPointId: selectedQuote.requiresRelayPoint ? drawerRelayPointId.trim() || null : null,
+        // Transmettre le poids calculé/saisi dans le drawer pour éviter que le backend
+        // utilise product.weightG=null (→ 0.01 kg sur l'étiquette) quand les poids
+        // unitaires ne sont pas encore enregistrés en base de données.
+        totalWeightG: packageWeightG > 0 ? packageWeightG : null,
       });
       setShipment(result.shipment);
       setLabelUrl(result.label?.downloadUrl || (result.shipment?.id ? getShipmentLabelPdfUrl(result.shipment.id) : getLogisticsLabelUrl(order.id)));

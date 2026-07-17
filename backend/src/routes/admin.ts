@@ -3909,7 +3909,15 @@ adminRouter.post(
       }
 
       const metrics = computeLogisticsMetrics(order.items as LogisticsOrderItem[]);
-      const totalWeightG = metrics.totalWeightG + (packaging?.selfWeightG || 0);
+      // totalWeightG du body : poids calculé/saisi dans le drawer (articles + emballage).
+      // Prioritaire sur le calcul interne (product.weightG en base) car les poids unitaires
+      // peuvent ne pas être encore enregistrés en base — sans cette priorité, l'étiquette
+      // affiche 0.01 kg (valeur minimale Colissimo) au lieu du poids réel.
+      const bodyWeightG = req.body?.totalWeightG !== undefined && req.body?.totalWeightG !== null
+        ? Math.max(0, parseInt(String(req.body.totalWeightG), 10) || 0)
+        : null;
+      const computedWeightG = metrics.totalWeightG + (packaging?.selfWeightG || 0);
+      const totalWeightG = (bodyWeightG && bodyWeightG > 0) ? bodyWeightG : computedWeightG;
       const labelResult = await createOfficialShipmentLabel({
         carrier,
         offerId,
