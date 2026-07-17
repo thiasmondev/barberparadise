@@ -10,6 +10,9 @@ import {
   updateAdminBrand,
   uploadBrandLogo,
   uploadBrandBanner,
+  createAdminBrand,
+  uploadBrandLogoForNew,
+  uploadBrandBannerForNew,
   type AdminBrand,
   type AdminBrandStats,
 } from "@/lib/admin-api";
@@ -26,7 +29,252 @@ import {
   Loader2,
   ExternalLink,
   Search,
+  Plus,
 } from "lucide-react";
+
+// ─── Modale de création ───────────────────────────────────────
+function BrandCreateModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (brand: AdminBrand) => void;
+}) {
+  const [name, setName]               = useState("");
+  const [description, setDescription] = useState("");
+  const [website, setWebsite]         = useState("");
+  const [slug, setSlug]               = useState("");
+  const [slugEdited, setSlugEdited]   = useState(false);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const [logoFile, setLogoFile]       = useState<File | null>(null);
+  const [bannerFile, setBannerFile]   = useState<File | null>(null);
+  const [saving, setSaving]           = useState(false);
+  const [error, setError]             = useState<string | null>(null);
+  const [success, setSuccess]         = useState(false);
+
+  const logoInputRef   = useRef<HTMLInputElement>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
+
+  function slugify(value: string) {
+    return value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 90);
+  }
+
+  function handleNameChange(value: string) {
+    setName(value);
+    if (!slugEdited) setSlug(slugify(value));
+  }
+
+  function handleSlugChange(value: string) {
+    setSlug(slugify(value));
+    setSlugEdited(true);
+  }
+
+  function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoFile(file);
+    setLogoPreview(URL.createObjectURL(file));
+  }
+
+  function handleBannerChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBannerFile(file);
+    setBannerPreview(URL.createObjectURL(file));
+  }
+
+  async function handleSave() {
+    if (!name.trim()) { setError("Le nom est obligatoire"); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      let logoUrl: string | null = null;
+      let bannerUrl: string | null = null;
+      if (logoFile) logoUrl = await uploadBrandLogoForNew(logoFile);
+      if (bannerFile) bannerUrl = await uploadBrandBannerForNew(bannerFile);
+      const created = await createAdminBrand({
+        name: name.trim(),
+        description: description.trim() || null,
+        website: website.trim() || null,
+        logo: logoUrl,
+        bannerImage: bannerUrl,
+        slug: slug.trim() || null,
+      });
+      setSuccess(true);
+      setTimeout(() => {
+        onCreated(created);
+        onClose();
+      }, 800);
+    } catch (err: any) {
+      setError(err?.message || "Erreur lors de la création");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white border border-gray-200 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-100">
+          <div>
+            <h2 className="text-xl font-bold text-dark-800">Nouvelle marque</h2>
+            <p className="text-sm text-gray-400 mt-0.5">Créer une marque et l'associer à des produits</p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Nom */}
+          <div>
+            <label className="block text-sm font-medium text-dark-700 mb-2">Nom de la marque <span className="text-red-500">*</span></label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => handleNameChange(e.target.value)}
+              placeholder="Ex : Wahl, Andis, BaByliss..."
+              autoFocus
+              className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-dark-800 placeholder-gray-400 focus:outline-none focus:border-primary transition-colors text-sm"
+            />
+          </div>
+
+          {/* Slug */}
+          <div>
+            <label className="block text-sm font-medium text-dark-700 mb-2">Slug (URL)</label>
+            <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-4 py-2.5 focus-within:border-primary transition-colors">
+              <span className="text-gray-400 text-sm flex-shrink-0">/marques/</span>
+              <input
+                type="text"
+                value={slug}
+                onChange={(e) => handleSlugChange(e.target.value)}
+                placeholder="nom-de-la-marque"
+                className="flex-1 text-dark-800 placeholder-gray-400 focus:outline-none text-sm bg-transparent"
+              />
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Généré automatiquement depuis le nom. Modifiable.</p>
+          </div>
+
+          {/* Logo */}
+          <div>
+            <label className="block text-sm font-medium text-dark-700 mb-3">Logo</label>
+            <div className="flex items-start gap-4">
+              <div className="w-24 h-24 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                {logoPreview ? (
+                  <Image src={logoPreview} alt="Logo" width={96} height={96} className="object-contain w-full h-full p-2" unoptimized />
+                ) : (
+                  <ImageIcon size={32} className="text-gray-300" />
+                )}
+              </div>
+              <div className="flex-1">
+                <input ref={logoInputRef} type="file" accept="image/*" onChange={handleLogoChange} className="hidden" />
+                <button
+                  onClick={() => logoInputRef.current?.click()}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg text-sm text-dark-700 transition-colors"
+                >
+                  <Upload size={16} />
+                  {logoFile ? logoFile.name : "Choisir un logo"}
+                </button>
+                <p className="text-xs text-gray-400 mt-2">PNG, JPG, SVG, WebP — max 10 Mo — recommandé : 400×400 px</p>
+                {logoFile && (
+                  <button onClick={() => { setLogoFile(null); setLogoPreview(null); }} className="text-xs text-red-500 hover:text-red-600 mt-1">Annuler</button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Bannière */}
+          <div>
+            <label className="block text-sm font-medium text-dark-700 mb-3">Image de bannière</label>
+            <div
+              className="w-full h-28 rounded-xl bg-gray-50 border border-dashed border-gray-300 overflow-hidden relative cursor-pointer hover:border-primary transition-colors"
+              onClick={() => bannerInputRef.current?.click()}
+            >
+              {bannerPreview ? (
+                <Image src={bannerPreview} alt="Bannière" fill className="object-cover" unoptimized />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full gap-2">
+                  <Upload size={24} className="text-gray-300" />
+                  <span className="text-sm text-gray-400">Cliquer pour uploader une bannière</span>
+                  <span className="text-xs text-gray-300">Recommandé : 1400×400 px</span>
+                </div>
+              )}
+              {bannerPreview && (
+                <div className="absolute inset-0 bg-black/30 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <span className="text-white text-sm font-medium flex items-center gap-2"><Upload size={16} /> Changer la bannière</span>
+                </div>
+              )}
+            </div>
+            <input ref={bannerInputRef} type="file" accept="image/*" onChange={handleBannerChange} className="hidden" />
+            {bannerFile && (
+              <button onClick={() => { setBannerFile(null); setBannerPreview(null); }} className="text-xs text-red-500 hover:text-red-600 mt-1">Annuler</button>
+            )}
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-dark-700 mb-2">Description <span className="text-gray-400 font-normal">(optionnelle)</span></label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-dark-800 placeholder-gray-400 focus:outline-none focus:border-primary transition-colors resize-none text-sm"
+              placeholder="Description de la marque..."
+            />
+          </div>
+
+          {/* Site web */}
+          <div>
+            <label className="block text-sm font-medium text-dark-700 mb-2">Site web <span className="text-gray-400 font-normal">(optionnel)</span></label>
+            <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-4 py-2.5 focus-within:border-primary transition-colors">
+              <Globe size={16} className="text-gray-400 flex-shrink-0" />
+              <input
+                type="url"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                className="flex-1 text-dark-800 placeholder-gray-400 focus:outline-none text-sm bg-transparent"
+                placeholder="https://..."
+              />
+            </div>
+          </div>
+
+          {/* Erreur */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-600 text-sm">{error}</div>
+          )}
+
+          {/* Boutons */}
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button onClick={onClose} disabled={saving} className="px-5 py-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors text-sm">
+              Annuler
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || success || !name.trim()}
+              className="px-5 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-white font-medium transition-colors text-sm flex items-center gap-2 disabled:opacity-60"
+            >
+              {saving ? (
+                <><Loader2 size={16} className="animate-spin" /> Création...</>
+              ) : success ? (
+                <><Check size={16} /> Marque créée !</>
+              ) : (
+                <><Plus size={16} /> Créer la marque</>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Modale d'édition ────────────────────────────────────────
 function BrandEditModal({
@@ -382,6 +630,7 @@ export default function AdminBrandsPage() {
   const [loadingDeleteId, setLoadingDeleteId] = useState<number | null>(null);
   const [toast, setToast]                     = useState<string | null>(null);
   const [search, setSearch]                   = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   useEffect(() => {
     getAdminBrands()
@@ -425,6 +674,12 @@ export default function AdminBrandsPage() {
     setTimeout(() => setToast(null), 6000);
   }
 
+  function handleCreated(brand: AdminBrand) {
+    setBrands((prev) => [brand, ...prev]);
+    setToast(`Marque « ${brand.name} » créée avec succès`);
+    setTimeout(() => setToast(null), 5000);
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -455,15 +710,24 @@ export default function AdminBrandsPage() {
           <h1 className="font-heading font-bold text-xl text-dark-800">Marques</h1>
           <p className="text-sm text-gray-500">{brands.length} marques au total</p>
         </div>
-        <a
-          href="/marques"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-gray-600 hover:border-primary hover:text-primary transition-colors text-sm"
-        >
-          <ExternalLink size={14} />
-          Voir la page marques
-        </a>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary hover:bg-primary/90 text-white font-medium transition-colors text-sm"
+          >
+            <Plus size={16} />
+            Ajouter une marque
+          </button>
+          <a
+            href="/marques"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-gray-600 hover:border-primary hover:text-primary transition-colors text-sm"
+          >
+            <ExternalLink size={14} />
+            Voir la page marques
+          </a>
+        </div>
       </div>
 
       {/* Stats */}
@@ -612,6 +876,14 @@ export default function AdminBrandsPage() {
         <div className="text-center py-16 text-gray-400">
           Aucune marque trouvée pour « {search} »
         </div>
+      )}
+
+      {/* Modale de création */}
+      {showCreateModal && (
+        <BrandCreateModal
+          onClose={() => setShowCreateModal(false)}
+          onCreated={handleCreated}
+        />
       )}
 
       {/* Modale d'édition */}

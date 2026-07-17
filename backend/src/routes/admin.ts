@@ -7006,6 +7006,54 @@ adminRouter.get(
   }
 );
 
+// POST /api/admin/brands — Créer une nouvelle marque
+adminRouter.post(
+  "/brands",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { name, description, website, logo, bannerImage, slug: slugOverride } = req.body;
+      if (!name || typeof name !== "string" || !name.trim()) {
+        res.status(400).json({ error: "Le nom de la marque est obligatoire" });
+        return;
+      }
+      const trimmedName = name.trim();
+      // Génération du slug depuis le nom (même logique que slugifyProductAnchor)
+      const baseSlug = (slugOverride?.trim() || trimmedName)
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 90) || "marque";
+      // Garantir l'unicité du slug : ajouter un suffixe numérique si nécessaire
+      let slug = baseSlug;
+      let suffix = 1;
+      while (await prisma.brand.findUnique({ where: { slug } })) {
+        slug = `${baseSlug}-${suffix++}`;
+      }
+      const brand = await prisma.brand.create({
+        data: {
+          name: trimmedName,
+          slug,
+          description: description?.trim() || null,
+          website: website?.trim() || null,
+          logo: logo?.trim() || null,
+          bannerImage: bannerImage?.trim() || null,
+        },
+      });
+      res.status(201).json({ ...brand, productCount: 0 });
+    } catch (err: any) {
+      console.error(err);
+      if (err?.code === "P2002") {
+        res.status(409).json({ error: "Une marque avec ce slug existe déjà" });
+      } else {
+        res.status(500).json({ error: "Erreur lors de la création de la marque" });
+      }
+    }
+  }
+);
+
 // DELETE /api/admin/brands/:id?confirm=true — Supprimer définitivement une marque et ses produits liés
 adminRouter.delete(
   "/brands/:id",

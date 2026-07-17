@@ -798,6 +798,32 @@ export function getAdminBrands() {
   return adminFetch<AdminBrand[]>("/api/admin/brands");
 }
 
+export function createAdminBrand(
+  data: {
+    name: string;
+    description?: string | null;
+    website?: string | null;
+    logo?: string | null;
+    bannerImage?: string | null;
+    slug?: string | null;
+  }
+) {
+  return adminFetch<AdminBrand>("/api/admin/brands", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+/** Upload d'un logo pour une nouvelle marque (avant création, sans brandId) */
+export async function uploadBrandLogoForNew(file: File): Promise<string> {
+  return uploadBrandMediaToCloudinary(file, "logo");
+}
+
+/** Upload d'une bannière pour une nouvelle marque (avant création, sans brandId) */
+export async function uploadBrandBannerForNew(file: File): Promise<string> {
+  return uploadBrandMediaToCloudinary(file, "banner");
+}
+
 export function getAdminBrandStats(id: number) {
   return adminFetch<AdminBrandStats>(`/api/admin/brands/${id}/stats`);
 }
