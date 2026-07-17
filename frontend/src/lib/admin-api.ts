@@ -1987,6 +1987,10 @@ export function purchaseLogisticsLabel(
      * Transmis au backend pour être utilisé en priorité sur le calcul interne (product.weightG en base).
      * Indispensable quand les poids unitaires ne sont pas encore enregistrés en base. */
     totalWeightG?: number | null;
+    /** Format du PDF d'étiquette sélectionné dans le drawer : "100x150" (défaut) ou "A4".
+     * Transmis au backend pour paramétrer l'URL Mondial Relay (format=10x15 ou format=A4)
+     * et le paramètre outputPrintingType de Colissimo. */
+    labelPrintFormat?: "100x150" | "A4" | null;
   }
 ) {
   return adminFetch<{

@@ -53,6 +53,8 @@ export type ShipmentLabelInput = ShipmentQuoteInput & {
   signatureRequired?: boolean;
   packagingId?: number | null;
   relayPointId?: string | null;
+  /** Format du PDF d'étiquette demandé par l'admin : "100x150" (défaut) ou "A4" */
+  labelPrintFormat?: "100x150" | "A4" | null;
 };
 
 export type ShipmentRateQuote = {
@@ -704,20 +706,31 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
     throw new Error(`Mondial Relay n’a pas retourné de numéro d’expédition. Réponse: ${xml.slice(0, 600)}`);
   }
 
-  // Toujours appeler WSI3_GetEtiquettes pour obtenir URL_PDF_10x15 (format 100x150mm natif).
-  // URL_Etiquette retournée par WSI2_CreationExpedition est au format A4 — ne pas l'utiliser
-  // comme source principale car elle produit une étiquette positionnée sur une page A4.
+  // Doc Mondial Relay v5.14 p.26 : URL_Etiquette contient format=A4 dans l'URL.
+  // Pour obtenir le format 10x15 (100x150mm), il suffit de remplacer format=A4 par format=10x15.
+  // Pas besoin d'appeler WSI3_GetEtiquettes — l'URL directe est plus fiable et plus rapide.
+  const wantedFormat = (input.labelPrintFormat === "A4") ? "A4" : "10x15";
   let labelUrl: string | null = null;
-  {
+  if (labelUrlDirect) {
+    // Remplacer le param format dans l'URL Mondial Relay (format=A4 → format=10x15 ou inversement)
+    labelUrl = labelUrlDirect.replace(/([?&]format=)[^&]*/i, `$1${wantedFormat}`);
+    // Si l'URL ne contient pas de param format, l'ajouter manuellement
+    if (!/[?&]format=/i.test(labelUrl)) {
+      labelUrl += (labelUrl.includes("?") ? "&" : "?") + `format=${wantedFormat}`;
+    }
+  } else {
+    // Fallback WSI3_GetEtiquettes si URL_Etiquette absente (cas rare)
     const getLabelValues = [enseigne, expeditionNum, "FR"];
     const getLabelSecurity = mondialRelaySecurity(getLabelValues);
     const getLabelEnvelope = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><WSI3_GetEtiquettes xmlns="http://www.mondialrelay.fr/webservice/"><Enseigne>${xmlEscape(enseigne)}</Enseigne><Expeditions>${xmlEscape(expeditionNum)}</Expeditions><Langue>FR</Langue><Security>${getLabelSecurity}</Security></WSI3_GetEtiquettes></soap:Body></soap:Envelope>`;
     const labelXml = await postSoap("https://api.mondialrelay.com/Web_Services.asmx", "http://www.mondialrelay.fr/webservice/WSI3_GetEtiquettes", getLabelEnvelope);
-    labelUrl = getXmlValue(labelXml, "URL_PDF_10x15") || getXmlValue(labelXml, "URL_PDF_A5") || getXmlValue(labelXml, "URL_PDF_A4");
+    if (wantedFormat === "10x15") {
+      labelUrl = getXmlValue(labelXml, "URL_PDF_10x15") || getXmlValue(labelXml, "URL_PDF_A5") || getXmlValue(labelXml, "URL_PDF_A4");
+    } else {
+      labelUrl = getXmlValue(labelXml, "URL_PDF_A4") || getXmlValue(labelXml, "URL_PDF_A5") || getXmlValue(labelXml, "URL_PDF_10x15");
+    }
   }
-  // Fallback : URL_Etiquette de WSI2 si WSI3 n'a rien retourné
-  if (!labelUrl) labelUrl = labelUrlDirect;
   if (!labelUrl) {
     throw new Error("Mondial Relay a créé l’expédition mais n’a pas retourné d’URL d’étiquette PDF.");
   }

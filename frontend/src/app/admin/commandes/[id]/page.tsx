@@ -606,6 +606,9 @@ export default function OrderDetailPage() {
         // utilise product.weightG=null (→ 0.01 kg sur l'étiquette) quand les poids
         // unitaires ne sont pas encore enregistrés en base de données.
         totalWeightG: packageWeightG > 0 ? packageWeightG : null,
+        // Format d'étiquette sélectionné dans le drawer : "100x150" (défaut) ou "A4".
+        // Utilisé par Mondial Relay pour paramétrer l'URL PDF (format=10x15 ou format=A4).
+        labelPrintFormat: (labelPrintFormat === "a4" ? "A4" : "100x150") as "100x150" | "A4",
       });
       setShipment(result.shipment);
       setLabelUrl(result.label?.downloadUrl || (result.shipment?.id ? getShipmentLabelPdfUrl(result.shipment.id) : getLogisticsLabelUrl(order.id)));

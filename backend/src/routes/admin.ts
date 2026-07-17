@@ -3918,6 +3918,11 @@ adminRouter.post(
         : null;
       const computedWeightG = metrics.totalWeightG + (packaging?.selfWeightG || 0);
       const totalWeightG = (bodyWeightG && bodyWeightG > 0) ? bodyWeightG : computedWeightG;
+      // Format d'étiquette choisi par l'admin dans le drawer ("100x150" par défaut, "A4" possible)
+      const rawLabelPrintFormat = String(req.body?.labelPrintFormat || "").trim();
+      const labelPrintFormat: "100x150" | "A4" | null =
+        rawLabelPrintFormat === "A4" ? "A4" : rawLabelPrintFormat === "100x150" ? "100x150" : null;
+
       const labelResult = await createOfficialShipmentLabel({
         carrier,
         offerId,
@@ -3925,6 +3930,7 @@ adminRouter.post(
         signatureRequired,
         packagingId,
         relayPointId,
+        labelPrintFormat,
         orderNumber: order.orderNumber,
         customerEmail: order.email,
         recipient: order.shippingAddress,
