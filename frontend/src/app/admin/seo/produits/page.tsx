@@ -30,10 +30,15 @@ export default function SeoProductsPage() {
 
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
+    // Découper en mots-clés indépendants (AND logique) — même logique que la recherche publique corrigée
+    const keywords = query ? query.split(/\s+/).filter((w) => w.length >= 1) : [];
     return products.filter((product) => {
-      const matchesSearch = !query || [product.name, product.brand, product.category, product.subcategory]
+      const fields = [product.name, product.brand, product.category, product.subcategory]
         .filter(Boolean)
-        .some((value) => value.toLowerCase().includes(query));
+        .map((v) => v!.toLowerCase());
+      const matchesSearch =
+        keywords.length === 0 ||
+        keywords.every((kw) => fields.some((field) => field.includes(kw)));
       const matchesStatus = status === "all"
         || (status === "optimized" && product.seoScore >= 80)
         || (status === "correct" && product.seoScore >= 60 && product.seoScore < 80)
