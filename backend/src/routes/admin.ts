@@ -42,6 +42,7 @@ import {
 import { calculateShippingOptions, ensureDefaultShippingZones } from "../services/shippingCalculator";
 import { generateProductRecommendations } from "../services/seo-agent";
 import { notifyIfRestocked, notifySingleStockAlert } from "../services/stockAlertService";
+import { applyProductSearch } from "../utils/searchUtils";
 
 // ─── Cloudinary Config ───────────────────────────────────────
 cloudinary.config({
@@ -2413,13 +2414,11 @@ adminRouter.get(
       }
       if (status) where.status = status;
       if (search) {
-        andFilters.push({
-          OR: [
-            { name: { contains: search, mode: "insensitive" } },
-            { slug: { contains: search, mode: "insensitive" } },
-            { brand: { contains: search, mode: "insensitive" } },
-          ],
-        });
+        // Recherche par mots-clés indépendants (AND logique) via l'utilitaire partagé
+        const tempWhere: Record<string, unknown> = {};
+        applyProductSearch(tempWhere, search);
+        if (tempWhere.OR) andFilters.push({ OR: tempWhere.OR as Record<string, unknown>[] });
+        if (tempWhere.AND) andFilters.push(...(tempWhere.AND as Record<string, unknown>[]));
       }
       if (andFilters.length > 0) where.AND = andFilters;
       const products = await prisma.product.findMany({
@@ -2803,16 +2802,8 @@ adminRouter.get(
       const where: any = {};
       if (status) where.status = status;
       if (category) where.category = category;
-      if (search)
-        where.OR = [
-          { name: { contains: search, mode: "insensitive" } },
-          { slug: { contains: search, mode: "insensitive" } },
-          { handle: { contains: search, mode: "insensitive" } },
-          { brand: { contains: search, mode: "insensitive" } },
-          { category: { contains: search, mode: "insensitive" } },
-          { subcategory: { contains: search, mode: "insensitive" } },
-          { subsubcategory: { contains: search, mode: "insensitive" } },
-        ];
+      // Recherche par mots-clés indépendants (AND logique) via l'utilitaire partagé
+      applyProductSearch(where, search);
       const [products, total] = await Promise.all([
         prisma.product.findMany({
           where,

@@ -31,6 +31,7 @@ import {
   updateAdminCategoryDetail,
   uploadCategoryImage,
 } from "@/lib/admin-api";
+import { matchesKeywords } from "@/lib/search-utils";
 import type { Category, Product } from "@/types";
 import {
   ArrowLeft,
@@ -369,12 +370,10 @@ export default function AdminCategoryDetailPage() {
 
   const currentProductIds = useMemo(() => new Set(products.map((product) => product.id)), [products]);
   const filteredProducts = useMemo(() => {
-    const needle = productSearch.trim().toLowerCase();
-    if (!needle) return products;
+    if (!productSearch.trim()) return products;
+    // Recherche par mots-clés indépendants (AND logique) via l'utilitaire partagé
     return products.filter((product) =>
-      [product.name, product.brand, product.slug, product.status]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(needle))
+      matchesKeywords(productSearch, [product.name, product.brand, product.slug, product.status])
     );
   }, [productSearch, products]);
 
