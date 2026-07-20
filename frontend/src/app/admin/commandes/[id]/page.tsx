@@ -44,6 +44,9 @@ import {
   getCustomerExtraEmails,
   sendAdminOrderInvoice,
   toggleAdminOrderB2B,
+  assignAdminOrderCustomer,
+  createAdminCustomerQuick,
+  getAdminCustomers,
   type CustomerExtraEmail,
   getLogisticsCarrierQuotes,
   getLogisticsLabelUrl,
@@ -64,7 +67,7 @@ import {
   type LogisticsPreparationItem,
   type ShipmentRecord,
 } from "@/lib/admin-api";
-import type { Order, Packaging, ShippingAddress, Product, ProductVariant } from "@/types";
+import type { Order, Packaging, ShippingAddress, Product, ProductVariant, Customer } from "@/types";
 import { EmailPickerModal, type EmailOption } from "@/components/admin/EmailPickerModal";
 
 const PAYMENT_BADGES: Record<string, { label: string; className: string }> = {
@@ -370,6 +373,23 @@ export default function OrderDetailPage() {
   const [productSearch, setProductSearch] = useState("");
   const [productSearchResults, setProductSearchResults] = useState<Product[]>([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
+
+  // ─── Associer un client (Caisse POS) ──────────────────────────────────────
+  type AssignMode = "search" | "create";
+  const [assignMode, setAssignMode] = useState<AssignMode>("search");
+  const [assignCustomerSearch, setAssignCustomerSearch] = useState("");
+  const [assignCustomerResults, setAssignCustomerResults] = useState<Customer[]>([]);
+  const [assignCustomerLoading, setAssignCustomerLoading] = useState(false);
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [assignError, setAssignError] = useState("");
+  const [assignSuccess, setAssignSuccess] = useState("");
+  // Formulaire création rapide
+  const [newCustomerFirstName, setNewCustomerFirstName] = useState("");
+  const [newCustomerLastName, setNewCustomerLastName] = useState("");
+  const [newCustomerEmail, setNewCustomerEmail] = useState("");
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
+  // Confirmation réassignation
+  const [assignForceConfirm, setAssignForceConfirm] = useState(false);
 
   const loadOrder = async () => {
     if (!id) return;
@@ -1144,6 +1164,83 @@ export default function OrderDetailPage() {
     }
   };
 
+  // ─── Recherche client debounce (bloc Associer un client) ─────────────────
+  useEffect(() => {
+    if (!assignCustomerSearch.trim()) {
+      setAssignCustomerResults([]);
+      return;
+    }
+    let cancelled = false;
+    setAssignCustomerLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const data = await getAdminCustomers({ search: assignCustomerSearch, limit: 8 });
+        if (!cancelled) setAssignCustomerResults(data.customers || []);
+      } catch {
+        if (!cancelled) setAssignCustomerResults([]);
+      } finally {
+        if (!cancelled) setAssignCustomerLoading(false);
+      }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [assignCustomerSearch]);
+
+  const handleAssignExistingCustomer = async (customerId: string, force = false) => {
+    if (!order) return;
+    setAssignLoading(true);
+    setAssignError("");
+    setAssignSuccess("");
+    try {
+      const updated = await assignAdminOrderCustomer(order.id, customerId, force);
+      setOrder(updated);
+      setAssignSuccess("Client associé avec succès.");
+      setAssignCustomerSearch("");
+      setAssignCustomerResults([]);
+      setAssignForceConfirm(false);
+      setTimeout(() => setAssignSuccess(""), 5000);
+    } catch (err: any) {
+      if (err?.status === 409 || (err?.message || "").includes("déjà un client")) {
+        setAssignForceConfirm(true);
+        setAssignError("Cette commande a déjà un client associé. Confirmez pour le remplacer.");
+      } else {
+        setAssignError(err?.message || "Erreur lors de l'association.");
+      }
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
+  const handleCreateAndAssignCustomer = async () => {
+    if (!order) return;
+    if (!newCustomerFirstName.trim() || !newCustomerLastName.trim() || !newCustomerEmail.trim()) {
+      setAssignError("Prénom, nom et email sont obligatoires.");
+      return;
+    }
+    setAssignLoading(true);
+    setAssignError("");
+    setAssignSuccess("");
+    try {
+      const { customer } = await createAdminCustomerQuick({
+        firstName: newCustomerFirstName.trim(),
+        lastName: newCustomerLastName.trim(),
+        email: newCustomerEmail.trim().toLowerCase(),
+        phone: newCustomerPhone.trim() || undefined,
+      });
+      const updated = await assignAdminOrderCustomer(order.id, customer.id);
+      setOrder(updated);
+      setAssignSuccess(`Client ${customer.firstName} ${customer.lastName} créé et associé avec succès.`);
+      setNewCustomerFirstName("");
+      setNewCustomerLastName("");
+      setNewCustomerEmail("");
+      setNewCustomerPhone("");
+      setTimeout(() => setAssignSuccess(""), 5000);
+    } catch (err: any) {
+      setAssignError(err?.message || "Erreur lors de la création/association.");
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
@@ -1566,12 +1663,169 @@ export default function OrderDetailPage() {
 
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <div className="mb-3 flex items-center gap-2"><User className="h-4 w-4 text-gray-500" /><h2 className="font-semibold text-gray-950">Client</h2></div>
-              <Link href={order.customerId ? `/admin/clients/${order.customerId}` : "#"} className="font-medium text-gray-950 underline-offset-4 hover:underline">{customerName(order)}</Link>
-              <p className="mt-1 text-sm text-gray-500">{order.customer?._count?.orders || 1} commande{(order.customer?._count?.orders || 1) > 1 ? "s" : ""}</p>
-              <div className="mt-4 space-y-2 text-sm text-gray-600">
-                <p className="flex items-center gap-2"><Mail className="h-4 w-4" /> {order.customer?.email || order.customerEmail || order.email}</p>
-                <p className="flex items-center gap-2"><Phone className="h-4 w-4" /> {order.customer?.phone || order.shippingAddress?.phone || "Téléphone non renseigné"}</p>
-              </div>
+
+              {/* Client associé existant */}
+              {order.customerId ? (
+                <>
+                  <Link href={`/admin/clients/${order.customerId}`} className="font-medium text-gray-950 underline-offset-4 hover:underline">{customerName(order)}</Link>
+                  <p className="mt-1 text-sm text-gray-500">{order.customer?._count?.orders || 1} commande{(order.customer?._count?.orders || 1) > 1 ? "s" : ""}</p>
+                  <div className="mt-4 space-y-2 text-sm text-gray-600">
+                    <p className="flex items-center gap-2"><Mail className="h-4 w-4" /> {order.customer?.email || order.customerEmail || order.email}</p>
+                    <p className="flex items-center gap-2"><Phone className="h-4 w-4" /> {order.customer?.phone || order.shippingAddress?.phone || "Téléphone non renseigné"}</p>
+                  </div>
+                  {/* Bouton réassigner uniquement sur commandes POS */}
+                  {isPosOrder && (
+                    <button
+                      onClick={() => { setAssignMode("search"); setAssignError(""); setAssignSuccess(""); setAssignCustomerSearch(""); setAssignCustomerResults([]); setAssignForceConfirm(false); }}
+                      className="mt-3 text-xs text-gray-400 underline hover:text-gray-600"
+                    >
+                      Changer de client
+                    </button>
+                  )}
+                </>
+              ) : (
+                /* Pas de client : afficher les infos anonymes */
+                <>
+                  <p className="font-medium text-gray-500 italic">{isPosOrder ? "Vente anonyme (Caisse POS)" : customerName(order)}</p>
+                  <div className="mt-4 space-y-2 text-sm text-gray-600">
+                    <p className="flex items-center gap-2"><Mail className="h-4 w-4" /> {order.customerEmail || order.email || "—"}</p>
+                    <p className="flex items-center gap-2"><Phone className="h-4 w-4" /> {order.shippingAddress?.phone || "Téléphone non renseigné"}</p>
+                  </div>
+                </>
+              )}
+
+              {/* Bloc Associer un client — visible sur commandes POS uniquement */}
+              {isPosOrder && (
+                <div className="mt-5 border-t border-gray-100 pt-4">
+                  <p className="mb-3 text-sm font-semibold text-gray-700">Associer un client</p>
+
+                  {/* Onglets Search / Create */}
+                  <div className="mb-3 flex gap-2">
+                    <button
+                      onClick={() => { setAssignMode("search"); setAssignError(""); setAssignSuccess(""); }}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                        assignMode === "search" ? "bg-gray-950 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      Rechercher
+                    </button>
+                    <button
+                      onClick={() => { setAssignMode("create"); setAssignError(""); setAssignSuccess(""); }}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                        assignMode === "create" ? "bg-gray-950 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      Nouveau client
+                    </button>
+                  </div>
+
+                  {assignMode === "search" && (
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Nom, email ou téléphone..."
+                          value={assignCustomerSearch}
+                          onChange={(e) => setAssignCustomerSearch(e.target.value)}
+                          className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm placeholder-gray-400 focus:border-gray-400 focus:outline-none"
+                        />
+                        {assignCustomerLoading && <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-gray-400" />}
+                      </div>
+                      {assignCustomerResults.length > 0 && (
+                        <ul className="max-h-48 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+                          {assignCustomerResults.map((c) => (
+                            <li key={c.id}>
+                              <button
+                                onClick={() => handleAssignExistingCustomer(c.id)}
+                                disabled={assignLoading}
+                                className="flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm hover:bg-gray-50 disabled:opacity-50"
+                              >
+                                <span className="font-medium text-gray-900">{c.firstName} {c.lastName}</span>
+                                <span className="ml-auto shrink-0 text-xs text-gray-400">{c.email}</span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {assignCustomerSearch.trim() && !assignCustomerLoading && assignCustomerResults.length === 0 && (
+                        <p className="text-xs text-gray-400">Aucun client trouvé.</p>
+                      )}
+                    </div>
+                  )}
+
+                  {assignMode === "create" && (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          placeholder="Prénom *"
+                          value={newCustomerFirstName}
+                          onChange={(e) => setNewCustomerFirstName(e.target.value)}
+                          className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm placeholder-gray-400 focus:border-gray-400 focus:outline-none"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Nom *"
+                          value={newCustomerLastName}
+                          onChange={(e) => setNewCustomerLastName(e.target.value)}
+                          className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm placeholder-gray-400 focus:border-gray-400 focus:outline-none"
+                        />
+                      </div>
+                      <input
+                        type="email"
+                        placeholder="Email *"
+                        value={newCustomerEmail}
+                        onChange={(e) => setNewCustomerEmail(e.target.value)}
+                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm placeholder-gray-400 focus:border-gray-400 focus:outline-none"
+                      />
+                      <input
+                        type="tel"
+                        placeholder="Téléphone (optionnel)"
+                        value={newCustomerPhone}
+                        onChange={(e) => setNewCustomerPhone(e.target.value)}
+                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm placeholder-gray-400 focus:border-gray-400 focus:outline-none"
+                      />
+                      <button
+                        onClick={handleCreateAndAssignCustomer}
+                        disabled={assignLoading || !newCustomerFirstName.trim() || !newCustomerLastName.trim() || !newCustomerEmail.trim()}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {assignLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                        Créer et associer
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Confirmation réassignation */}
+                  {assignForceConfirm && (
+                    <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                      <p className="mb-2 font-medium">Un client est déjà associé à cette commande. Confirmer le remplacement ?</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => { const id = assignCustomerResults[0]?.id; if (id) handleAssignExistingCustomer(id, true); }}
+                          className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+                        >
+                          Confirmer
+                        </button>
+                        <button
+                          onClick={() => { setAssignForceConfirm(false); setAssignError(""); }}
+                          className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50"
+                        >
+                          Annuler
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Feedback */}
+                  {assignError && !assignForceConfirm && (
+                    <p className="mt-2 rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-700">{assignError}</p>
+                  )}
+                  {assignSuccess && (
+                    <p className="mt-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{assignSuccess}</p>
+                  )}
+                </div>
+              )}
             </section>
 
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">

@@ -7725,4 +7725,73 @@ adminRouter.patch(
   }
 );
 
+// PATCH /api/admin/orders/:id/assign-customer — Associer rétroactivement un client à une commande Caisse POS
+adminRouter.patch(
+  "/orders/:id/assign-customer",
+  requireAdmin,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { customerId } = req.body;
+
+      if (!customerId || typeof customerId !== "string") {
+        res.status(400).json({ error: "customerId est requis" });
+        return;
+      }
+
+      // Vérifier que la commande existe
+      const order = await prisma.order.findUnique({
+        where: { id },
+        select: { id: true, orderNumber: true, channel: true, customerId: true },
+      });
+      if (!order) {
+        res.status(404).json({ error: "Commande introuvable" });
+        return;
+      }
+
+      // Sécurité : ne pas permettre de réassigner si un client est déjà associé
+      // (sauf si le body contient force:true pour une réassignation explicite)
+      if (order.customerId && order.customerId !== customerId && !req.body.force) {
+        res.status(409).json({
+          error: "Cette commande a déjà un client associé. Passez force:true pour confirmer la réassignation.",
+          currentCustomerId: order.customerId,
+        });
+        return;
+      }
+
+      // Vérifier que le client cible existe
+      const customer = await prisma.customer.findUnique({
+        where: { id: customerId },
+        select: { id: true, email: true, firstName: true, lastName: true },
+      });
+      if (!customer) {
+        res.status(404).json({ error: "Client introuvable" });
+        return;
+      }
+
+      // Associer le client à la commande (sans recalcul de prix)
+      const updated = await prisma.order.update({
+        where: { id },
+        data: { customerId },
+        include: {
+          items: true,
+          shippingAddress: true,
+          shipment: true,
+          customer: {
+            include: { addresses: true, _count: { select: { orders: true } } },
+          },
+        },
+      });
+
+      console.log(
+        `[admin][assign-customer] Commande ${order.orderNumber} → client ${customer.email} (${customerId}) par ${req.user?.email || "admin"}`
+      );
+      res.json(updated);
+    } catch (err) {
+      console.error(`[admin][assign-customer] Erreur pour ${req.params.id}:`, err);
+      res.status(500).json({ error: err instanceof Error ? err.message : "Erreur lors de l'association" });
+    }
+  }
+);
+
 export default adminRouter;

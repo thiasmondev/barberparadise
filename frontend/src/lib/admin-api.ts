@@ -650,6 +650,34 @@ export function toggleAdminOrderB2B(id: string, isB2B: boolean) {
   );
 }
 
+export function assignAdminOrderCustomer(
+  orderId: string,
+  customerId: string,
+  force = false
+) {
+  return adminFetch<import("@/types").Order>(
+    `/api/admin/orders/${orderId}/assign-customer`,
+    { method: "PATCH", body: JSON.stringify({ customerId, ...(force ? { force: true } : {}) }) }
+  );
+}
+
+export interface AdminCreateCustomerQuickPayload {
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+}
+
+export function createAdminCustomerQuick(payload: AdminCreateCustomerQuickPayload) {
+  return adminFetch<{ customer: import("@/types").Customer; invitation: unknown }>(
+    "/api/admin/customers",
+    {
+      method: "POST",
+      body: JSON.stringify({ ...payload, accountType: "b2c", sendInvitation: false }),
+    }
+  );
+}
+
 export function sendAdminOrderInvoice(id: string, overrideEmail?: string) {
   return adminFetch<{ success: boolean; message: string }>(
     `/api/admin/orders/${id}/send-invoice`,
