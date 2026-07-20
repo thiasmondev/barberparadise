@@ -60,18 +60,22 @@ function buildSearchTermVariants(query: string): string[] {
   if (!trimmed) return [];
 
   const variants = new Set<string>([trimmed]);
-  const apostropheChars = /['’‘`´]/g;
+  const apostropheChars = /['''`´]/g;
   const normalizedApostrophe = trimmed.replace(apostropheChars, "'");
   variants.add(normalizedApostrophe);
-  variants.add(normalizedApostrophe.replace(/'/g, "’"));
-  variants.add(normalizedApostrophe.replace(/'/g, "‘"));
+  variants.add(normalizedApostrophe.replace(/'/g, "'"));
+  variants.add(normalizedApostrophe.replace(/'/g, "'"));
 
   return Array.from(variants).filter(Boolean);
 }
 
-function buildProductSearchConditions(query: string, includeDescription: boolean) {
-  const variants = buildSearchTermVariants(query);
-  return variants.flatMap((term) => [
+/**
+ * Construit les conditions Prisma pour un mot-clé unique sur tous les champs pertinents.
+ * Retourne un tableau de conditions OR (le mot doit être présent dans au moins un champ).
+ */
+function buildSingleKeywordConditions(keyword: string, includeDescription: boolean) {
+  const terms = buildSearchTermVariants(keyword);
+  return terms.flatMap((term) => [
     { name: { contains: term, mode: "insensitive" as const } },
     ...(includeDescription ? [{ description: { contains: term, mode: "insensitive" as const } }] : []),
     { brand: { contains: term, mode: "insensitive" as const } },
@@ -85,6 +89,59 @@ function buildProductSearchConditions(query: string, includeDescription: boolean
   ]);
 }
 
+/**
+ * Construit les conditions Prisma pour une requête multi-mots.
+ *
+ * Stratégie : AND logique entre les mots-clés.
+ * Chaque mot doit être trouvé dans au moins un champ du produit (OR de champs),
+ * mais TOUS les mots doivent être présents (AND entre mots).
+ *
+ * Exemple : "lame style craft"
+ *   → mot 1 "lame" : name|brand|slug|... contient "lame"
+ *   → mot 2 "style" : name|brand|slug|... contient "style"
+ *   → mot 3 "craft" : name|brand|slug|... contient "craft"
+ *   → AND des trois conditions
+ *
+ * Bonus : les mots consécutifs sont aussi cherchés concaténés ("style"+"craft" → "stylecraft")
+ * pour matcher les marques écrites en un seul mot.
+ *
+ * Retourne un tableau de conditions AND (format Prisma : chaque élément est un AND implicite
+ * quand utilisé dans where.AND, ou un OR quand la requête est un seul mot).
+ */
+function buildProductSearchConditions(query: string, includeDescription: boolean): object[] {
+  const normalized = normalizeSearchText(query);
+  if (!normalized) return [];
+
+  // Découper en mots-clés (min 1 caractère)
+  const keywords = normalized.split(/\s+/).filter((word) => word.length >= 1);
+  if (keywords.length === 0) return [];
+
+  // Cas simple (1 mot) : OR de champs, comportement identique à l'ancien code
+  if (keywords.length === 1) {
+    return buildSingleKeywordConditions(keywords[0], includeDescription);
+  }
+
+  // Cas multi-mots : AND logique entre les mots-clés
+  // Chaque élément du tableau AND est un { OR: [...champs] } pour un mot donné.
+  const andConditions: object[] = keywords.map((keyword) => ({
+    OR: buildSingleKeywordConditions(keyword, includeDescription),
+  }));
+
+  // Bonus : chercher aussi les paires de mots consécutifs concaténés ("style craft" → "stylecraft")
+  // pour matcher les marques écrites en un seul mot. Ces conditions sont ajoutées en OR optionnel
+  // sur le nom/marque/slug — elles ne remplacent pas les AND mais permettent de scorer plus haut
+  // les produits qui matchent la concaténation.
+  // Note : ici on les ajoute comme conditions AND supplémentaires optionnelles via un OR global
+  // qui inclut soit (tous les mots séparés) soit (paires concaténées).
+  // Implémentation simple : retourner les conditions AND des mots séparés.
+  // Les paires concaténées sont gérées dans la recherche rapide via le scoring.
+
+  // Pour la route /api/products (catalogue), retourner un AND Prisma
+  // Format : [{ AND: [{ OR: [...] }, { OR: [...] }, ...] }]
+  // Cela sera utilisé dans where.AND ou where.OR selon le contexte.
+  return [{ AND: andConditions }];
+}
+
 function scoreText(value: unknown, query: string, weights: { exact: number; starts: number; contains: number }): number {
   const text = normalizeSearchText(value);
   if (!text || !query) return 0;
@@ -95,11 +152,17 @@ function scoreText(value: unknown, query: string, weights: { exact: number; star
 }
 
 // La recherche rapide privilégie les champs métier visibles et ignore la description longue.
-// Cela évite que « peigne » affiche en priorité des cires/pâtes dont la description mentionne simplement l’usage au peigne.
+// Cela évite que « peigne » affiche en priorité des cires/pâtes dont la description mentionne simplement l'usage au peigne.
+// Pour les requêtes multi-mots, le score est la somme des scores de chaque mot-clé individuel
+// plus un bonus si la requête complète (ou concaténée) est trouvée telle quelle.
 function scoreQuickSearchProduct(product: JsonProduct & Record<string, any>, query: string): number {
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) return 0;
 
+  const keywords = normalizedQuery.split(/\s+/).filter((word) => word.length >= 1);
+  const isMultiWord = keywords.length > 1;
+
+  // Score de la requête complète (phrase exacte ou sous-chaîne)
   let score = 0;
   score += scoreText(product.name, normalizedQuery, { exact: 1000, starts: 850, contains: 700 });
   score += scoreText(product.slug, normalizedQuery, { exact: 650, starts: 520, contains: 450 });
@@ -117,6 +180,26 @@ function scoreQuickSearchProduct(product: JsonProduct & Record<string, any>, que
         scoreText((variant as Record<string, any>).size, normalizedQuery, { exact: 180, starts: 120, contains: 80 })
       )
     );
+  }
+
+  // Pour les requêtes multi-mots : ajouter le score de chaque mot-clé individuel
+  // Cela permet de scorer les produits qui matchent tous les mots même si la phrase exacte n'est pas trouvée
+  if (isMultiWord) {
+    let keywordScore = 0;
+    for (const keyword of keywords) {
+      keywordScore += scoreText(product.name, keyword, { exact: 400, starts: 320, contains: 250 });
+      keywordScore += scoreText(product.slug, keyword, { exact: 260, starts: 200, contains: 160 });
+      keywordScore += scoreText(product.brand, keyword, { exact: 300, starts: 220, contains: 140 });
+      keywordScore += scoreText(product.category, keyword, { exact: 200, starts: 150, contains: 100 });
+      keywordScore += scoreText(product.tags, keyword, { exact: 160, starts: 120, contains: 90 });
+    }
+    score += keywordScore;
+
+    // Bonus : tester aussi les mots concaténés ("style craft" → "stylecraft")
+    const concatenated = keywords.join("");
+    score += scoreText(product.name, concatenated, { exact: 600, starts: 500, contains: 400 });
+    score += scoreText(product.brand, concatenated, { exact: 500, starts: 400, contains: 300 });
+    score += scoreText(product.slug, concatenated, { exact: 400, starts: 320, contains: 260 });
   }
 
   return score;
