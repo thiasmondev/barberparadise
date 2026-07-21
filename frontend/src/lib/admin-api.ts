@@ -525,6 +525,7 @@ export interface AdminOrderDraftPayload {
   email: string;
   isB2B: boolean;
   paymentLater: boolean;
+  noShipping?: boolean; // true = remise en main propre / retrait en magasin, pas d'étape livraison
   vatNumber?: string | null;
   shipping?: number;
   notes?: string;
@@ -537,12 +538,13 @@ export interface AdminOrderDraftPayload {
     lineDiscountType?: DiscountType | null;
     lineDiscountValue?: number | null;
   }>;
-  shippingAddress: AdminDraftAddressPayload;
+  shippingAddress?: AdminDraftAddressPayload; // optionnel si noShipping = true
   billingAddress?: AdminDraftAddressPayload;
 }
 
 export type AdminOrderDraft = Order & {
   vatNumber?: string | null;
+  noShipping?: boolean;
   draftShareUrl?: string | null;
   draftShareExpiresAt?: string | null;
   draftShareSentAt?: string | null;

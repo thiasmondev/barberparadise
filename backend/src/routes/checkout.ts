@@ -478,6 +478,7 @@ checkoutRouter.get("/draft/:token", async (req: Request, res: Response): Promise
         email: draft.email || draft.customerEmail,
         expiresAt: draft.draftShareExpiresAt,
         isB2B: draft.isB2B,
+        noShipping: draft.noShipping,
         subtotal: draft.subtotal,
         shipping: draft.shipping,
         total: draft.totalTTC || draft.total,
@@ -762,7 +763,9 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
     }
 
     const shippingAddress = body.shippingAddress;
-    if (!shippingAddress?.firstName || !shippingAddress?.lastName || !shippingAddress?.address || !shippingAddress?.city || !shippingAddress?.postalCode) {
+    // La validation de l'adresse est assouplie pour les brouillons noShipping (retrait/main propre)
+    const isNoShippingRequest = body.shippingAddress?.address === "Retrait en magasin";
+    if (!isNoShippingRequest && (!shippingAddress?.firstName || !shippingAddress?.lastName || !shippingAddress?.address || !shippingAddress?.city || !shippingAddress?.postalCode)) {
       res.status(400).json({ error: "Adresse de livraison incomplète" });
       return;
     }
@@ -815,8 +818,11 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
     if (checkoutDraft && shouldUseDraftPricing) {
       const provider = getProvider(body.paymentMethod, country);
       const orderTotalTTC = money(checkoutDraft.totalTTC || checkoutDraft.total);
-      const draftShippingOptions = await calculateShippingOptions(country, checkoutDraft.isB2B ? checkoutDraft.subtotal : Math.max(0, orderTotalTTC - checkoutDraft.shipping), checkoutDraft.isB2B);
-      const draftShippingOption = resolveShippingOptionForPaidOrder(draftShippingOptions, body.shippingOptionId, checkoutDraft.shipping);
+      const isNoShipping = Boolean(checkoutDraft.noShipping);
+      const draftShippingOptions = isNoShipping ? [] : await calculateShippingOptions(country, checkoutDraft.isB2B ? checkoutDraft.subtotal : Math.max(0, orderTotalTTC - checkoutDraft.shipping), checkoutDraft.isB2B);
+      const draftShippingOption = isNoShipping
+        ? { carrier: "retrait_magasin", label: "Retrait en magasin", id: "retrait_magasin" }
+        : resolveShippingOptionForPaidOrder(draftShippingOptions, body.shippingOptionId, checkoutDraft.shipping);
 
       // --- DÉTECTION DE DOUBLON (FLUX DRAFT) ---
       const recentPendingOrder = await prisma.order.findFirst({
@@ -878,23 +884,23 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
           },
           shippingAddress: {
             create: {
-              firstName: shippingAddress.firstName,
-              lastName: shippingAddress.lastName,
-              address: shippingAddress.address,
-              extension: shippingAddress.extension || "",
-              city: shippingAddress.city,
-              postalCode: shippingAddress.postalCode,
-              country,
-              phone: shippingAddress.phone || "",
+              firstName: shippingAddress?.firstName || "Client",
+              lastName: shippingAddress?.lastName || "Barber Paradise",
+              address: isNoShipping ? "Retrait en magasin" : (shippingAddress?.address || ""),
+              extension: shippingAddress?.extension || "",
+              city: isNoShipping ? "Barber Paradise" : (shippingAddress?.city || ""),
+              postalCode: isNoShipping ? "00000" : (shippingAddress?.postalCode || ""),
+              country: isNoShipping ? "FR" : country,
+              phone: shippingAddress?.phone || "",
             },
           },
-          relayPointId: body.relayPointId || null,
-          relayPointName: body.relayPointName || null,
-          relayPointAddress: body.relayPointAddress || null,
+          noShipping: isNoShipping,
+          relayPointId: isNoShipping ? null : (body.relayPointId || null),
+          relayPointName: isNoShipping ? null : (body.relayPointName || null),
+          relayPointAddress: isNoShipping ? null : (body.relayPointAddress || null),
           shipment: {
             create: {
-              // Priorité : option choisie par le client > option du brouillon > fallback par montant
-              carrier: normalizeShipmentCarrier(draftShippingOption) || checkoutDraft.shipment?.carrier || "livraison_standard",
+              carrier: isNoShipping ? "retrait_magasin" : (normalizeShipmentCarrier(draftShippingOption) || checkoutDraft.shipment?.carrier || "livraison_standard"),
               totalWeightG: checkoutDraft.shipment?.totalWeightG || null,
             },
           },
@@ -1351,12 +1357,14 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
     }
 
     const shippingAddress = body.shippingAddress;
-    if (!shippingAddress?.firstName || !shippingAddress?.lastName || !shippingAddress?.address || !shippingAddress?.city || !shippingAddress?.postalCode) {
+    // La validation de l'adresse est assouplie pour les brouillons noShipping (retrait/main propre)
+    const isNoShippingRequestPaypal = body.shippingAddress?.address === "Retrait en magasin";
+    if (!isNoShippingRequestPaypal && (!shippingAddress?.firstName || !shippingAddress?.lastName || !shippingAddress?.address || !shippingAddress?.city || !shippingAddress?.postalCode)) {
       res.status(400).json({ error: "Adresse de livraison incomplète" });
       return;
     }
 
-    const country = normalizeCountry(shippingAddress.country);
+    const country = normalizeCountry(isNoShippingRequestPaypal ? "FR" : (shippingAddress?.country || "FR"));
     const requestedB2B = Boolean(body.isB2B);
     const proAccount = body.customerId
       ? await prisma.proAccount.findUnique({ where: { customerId: body.customerId } })
@@ -1411,12 +1419,15 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
         orderBy: { createdAt: "desc" },
       });
 
+      const isNoShippingPaypal = Boolean(checkoutDraft.noShipping);
       let order;
       if (recentPendingOrder && normalizeDraftItemsSignature(recentPendingOrder.items) === normalizeDraftItemsSignature(checkoutDraft.items)) {
         order = recentPendingOrder;
       } else {
-        const draftShippingOptions = await calculateShippingOptions(country, checkoutDraft.isB2B ? checkoutDraft.subtotal : Math.max(0, orderTotalTTC - checkoutDraft.shipping), checkoutDraft.isB2B);
-        const draftShippingOption = resolveShippingOptionForPaidOrder(draftShippingOptions, body.shippingOptionId, checkoutDraft.shipping);
+        const draftShippingOptions = isNoShippingPaypal ? [] : await calculateShippingOptions(country, checkoutDraft.isB2B ? checkoutDraft.subtotal : Math.max(0, orderTotalTTC - checkoutDraft.shipping), checkoutDraft.isB2B);
+        const draftShippingOption = isNoShippingPaypal
+          ? { carrier: "retrait_magasin", label: "Retrait en magasin", id: "retrait_magasin" }
+          : resolveShippingOptionForPaidOrder(draftShippingOptions, body.shippingOptionId, checkoutDraft.shipping);
         order = await prisma.order.create({
           data: {
             orderNumber: generateOrderNumber(),
@@ -1442,12 +1453,13 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
             discountTotal: checkoutDraft.discountTotal,
             billingAddress: (body.billingAddress || shippingAddress) as object,
             notes: checkoutDraft.notes || null,
+            noShipping: isNoShippingPaypal,
             items: { create: checkoutDraft.items.map((item) => ({ productId: item.productId, variantId: item.variantId, variantLabel: item.variantLabel, name: item.name, price: item.price, quantity: item.quantity, image: item.image, discountAmount: item.discountAmount, lineDiscountType: item.lineDiscountType, lineDiscountValue: item.lineDiscountValue, isCustomSale: item.isCustomSale })) },
-            shippingAddress: { create: { firstName: shippingAddress.firstName, lastName: shippingAddress.lastName, address: shippingAddress.address, extension: shippingAddress.extension || "", city: shippingAddress.city, postalCode: shippingAddress.postalCode, country, phone: shippingAddress.phone || "" } },
-            relayPointId: body.relayPointId || null,
-            relayPointName: body.relayPointName || null,
-            relayPointAddress: body.relayPointAddress || null,
-            shipment: { create: { carrier: normalizeShipmentCarrier(draftShippingOption) || checkoutDraft.shipment?.carrier || "livraison_standard", totalWeightG: checkoutDraft.shipment?.totalWeightG || null } },
+            shippingAddress: { create: { firstName: shippingAddress?.firstName || "Client", lastName: shippingAddress?.lastName || "Barber Paradise", address: isNoShippingPaypal ? "Retrait en magasin" : (shippingAddress?.address || ""), extension: shippingAddress?.extension || "", city: isNoShippingPaypal ? "Barber Paradise" : (shippingAddress?.city || ""), postalCode: isNoShippingPaypal ? "00000" : (shippingAddress?.postalCode || ""), country: isNoShippingPaypal ? "FR" : country, phone: shippingAddress?.phone || "" } },
+            relayPointId: isNoShippingPaypal ? null : (body.relayPointId || null),
+            relayPointName: isNoShippingPaypal ? null : (body.relayPointName || null),
+            relayPointAddress: isNoShippingPaypal ? null : (body.relayPointAddress || null),
+            shipment: { create: { carrier: isNoShippingPaypal ? "retrait_magasin" : (normalizeShipmentCarrier(draftShippingOption) || checkoutDraft.shipment?.carrier || "livraison_standard"), totalWeightG: checkoutDraft.shipment?.totalWeightG || null } },
           },
         });
       }

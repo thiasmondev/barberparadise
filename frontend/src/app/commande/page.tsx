@@ -70,6 +70,7 @@ type DraftCheckoutResponse = {
     email?: string | null;
     expiresAt?: string;
     isB2B?: boolean;
+    noShipping?: boolean;
     subtotal?: number;
     shipping?: number;
     total?: number;
@@ -214,6 +215,7 @@ export default function CheckoutPage() {
   const [draftLoading, setDraftLoading] = useState(false);
   const [draftError, setDraftError] = useState("");
   const [draftNotice, setDraftNotice] = useState("");
+  const [draftNoShipping, setDraftNoShipping] = useState(false);
 
   // États Mondial Relay
   const [relayPoints, setRelayPoints] = useState<RelayPoint[]>([]);
@@ -296,7 +298,10 @@ export default function CheckoutPage() {
     [availableMethods, effectiveIsB2B, discountedGrandTotal],
   );
 
-  const checkoutSteps: Step[] = isAuthenticated ? ["livraison", "paiement"] : ["contact", "livraison", "paiement"];
+  // Si le brouillon est noShipping, on saute l'étape livraison
+  const checkoutSteps: Step[] = draftNoShipping
+    ? (isAuthenticated ? ["paiement"] : ["contact", "paiement"])
+    : (isAuthenticated ? ["livraison", "paiement"] : ["contact", "livraison", "paiement"]);
 
   // Détecter si Mondial Relay est sélectionné
   const isMondialRelay = useMemo(() => {
@@ -425,12 +430,17 @@ export default function CheckoutPage() {
           cartSignature: nextSignature,
         });
         setIsB2B(Boolean(data.draft.isB2B));
+        setDraftNoShipping(Boolean(data.draft.noShipping));
         setPromoCode("");
         setPromoResult(null);
         setPromoError("");
         if (data.draft.email) {
           setForm((prev) => ({ ...prev, email: data.draft?.email || prev.email }));
           setGuestCheckout(true);
+        }
+        // Si pas de livraison, sauter directement à l'étape paiement pour les clients connectés
+        if (data.draft.noShipping) {
+          setStep("paiement");
         }
         setDraftNotice(`Commande préparée ${data.draft.orderNumber} chargée dans votre panier avec ses prix et remises figés. Vous pouvez la modifier avant paiement, ce qui recalculera alors les totaux au tarif catalogue.`);
       } catch (err) {
@@ -569,15 +579,17 @@ export default function CheckoutPage() {
       customerId: isAuthenticated && customer ? customer.id : undefined,
       cartSessionId,
       draftToken: draftToken || undefined,
-      shippingAddress: { firstName: form.prenom, lastName: form.nom, address: form.adresse, extension: form.complement, city: form.ville, postalCode: form.codePostal, country: countryCode, phone: form.telephone },
+      shippingAddress: draftNoShipping
+        ? { firstName: form.prenom || "Client", lastName: form.nom || "Barber Paradise", address: "Retrait en magasin", city: "Barber Paradise", postalCode: "00000", country: "FR" }
+        : { firstName: form.prenom, lastName: form.nom, address: form.adresse, extension: form.complement, city: form.ville, postalCode: form.codePostal, country: countryCode, phone: form.telephone },
       paymentMethod,
-      shippingOptionId: selectedShippingOption?.id,
+      shippingOptionId: draftNoShipping ? undefined : selectedShippingOption?.id,
       isB2B: effectiveIsB2B,
       vatNumber: vatNumber.trim() || undefined,
       promoCode: promoCode.trim() || undefined,
-      relayPointId: relayPointId || undefined,
-      relayPointName: relayPointName || undefined,
-      relayPointAddress: relayPointAddress || undefined,
+      relayPointId: draftNoShipping ? undefined : (relayPointId || undefined),
+      relayPointName: draftNoShipping ? undefined : (relayPointName || undefined),
+      relayPointAddress: draftNoShipping ? undefined : (relayPointAddress || undefined),
     });
 
     const buttons = win.paypal.Buttons({
@@ -783,24 +795,17 @@ export default function CheckoutPage() {
           customerId: isAuthenticated && customer ? customer.id : undefined,
           cartSessionId,
           draftToken: draftToken || undefined,
-          shippingAddress: {
-            firstName: form.prenom,
-            lastName: form.nom,
-            address: form.adresse,
-            extension: form.complement,
-            city: form.ville,
-            postalCode: form.codePostal,
-            country: countryCode,
-            phone: form.telephone,
-          },
+          shippingAddress: draftNoShipping
+            ? { firstName: form.prenom || "Client", lastName: form.nom || "Barber Paradise", address: "Retrait en magasin", city: "Barber Paradise", postalCode: "00000", country: "FR" }
+            : { firstName: form.prenom, lastName: form.nom, address: form.adresse, extension: form.complement, city: form.ville, postalCode: form.codePostal, country: countryCode, phone: form.telephone },
           paymentMethod: checkoutPaymentMethod,
-          shippingOptionId: selectedShippingOption?.id,
+          shippingOptionId: draftNoShipping ? undefined : selectedShippingOption?.id,
           isB2B: effectiveIsB2B,
           vatNumber: vatNumber.trim() || undefined,
           promoCode: promoCode.trim() || undefined,
-          relayPointId: relayPointId || undefined,
-          relayPointName: relayPointName || undefined,
-          relayPointAddress: relayPointAddress || undefined,
+          relayPointId: draftNoShipping ? undefined : (relayPointId || undefined),
+          relayPointName: draftNoShipping ? undefined : (relayPointName || undefined),
+          relayPointAddress: draftNoShipping ? undefined : (relayPointAddress || undefined),
         }),
       });
 
@@ -898,7 +903,7 @@ export default function CheckoutPage() {
                   <>
                     <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Sous-total HT</span><span className="font-black">{formatPrice(subtotalHT)}</span></div>
                     <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">TVA ({vatRate}%)</span><span className="font-black">{formatPrice(vatAmount)}</span></div>
-                    <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Livraison</span>{shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="font-black">{formatPrice(shipping)}</span>}</div>
+                    <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">{draftNoShipping ? "Livraison" : "Livraison"}</span>{draftNoShipping ? <span className="text-xs font-black text-amber-400 uppercase tracking-widest">RETRAIT EN MAGASIN</span> : (shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="font-black">{formatPrice(shipping)}</span>)}</div>
                     {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="font-black">-{formatPrice(promoDiscount)}</span></div>}
                     <div className="border-t border-white/5 pt-3 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL TTC</span><span className="font-black">{formatPrice(discountedGrandTotal)}</span></div>
                   </>
@@ -949,7 +954,7 @@ export default function CheckoutPage() {
                   </div>
                 )}
               </div>
-              <button onClick={() => setStep("livraison")} disabled={!guestCheckout || !form.email} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-not-allowed text-white py-5 text-xs font-black tracking-widest uppercase transition-colors">CONTINUER VERS LA LIVRAISON</button>
+              <button onClick={() => setStep(draftNoShipping ? "paiement" : "livraison")} disabled={!guestCheckout || !form.email} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-not-allowed text-white py-5 text-xs font-black tracking-widest uppercase transition-colors">{draftNoShipping ? "CONTINUER VERS LE PAIEMENT" : "CONTINUER VERS LA LIVRAISON"}</button>
             </div>
           )}
 
@@ -1224,7 +1229,7 @@ export default function CheckoutPage() {
                 <>
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total HT</span><span className="text-sm font-black">{formatPrice(subtotalHT)}</span></div>
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">TVA ({vatRate}%)</span><span className="text-sm font-black">{formatPrice(vatAmount)}</span></div>
-                  <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>{shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>}</div>
+                  <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>{draftNoShipping ? <span className="text-xs font-black text-amber-400 uppercase tracking-widest">RETRAIT EN MAGASIN</span> : (shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>)}</div>
                   {draftPricingActive && draftPricing && draftPricing.discountTotal > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise brouillon</span><span className="text-sm font-black">-{formatPrice(draftPricing.discountTotal)}</span></div>}
                   {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="text-sm font-black">-{formatPrice(promoDiscount)}</span></div>}
                   <div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL TTC</span><span className="text-2xl font-black">{formatPrice(discountedGrandTotal)}</span></div>
@@ -1232,7 +1237,7 @@ export default function CheckoutPage() {
               ) : (
                 <>
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total</span><span className="text-sm font-black">{formatPrice(displaySubtotalTTC)}</span></div>
-                  <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>{shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>}</div>
+                  <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>{draftNoShipping ? <span className="text-xs font-black text-amber-400 uppercase tracking-widest">RETRAIT EN MAGASIN</span> : (shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>)}</div>
                   {draftPricingActive && draftPricing && draftPricing.discountTotal > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise brouillon</span><span className="text-sm font-black">-{formatPrice(draftPricing.discountTotal)}</span></div>}
                   {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="text-sm font-black">-{formatPrice(promoDiscount)}</span></div>}
                   <div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL</span><span className="text-2xl font-black">{formatPrice(discountedGrandTotal)}</span></div>

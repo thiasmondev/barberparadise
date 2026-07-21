@@ -4664,13 +4664,14 @@ adminRouter.post(
         return;
       }
 
+      const noShipping = Boolean(req.body?.noShipping);
       const shippingAddress = normalizeDraftAddress(req.body?.shippingAddress) || {
         firstName: customer?.firstName || "Client",
         lastName: customer?.lastName || "Barber Paradise",
-        address: "Adresse à compléter",
+        address: noShipping ? "Retrait en magasin" : "Adresse à compléter",
         extension: "",
-        city: "Ville à compléter",
-        postalCode: "00000",
+        city: noShipping ? "Barber Paradise" : "Ville à compléter",
+        postalCode: noShipping ? "00000" : "00000",
         country: normalizeCountry(req.body?.shippingAddress?.country),
         phone: "",
       };
@@ -4681,7 +4682,7 @@ adminRouter.post(
         isB2B,
         country: shippingAddress.country,
         vatNumber,
-        shippingOverride: req.body?.shipping,
+        shippingOverride: noShipping ? 0 : req.body?.shipping,
         orderDiscountType: req.body?.orderDiscountType,
         orderDiscountValue: req.body?.orderDiscountValue,
         enforceProMinimum: false,
@@ -4699,6 +4700,7 @@ adminRouter.post(
           paymentMethod: paymentLater ? "b2b_deferred" : "card",
           paymentProvider: paymentLater ? "manual" : null,
           isB2B,
+          noShipping,
           subtotal: totals.subtotal,
           shipping: totals.shipping,
           total: totals.total,
@@ -4843,7 +4845,18 @@ adminRouter.patch(
         ? await prisma.customer.findUnique({ where: { id: customerId }, include: { proAccount: true } })
         : null;
       const email = asOptionalString(req.body?.email, customer?.email || current.email).toLowerCase();
-      const shippingAddress = normalizeDraftAddress(req.body?.shippingAddress);
+      // noShipping peut être modifié lors de l'édition du brouillon
+      const noShipping = req.body?.noShipping !== undefined ? Boolean(req.body.noShipping) : current.noShipping;
+      const shippingAddress = normalizeDraftAddress(req.body?.shippingAddress) || (noShipping ? {
+        firstName: customer?.firstName || "Client",
+        lastName: customer?.lastName || "Barber Paradise",
+        address: "Retrait en magasin",
+        extension: "",
+        city: "Barber Paradise",
+        postalCode: "00000",
+        country: normalizeCountry(req.body?.shippingAddress?.country),
+        phone: "",
+      } : null);
       if (!shippingAddress) {
         res.status(400).json({ error: "Adresse de livraison incomplète" });
         return;
@@ -4856,7 +4869,7 @@ adminRouter.patch(
         isB2B,
         country: shippingAddress.country,
         vatNumber,
-        shippingOverride: req.body?.shipping,
+        shippingOverride: noShipping ? 0 : req.body?.shipping,
         orderDiscountType: req.body?.orderDiscountType,
         orderDiscountValue: req.body?.orderDiscountValue,
         enforceProMinimum: false,
@@ -4878,6 +4891,7 @@ adminRouter.patch(
             paymentMethod: paymentLater ? "b2b_deferred" : "card",
             paymentProvider: paymentLater ? "manual" : null,
             isB2B,
+            noShipping,
             subtotal: totals.subtotal,
             shipping: totals.shipping,
             total: totals.total,

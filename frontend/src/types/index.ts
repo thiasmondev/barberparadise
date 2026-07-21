@@ -193,6 +193,7 @@ export interface Order {
   proInvoiceNumber?: string | null;
   proInvoiceUrl?: string | null;
   channel?: "online" | "pos" | string;
+  noShipping?: boolean;
   terminalId?: string | null;
   posSessionId?: string | null;
   posPaymentStatus?: string | null;

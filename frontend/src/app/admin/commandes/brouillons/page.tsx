@@ -52,6 +52,7 @@ type DraftForm = {
   email: string;
   isB2B: boolean;
   paymentLater: boolean;
+  noShipping: boolean;
   vatNumber: string;
   shipping: string;
   notes: string;
@@ -67,6 +68,7 @@ const initialForm: DraftForm = {
   email: "",
   isB2B: false,
   paymentLater: false,
+  noShipping: false,
   vatNumber: "",
   shipping: "",
   notes: "",
@@ -142,6 +144,7 @@ function draftToForm(draft: AdminOrderDraft): DraftForm {
     email: draft.email || draft.customerEmail || "",
     isB2B: Boolean(draft.isB2B),
     paymentLater: draft.paymentMethod === "b2b_deferred",
+    noShipping: Boolean((draft as AdminOrderDraft).noShipping),
     vatNumber: draft.vatNumber || "",
     shipping: String(draft.shipping ?? ""),
     notes: draft.notes || "",
@@ -306,13 +309,14 @@ export default function AdminOrderDraftsPage() {
       email: form.email,
       isB2B: form.isB2B,
       paymentLater: form.paymentLater,
+      noShipping: form.noShipping,
       vatNumber: form.vatNumber || null,
-      shipping: Number.isFinite(shippingValue) ? shippingValue : undefined,
+      shipping: form.noShipping ? 0 : (Number.isFinite(shippingValue) ? shippingValue : undefined),
       notes: form.notes,
       orderDiscountType: numericValue(form.orderDiscountValue) > 0 ? form.orderDiscountType : null,
       orderDiscountValue: numericValue(form.orderDiscountValue) > 0 ? numericValue(form.orderDiscountValue) : null,
       paymentDueDate: form.paymentDueDate || null,
-      shippingAddress: form.shippingAddress,
+      shippingAddress: form.noShipping ? undefined : form.shippingAddress,
       billingAddress: form.shippingAddress,
       items: form.items.map((line) => ({
         productId: line.productId,
@@ -589,7 +593,10 @@ export default function AdminOrderDraftsPage() {
           <aside className="h-fit rounded-xl border border-gray-100 bg-white p-4 lg:sticky lg:top-6">
             <h2 className="font-semibold text-dark-800">Résumé Shopify-like</h2>
             <label className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 p-3 text-sm"><span><strong className="block">Paiement ultérieur</strong><span className="text-gray-500">La commande sera en attente de paiement.</span></span><input type="checkbox" checked={form.paymentLater} onChange={(event) => setForm({ ...form, paymentLater: event.target.checked })} className="h-5 w-5" /></label>
-            <div className="mt-4"><label className="text-sm font-medium text-gray-700">Livraison</label><input type="number" min="0" step="0.01" value={form.shipping} onChange={(event) => setForm({ ...form, shipping: event.target.value })} placeholder="Auto si vide" className="mt-2 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-dark-800" /></div>
+            <label className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm"><span><strong className="block text-amber-900">Déjà remis en main propre / Retrait en magasin</strong><span className="text-amber-700">Aucune livraison n’est nécessaire. Le client ne verra pas l’étape de livraison.</span></span><input type="checkbox" checked={form.noShipping} onChange={(event) => setForm({ ...form, noShipping: event.target.checked, shipping: event.target.checked ? "0" : form.shipping })} className="h-5 w-5 accent-amber-600" /></label>
+            {!form.noShipping && (
+              <div className="mt-4"><label className="text-sm font-medium text-gray-700">Livraison</label><input type="number" min="0" step="0.01" value={form.shipping} onChange={(event) => setForm({ ...form, shipping: event.target.value })} placeholder="Auto si vide" className="mt-2 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-dark-800" /></div>
+            )}
             <div className="mt-4"><label className="text-sm font-medium text-gray-700">Remise commande totale</label><div className="mt-2 grid grid-cols-[92px_1fr] gap-2"><select value={form.orderDiscountType} onChange={(event) => updateOrderDiscount(event.target.value as DiscountType, form.orderDiscountValue)} className="rounded-xl border border-gray-200 px-2 py-2.5 text-sm outline-none focus:border-dark-800"><option value="fixed">€ fixe</option><option value="percent">%</option></select><input type="number" min="0" step="0.01" value={form.orderDiscountValue} onChange={(event) => updateOrderDiscount(form.orderDiscountType, event.target.value)} placeholder="0" className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-dark-800" /></div></div>
             <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Notes internes" rows={4} className="mt-4 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-dark-800" />
             <div className="mt-4">

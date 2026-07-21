@@ -1268,6 +1268,7 @@ export default function OrderDetailPage() {
   const fulfillment = fulfillmentBadge(order);
   const channelInfo = channelBadge(order);
   const isPosOrder = order.channel === "pos";
+  const isNoShipping = Boolean(order.noShipping) && !isPosOrder; // brouillon payé sans livraison
   const BANK_TRANSFER_METHODS = ["paybybank", "pay_by_bank", "banktransfer", "bank_transfer", "bank-transfer", "virement"];
   const isB2BBankTransferPending =
     order.isB2B &&
@@ -1347,7 +1348,11 @@ export default function OrderDetailPage() {
               <div className="flex flex-col gap-2 border-t border-gray-200 px-5 py-4 sm:flex-row">
                 {isPosOrder ? (
                   <div className="rounded-xl bg-fuchsia-50 px-4 py-3 text-sm text-fuchsia-800">
-                    Cette vente a été encaissée en caisse. Elle ne nécessite ni traitement logistique, ni étiquette d’expédition.
+                    Cette vente a été encaissée en caisse. Elle ne nécessite ni traitement logistique, ni étiquette d'expédition.
+                  </div>
+                ) : isNoShipping ? (
+                  <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    Cette commande a été marquée « Retrait en magasin / Remise en main propre ». Elle ne nécessite ni traitement logistique, ni étiquette d'expédition.
                   </div>
                 ) : (
                   <>
@@ -1374,7 +1379,7 @@ export default function OrderDetailPage() {
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between"><span className="text-gray-500">Sous-total</span><span>{formatPrice(order.subtotal, order.currency)}</span></div>
                 {order.discountAmount ? <div className="flex justify-between text-emerald-700"><span>Remise caisse</span><span>-{formatPrice(order.discountAmount, order.currency)}</span></div> : null}
-                <div className="flex justify-between"><span className="text-gray-500">{isPosOrder ? "Expédition" : shipmentSummary(order)}</span><span>{isPosOrder ? "Non applicable" : order.shipping === 0 ? "Gratuite" : formatPrice(order.shipping, order.currency)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">{isPosOrder ? "Expédition" : isNoShipping ? "Livraison" : shipmentSummary(order)}</span><span>{isPosOrder ? "Non applicable" : isNoShipping ? "Retrait en magasin" : order.shipping === 0 ? "Gratuite" : formatPrice(order.shipping, order.currency)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Taxes</span><span>{formatPrice(totals.taxes, order.currency)}</span></div>
                 <div className="flex justify-between border-t border-gray-200 pt-3 text-base font-semibold text-gray-950"><span>Total</span><span>{formatPrice(order.total, order.currency)}</span></div>
                 {/* Payé à ce jour — utilise paidAmount si disponible, sinon fallback binaire */}
