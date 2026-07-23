@@ -14,27 +14,21 @@ import {
   RefreshCw,
   Search,
   ShoppingBag,
+  SplitSquareHorizontal,
   Store,
   Trash2,
   UserRound,
-  XCircle,
 } from "lucide-react";
 import {
-  cancelPosPayment,
-  closePosSession,
   createPosPayment,
   createPosQuickSale,
   getAdminCustomers,
   getPosCatalog,
-  getPosPaymentStatus,
-  getPosTerminals,
-  markPosOrderPaid,
-  openPosSession,
   type DiscountType,
   type PosOrder,
   type PosPaymentMethod,
   type PosProduct,
-  type PosTerminal,
+  type PosSplitLine,
   type PosVariant,
 } from "@/lib/admin-api";
 import type { Customer } from "@/types";
@@ -59,6 +53,26 @@ type CartLine = {
   lineDiscountValue: string;
   variantLabel?: string | null;
 };
+
+type SplitLineInput = {
+  method: Exclude<PosPaymentMethod, "split">;
+  amount: string;
+};
+
+const PAYMENT_METHODS: { value: PosPaymentMethod; label: string; labelShort: string; color: string; activeColor: string }[] = [
+  { value: "indy", label: "Carte · Indy", labelShort: "Indy", color: "border-gray-200 bg-white text-gray-700 hover:border-primary/40", activeColor: "border-primary bg-primary text-white" },
+  { value: "mollie_manual", label: "Carte · Mollie", labelShort: "Mollie", color: "border-gray-200 bg-white text-gray-700 hover:border-blue-300", activeColor: "border-blue-600 bg-blue-600 text-white" },
+  { value: "cash", label: "Espèces", labelShort: "Espèces", color: "border-gray-200 bg-white text-gray-700 hover:border-emerald-300", activeColor: "border-emerald-600 bg-emerald-600 text-white" },
+  { value: "virement", label: "Virement", labelShort: "Virement", color: "border-gray-200 bg-white text-gray-700 hover:border-amber-300", activeColor: "border-amber-600 bg-amber-600 text-white" },
+  { value: "split", label: "Diviser", labelShort: "Diviser", color: "border-gray-200 bg-white text-gray-700 hover:border-violet-300", activeColor: "border-violet-600 bg-violet-600 text-white" },
+];
+
+const SPLIT_METHODS: { value: Exclude<PosPaymentMethod, "split">; label: string }[] = [
+  { value: "indy", label: "Carte · Indy" },
+  { value: "mollie_manual", label: "Carte · Mollie" },
+  { value: "cash", label: "Espèces" },
+  { value: "virement", label: "Virement" },
+];
 
 function getProductImage(product: PosProduct, variant?: PosVariant | null) {
   return variant?.image || product.image || "/placeholder-product.png";
@@ -85,10 +99,11 @@ function lineDiscountAmount(line: CartLine) {
   return resolveDiscount(line.lineDiscountType, line.lineDiscountValue, line.price * line.quantity);
 }
 
+function money(value: number) {
+  return Math.max(0, Math.round((value + Number.EPSILON) * 100) / 100);
+}
+
 export default function AdminCaissePage() {
-  const [terminals, setTerminals] = useState<PosTerminal[]>([]);
-  const [terminalId, setTerminalId] = useState("");
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<PosProduct[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [query, setQuery] = useState("");
@@ -96,8 +111,12 @@ export default function AdminCaissePage() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [orderDiscountType, setOrderDiscountType] = useState<DiscountType>("fixed");
   const [orderDiscountValue, setOrderDiscountValue] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<PosPaymentMethod>("card");
+  const [paymentMethod, setPaymentMethod] = useState<PosPaymentMethod>("indy");
   const [cashReceived, setCashReceived] = useState("");
+  const [splitLines, setSplitLines] = useState<SplitLineInput[]>([
+    { method: "indy", amount: "" },
+    { method: "cash", amount: "" },
+  ]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerSearch, setCustomerSearch] = useState("");
   const [customerLoading, setCustomerLoading] = useState(false);
@@ -109,19 +128,9 @@ export default function AdminCaissePage() {
   const [loading, setLoading] = useState(true);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [paymentId, setPaymentId] = useState<string | null>(null);
-  const [currentOrder, setCurrentOrder] = useState<PosOrder | null>(null);
-  const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
+  const [lastOrder, setLastOrder] = useState<PosOrder | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const loadTerminals = useCallback(async () => {
-    const data = await getPosTerminals();
-    setTerminals(data.terminals);
-    if (!terminalId && data.terminals.length) {
-      setTerminalId(data.terminals[0].id);
-    }
-  }, [terminalId]);
 
   const loadCatalog = useCallback(async () => {
     setCatalogLoading(true);
@@ -147,12 +156,10 @@ export default function AdminCaissePage() {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    Promise.all([loadTerminals(), loadCatalog(), loadCustomers()])
+    Promise.all([loadCatalog(), loadCustomers()])
       .catch((err) => alive && setError(err.message || "Impossible de charger la caisse."))
       .finally(() => alive && setLoading(false));
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, []);
 
   useEffect(() => {
@@ -169,34 +176,7 @@ export default function AdminCaissePage() {
     return () => window.clearTimeout(timer);
   }, [loadCustomers]);
 
-  useEffect(() => {
-    if (!paymentId || paymentStatus === "paid" || paymentStatus === "failed" || paymentStatus === "canceled" || paymentStatus === "expired") return;
-    const timer = window.setInterval(async () => {
-      try {
-        const data = await getPosPaymentStatus(paymentId);
-        setPaymentStatus(data.status);
-        if (data.order) setCurrentOrder(data.order);
-        if (data.status === "paid") {
-          setMessage(`Paiement validé pour la commande ${data.order?.orderNumber || "POS"}.`);
-          setCart([]);
-          setOrderDiscountType("fixed");
-          setOrderDiscountValue("");
-          setNotes("");
-          setPaymentId(null);
-          await loadCatalog();
-        }
-        if (["failed", "canceled", "expired"].includes(data.status)) {
-          setError(`Paiement ${data.status}. Vous pouvez relancer l’encaissement.`);
-          setPaymentId(null);
-        }
-      } catch (err: any) {
-        setError(err.message || "Impossible de rafraîchir le statut du paiement.");
-      }
-    }, 2500);
-    return () => window.clearInterval(timer);
-  }, [loadCatalog, paymentId, paymentStatus]);
-
-  const selectedCustomer = useMemo(() => customers.find((customer) => customer.id === selectedCustomerId) || null, [customers, selectedCustomerId]);
+  const selectedCustomer = useMemo(() => customers.find((c) => c.id === selectedCustomerId) || null, [customers, selectedCustomerId]);
   const trimmedCustomerSearch = customerSearch.trim();
   const showCustomerResults = customerPickerOpen && trimmedCustomerSearch.length > 0;
   const subtotal = useMemo(() => cart.reduce((sum, line) => sum + line.price * line.quantity, 0), [cart]);
@@ -208,6 +188,10 @@ export default function AdminCaissePage() {
   const vat = total - total / 1.2;
   const receivedAmount = numericValue(cashReceived);
   const changeDue = paymentMethod === "cash" && receivedAmount > 0 ? Math.max(0, receivedAmount - total) : 0;
+
+  // Calcul du reste à répartir en mode DIVISER
+  const splitAllocated = useMemo(() => splitLines.reduce((sum, l) => sum + numericValue(l.amount), 0), [splitLines]);
+  const splitRemaining = money(total - splitAllocated);
 
   function addToCart(product: PosProduct, variant?: PosVariant | null) {
     const price = variant?.price ?? product.price;
@@ -258,34 +242,46 @@ export default function AdminCaissePage() {
     setOrderDiscountValue(value === "" ? "" : String(numericValue(value)));
   }
 
-  async function ensureSession() {
-    if (sessionId) return sessionId;
-    if (!terminalId) throw new Error("Sélectionnez un terminal de paiement.");
-    const data = await openPosSession({ terminalId, notes: "Session ouverte depuis l’admin Barber Paradise" });
-    setSessionId(data.session.id);
-    return data.session.id;
+  function updateSplitLine(idx: number, field: "method" | "amount", value: string) {
+    setSplitLines((lines) =>
+      lines.map((line, i) =>
+        i === idx ? { ...line, [field]: field === "method" ? (value as Exclude<PosPaymentMethod, "split">) : value } : line
+      )
+    );
   }
 
-  async function handleStartSession() {
-    try {
-      setError(null);
-      const id = await ensureSession();
-      setMessage(`Session de caisse ouverte sur le terminal ${terminalId}.`);
-      setSessionId(id);
-    } catch (err: any) {
-      setError(err.message || "Impossible d’ouvrir la session de caisse.");
+  function addSplitLine() {
+    setSplitLines((lines) => [...lines, { method: "cash", amount: "" }]);
+  }
+
+  function removeSplitLine(idx: number) {
+    setSplitLines((lines) => lines.filter((_, i) => i !== idx));
+  }
+
+  function autoFillLastSplitLine() {
+    if (splitLines.length === 0) return;
+    const allocated = splitLines.slice(0, -1).reduce((sum, l) => sum + numericValue(l.amount), 0);
+    const remaining = money(total - allocated);
+    if (remaining > 0) {
+      setSplitLines((lines) =>
+        lines.map((line, i) =>
+          i === lines.length - 1 ? { ...line, amount: String(remaining) } : line
+        )
+      );
     }
   }
 
-  async function handleCloseSession() {
-    if (!sessionId) return;
-    try {
-      await closePosSession(sessionId);
-      setSessionId(null);
-      setMessage("Session de caisse clôturée.");
-    } catch (err: any) {
-      setError(err.message || "Impossible de clôturer la session.");
-    }
+  function resetCart() {
+    setCart([]);
+    setOrderDiscountType("fixed");
+    setOrderDiscountValue("");
+    setCashReceived("");
+    setNotes("");
+    setSplitLines([{ method: "indy", amount: "" }, { method: "cash", amount: "" }]);
+  }
+
+  function buildSplitPayload(): PosSplitLine[] {
+    return splitLines.map((l) => ({ method: l.method, amount: money(numericValue(l.amount)) }));
   }
 
   async function handleCheckout(event: FormEvent) {
@@ -298,15 +294,19 @@ export default function AdminCaissePage() {
       setError("Le montant reçu est inférieur au total du panier.");
       return;
     }
+    if (paymentMethod === "split") {
+      if (Math.abs(splitAllocated - total) > 0.01) {
+        setError(`La somme des lignes (${formatPrice(splitAllocated)}) ne correspond pas au total (${formatPrice(total)}).`);
+        return;
+      }
+    }
     setSubmitting(true);
     setError(null);
     setMessage(null);
     try {
-      const activeSessionId = paymentMethod === "card" ? await ensureSession() : sessionId;
       const data = await createPosPayment({
-        terminalId: paymentMethod === "card" ? terminalId : null,
-        posSessionId: activeSessionId,
         paymentMethod,
+        splitLines: paymentMethod === "split" ? buildSplitPayload() : undefined,
         customerId: selectedCustomerId,
         items: cart.map((line) => ({
           productId: line.productId,
@@ -319,21 +319,11 @@ export default function AdminCaissePage() {
         orderDiscountValue: numericValue(orderDiscountValue) > 0 ? numericValue(orderDiscountValue) : null,
         notes: notes || null,
       });
-      setCurrentOrder(data.order);
-      setPaymentId(data.paymentId);
-      setPaymentStatus(data.status);
-      if (paymentMethod === "cash" || paymentMethod === "manual") {
-        setCart([]);
-        setOrderDiscountType("fixed");
-        setOrderDiscountValue("");
-        setCashReceived("");
-        setNotes("");
-        const label = paymentMethod === "manual" ? "Encaissement manuel validé" : "Encaissement espèces validé";
-        setMessage(`${label} pour ${formatPrice(data.order.totalTTC || data.order.total)}.`);
-        await loadCatalog();
-      } else {
-        setMessage(`Paiement envoyé au terminal pour ${formatPrice(data.order.totalTTC || data.order.total)}.`);
-      }
+      setLastOrder(data.order);
+      const methodLabel = PAYMENT_METHODS.find((m) => m.value === paymentMethod)?.label || paymentMethod;
+      setMessage(`Encaissement ${methodLabel} validé — ${data.order.orderNumber} · ${formatPrice(data.order.totalTTC || data.order.total)}.`);
+      resetCart();
+      await loadCatalog();
     } catch (err: any) {
       setError(err.message || "Impossible de créer le paiement POS.");
     } finally {
@@ -348,23 +338,21 @@ export default function AdminCaissePage() {
       setError("Saisissez un montant de vente rapide valide.");
       return;
     }
-    if (paymentMethod === "card" && amount <= 0) {
-      setError("Le montant doit être supérieur à 0 € pour un paiement par carte.");
-      return;
+    if (paymentMethod === "split") {
+      // Pour la vente rapide en mode split, on utilise le montant saisi comme base
+      const splitTotal = splitLines.reduce((sum, l) => sum + numericValue(l.amount), 0);
+      if (Math.abs(splitTotal - amount) > 0.01) {
+        setError(`La somme des lignes (${formatPrice(splitTotal)}) ne correspond pas au montant (${formatPrice(amount)}).`);
+        return;
+      }
     }
     setSubmitting(true);
     setError(null);
     setMessage(null);
     try {
-      if (paymentMethod === "cash" && cashReceived && receivedAmount < amount) {
-        setError("Le montant reçu est inférieur au montant de la vente rapide.");
-        return;
-      }
-      const activeSessionId = paymentMethod === "card" ? await ensureSession() : sessionId;
       const data = await createPosQuickSale({
-        terminalId: paymentMethod === "card" ? terminalId : null,
-        posSessionId: activeSessionId,
         paymentMethod,
+        splitLines: paymentMethod === "split" ? buildSplitPayload() : undefined,
         customerId: selectedCustomerId,
         amount,
         description: quickDescription || "Vente comptoir",
@@ -372,61 +360,14 @@ export default function AdminCaissePage() {
         orderDiscountValue: numericValue(orderDiscountValue) > 0 ? numericValue(orderDiscountValue) : null,
         notes: notes || null,
       });
-      setCurrentOrder(data.order);
-      setPaymentId(data.paymentId);
-      setPaymentStatus(data.status);
-      if (paymentMethod === "cash" || paymentMethod === "manual") {
-        const label = paymentMethod === "manual" ? "Vente rapide manuelle validée" : "Vente rapide espèces validée";
-        setMessage(`${label} pour ${formatPrice(data.order.totalTTC || data.order.total)}.`);
-        setCashReceived("");
-        await loadCatalog();
-      } else {
-        setMessage(`Vente rapide envoyée au terminal pour ${formatPrice(data.order.totalTTC || data.order.total)}.`);
-      }
+      setLastOrder(data.order);
+      const methodLabel = PAYMENT_METHODS.find((m) => m.value === paymentMethod)?.label || paymentMethod;
+      setMessage(`Vente rapide ${methodLabel} validée — ${data.order.orderNumber} · ${formatPrice(data.order.totalTTC || data.order.total)}.`);
       setQuickAmount("");
       setOrderDiscountType("fixed");
       setOrderDiscountValue("");
     } catch (err: any) {
       setError(err.message || "Impossible de créer la vente rapide.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleCancelPayment() {
-    if (!paymentId) return;
-    try {
-      await cancelPosPayment(paymentId);
-      setPaymentId(null);
-      setPaymentStatus("canceled");
-      setMessage("Paiement POS annulé.");
-    } catch (err: any) {
-      setError(err.message || "Impossible d'annuler le paiement.");
-    }
-  }
-
-  async function handleMarkPaid() {
-    if (!currentOrder) {
-      setError("Aucune commande en cours à marquer comme payée.");
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const data = await markPosOrderPaid(currentOrder.id);
-      setCurrentOrder(data.order);
-      setPaymentId(null);
-      setPaymentStatus("paid");
-      setCart([]);
-      setOrderDiscountType("fixed");
-      setOrderDiscountValue("");
-      setCashReceived("");
-      setNotes("");
-      setMessage(`Commande ${data.order.orderNumber} marquée comme payée.`);
-      await loadCatalog();
-    } catch (err: any) {
-      setError(err.message || "Impossible de marquer la commande comme payée.");
     } finally {
       setSubmitting(false);
     }
@@ -440,6 +381,8 @@ export default function AdminCaissePage() {
     );
   }
 
+  const activeMethod = PAYMENT_METHODS.find((m) => m.value === paymentMethod);
+
   return (
     <div className="space-y-4 overflow-x-hidden">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -449,7 +392,7 @@ export default function AdminCaissePage() {
             <Store className="h-6 w-6 text-primary" /> Caisse POS
           </h1>
           <p className="mt-1 hidden sm:block max-w-2xl text-sm text-gray-600">
-            Encaissez les ventes physiques Barber Paradise avec terminal de paiement sécurisé, décrémentation du stock, historique et rattachement client facultatif.
+            Encaissez les ventes physiques Barber Paradise — carte Indy, Mollie, espèces, virement ou paiement divisé.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -464,16 +407,25 @@ export default function AdminCaissePage() {
 
       {error && (
         <div className="flex items-start gap-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <AlertCircle className="mt-0.5 h-4 w-4" /> <span>{error}</span>
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> <span>{error}</span>
         </div>
       )}
       {message && (
         <div className="flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          <CheckCircle2 className="mt-0.5 h-4 w-4" /> <span>{message}</span>
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            {message}
+            {lastOrder && (
+              <Link href={`/admin/commandes/${lastOrder.id}`} className="ml-2 font-bold underline underline-offset-2 hover:text-emerald-900">
+                Voir la commande →
+              </Link>
+            )}
+          </span>
         </div>
       )}
 
       <section className="grid gap-4 xl:grid-cols-[1.4fr_0.9fr] min-w-0">
+        {/* ── Catalogue ── */}
         <div className="space-y-4 min-w-0">
           <div className="rounded-2xl border border-gray-100 bg-white p-3 sm:p-4 shadow-sm">
             <div className="grid gap-3 lg:grid-cols-[1fr_220px_180px]">
@@ -481,12 +433,12 @@ export default function AdminCaissePage() {
                 <label className="mb-1 block text-xs font-bold uppercase tracking-[0.2em] text-gray-400">Recherche produit</label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                  <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nom, marque, SKU…" className="w-full rounded-xl border border-gray-200 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-primary" />
+                  <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Nom, marque, SKU…" className="w-full rounded-xl border border-gray-200 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-primary" />
                 </div>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-bold uppercase tracking-[0.2em] text-gray-400">Catégorie</label>
-                <select value={category} onChange={(event) => setCategory(event.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary">
+                <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary">
                   <option value="">Toutes</option>
                   {categories.map((item) => <option key={item} value={item}>{item}</option>)}
                 </select>
@@ -532,22 +484,8 @@ export default function AdminCaissePage() {
           </div>
         </div>
 
+        {/* ── Panier + Paiement ── */}
         <aside className="space-y-4 min-w-0">
-          <div className="rounded-2xl border border-gray-100 bg-white p-3 sm:p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="flex items-center gap-2 text-sm font-black text-gray-950"><CreditCard size={16} /> Terminal</h2>
-              <span className={`rounded-full px-2 py-0.5 text-xs font-bold shrink-0 ${sessionId ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>{sessionId ? "Ouverte" : "Fermée"}</span>
-            </div>
-            <select value={terminalId} onChange={(event) => setTerminalId(event.target.value)} className="mt-2 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary min-w-0">
-              <option value="">Sélectionner un terminal</option>
-              {terminals.map((terminal) => <option key={terminal.id} value={terminal.id}>{terminal.description || terminal.id} · {terminal.status}</option>)}
-            </select>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <button type="button" onClick={handleStartSession} disabled={!terminalId || Boolean(sessionId)} className="rounded-xl bg-gray-950 px-3 py-2.5 text-sm font-bold text-white disabled:opacity-40 min-h-[44px]">Ouvrir</button>
-              <button type="button" onClick={handleCloseSession} disabled={!sessionId} className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-bold text-gray-700 disabled:opacity-40 min-h-[44px]">Clôturer</button>
-            </div>
-          </div>
-
           <form onSubmit={handleCheckout} className="rounded-2xl border border-gray-100 bg-white p-3 sm:p-4 shadow-sm min-w-0">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-base font-black text-gray-950"><ShoppingBag size={18} /> Panier</h2>
@@ -562,7 +500,7 @@ export default function AdminCaissePage() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-bold text-gray-950">{line.name}</p>
                       <p className="text-xs text-gray-500">{line.variantLabel || line.brand}</p>
-                      <button type="button" onClick={() => updateLineDiscount(line.key, line.lineDiscountType, line.lineDiscountValue || "")} className="mt-1 text-left text-sm font-black text-gray-950 underline-offset-2 hover:text-primary hover:underline">{formatPrice(line.price)}</button>
+                      <span className="mt-1 text-sm font-black text-gray-950">{formatPrice(line.price)}</span>
                     </div>
                     <button type="button" onClick={() => updateQuantity(line.key, 0)} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
                   </div>
@@ -573,11 +511,11 @@ export default function AdminCaissePage() {
                       <button type="button" onClick={() => updateQuantity(line.key, line.quantity + 1)} className="p-1"><Plus size={14} /></button>
                     </div>
                     <div className="flex flex-1 min-w-[140px] gap-2">
-                      <select value={line.lineDiscountType} onChange={(event) => updateLineDiscount(line.key, event.target.value as DiscountType, line.lineDiscountValue)} className="w-16 rounded-lg border border-gray-200 px-2 py-1 text-sm outline-none focus:border-primary min-h-[44px]">
+                      <select value={line.lineDiscountType} onChange={(e) => updateLineDiscount(line.key, e.target.value as DiscountType, line.lineDiscountValue)} className="w-16 rounded-lg border border-gray-200 px-2 py-1 text-sm outline-none focus:border-primary min-h-[44px]">
                         <option value="fixed">€</option>
                         <option value="percent">%</option>
                       </select>
-                      <input type="number" min="0" step="0.01" value={line.lineDiscountValue} onChange={(event) => updateLineDiscount(line.key, line.lineDiscountType, event.target.value)} onFocus={(event) => event.currentTarget.select()} className="flex-1 min-w-0 rounded-lg border border-gray-200 px-2 py-1 text-sm outline-none focus:border-primary min-h-[44px]" placeholder="Remise" />
+                      <input type="number" min="0" step="0.01" value={line.lineDiscountValue} onChange={(e) => updateLineDiscount(line.key, line.lineDiscountType, e.target.value)} onFocus={(e) => e.currentTarget.select()} className="flex-1 min-w-0 rounded-lg border border-gray-200 px-2 py-1 text-sm outline-none focus:border-primary min-h-[44px]" placeholder="Remise" />
                     </div>
                   </div>
                   {lineDiscountAmount(line) > 0 ? <p className="mt-2 text-right text-xs font-semibold text-emerald-700">Remise ligne : - {formatPrice(lineDiscountAmount(line))}</p> : null}
@@ -585,16 +523,14 @@ export default function AdminCaissePage() {
               ))}
             </div>
 
+            {/* Client + remise + notes */}
             <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
               <label className="block text-xs font-bold uppercase tracking-[0.2em] text-gray-400">Client facultatif</label>
               <div className="relative">
                 <UserRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <input
                   value={customerSearch}
-                  onChange={(event) => {
-                    setCustomerSearch(event.target.value);
-                    setCustomerPickerOpen(true);
-                  }}
+                  onChange={(e) => { setCustomerSearch(e.target.value); setCustomerPickerOpen(true); }}
                   onFocus={() => setCustomerPickerOpen(true)}
                   placeholder="Rechercher un client"
                   className="w-full rounded-xl border border-gray-200 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-primary"
@@ -603,24 +539,14 @@ export default function AdminCaissePage() {
               {showCustomerResults ? (
                 <div className="max-h-56 overflow-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
                   {customerLoading ? (
-                    <div className="flex items-center gap-2 px-3 py-2 text-sm text-gray-500">
-                      <Loader2 className="h-4 w-4 animate-spin" /> Recherche des clients…
-                    </div>
+                    <div className="flex items-center gap-2 px-3 py-2 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Recherche…</div>
                   ) : customers.length ? (
                     customers.map((customer) => (
-                      <button
-                        key={customer.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedCustomerId(customer.id);
-                          setCustomerSearch(customerName(customer));
-                          setCustomerPickerOpen(false);
-                        }}
+                      <button key={customer.id} type="button"
+                        onClick={() => { setSelectedCustomerId(customer.id); setCustomerSearch(customerName(customer)); setCustomerPickerOpen(false); }}
                         className={`flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left transition ${selectedCustomerId === customer.id ? "bg-primary/10 text-gray-950" : "hover:bg-gray-50"}`}
                       >
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-black uppercase text-gray-600">
-                          {customerName(customer).charAt(0)}
-                        </span>
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-black uppercase text-gray-600">{customerName(customer).charAt(0)}</span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-bold text-gray-950">{customerName(customer)}</span>
                           <span className="block truncate text-xs text-gray-500">{customer.email}{customer.phone ? ` · ${customer.phone}` : ""}</span>
@@ -634,10 +560,10 @@ export default function AdminCaissePage() {
               ) : null}
               <select
                 value={selectedCustomerId || ""}
-                onChange={(event) => {
-                  const nextId = event.target.value || null;
+                onChange={(e) => {
+                  const nextId = e.target.value || null;
                   setSelectedCustomerId(nextId);
-                  const nextCustomer = customers.find((customer) => customer.id === nextId);
+                  const nextCustomer = customers.find((c) => c.id === nextId);
                   if (nextCustomer) setCustomerSearch(customerName(nextCustomer));
                 }}
                 className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary"
@@ -648,50 +574,100 @@ export default function AdminCaissePage() {
               {selectedCustomer && (
                 <div className="flex items-center justify-between rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
                   <span>Vente rattachée à <strong>{customerName(selectedCustomer)}</strong>.</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedCustomerId(null);
-                      setCustomerSearch("");
-                      setCustomerPickerOpen(false);
-                    }}
-                    className="font-bold text-emerald-900 underline-offset-2 hover:underline"
-                  >
-                    Retirer
-                  </button>
+                  <button type="button" onClick={() => { setSelectedCustomerId(null); setCustomerSearch(""); setCustomerPickerOpen(false); }} className="font-bold text-emerald-900 underline-offset-2 hover:underline">Retirer</button>
                 </div>
               )}
               <div className="flex gap-2">
-                <select value={orderDiscountType} onChange={(event) => updateOrderDiscount(event.target.value as DiscountType, orderDiscountValue)} className="w-20 shrink-0 rounded-xl border border-gray-200 px-2 py-2.5 text-sm outline-none focus:border-primary min-h-[44px]">
+                <select value={orderDiscountType} onChange={(e) => updateOrderDiscount(e.target.value as DiscountType, orderDiscountValue)} className="w-20 shrink-0 rounded-xl border border-gray-200 px-2 py-2.5 text-sm outline-none focus:border-primary min-h-[44px]">
                   <option value="fixed">€ fixe</option>
                   <option value="percent">%</option>
                 </select>
-                <input type="number" min="0" step="0.01" value={orderDiscountValue} onChange={(event) => updateOrderDiscount(orderDiscountType, event.target.value)} className="flex-1 min-w-0 rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary min-h-[44px]" placeholder="Remise commande" />
+                <input type="number" min="0" step="0.01" value={orderDiscountValue} onChange={(e) => updateOrderDiscount(orderDiscountType, e.target.value)} className="flex-1 min-w-0 rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary min-h-[44px]" placeholder="Remise commande" />
               </div>
-              <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary" placeholder="Notes internes de vente" />
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary" placeholder="Notes internes de vente" />
             </div>
 
+            {/* Modes de paiement */}
             <div className="mt-4 space-y-3 rounded-2xl border border-gray-100 bg-gray-50 p-3">
               <label className="block text-xs font-bold uppercase tracking-[0.2em] text-gray-400">Moyen de paiement</label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <button type="button" onClick={() => setPaymentMethod("card")} className={`rounded-xl border px-3 py-3 text-sm font-black min-h-[44px] ${paymentMethod === "card" ? "border-primary bg-primary text-white" : "border-gray-200 bg-white text-gray-700 hover:border-primary/40"}`}>Carte · Tap to Pay</button>
-                <button type="button" onClick={() => setPaymentMethod("cash")} className={`rounded-xl border px-3 py-3 text-sm font-black min-h-[44px] ${paymentMethod === "cash" ? "border-emerald-600 bg-emerald-600 text-white" : "border-gray-200 bg-white text-gray-700 hover:border-emerald-300"}`}>Espèces</button>
-                <button type="button" onClick={() => setPaymentMethod("manual")} className={`rounded-xl border px-3 py-3 text-sm font-black min-h-[44px] ${paymentMethod === "manual" ? "border-violet-600 bg-violet-600 text-white" : "border-gray-200 bg-white text-gray-700 hover:border-violet-300"}`}>Marquer payé</button>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {PAYMENT_METHODS.map((m) => (
+                  <button
+                    key={m.value}
+                    type="button"
+                    onClick={() => setPaymentMethod(m.value)}
+                    className={`rounded-xl border px-3 py-3 text-sm font-black min-h-[44px] flex items-center justify-center gap-1.5 ${paymentMethod === m.value ? m.activeColor : m.color}`}
+                  >
+                    {m.value === "split" && <SplitSquareHorizontal size={14} />}
+                    {m.value === "cash" && <Banknote size={14} />}
+                    {(m.value === "indy" || m.value === "mollie_manual") && <CreditCard size={14} />}
+                    {m.label}
+                  </button>
+                ))}
               </div>
-              {paymentMethod === "cash" ? (
+
+              {/* Espèces : monnaie à rendre */}
+              {paymentMethod === "cash" && (
                 <div className="grid gap-2 sm:grid-cols-[1fr_1fr]">
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-gray-500">Montant reçu</label>
-                    <input value={cashReceived} onChange={(event) => setCashReceived(event.target.value)} inputMode="decimal" className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500" placeholder={formatPrice(total)} />
+                    <input value={cashReceived} onChange={(e) => setCashReceived(e.target.value)} inputMode="decimal" className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500" placeholder={formatPrice(total)} />
                   </div>
                   <div className="rounded-xl bg-white px-3 py-2.5">
                     <p className="text-xs font-semibold text-gray-500">Monnaie à rendre</p>
                     <p className="mt-1 text-lg font-black text-emerald-700">{formatPrice(changeDue)}</p>
                   </div>
                 </div>
-              ) : null}
+              )}
+
+              {/* DIVISER : répartition par mode */}
+              {paymentMethod === "split" && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs font-semibold text-gray-500">
+                    <span>Répartition du paiement</span>
+                    <span className={splitRemaining === 0 ? "text-emerald-600 font-bold" : splitRemaining < 0 ? "text-red-600 font-bold" : "text-amber-600 font-bold"}>
+                      {splitRemaining === 0 ? "✓ Équilibré" : splitRemaining > 0 ? `Reste : ${formatPrice(splitRemaining)}` : `Dépassement : ${formatPrice(-splitRemaining)}`}
+                    </span>
+                  </div>
+                  {splitLines.map((line, idx) => (
+                    <div key={idx} className="flex gap-2 items-center">
+                      <select
+                        value={line.method}
+                        onChange={(e) => updateSplitLine(idx, "method", e.target.value)}
+                        className="w-36 shrink-0 rounded-xl border border-gray-200 bg-white px-2 py-2.5 text-sm outline-none focus:border-violet-500 min-h-[44px]"
+                      >
+                        {SPLIT_METHODS.map((sm) => <option key={sm.value} value={sm.value}>{sm.label}</option>)}
+                      </select>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.amount}
+                        onChange={(e) => updateSplitLine(idx, "amount", e.target.value)}
+                        onFocus={(e) => e.currentTarget.select()}
+                        className="flex-1 min-w-0 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-500 min-h-[44px]"
+                        placeholder="Montant (€)"
+                      />
+                      {splitLines.length > 2 && (
+                        <button type="button" onClick={() => removeSplitLine(idx)} className="text-gray-400 hover:text-red-500 shrink-0"><Trash2 size={16} /></button>
+                      )}
+                    </div>
+                  ))}
+                  <div className="flex gap-2">
+                    <button type="button" onClick={addSplitLine} className="flex-1 rounded-xl border border-dashed border-gray-300 px-3 py-2 text-xs font-bold text-gray-500 hover:border-violet-400 hover:text-violet-600 min-h-[40px]">
+                      + Ajouter une ligne
+                    </button>
+                    {splitRemaining > 0 && (
+                      <button type="button" onClick={autoFillLastSplitLine} className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-bold text-violet-700 hover:bg-violet-100 min-h-[40px]">
+                        Compléter ({formatPrice(splitRemaining)})
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
+            {/* Récapitulatif */}
             <div className="mt-4 rounded-2xl bg-gray-950 p-3 sm:p-4 text-white min-w-0">
               <div className="space-y-1.5 text-sm text-gray-300">
                 <div className="flex items-center justify-between gap-2"><span className="shrink-0">Sous-total</span><span className="tabular-nums">{formatPrice(subtotal)}</span></div>
@@ -703,40 +679,41 @@ export default function AdminCaissePage() {
               <div className="mt-3 flex items-center justify-between gap-2 text-xl font-black"><span>Total</span><span className="tabular-nums">{formatPrice(total)}</span></div>
             </div>
 
-            <button type="submit" disabled={submitting || (paymentMethod === "card" && !terminalId) || !cart.length || Boolean(paymentId)} className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-black uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:opacity-50 min-h-[52px] ${paymentMethod === "cash" ? "bg-emerald-600 hover:bg-emerald-700" : paymentMethod === "manual" ? "bg-violet-600 hover:bg-violet-700" : "bg-primary hover:bg-primary/90"}`}>
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : paymentMethod === "cash" ? <Banknote size={16} /> : paymentMethod === "manual" ? <CheckCircle2 size={16} /> : <CreditCard size={16} />}
-              <span className="sm:hidden">{paymentMethod === "cash" ? "Encaisser espèces" : paymentMethod === "manual" ? "Marquer payé" : "Encaisser"}</span>
-              <span className="hidden sm:inline">{paymentMethod === "cash" ? "Valider l'encaissement espèces" : paymentMethod === "manual" ? "Marquer comme payé" : "Encaisser sur terminal"}</span>
+            <button
+              type="submit"
+              disabled={submitting || !cart.length || (paymentMethod === "split" && Math.abs(splitAllocated - total) > 0.01)}
+              className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-black uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:opacity-50 min-h-[52px] ${
+                paymentMethod === "cash" ? "bg-emerald-600 hover:bg-emerald-700" :
+                paymentMethod === "virement" ? "bg-amber-600 hover:bg-amber-700" :
+                paymentMethod === "split" ? "bg-violet-600 hover:bg-violet-700" :
+                paymentMethod === "mollie_manual" ? "bg-blue-600 hover:bg-blue-700" :
+                "bg-primary hover:bg-primary/90"
+              }`}
+            >
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : paymentMethod === "cash" ? <Banknote size={16} /> : paymentMethod === "split" ? <SplitSquareHorizontal size={16} /> : <CreditCard size={16} />}
+              <span>
+                {paymentMethod === "cash" ? "Valider l'encaissement espèces" :
+                 paymentMethod === "virement" ? "Valider le virement" :
+                 paymentMethod === "split" ? "Valider le paiement divisé" :
+                 paymentMethod === "mollie_manual" ? "Valider · Mollie" :
+                 "Valider · Indy"}
+              </span>
             </button>
           </form>
 
+          {/* Vente rapide */}
           <form onSubmit={handleQuickSale} className="rounded-2xl border border-gray-100 bg-white p-3 sm:p-4 shadow-sm min-w-0">
             <h2 className="text-base font-black text-gray-950">Vente rapide</h2>
             <p className="mt-1 text-xs text-gray-500">Pour une prestation ou un article non catalogué.</p>
             <div className="mt-3 flex flex-col sm:flex-row gap-2">
-              <input value={quickAmount} onChange={(event) => setQuickAmount(event.target.value)} inputMode="decimal" className="w-full sm:w-32 rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary min-h-[44px]" placeholder="Montant (€)" />
-              <input value={quickDescription} onChange={(event) => setQuickDescription(event.target.value)} className="flex-1 min-w-0 rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary min-h-[44px]" placeholder="Libellé" />
+              <input value={quickAmount} onChange={(e) => setQuickAmount(e.target.value)} inputMode="decimal" className="w-full sm:w-32 rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary min-h-[44px]" placeholder="Montant (€)" />
+              <input value={quickDescription} onChange={(e) => setQuickDescription(e.target.value)} className="flex-1 min-w-0 rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary min-h-[44px]" placeholder="Libellé" />
             </div>
-            <button type="submit" disabled={submitting || (paymentMethod === "card" && !terminalId) || Boolean(paymentId)} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-bold text-gray-800 hover:border-primary/40 hover:text-primary disabled:opacity-40">
-              <Banknote size={16} /> {paymentMethod === "cash" ? "Valider la vente rapide espèces" : paymentMethod === "manual" ? "Vente rapide — Marquer comme payé" : "Encaisser une vente rapide"}
+            <p className="mt-2 text-xs text-gray-500">Mode actif : <strong>{activeMethod?.label || paymentMethod}</strong></p>
+            <button type="submit" disabled={submitting} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-bold text-gray-800 hover:border-primary/40 hover:text-primary disabled:opacity-40">
+              <Banknote size={16} /> Valider la vente rapide
             </button>
           </form>
-
-          {paymentId && (
-            <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-amber-900">
-              <div className="flex items-start gap-3">
-                <Loader2 className="mt-0.5 h-5 w-5 animate-spin" />
-                <div>
-                  <p className="font-black">Paiement en attente terminal</p>
-                  <p className="mt-1 text-sm">Statut : {paymentStatus || "pending"}</p>
-                  {currentOrder && <p className="mt-1 text-sm">Commande : {currentOrder.orderNumber}</p>}
-                </div>
-              </div>
-              <button type="button" onClick={handleCancelPayment} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-bold text-amber-900 hover:text-red-600">
-                <XCircle size={16} /> Annuler le paiement
-              </button>
-            </div>
-          )}
         </aside>
       </section>
     </div>

@@ -3104,6 +3104,11 @@ export interface PosTerminal {
   serialNumber?: string | null;
 }
 
+export interface PosSplitLine {
+  method: Exclude<PosPaymentMethod, "split">;
+  amount: number;
+}
+
 export interface PosOrderItem {
   id: string;
   productId?: string | null;
@@ -3129,6 +3134,7 @@ export interface PosOrder {
   terminalId?: string | null;
   posSessionId?: string | null;
   paymentMethod?: PosPaymentMethod | string | null;
+  posPaymentBreakdown?: PosSplitLine[] | null;
   subtotal: number;
   discountAmount: number;
   orderDiscountType?: DiscountType | null;
@@ -3146,7 +3152,16 @@ export interface PosOrder {
   items: PosOrderItem[];
 }
 
-export type PosPaymentMethod = "card" | "cash" | "manual";
+/**
+ * Modes de paiement POS manuels :
+ * - indy         : paiement carte via app Indy
+ * - mollie_manual: paiement carte via app Mollie tap-to-pay (sans API)
+ * - cash         : espèces
+ * - virement     : virement bancaire
+ * - split        : paiement divisé sur plusieurs modes
+ * Rétrocompatibilité : "card" et "manual" sont conservés pour les anciennes commandes
+ */
+export type PosPaymentMethod = "indy" | "mollie_manual" | "cash" | "virement" | "split" | "card" | "manual";
 
 export interface PosStats {
   period: string;
@@ -3155,8 +3170,13 @@ export interface PosStats {
   revenue: number;
   averageOrder: number;
   paymentBreakdown?: {
-    card: { revenue: number; count: number };
+    indy: { revenue: number; count: number };
+    mollie_manual: { revenue: number; count: number };
     cash: { revenue: number; count: number };
+    virement: { revenue: number; count: number };
+    split: { revenue: number; count: number };
+    // Rétrocompatibilité
+    card?: { revenue: number; count: number };
   };
   topProducts: { name: string; quantity: number; revenue: number }[];
   latestOrder: PosOrder | null;
@@ -3172,8 +3192,9 @@ export interface PosCartItemPayload {
 }
 
 
+/** @deprecated Supprimé — plus de terminal Mollie */
 export function getPosTerminals() {
-  return adminFetch<{ terminals: PosTerminal[] }>("/api/pos/terminals");
+  return Promise.resolve({ terminals: [] as PosTerminal[] });
 }
 
 export function getPosCatalog(params: { q?: string; category?: string; limit?: number } = {}) {
@@ -3185,22 +3206,21 @@ export function getPosCatalog(params: { q?: string; category?: string; limit?: n
   return adminFetch<{ products: PosProduct[]; categories: string[] }>(`/api/pos/catalog${suffix}`);
 }
 
-export function openPosSession(payload: { terminalId: string; notes?: string }) {
-  return adminFetch<{ session: { id: string; terminalId: string; openedAt: string; closedAt?: string | null } }>("/api/pos/sessions", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+/** @deprecated Supprimé — plus de sessions terminal */
+export function openPosSession(_payload: { terminalId: string; notes?: string }) {
+  return Promise.resolve({ session: { id: "", terminalId: "", openedAt: new Date().toISOString() } });
 }
 
-export function closePosSession(sessionId: string) {
-  return adminFetch<{ session: { id: string; closedAt?: string | null } }>(`/api/pos/sessions/${sessionId}/close`, { method: "POST" });
+/** @deprecated Supprimé — plus de sessions terminal */
+export function closePosSession(_sessionId: string) {
+  return Promise.resolve({ session: { id: "", closedAt: new Date().toISOString() } });
 }
 
 export function createPosPayment(payload: {
-  terminalId?: string | null;
   posSessionId?: string | null;
   customerId?: string | null;
   paymentMethod?: PosPaymentMethod;
+  splitLines?: PosSplitLine[];
   items: PosCartItemPayload[];
   globalDiscount?: number;
   orderDiscountType?: DiscountType | null;
@@ -3214,10 +3234,10 @@ export function createPosPayment(payload: {
 }
 
 export function createPosQuickSale(payload: {
-  terminalId?: string | null;
   posSessionId?: string | null;
   customerId?: string | null;
   paymentMethod?: PosPaymentMethod;
+  splitLines?: PosSplitLine[];
   amount: number;
   description?: string;
   orderDiscountType?: DiscountType | null;
@@ -3231,12 +3251,14 @@ export function createPosQuickSale(payload: {
   });
 }
 
-export function getPosPaymentStatus(paymentId: string) {
-  return adminFetch<{ status: string; paymentId: string; order: PosOrder | null; changePaymentStateUrl?: string | null }>(`/api/pos/payments/${paymentId}/status`);
+/** @deprecated Supprimé — plus de polling terminal Mollie */
+export function getPosPaymentStatus(_paymentId: string) {
+  return Promise.resolve({ status: "paid", paymentId: "", order: null as PosOrder | null });
 }
 
-export function cancelPosPayment(paymentId: string) {
-  return adminFetch<{ ok: boolean }>(`/api/pos/payments/${paymentId}/cancel`, { method: "POST" });
+/** @deprecated Supprimé — plus d'annulation terminal Mollie */
+export function cancelPosPayment(_paymentId: string) {
+  return Promise.resolve({ ok: true });
 }
 
 export function getPosHistory(params: { page?: number; limit?: number; period?: string; status?: string; search?: string } = {}) {

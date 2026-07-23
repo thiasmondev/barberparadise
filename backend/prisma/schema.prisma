@@ -374,6 +374,7 @@ model Order {
   paymentReminderStage Int @default(0) // Stade de relance : 0=aucune, 1=J-3, 2=jour J, 3=J+3
   lastPaymentReminderAt DateTime? // Date d'envoi de la dernière relance de paiement
   noShipping        Boolean  @default(false) // true si la commande ne nécessite pas de livraison (remise en main propre, retrait en magasin)
+  posPaymentBreakdown Json?    // Répartition paiement divisé POS : [{"method":"cash","amount":50},{"method":"indy","amount":30}]
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

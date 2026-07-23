@@ -92,16 +92,26 @@ export default function PosStatsPage() {
             </div>
           </div>
 
-          <section className="grid gap-4 md:grid-cols-2">
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="flex items-center gap-2 text-lg font-black text-gray-950"><CreditCard size={18} /> Ventilation Carte</h2>
-              <p className="mt-3 text-3xl font-black text-gray-950">{formatPrice(stats.paymentBreakdown?.card.revenue || 0)}</p>
-              <p className="mt-2 text-sm text-gray-500">{stats.paymentBreakdown?.card.count || 0} vente(s) Tap to Pay.</p>
+              <h2 className="flex items-center gap-2 text-sm font-black text-gray-950"><CreditCard size={16} /> Carte · Indy</h2>
+              <p className="mt-3 text-2xl font-black text-gray-950">{formatPrice(stats.paymentBreakdown?.indy?.revenue ?? 0)}</p>
+              <p className="mt-2 text-sm text-gray-500">{stats.paymentBreakdown?.indy?.count ?? 0} vente(s) via Indy.</p>
             </div>
             <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="flex items-center gap-2 text-lg font-black text-gray-950"><Banknote size={18} /> Ventilation Espèces</h2>
-              <p className="mt-3 text-3xl font-black text-gray-950">{formatPrice(stats.paymentBreakdown?.cash.revenue || 0)}</p>
-              <p className="mt-2 text-sm text-gray-500">{stats.paymentBreakdown?.cash.count || 0} vente(s) encaissée(s) en espèces.</p>
+              <h2 className="flex items-center gap-2 text-sm font-black text-gray-950"><CreditCard size={16} /> Carte · Mollie</h2>
+              <p className="mt-3 text-2xl font-black text-gray-950">{formatPrice(stats.paymentBreakdown?.mollie_manual?.revenue ?? 0)}</p>
+              <p className="mt-2 text-sm text-gray-500">{stats.paymentBreakdown?.mollie_manual?.count ?? 0} vente(s) via Mollie.</p>
+            </div>
+            <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="flex items-center gap-2 text-sm font-black text-gray-950"><Banknote size={16} /> Espèces</h2>
+              <p className="mt-3 text-2xl font-black text-gray-950">{formatPrice(stats.paymentBreakdown?.cash?.revenue ?? 0)}</p>
+              <p className="mt-2 text-sm text-gray-500">{stats.paymentBreakdown?.cash?.count ?? 0} vente(s) en espèces.</p>
+            </div>
+            <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <h2 className="flex items-center gap-2 text-sm font-black text-gray-950"><Banknote size={16} /> Virement</h2>
+              <p className="mt-3 text-2xl font-black text-gray-950">{formatPrice(stats.paymentBreakdown?.virement?.revenue ?? 0)}</p>
+              <p className="mt-2 text-sm text-gray-500">{stats.paymentBreakdown?.virement?.count ?? 0} vente(s) par virement.</p>
             </div>
           </section>
 
@@ -140,7 +150,7 @@ export default function PosStatsPage() {
                 <div className="mt-4 space-y-4">
                   <div>
                     <p className="text-xl font-black text-gray-950">{stats.latestOrder.orderNumber}</p>
-                    <p className="mt-1 text-sm text-gray-500">{dateFormatter.format(new Date(stats.latestOrder.createdAt))} · {stats.latestOrder.paymentMethod === "cash" ? "Espèces" : "Carte"}</p>
+                    <p className="mt-1 text-sm text-gray-500">{dateFormatter.format(new Date(stats.latestOrder.createdAt))} · {stats.latestOrder.paymentMethod === "cash" ? "Espèces" : stats.latestOrder.paymentMethod === "virement" ? "Virement" : stats.latestOrder.paymentMethod === "split" ? "Divisé" : stats.latestOrder.paymentMethod === "mollie_manual" ? "Mollie" : "Indy"}</p>
                   </div>
                   <div className="rounded-2xl bg-gray-950 p-4 text-white">
                     <p className="text-sm text-gray-300">Total encaissé</p>
