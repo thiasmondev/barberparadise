@@ -51,6 +51,40 @@ function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Les DOM-TOM ont le code pays "FR" dans les formulaires standard,
+ * mais leur code postal commence par 97x ou 98x.
+ * Cette fonction résout le vrai code ISO du territoire à partir du CP
+ * afin d'appliquer le bon tarif d'expédition (zone DOM-TOM).
+ *
+ * Préfixes traités :
+ *   971 = Guadeloupe (GP)
+ *   972 = Martinique (MQ)
+ *   973 = Guyane (GF)
+ *   974 = La Réunion (RE)
+ *   975 = Saint-Pierre-et-Miquelon (PM)
+ *   976 = Mayotte (YT)
+ *   984 = Wallis-et-Futuna (WF)
+ *   986 = Wallis-et-Futuna (WF)
+ *   987 = Polynésie française (PF)
+ *   988 = Nouvelle-Calédonie (NC)
+ */
+export function resolveCountryFromPostalCode(country: string, postalCode?: string | null): string {
+  const c = (country || "FR").toUpperCase();
+  if (c !== "FR" || !postalCode) return c;
+  const cp = postalCode.trim().replace(/\s/g, "");
+  if (cp.startsWith("971")) return "GP";
+  if (cp.startsWith("972")) return "MQ";
+  if (cp.startsWith("973")) return "GF";
+  if (cp.startsWith("974")) return "RE";
+  if (cp.startsWith("975")) return "PM";
+  if (cp.startsWith("976")) return "YT";
+  if (cp.startsWith("984") || cp.startsWith("986")) return "WF";
+  if (cp.startsWith("987")) return "PF";
+  if (cp.startsWith("988")) return "NC";
+  return c;
+}
+
 export function getFreeShippingThreshold(isPro: boolean = false): number {
   return isPro ? PRO_FREE_SHIPPING_THRESHOLD : FALLBACK_FREE_SHIPPING_THRESHOLD;
 }
@@ -108,9 +142,9 @@ function resolveProPaidRates<T extends { minAmount: number; maxAmount: number | 
   return paidRates.sort((a, b) => a.minAmount - b.minAmount || a.price - b.price).slice(0, 1);
 }
 
-export async function calculateShippingOptions(country: string | undefined, orderTotal: number, isPro: boolean = false): Promise<ShippingOption[]> {
+export async function calculateShippingOptions(country: string | undefined, orderTotal: number, isPro: boolean = false, postalCode?: string | null): Promise<ShippingOption[]> {
   const safeTotal = Number.isFinite(orderTotal) ? Math.max(0, orderTotal) : 0;
-  const c = (country || "FR").toUpperCase();
+  const c = resolveCountryFromPostalCode(country || "FR", postalCode);
   const zones = await listShippingZones();
   const zone = zones.find((candidate) => candidate.countries.map((item) => item.toUpperCase()).includes(c));
 
@@ -158,11 +192,11 @@ export async function calculateShippingOptions(country: string | undefined, orde
   });
 }
 
-export async function calculateFreeShippingRemaining(country: string | undefined, orderTotal: number, isPro: boolean = false): Promise<number> {
+export async function calculateFreeShippingRemaining(country: string | undefined, orderTotal: number, isPro: boolean = false, postalCode?: string | null): Promise<number> {
   const safeTotal = Number.isFinite(orderTotal) ? Math.max(0, orderTotal) : 0;
   if (isPro) return roundMoney(Math.max(0, PRO_FREE_SHIPPING_THRESHOLD - safeTotal));
 
-  const c = (country || "FR").toUpperCase();
+  const c = resolveCountryFromPostalCode(country || "FR", postalCode);
   const zones = await listShippingZones();
   const zone = zones.find((candidate) => candidate.countries.map((item) => item.toUpperCase()).includes(c));
   const freeThreshold = zone?.rates
@@ -174,9 +208,9 @@ export async function calculateFreeShippingRemaining(country: string | undefined
   return roundMoney(Math.max(0, freeThreshold - safeTotal));
 }
 
-export async function getFreeShippingThresholdForCountry(country: string | undefined, isPro: boolean = false): Promise<number | null> {
+export async function getFreeShippingThresholdForCountry(country: string | undefined, isPro: boolean = false, postalCode?: string | null): Promise<number | null> {
   if (isPro) return PRO_FREE_SHIPPING_THRESHOLD;
-  const c = (country || "FR").toUpperCase();
+  const c = resolveCountryFromPostalCode(country || "FR", postalCode);
   const zones = await listShippingZones();
   const zone = zones.find((candidate) => candidate.countries.map((item) => item.toUpperCase()).includes(c));
   const freeThreshold = zone?.rates

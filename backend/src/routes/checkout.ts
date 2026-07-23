@@ -407,8 +407,9 @@ checkoutRouter.get("/shipping-options", async (req: Request, res: Response): Pro
     const isPro = req.query.isPro === "true";
     const isB2B = req.query.isB2B === "true" || isPro;
     const amountBasis = isB2B ? "HT" : "TTC";
-    const freeShippingFrom = await getFreeShippingThresholdForCountry(country, isB2B);
-    const options = await calculateShippingOptions(country, orderTotal, isB2B);
+    const postalCode = typeof req.query.postalCode === "string" ? req.query.postalCode : undefined;
+    const freeShippingFrom = await getFreeShippingThresholdForCountry(country, isB2B, postalCode);
+    const options = await calculateShippingOptions(country, orderTotal, isB2B, postalCode);
     res.json({
       options,
       country,
@@ -417,7 +418,7 @@ checkoutRouter.get("/shipping-options", async (req: Request, res: Response): Pro
       isB2B,
       isPro,
       freeShippingFrom,
-      freeShippingRemaining: await calculateFreeShippingRemaining(country, orderTotal, isB2B),
+      freeShippingRemaining: await calculateFreeShippingRemaining(country, orderTotal, isB2B, postalCode),
     });
   } catch (err) {
     console.error("Erreur options livraison", err);
@@ -819,7 +820,8 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       const provider = getProvider(body.paymentMethod, country);
       const orderTotalTTC = money(checkoutDraft.totalTTC || checkoutDraft.total);
       const isNoShipping = Boolean(checkoutDraft.noShipping);
-      const draftShippingOptions = isNoShipping ? [] : await calculateShippingOptions(country, checkoutDraft.isB2B ? checkoutDraft.subtotal : Math.max(0, orderTotalTTC - checkoutDraft.shipping), checkoutDraft.isB2B);
+      const draftPostalCode = shippingAddress?.postalCode || undefined;
+      const draftShippingOptions = isNoShipping ? [] : await calculateShippingOptions(country, checkoutDraft.isB2B ? checkoutDraft.subtotal : Math.max(0, orderTotalTTC - checkoutDraft.shipping), checkoutDraft.isB2B, draftPostalCode);
       const draftShippingOption = isNoShipping
         ? { carrier: "retrait_magasin", label: "Retrait en magasin", id: "retrait_magasin" }
         : resolveShippingOptionForPaidOrder(draftShippingOptions, body.shippingOptionId, checkoutDraft.shipping);
@@ -1068,7 +1070,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const shippingOptions = await calculateShippingOptions(country, isB2B ? subtotalHT : subtotalTTC, isB2B);
+    const shippingOptions = await calculateShippingOptions(country, isB2B ? subtotalHT : subtotalTTC, isB2B, shippingAddress?.postalCode);
     const selectedShippingOption = shippingOptions.find((option) => option.id === body.shippingOptionId) || shippingOptions[0];
     if (!selectedShippingOption) {
       res.status(400).json({ error: "Aucune option de livraison disponible pour ce pays" });
@@ -1424,7 +1426,8 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
       if (recentPendingOrder && normalizeDraftItemsSignature(recentPendingOrder.items) === normalizeDraftItemsSignature(checkoutDraft.items)) {
         order = recentPendingOrder;
       } else {
-        const draftShippingOptions = isNoShippingPaypal ? [] : await calculateShippingOptions(country, checkoutDraft.isB2B ? checkoutDraft.subtotal : Math.max(0, orderTotalTTC - checkoutDraft.shipping), checkoutDraft.isB2B);
+        const draftPostalCodePaypal = shippingAddress?.postalCode || undefined;
+        const draftShippingOptions = isNoShippingPaypal ? [] : await calculateShippingOptions(country, checkoutDraft.isB2B ? checkoutDraft.subtotal : Math.max(0, orderTotalTTC - checkoutDraft.shipping), checkoutDraft.isB2B, draftPostalCodePaypal);
         const draftShippingOption = isNoShippingPaypal
           ? { carrier: "retrait_magasin", label: "Retrait en magasin", id: "retrait_magasin" }
           : resolveShippingOptionForPaidOrder(draftShippingOptions, body.shippingOptionId, checkoutDraft.shipping);
@@ -1499,7 +1502,7 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
 
       if (isB2B && subtotalHT < PRO_MINIMUM_ORDER_HT) { res.status(400).json({ error: `Le minimum de commande professionnel est de ${PRO_MINIMUM_ORDER_HT} € HT` }); return; }
 
-      const shippingOptions = await calculateShippingOptions(country, isB2B ? subtotalHT : subtotalTTC, isB2B);
+      const shippingOptions = await calculateShippingOptions(country, isB2B ? subtotalHT : subtotalTTC, isB2B, shippingAddress?.postalCode);
       const selectedShippingOption = shippingOptions.find((o) => o.id === body.shippingOptionId) || shippingOptions[0];
       if (!selectedShippingOption) { res.status(400).json({ error: "Aucune option de livraison disponible" }); return; }
       const shipping = selectedShippingOption.price;

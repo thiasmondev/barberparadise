@@ -140,6 +140,16 @@ const COUNTRY_CODE_BY_NAME: Record<string, string> = {
   "États-Unis": "US",
   Canada: "CA",
   Maroc: "MA",
+  // DOM-TOM : codes ISO distincts pour le calcul des frais de port
+  Guadeloupe: "GP",
+  Martinique: "MQ",
+  "Guyane française": "GF",
+  "La Réunion": "RE",
+  Mayotte: "YT",
+  "Saint-Pierre-et-Miquelon": "PM",
+  "Polynésie française": "PF",
+  "Nouvelle-Calédonie": "NC",
+  "Wallis-et-Futuna": "WF",
 };
 
 const METHOD_CONFIG: Record<PaymentMethod, { label: string; badge: string; icon: typeof CreditCard }> = {
@@ -967,7 +977,34 @@ export default function CheckoutPage() {
                     <label className={labelClass}>Pays</label>
                     <div className="relative">
                       <select value={form.pays} onChange={(e) => updateForm("pays", e.target.value)} className={`${inputClass} appearance-none pr-8`}>
-                        <option value="France">France</option><option value="Belgique">Belgique</option><option value="Suisse">Suisse</option><option value="Luxembourg">Luxembourg</option><option value="Pays-Bas">Pays-Bas</option><option value="Allemagne">Allemagne</option><option value="Espagne">Espagne</option><option value="Italie">Italie</option><option value="Portugal">Portugal</option><option value="Pologne">Pologne</option><option value="États-Unis">États-Unis</option><option value="Canada">Canada</option><option value="Maroc">Maroc</option>
+                        <optgroup label="Europe">
+                          <option value="France">France métropolitaine</option>
+                          <option value="Belgique">Belgique</option>
+                          <option value="Luxembourg">Luxembourg</option>
+                          <option value="Pays-Bas">Pays-Bas</option>
+                          <option value="Allemagne">Allemagne</option>
+                          <option value="Espagne">Espagne</option>
+                          <option value="Italie">Italie</option>
+                          <option value="Portugal">Portugal</option>
+                          <option value="Pologne">Pologne</option>
+                          <option value="Suisse">Suisse</option>
+                        </optgroup>
+                        <optgroup label="DOM-TOM">
+                          <option value="Guadeloupe">Guadeloupe (971)</option>
+                          <option value="Martinique">Martinique (972)</option>
+                          <option value="Guyane française">Guyane (973)</option>
+                          <option value="La Réunion">La Réunion (974)</option>
+                          <option value="Saint-Pierre-et-Miquelon">Saint-Pierre-et-Miquelon (975)</option>
+                          <option value="Mayotte">Mayotte (976)</option>
+                          <option value="Polynésie française">Polynésie française (987)</option>
+                          <option value="Nouvelle-Calédonie">Nouvelle-Calédonie (988)</option>
+                          <option value="Wallis-et-Futuna">Wallis-et-Futuna (986)</option>
+                        </optgroup>
+                        <optgroup label="Autres">
+                          <option value="États-Unis">États-Unis</option>
+                          <option value="Canada">Canada</option>
+                          <option value="Maroc">Maroc</option>
+                        </optgroup>
                       </select>
                       <ChevronDown size={14} className="absolute right-0 top-3.5 text-gray-500 pointer-events-none" />
                     </div>
