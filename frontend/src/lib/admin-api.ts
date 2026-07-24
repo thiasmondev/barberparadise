@@ -402,6 +402,21 @@ export function deleteAdminOrder(id: string) {
   return adminFetch<{ success: boolean }>(`/api/admin/orders/${id}`, { method: "DELETE" });
 }
 
+export function markShippedManual(
+  id: string,
+  payload: {
+    manualTrackingNumber?: string | null;
+    manualCarrier?: string | null;
+    manualCarrierOther?: string | null;
+    sendTrackingEmail?: boolean;
+  }
+) {
+  return adminFetch<{ success: boolean; order: Order; shipment: unknown; trackingEmailSent: boolean }>(
+    `/api/admin/orders/${id}/mark-shipped-manual`,
+    { method: "POST", body: JSON.stringify(payload) }
+  );
+}
+
 export function modifyOrderItems(
   id: string,
   payload: {

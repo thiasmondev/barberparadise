@@ -6088,6 +6088,121 @@ adminRouter.patch(
   }
 );
 
+// POST /api/admin/orders/:id/mark-shipped-manual — Marquer comme traité avec suivi manuel optionnel
+adminRouter.post(
+  "/orders/:id/mark-shipped-manual",
+  requireAdmin,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const orderId = req.params.id;
+      const manualTrackingNumber = typeof req.body?.manualTrackingNumber === "string" ? req.body.manualTrackingNumber.trim() || null : null;
+      const manualCarrier = typeof req.body?.manualCarrier === "string" ? req.body.manualCarrier.trim() || null : null;
+      const manualCarrierOther = typeof req.body?.manualCarrierOther === "string" ? req.body.manualCarrierOther.trim() || null : null;
+      const sendTrackingEmail = req.body?.sendTrackingEmail !== false;
+
+      // Résoudre le libellé final du transporteur
+      const MANUAL_CARRIER_LABELS: Record<string, string> = {
+        colissimo: "Colissimo",
+        chronopost: "Chronopost",
+        dhl: "DHL",
+        ups: "UPS",
+        mondial_relay: "Mondial Relay",
+        laposte: "La Poste",
+        autre: manualCarrierOther || "Autre transporteur",
+      };
+      const carrierLabel = manualCarrier ? (MANUAL_CARRIER_LABELS[manualCarrier] || manualCarrier) : null;
+
+      // Construire le lien de tracking selon le transporteur
+      const buildTrackingUrl = (carrier: string | null, tracking: string | null): string | null => {
+        if (!tracking) return null;
+        const t = encodeURIComponent(tracking);
+        switch (carrier) {
+          case "colissimo": return `https://www.laposte.fr/outils/suivre-vos-envois?code=${t}`;
+          case "chronopost": return `https://www.chronopost.fr/tracking-no-cms/suivi-page?listeNumerosLT=${t}`;
+          case "dhl": return `https://www.dhl.com/fr-fr/home/tracking.html?tracking-id=${t}`;
+          case "ups": return `https://www.ups.com/track?tracknum=${t}`;
+          case "mondial_relay": return `https://www.mondialrelay.fr/suivi-de-colis/?NumColis=${t}`;
+          case "laposte": return `https://www.laposte.fr/outils/suivre-vos-envois?code=${t}`;
+          default: return null;
+        }
+      };
+      const trackingUrl = buildTrackingUrl(manualCarrier, manualTrackingNumber);
+
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        include: { customer: true, shipment: true },
+      });
+      if (!order) {
+        res.status(404).json({ error: "Commande non trouvée" });
+        return;
+      }
+      if (!["paid", "processing"].includes(order.status)) {
+        res.status(400).json({ error: "Seules les commandes payées ou en préparation peuvent être marquées comme traitées" });
+        return;
+      }
+      // Bloquer si une étiquette officielle a déjà été générée — utiliser la route /ship à la place
+      if (order.shipment?.labelSource === "carrier_api" && order.shipment?.trackingNumber) {
+        res.status(400).json({ error: "Cette commande a déjà une étiquette officielle. Utilisez la route d'expédition standard." });
+        return;
+      }
+
+      const shippedAt = new Date();
+      const [shipment, updatedOrder] = await prisma.$transaction([
+        prisma.shipment.upsert({
+          where: { orderId },
+          create: {
+            orderId,
+            carrier: manualCarrier || "manual",
+            trackingNumber: manualTrackingNumber,
+            trackingUrl,
+            labelSource: "manual",
+            lastTrackingStatus: manualTrackingNumber ? `Expédié — suivi ${manualTrackingNumber}` : "Expédié sans suivi",
+            lastTrackingSyncAt: new Date(),
+            shippedAt,
+            shippedBy: req.user?.email || null,
+            manualTrackingNumber,
+            manualCarrier,
+          },
+          update: {
+            carrier: manualCarrier || "manual",
+            trackingNumber: manualTrackingNumber,
+            trackingUrl,
+            labelSource: "manual",
+            lastTrackingStatus: manualTrackingNumber ? `Expédié — suivi ${manualTrackingNumber}` : "Expédié sans suivi",
+            lastTrackingSyncAt: new Date(),
+            shippedAt,
+            shippedBy: req.user?.email || null,
+            manualTrackingNumber,
+            manualCarrier,
+          },
+        }),
+        prisma.order.update({
+          where: { id: orderId },
+          data: { status: "processing" },
+        }),
+      ]);
+
+      let trackingEmailSent = false;
+      if (sendTrackingEmail && order.email) {
+        await sendOrderShippedEmail({
+          to: order.email,
+          orderNumber: order.orderNumber,
+          customerName: getCustomerName(order.customer, order.email),
+          carrier: carrierLabel || undefined,
+          trackingNumber: manualTrackingNumber || undefined,
+          trackingUrl: trackingUrl || undefined,
+        });
+        trackingEmailSent = true;
+      }
+
+      res.json({ success: true, order: updatedOrder, shipment, trackingEmailSent });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur lors du marquage manuel" });
+    }
+  }
+);
+
 // POST /api/admin/customers — Création manuelle d'un client B2C ou B2B depuis l'admin
 adminRouter.post(
   "/customers",

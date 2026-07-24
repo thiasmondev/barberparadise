@@ -58,6 +58,7 @@ import {
   resendOrderTracking,
   updateAdminOrder,
   updateOrderStatus,
+  markShippedManual,
   modifyOrderItems,
   createPaymentAdjustment,
   getAdminProducts,
@@ -390,6 +391,15 @@ export default function OrderDetailPage() {
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   // Confirmation réassignation
   const [assignForceConfirm, setAssignForceConfirm] = useState(false);
+
+  // Modal suivi manuel
+  const [showManualTrackingModal, setShowManualTrackingModal] = useState(false);
+  const [manualTrackingNumber, setManualTrackingNumber] = useState("");
+  const [manualCarrier, setManualCarrier] = useState("colissimo");
+  const [manualCarrierOther, setManualCarrierOther] = useState("");
+  const [manualSendEmail, setManualSendEmail] = useState(true);
+  const [manualTrackingLoading, setManualTrackingLoading] = useState(false);
+  const [manualTrackingError, setManualTrackingError] = useState("");
 
   const loadOrder = async () => {
     if (!id) return;
@@ -1121,12 +1131,42 @@ export default function OrderDetailPage() {
 
   const markAsProcessed = async () => {
     if (!order) return;
+    // Si pas d'étiquette officielle, ouvrir le modal de suivi manuel
+    const hasOfficialLabel = order.shipment?.labelSource === "carrier_api" && order.shipment?.trackingNumber;
+    if (!hasOfficialLabel) {
+      setShowManualTrackingModal(true);
+      return;
+    }
     setUpdating(true);
     try {
       const updated = await updateOrderStatus(order.id, "processing");
       setOrder(updated);
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const handleMarkShippedManual = async () => {
+    if (!order) return;
+    setManualTrackingError("");
+    setManualTrackingLoading(true);
+    try {
+      const result = await markShippedManual(order.id, {
+        manualTrackingNumber: manualTrackingNumber.trim() || null,
+        manualCarrier: manualCarrier || null,
+        manualCarrierOther: manualCarrierOther.trim() || null,
+        sendTrackingEmail: manualSendEmail,
+      });
+      setOrder((prev) => prev ? { ...prev, ...result.order, shipment: prev.shipment } : prev);
+      setShowManualTrackingModal(false);
+      setManualTrackingNumber("");
+      setManualCarrier("colissimo");
+      setManualCarrierOther("");
+      await loadOrder();
+    } catch (err: unknown) {
+      setManualTrackingError(err instanceof Error ? err.message : "Erreur lors du marquage");
+    } finally {
+      setManualTrackingLoading(false);
     }
   };
 
@@ -2458,6 +2498,90 @@ export default function OrderDetailPage() {
                   Fermer
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal suivi manuel */}
+      {showManualTrackingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-950">Marquer comme traité</h2>
+              <button onClick={() => setShowManualTrackingModal(false)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"><X className="h-5 w-5" /></button>
+            </div>
+            <p className="mb-4 text-sm text-gray-500">Aucune étiquette officielle n’a été générée pour cette commande. Vous pouvez renseigner un numéro de suivi externe (optionnel).</p>
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Transporteur</label>
+                <select
+                  value={manualCarrier}
+                  onChange={(e) => setManualCarrier(e.target.value)}
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-gray-950 focus:outline-none"
+                >
+                  <option value="colissimo">Colissimo</option>
+                  <option value="chronopost">Chronopost</option>
+                  <option value="mondial_relay">Mondial Relay</option>
+                  <option value="dhl">DHL</option>
+                  <option value="ups">UPS</option>
+                  <option value="laposte">La Poste (lettre suivie)</option>
+                  <option value="autre">Autre</option>
+                </select>
+              </div>
+              {manualCarrier === "autre" && (
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Nom du transporteur</label>
+                  <input
+                    type="text"
+                    value={manualCarrierOther}
+                    onChange={(e) => setManualCarrierOther(e.target.value)}
+                    placeholder="Ex : Fedex, TNT, Colis Privé..."
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm focus:border-gray-950 focus:outline-none"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Numéro de suivi <span className="font-normal normal-case text-gray-400">(optionnel)</span></label>
+                <input
+                  type="text"
+                  value={manualTrackingNumber}
+                  onChange={(e) => setManualTrackingNumber(e.target.value)}
+                  placeholder="Ex : 1Z999AA10123456784"
+                  className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm focus:border-gray-950 focus:outline-none"
+                />
+              </div>
+              <label className="flex cursor-pointer items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={manualSendEmail}
+                  onChange={(e) => setManualSendEmail(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-gray-950 focus:ring-gray-950"
+                />
+                <span className="text-sm text-gray-700">Envoyer l’email de suivi au client</span>
+              </label>
+              {!manualSendEmail && (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">Le client ne recevra pas d’email de notification.</p>
+              )}
+              {manualTrackingError && (
+                <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{manualTrackingError}</p>
+              )}
+            </div>
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => setShowManualTrackingModal(false)}
+                className="flex-1 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleMarkShippedManual}
+                disabled={manualTrackingLoading}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+              >
+                {manualTrackingLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Confirmer
+              </button>
             </div>
           </div>
         </div>

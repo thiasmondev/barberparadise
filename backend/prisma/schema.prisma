@@ -447,9 +447,11 @@ model Shipment {
   carrierRawResponse  Json?
   lastTrackingStatus  String?
   lastTrackingSyncAt  DateTime?
-  shippedAt           DateTime?
-  shippedBy           String? // email admin
-  createdAt           DateTime   @default(now())
+  shippedAt              DateTime?
+  shippedBy              String? // email admin
+  manualTrackingNumber   String? // numéro de suivi saisi manuellement (hors étiquette officielle)
+  manualCarrier          String? // transporteur saisi manuellement (ex: colissimo, chronopost, dhl, autre)
+  createdAt              DateTime   @default(now())
 
   @@index([carrier])
   @@index([labelStatus])
