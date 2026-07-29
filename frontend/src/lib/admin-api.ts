@@ -420,7 +420,16 @@ export function markShippedManual(
 export function modifyOrderItems(
   id: string,
   payload: {
-    items: { productId: string; variantId?: string | null; quantity: number }[];
+    items: Array<{
+      productId?: string;
+      variantId?: string | null;
+      quantity: number;
+      // Article personnalisé (hors catalogue)
+      isCustomItem?: boolean;
+      customName?: string;
+      customPriceTTC?: number;
+      customVatRate?: number;
+    }>;
     adjustmentMode: "real" | "internal" | "gift";
     notifyClient?: boolean;
   }
@@ -548,10 +557,15 @@ export interface AdminOrderDraftPayload {
   orderDiscountValue?: number | null;
   paymentDueDate?: string | null; // ISO date string (YYYY-MM-DD) ou null pour effacer
   items: Array<{
-    productId: string;
+    productId?: string;
     quantity: number;
     lineDiscountType?: DiscountType | null;
     lineDiscountValue?: number | null;
+    // Article personnalisé (hors catalogue)
+    isCustomItem?: boolean;
+    customName?: string;
+    customPriceTTC?: number;
+    customVatRate?: number;
   }>;
   shippingAddress?: AdminDraftAddressPayload; // optionnel si noShipping = true
   billingAddress?: AdminDraftAddressPayload;

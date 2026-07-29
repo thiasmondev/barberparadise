@@ -32,6 +32,7 @@ import {
   ShoppingCart,
   Plus,
   Minus,
+  PenLine,
   Search,
 } from "lucide-react";
 import {
@@ -356,6 +357,10 @@ export default function OrderDetailPage() {
     image: string;
     price: number;
     quantity: number;
+    // Article personnalisé (hors catalogue)
+    isCustomItem?: boolean;
+    customPriceTTC?: string;
+    customVatRate?: string;
   };
   const [showModifyItemsPanel, setShowModifyItemsPanel] = useState(false);
   const [editableItems, setEditableItems] = useState<EditableItem[]>([]);
@@ -374,6 +379,12 @@ export default function OrderDetailPage() {
   const [productSearch, setProductSearch] = useState("");
   const [productSearchResults, setProductSearchResults] = useState<Product[]>([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
+  // Formulaire article personnalisé (panel Modifier les articles)
+  const [showCustomItemFormEdit, setShowCustomItemFormEdit] = useState(false);
+  const [customItemNameEdit, setCustomItemNameEdit] = useState("");
+  const [customItemPriceEdit, setCustomItemPriceEdit] = useState("");
+  const [customItemVatEdit, setCustomItemVatEdit] = useState("20");
+  const [customItemQtyEdit, setCustomItemQtyEdit] = useState("1");
 
   // ─── Associer un client (Caisse POS) ──────────────────────────────────────
   type AssignMode = "search" | "create";
@@ -1051,7 +1062,18 @@ export default function OrderDetailPage() {
     setModifyItemsError("");
     try {
       const result = await modifyOrderItems(order.id, {
-        items: editableItems.map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity })),
+        items: editableItems.map((i) => {
+          if (i.isCustomItem) {
+            return {
+              isCustomItem: true,
+              customName: i.name,
+              customPriceTTC: Number(i.customPriceTTC) || 0,
+              customVatRate: Number(i.customVatRate) || 20,
+              quantity: i.quantity,
+            };
+          }
+          return { productId: i.productId, variantId: i.variantId, quantity: i.quantity };
+        }),
         adjustmentMode: modifyAdjustmentMode,
       });
       setModifyItemsResult({ oldTotal: result.oldTotal, newTotal: result.newTotal, diff: result.diff });
@@ -2247,10 +2269,10 @@ export default function OrderDetailPage() {
                     {editableItems.map((item, index) => (
                       <div key={`${item.productId}:${item.variantId ?? ""}:${index}`} className="flex items-center gap-3 px-4 py-3">
                         <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
-                          {item.image ? <img src={item.image} alt="" className="h-full w-full object-cover" /> : <Package className="h-4 w-4 text-gray-300" />}
+                          {item.isCustomItem ? <PenLine className="h-4 w-4 text-violet-400" /> : item.image ? <img src={item.image} alt="" className="h-full w-full object-cover" /> : <Package className="h-4 w-4 text-gray-300" />}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-gray-950">{item.name}</p>
+                          <p className="truncate text-sm font-medium text-gray-950">{item.name}{item.isCustomItem && <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-700">Personnalisé</span>}</p>
                           {/* Sélecteur de variante inline si le produit a plusieurs variantes */}
                           {productVariantsCache[item.productId] && productVariantsCache[item.productId].length > 1 ? (
                             <select
@@ -2332,6 +2354,51 @@ export default function OrderDetailPage() {
                             )}
                           </div>
                         ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Bouton article personnalisé */}
+                  <div>
+                    <button type="button" onClick={() => setShowCustomItemFormEdit((v) => !v)} className="inline-flex items-center gap-2 rounded-xl border border-dashed border-violet-300 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-700 hover:bg-violet-100">
+                      <PenLine size={15} /> Article personnalisé (hors catalogue)
+                    </button>
+                    {showCustomItemFormEdit && (
+                      <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 p-4">
+                        <p className="mb-3 text-xs font-semibold text-violet-800">Article hors catalogue — saisie libre</p>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <input value={customItemNameEdit} onChange={(e) => setCustomItemNameEdit(e.target.value)} placeholder="Nom de l'article *" className="sm:col-span-2 rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500" />
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-violet-700">Prix TTC (€)</label>
+                            <input type="number" min="0" step="0.01" value={customItemPriceEdit} onChange={(e) => setCustomItemPriceEdit(e.target.value)} placeholder="0.00" className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500" />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-violet-700">Taux TVA</label>
+                            <select value={customItemVatEdit} onChange={(e) => setCustomItemVatEdit(e.target.value)} className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500">
+                              <option value="20">20 % (standard)</option>
+                              <option value="10">10 %</option>
+                              <option value="8.5">8,5 % (DOM-TOM)</option>
+                              <option value="5.5">5,5 % (réduit)</option>
+                              <option value="0">0 % (exonéré)</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-violet-700">Quantité</label>
+                            <input type="number" min="1" value={customItemQtyEdit} onChange={(e) => setCustomItemQtyEdit(e.target.value)} className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500" />
+                          </div>
+                        </div>
+                        <div className="mt-3 flex gap-2">
+                          <button type="button" onClick={() => {
+                            if (!customItemNameEdit.trim() || !customItemPriceEdit) return;
+                            const id = `custom_${Date.now()}`;
+                            const priceTTC = Number(customItemPriceEdit) || 0;
+                            setEditableItems((prev) => [...prev, { productId: id, variantId: null, name: customItemNameEdit.trim(), variantLabel: null, image: "", price: priceTTC, quantity: Math.max(1, Number(customItemQtyEdit) || 1), isCustomItem: true, customPriceTTC: customItemPriceEdit, customVatRate: customItemVatEdit }]);
+                            setCustomItemNameEdit(""); setCustomItemPriceEdit(""); setCustomItemVatEdit("20"); setCustomItemQtyEdit("1"); setShowCustomItemFormEdit(false);
+                          }} className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50" disabled={!customItemNameEdit.trim() || !customItemPriceEdit}>
+                            Ajouter
+                          </button>
+                          <button type="button" onClick={() => setShowCustomItemFormEdit(false)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
+                        </div>
                       </div>
                     )}
                   </div>

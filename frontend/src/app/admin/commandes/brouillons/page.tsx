@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bell, CheckCircle2, FileText, Loader2, Mail, PackagePlus, Plus, Save, Search, Trash2, UserPlus } from "lucide-react";
+import { Bell, CheckCircle2, FileText, Loader2, Mail, PackagePlus, PenLine, Plus, Save, Search, Trash2, UserPlus } from "lucide-react";
 
 import AdminOrdersTabs from "@/components/admin/AdminOrdersTabs";
 import { EmailPickerModal, type EmailOption } from "@/components/admin/EmailPickerModal";
@@ -45,6 +45,10 @@ type DraftLine = {
   fallbackPrice?: number;
   lineDiscountType: DiscountType;
   lineDiscountValue: string;
+  // Article personnalisé (hors catalogue)
+  isCustomItem?: boolean;
+  customPriceTTC?: string; // string pour le champ input
+  customVatRate?: string;  // string pour le champ select
 };
 
 type DraftForm = {
@@ -119,6 +123,12 @@ function discountAmount(type: DiscountType, value: string | number | null | unde
 }
 
 function lineGrossTotal(line: DraftLine, isB2B: boolean) {
+  if (line.isCustomItem) {
+    const priceTTC = Number(line.customPriceTTC) || 0;
+    const vatRate = Number(line.customVatRate) || 20;
+    const priceHT = priceTTC / (1 + vatRate / 100);
+    return (isB2B ? priceHT : priceTTC) * line.quantity;
+  }
   return unitPrice(line, isB2B) * line.quantity;
 }
 
@@ -197,6 +207,12 @@ export default function AdminOrderDraftsPage() {
   const [emailPickerDraftId, setEmailPickerDraftId] = useState<string | null>(null);
   const [emailPickerOptions, setEmailPickerOptions] = useState<EmailOption[]>([]);
   const [emailPickerDefault, setEmailPickerDefault] = useState<string>("");
+  // Formulaire article personnalisé
+  const [showCustomItemForm, setShowCustomItemForm] = useState(false);
+  const [customItemName, setCustomItemName] = useState("");
+  const [customItemPrice, setCustomItemPrice] = useState("");
+  const [customItemVat, setCustomItemVat] = useState("20");
+  const [customItemQty, setCustomItemQty] = useState("1");
 
   const totals = useMemo(() => {
     const subtotal = form.items.reduce((sum, line) => sum + lineGrossTotal(line, form.isB2B), 0);
@@ -318,12 +334,25 @@ export default function AdminOrderDraftsPage() {
       paymentDueDate: form.paymentDueDate || null,
       shippingAddress: form.noShipping ? undefined : form.shippingAddress,
       billingAddress: form.shippingAddress,
-      items: form.items.map((line) => ({
-        productId: line.productId,
-        quantity: line.quantity,
-        lineDiscountType: numericValue(line.lineDiscountValue) > 0 ? line.lineDiscountType : null,
-        lineDiscountValue: numericValue(line.lineDiscountValue) > 0 ? numericValue(line.lineDiscountValue) : null,
-      })),
+      items: form.items.map((line) => {
+        if (line.isCustomItem) {
+          return {
+            isCustomItem: true,
+            customName: line.name,
+            customPriceTTC: Number(line.customPriceTTC) || 0,
+            customVatRate: Number(line.customVatRate) || 20,
+            quantity: line.quantity,
+            lineDiscountType: numericValue(line.lineDiscountValue) > 0 ? line.lineDiscountType : null,
+            lineDiscountValue: numericValue(line.lineDiscountValue) > 0 ? numericValue(line.lineDiscountValue) : null,
+          };
+        }
+        return {
+          productId: line.productId,
+          quantity: line.quantity,
+          lineDiscountType: numericValue(line.lineDiscountValue) > 0 ? line.lineDiscountType : null,
+          lineDiscountValue: numericValue(line.lineDiscountValue) > 0 ? numericValue(line.lineDiscountValue) : null,
+        };
+      }),
     };
   }
 
@@ -548,7 +577,7 @@ export default function AdminOrderDraftsPage() {
 
             <div className="rounded-xl border border-gray-100 bg-white p-4">
               <div className="mb-4 flex items-center gap-2"><PackagePlus size={18} className="text-gray-400" /><h2 className="font-semibold text-dark-800">Articles</h2></div>
-              <div className="relative mb-4">
+              <div className="relative mb-2">
                 <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Rechercher un produit à ajouter" className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-dark-800" />
                 {products.length > 0 && (
                   <div className="absolute z-20 mt-2 max-h-80 w-full overflow-auto rounded-xl border border-gray-200 bg-white shadow-xl">
@@ -561,10 +590,59 @@ export default function AdminOrderDraftsPage() {
                   </div>
                 )}
               </div>
+              {/* Bouton article personnalisé */}
+              <div className="mb-4">
+                <button type="button" onClick={() => setShowCustomItemForm((v) => !v)} className="inline-flex items-center gap-2 rounded-xl border border-dashed border-violet-300 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-700 hover:bg-violet-100">
+                  <PenLine size={15} /> Article personnalisé (hors catalogue)
+                </button>
+                {showCustomItemForm && (
+                  <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 p-4">
+                    <p className="mb-3 text-xs font-semibold text-violet-800">Article hors catalogue — saisie libre</p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <input value={customItemName} onChange={(e) => setCustomItemName(e.target.value)} placeholder="Nom de l'article *" className="sm:col-span-2 rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500" />
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-violet-700">Prix TTC (€)</label>
+                        <input type="number" min="0" step="0.01" value={customItemPrice} onChange={(e) => setCustomItemPrice(e.target.value)} placeholder="0.00" className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-violet-700">Taux TVA</label>
+                        <select value={customItemVat} onChange={(e) => setCustomItemVat(e.target.value)} className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500">
+                          <option value="20">20 % (standard)</option>
+                          <option value="10">10 %</option>
+                          <option value="8.5">8,5 % (DOM-TOM)</option>
+                          <option value="5.5">5,5 % (réduit)</option>
+                          <option value="0">0 % (exonéré)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-violet-700">Quantité</label>
+                        <input type="number" min="1" value={customItemQty} onChange={(e) => setCustomItemQty(e.target.value)} className="w-full rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-500" />
+                      </div>
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <button type="button" onClick={() => {
+                        if (!customItemName.trim()) return;
+                        const id = `custom_${Date.now()}`;
+                        setForm((current) => ({ ...current, items: [...current.items, { productId: id, name: customItemName.trim(), quantity: Math.max(1, Number(customItemQty) || 1), isCustomItem: true, customPriceTTC: customItemPrice, customVatRate: customItemVat, lineDiscountType: "fixed" as DiscountType, lineDiscountValue: "" }] }));
+                        setCustomItemName(""); setCustomItemPrice(""); setCustomItemVat("20"); setCustomItemQty("1"); setShowCustomItemForm(false);
+                      }} className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50" disabled={!customItemName.trim() || !customItemPrice}>
+                        Ajouter
+                      </button>
+                      <button type="button" onClick={() => setShowCustomItemForm(false)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="divide-y divide-gray-100 rounded-xl border border-gray-100">
                 {form.items.length === 0 ? <div className="p-6 text-center text-sm text-gray-500">Ajoutez au moins un produit au brouillon.</div> : form.items.map((line) => (
                   <div key={line.productId} className="grid gap-3 p-3 sm:grid-cols-[1fr_95px_190px_120px_36px] sm:items-center">
-                    <div className="flex min-w-0 items-center gap-3"><div className="h-11 w-11 overflow-hidden rounded-lg bg-gray-100">{line.image ? <img src={line.image} alt="" className="h-full w-full object-cover" /> : null}</div><div className="min-w-0"><p className="truncate font-medium">{line.name}</p><button type="button" onClick={() => updateLineDiscount(line.productId, line.lineDiscountType, line.lineDiscountValue || "")} className="text-left text-sm text-gray-500 underline-offset-2 hover:text-dark-800 hover:underline">{form.isB2B ? "Pro HT" : "Public TTC"} : {eur(unitPrice(line, form.isB2B))}</button></div></div>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="h-11 w-11 flex-shrink-0 overflow-hidden rounded-lg bg-gray-100 flex items-center justify-center">{line.isCustomItem ? <PenLine size={18} className="text-violet-400" /> : line.image ? <img src={line.image} alt="" className="h-full w-full object-cover" /> : null}</div>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{line.name}{line.isCustomItem && <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-700">Personnalisé</span>}</p>
+                        <span className="text-sm text-gray-500">{form.isB2B ? "HT" : "TTC"} : {eur(lineGrossTotal(line, form.isB2B) / line.quantity)}</span>
+                      </div>
+                    </div>
                     <input type="number" min={1} value={line.quantity} onChange={(event) => setForm((current) => ({ ...current, items: current.items.map((item) => item.productId === line.productId ? { ...item, quantity: Math.max(1, Number(event.target.value || 1)) } : item) }))} className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-dark-800" />
                     <div className="grid grid-cols-[82px_1fr] gap-2">
                       <select value={line.lineDiscountType} onChange={(event) => updateLineDiscount(line.productId, event.target.value as DiscountType, line.lineDiscountValue)} className="rounded-xl border border-gray-200 px-2 py-2 text-sm outline-none focus:border-dark-800">

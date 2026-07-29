@@ -149,6 +149,11 @@ type AdminDraftLineInput = {
   quantity?: unknown;
   lineDiscountType?: unknown;
   lineDiscountValue?: unknown;
+  // Champs articles personnalisés (hors catalogue)
+  isCustomItem?: unknown;
+  customName?: unknown;
+  customPriceTTC?: unknown;
+  customVatRate?: unknown;
 };
 
 type NormalizedDraftItem = {
@@ -157,6 +162,11 @@ type NormalizedDraftItem = {
   quantity: number;
   lineDiscountType: DiscountType | null;
   lineDiscountValue: number;
+  // Champs articles personnalisés (hors catalogue)
+  isCustomItem?: boolean;
+  customName?: string;
+  customPriceTTC?: number;
+  customVatRate?: number;
 };
 
 type NormalizedDiscount = {
@@ -188,7 +198,7 @@ type NormalizedDraftAddress = {
 
 type DraftCalculationResult = {
   orderItems: Array<{
-    productId: string;
+    productId: string | null;
     variantId: string | null;
     variantLabel: string | null;
     name: string;
@@ -198,6 +208,7 @@ type DraftCalculationResult = {
     discountAmount: number;
     lineDiscountType: DiscountType | null;
     lineDiscountValue: number | null;
+    isCustomSale?: boolean;
   }>;
   subtotalHT: number;
   subtotalTTC: number;
@@ -316,15 +327,26 @@ function normalizeDraftItems(items: unknown): NormalizedDraftItem[] {
       const variantId = typeof item?.variantId === "string" && item.variantId.trim() ? item.variantId.trim() : null;
       const quantity = Number(item?.quantity);
       const lineDiscount = normalizeDiscount(item?.lineDiscountType, item?.lineDiscountValue);
+      const isCustomItem = Boolean(item?.isCustomItem);
+      const customName = typeof item?.customName === "string" ? item.customName.trim() : undefined;
+      const customPriceTTC = typeof item?.customPriceTTC === "number" ? item.customPriceTTC : (typeof item?.customPriceTTC === "string" ? Number(item.customPriceTTC) : undefined);
+      const customVatRate = typeof item?.customVatRate === "number" ? item.customVatRate : (typeof item?.customVatRate === "string" ? Number(item.customVatRate) : undefined);
       return {
         productId,
         variantId,
         quantity: Number.isInteger(quantity) && quantity > 0 ? quantity : 0,
         lineDiscountType: lineDiscount.type,
         lineDiscountValue: lineDiscount.type ? lineDiscount.value : 0,
+        isCustomItem,
+        customName,
+        customPriceTTC: customPriceTTC && Number.isFinite(customPriceTTC) ? customPriceTTC : undefined,
+        customVatRate: customVatRate && Number.isFinite(customVatRate) ? customVatRate : undefined,
       };
     })
-    .filter((item) => item.productId && item.quantity > 0);
+    .filter((item) => {
+      if (item.isCustomItem) return item.quantity > 0 && typeof item.customName === "string" && item.customName.length > 0 && typeof item.customPriceTTC === "number" && item.customPriceTTC > 0;
+      return item.productId && item.quantity > 0;
+    });
 }
 
 function firstProductImage(images: string | null | undefined): string {
@@ -359,6 +381,40 @@ async function calculateAdminDraftTotals(params: {
   let lineDiscountTotal = 0;
 
   for (const item of params.items) {
+    // ── Article personnalisé (hors catalogue) ──────────────────────────────
+    if (item.isCustomItem) {
+      const customVatRate = typeof item.customVatRate === "number" && Number.isFinite(item.customVatRate) ? item.customVatRate : vatRate;
+      const customVatMultiplier = 1 + customVatRate / 100;
+      const unitTTC = money(item.customPriceTTC!);
+      const unitHT = money(unitTTC / customVatMultiplier);
+      const lineBaseTTC = money(unitTTC * item.quantity);
+      const lineBaseHT = money(unitHT * item.quantity);
+      const lineDiscountDisplay = calculateDiscountAmount(
+        item.lineDiscountType,
+        item.lineDiscountValue,
+        lineBaseTTC
+      );
+      const lineDiscountHT = money(lineDiscountDisplay / customVatMultiplier);
+      subtotalHT += Math.max(0, lineBaseHT - lineDiscountHT);
+      subtotalTTC += Math.max(0, lineBaseTTC - lineDiscountDisplay);
+      lineDiscountTotal += lineDiscountDisplay;
+      orderItems.push({
+        productId: null as unknown as string, // pas de produit catalogue
+        variantId: null,
+        variantLabel: null,
+        name: item.customName!,
+        price: unitTTC,
+        quantity: item.quantity,
+        image: "",
+        discountAmount: lineDiscountDisplay,
+        lineDiscountType: item.lineDiscountType,
+        lineDiscountValue: item.lineDiscountType ? item.lineDiscountValue : null,
+        isCustomSale: true,
+      });
+      continue;
+    }
+
+    // ── Article catalogue ──────────────────────────────────────────────────
     const product = productById.get(item.productId);
     if (!product) throw new Error(`Produit introuvable : ${item.productId}`);
     if (!params.allowInactiveProducts && product.status !== "active") throw new Error(`Produit indisponible : ${product.name}`);
@@ -5494,9 +5550,10 @@ adminRouter.patch(
           oldItemMap.set(key, { quantity: item.quantity, productId: item.productId!, variantId: item.variantId ?? null });
         }
       }
-      // Construire une map des nouveaux articles
+      // Construire une map des nouveaux articles (on ignore les articles personnalisés sans productId)
       const newItemMap = new Map<string, { quantity: number; productId: string; variantId: string | null }>();
       for (const item of newItems) {
+        if (item.isCustomItem || !item.productId) continue; // pas de gestion de stock pour les articles custom
         const key = `${item.productId}:${item.variantId ?? ""}`;
         const existing = newItemMap.get(key);
         if (existing) {
@@ -5546,7 +5603,7 @@ adminRouter.patch(
         await tx.orderItem.createMany({
           data: totals.orderItems.map((item) => ({
             orderId: id,
-            productId: item.productId,
+            productId: item.productId || null,
             variantId: item.variantId ?? null,
             variantLabel: item.variantLabel ?? null,
             name: item.name,
@@ -5556,6 +5613,7 @@ adminRouter.patch(
             discountAmount: item.discountAmount ?? 0,
             lineDiscountType: item.lineDiscountType ?? null,
             lineDiscountValue: item.lineDiscountValue ?? null,
+            isCustomSale: (item as { isCustomSale?: boolean }).isCustomSale ?? false,
           })),
         });
 
