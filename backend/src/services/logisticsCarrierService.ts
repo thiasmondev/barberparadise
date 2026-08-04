@@ -682,19 +682,44 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
     "FR", "", "FR", input.relayPointId, "", "", "", "", assurance, "",
   ];
   const security = mondialRelaySecurity(values);
-  // LOG DIAGNOSTIC STAT 33 — à retirer après résolution
-  console.log("[MondialRelay][DIAG] Expéditeur:", JSON.stringify({ expeAd1, expeAd3, expeAd4, expeVille, expeCP: process.env.LOGISTICS_SENDER_POSTAL_CODE || "", expeTel1, expeMail }));
-  console.log("[MondialRelay][DIAG] Destinataire:", JSON.stringify({ destName, destAd3, destAd4, destVille, destCP: input.recipient.postalCode, countryCode, destPhone }));
-  console.log("[MondialRelay][DIAG] Autres:", JSON.stringify({ enseigne, nDossier, nClient, poids, relayPointId: input.relayPointId, assurance }));
+  // LOG DIAGNOSTIC STAT 34 — à retirer après résolution
+  console.log("[MondialRelay][DIAG-V2] ENV brutes:", JSON.stringify({
+    COMPANY: process.env.LOGISTICS_SENDER_COMPANY || "(absent)",
+    ADDRESS: process.env.LOGISTICS_SENDER_ADDRESS || "(absent)",
+    ADDRESS_2: process.env.LOGISTICS_SENDER_ADDRESS_2 || "(absent)",
+    CITY: process.env.LOGISTICS_SENDER_CITY || "(absent)",
+    POSTAL_CODE: process.env.LOGISTICS_SENDER_POSTAL_CODE || "(absent)",
+    PHONE: process.env.LOGISTICS_SENDER_PHONE || "(absent)",
+    EMAIL: process.env.LOGISTICS_SENDER_EMAIL || "(absent)",
+  }));
+  console.log("[MondialRelay][DIAG-V2] Champs normalisés expéditeur:", JSON.stringify({
+    expeAd1,
+    expeAd3,
+    expeAd4: expeAd4 !== null ? expeAd4 : "(null — tag omis)",
+    expeVille,
+    expeCP: process.env.LOGISTICS_SENDER_POSTAL_CODE || "",
+    expeTel1,
+    expeMail,
+  }));
+  console.log("[MondialRelay][DIAG-V2] Champs normalisés destinataire:", JSON.stringify({
+    destName,
+    destAd3,
+    destAd4: destAd4.length >= 2 ? destAd4 : "(vide — tag omis)",
+    destVille,
+    destCP: input.recipient.postalCode,
+    countryCode,
+    destPhone,
+  }));
+  console.log("[MondialRelay][DIAG-V2] Autres:", JSON.stringify({ enseigne, nDossier, nClient, poids, relayPointId: input.relayPointId, assurance }));
   const envelope = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
     <WSI2_CreationExpedition xmlns="http://www.mondialrelay.fr/webservice/">
       <Enseigne>${xmlEscape(enseigne)}</Enseigne><ModeCol>${xmlEscape(modeCol)}</ModeCol><ModeLiv>${xmlEscape(modeLiv)}</ModeLiv>
       <NDossier>${xmlEscape(nDossier)}</NDossier><NClient>${xmlEscape(nClient)}</NClient><Expe_Langage>FR</Expe_Langage>
-      <Expe_Ad1>${xmlEscape(expeAd1)}</Expe_Ad1><Expe_Ad2></Expe_Ad2><Expe_Ad3>${xmlEscape(expeAd3)}</Expe_Ad3><Expe_Ad4>${expeAd4 !== null ? xmlEscape(expeAd4) : ""}</Expe_Ad4>
+      <Expe_Ad1>${xmlEscape(expeAd1)}</Expe_Ad1><Expe_Ad2></Expe_Ad2><Expe_Ad3>${xmlEscape(expeAd3)}</Expe_Ad3>${expeAd4 !== null ? `<Expe_Ad4>${xmlEscape(expeAd4)}</Expe_Ad4>` : ""}
       <Expe_Ville>${xmlEscape(expeVille)}</Expe_Ville><Expe_CP>${xmlEscape(process.env.LOGISTICS_SENDER_POSTAL_CODE || "")}</Expe_CP><Expe_Pays>FR</Expe_Pays><Expe_Tel1>${xmlEscape(expeTel1)}</Expe_Tel1><Expe_Tel2></Expe_Tel2><Expe_Mail>${xmlEscape(expeMail)}</Expe_Mail>
-      <Dest_Langage>FR</Dest_Langage><Dest_Ad1>${xmlEscape(destName)}</Dest_Ad1><Dest_Ad2></Dest_Ad2><Dest_Ad3>${xmlEscape(destAd3)}</Dest_Ad3><Dest_Ad4>${xmlEscape(destAd4)}</Dest_Ad4>
+      <Dest_Langage>FR</Dest_Langage><Dest_Ad1>${xmlEscape(destName)}</Dest_Ad1><Dest_Ad2></Dest_Ad2><Dest_Ad3>${xmlEscape(destAd3)}</Dest_Ad3>${destAd4.length >= 2 ? `<Dest_Ad4>${xmlEscape(destAd4)}</Dest_Ad4>` : ""}
       <Dest_Ville>${xmlEscape(destVille)}</Dest_Ville><Dest_CP>${xmlEscape(input.recipient.postalCode)}</Dest_CP><Dest_Pays>${xmlEscape(countryCode)}</Dest_Pays><Dest_Tel1>${xmlEscape(destPhone)}</Dest_Tel1><Dest_Tel2></Dest_Tel2><Dest_Mail>${xmlEscape(input.customerEmail)}</Dest_Mail>
       <Poids>${xmlEscape(poids)}</Poids><Longueur>${xmlEscape(input.packageDimensions?.lengthCm || "")}</Longueur><Taille></Taille><NbColis>1</NbColis>
       <CRT_Valeur>0</CRT_Valeur><CRT_Devise>EUR</CRT_Devise><Exp_Valeur>${xmlEscape(expValeur)}</Exp_Valeur><Exp_Devise>EUR</Exp_Devise><COL_Rel_Pays>FR</COL_Rel_Pays><COL_Rel></COL_Rel><LIV_Rel_Pays>FR</LIV_Rel_Pays><LIV_Rel>${xmlEscape(input.relayPointId)}</LIV_Rel><TAvisage></TAvisage><TReprise></TReprise><Montage></Montage><TRDV></TRDV><Assurance>${xmlEscape(assurance)}</Assurance><Instructions></Instructions><Security>${security}</Security>
