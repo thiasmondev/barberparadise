@@ -221,6 +221,8 @@ function xmlEscape(value: string | number | null | undefined) {
  * - Décompose les caractères accentués (NFD) et supprime les diacritiques
  * - Remplace les apostrophes doubles ('') par une apostrophe simple (')
  * - Supprime les caractères hors plage ASCII 32-126
+ * - En mode adresse (uppercase=true) : filtre strict selon la whitelist MR
+ *   ^[0-9A-Z _\-'.,/]{2,32}$ — les parenthèses, @, #, etc. sont supprimés
  * - Tronque à la longueur maximale si spécifiée
  * DOIT être appliqué de manière identique sur les valeurs du hash MD5
  * ET sur les valeurs du body SOAP pour garantir la cohérence.
@@ -241,7 +243,15 @@ function normalizeMondialRelayText(value: string | number | null | undefined, ma
   // Conversion en majuscules : Mondial Relay n'accepte que [A-Z] dans les champs adresse
   // (regex ^[0-9A-Z\_\-'., /]{2,32}$). Sans toUpperCase, les minuscules déclenchent STAT 33.
   // Ne pas mettre en majuscules les emails (STAT 39) ni les téléphones.
-  if (uppercase) s = s.toUpperCase();
+  if (uppercase) {
+    s = s.toUpperCase();
+    // Filtrage strict : supprime les caractères hors whitelist MR pour les champs adresse.
+    // La regex MR autorise uniquement : chiffres, lettres majuscules, espace, _ - ' . , /
+    // Les parenthèses (), crochets [], @, #, &, etc. ne sont pas autorisés et causent STAT 34.
+    s = s.replace(/[^0-9A-Z _\-'.,/]/g, "");
+    // Re-normaliser les espaces multiples après suppression des caractères
+    s = s.replace(/\s+/g, " ").trim();
+  }
   if (maxLen !== undefined && s.length > maxLen) s = s.slice(0, maxLen);
   return s;
 }
