@@ -648,8 +648,14 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
   // Normalisation ASCII des champs expéditeur (suppression accents, apostrophes doubles, etc.)
   // DOIT être identique entre le tableau values (hash MD5) et l'enveloppe SOAP.
   const expeAd1 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise", 32);
-  const expeAd3 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_ADDRESS || "", 32);
-  const expeAd4 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_ADDRESS_2 || "", 32);
+  // Spec MR v5.11 : Expe_Ad3 est obligatoire (min 2 car.). Si la variable d'env est vide, on utilise
+  // le nom de la société comme fallback pour éviter STAT 33 (L3 invalide).
+  const expeAd3Raw = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_ADDRESS || "", 32);
+  const expeAd3 = expeAd3Raw.length >= 2 ? expeAd3Raw : normalizeMondialRelayText(process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise", 32);
+  // Spec MR v5.11 : Expe_Ad4 est optionnel. Mondial Relay rejette une chaîne vide (STAT 34) :
+  // il faut soit une valeur valide (min 2 car.), soit ne pas envoyer le tag du tout.
+  const expeAd4Raw = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_ADDRESS_2 || "", 32);
+  const expeAd4 = expeAd4Raw.length >= 2 ? expeAd4Raw : null; // null = tag omis dans l'enveloppe
   const expeVille = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_CITY || "", 26);
   const expeTel1 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_PHONE || "", 20, false);
   const expeMail = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr", 70, false);
@@ -665,7 +671,8 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
   const values = [
     enseigne, modeCol, modeLiv, nDossier, nClient,
     "FR", expeAd1, "", expeAd3,
-    expeAd4, expeVille, process.env.LOGISTICS_SENDER_POSTAL_CODE || "", "FR",
+    // expeAd4 est null quand LOGISTICS_SENDER_ADDRESS_2 est vide : le hash doit utiliser "" dans ce cas
+    expeAd4 ?? "", expeVille, process.env.LOGISTICS_SENDER_POSTAL_CODE || "", "FR",
     expeTel1, "", expeMail,
     "FR", destName, "", destAd3, destAd4,
     destVille, input.recipient.postalCode, countryCode, destPhone, "", input.customerEmail,
@@ -685,7 +692,7 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
     <WSI2_CreationExpedition xmlns="http://www.mondialrelay.fr/webservice/">
       <Enseigne>${xmlEscape(enseigne)}</Enseigne><ModeCol>${xmlEscape(modeCol)}</ModeCol><ModeLiv>${xmlEscape(modeLiv)}</ModeLiv>
       <NDossier>${xmlEscape(nDossier)}</NDossier><NClient>${xmlEscape(nClient)}</NClient><Expe_Langage>FR</Expe_Langage>
-      <Expe_Ad1>${xmlEscape(expeAd1)}</Expe_Ad1><Expe_Ad2></Expe_Ad2><Expe_Ad3>${xmlEscape(expeAd3)}</Expe_Ad3><Expe_Ad4>${xmlEscape(expeAd4)}</Expe_Ad4>
+      <Expe_Ad1>${xmlEscape(expeAd1)}</Expe_Ad1><Expe_Ad2></Expe_Ad2><Expe_Ad3>${xmlEscape(expeAd3)}</Expe_Ad3><Expe_Ad4>${expeAd4 !== null ? xmlEscape(expeAd4) : ""}</Expe_Ad4>
       <Expe_Ville>${xmlEscape(expeVille)}</Expe_Ville><Expe_CP>${xmlEscape(process.env.LOGISTICS_SENDER_POSTAL_CODE || "")}</Expe_CP><Expe_Pays>FR</Expe_Pays><Expe_Tel1>${xmlEscape(expeTel1)}</Expe_Tel1><Expe_Tel2></Expe_Tel2><Expe_Mail>${xmlEscape(expeMail)}</Expe_Mail>
       <Dest_Langage>FR</Dest_Langage><Dest_Ad1>${xmlEscape(destName)}</Dest_Ad1><Dest_Ad2></Dest_Ad2><Dest_Ad3>${xmlEscape(destAd3)}</Dest_Ad3><Dest_Ad4>${xmlEscape(destAd4)}</Dest_Ad4>
       <Dest_Ville>${xmlEscape(destVille)}</Dest_Ville><Dest_CP>${xmlEscape(input.recipient.postalCode)}</Dest_CP><Dest_Pays>${xmlEscape(countryCode)}</Dest_Pays><Dest_Tel1>${xmlEscape(destPhone)}</Dest_Tel1><Dest_Tel2></Dest_Tel2><Dest_Mail>${xmlEscape(input.customerEmail)}</Dest_Mail>
