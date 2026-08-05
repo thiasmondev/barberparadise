@@ -45,6 +45,8 @@ type DraftCheckoutItem = {
   brand?: string;
   images?: string[];
   variants?: Product["variants"];
+  /** Article personnalisé hors catalogue */
+  isCustomSale?: boolean;
 };
 
 type DraftPricingSnapshot = {
@@ -418,7 +420,16 @@ export default function CheckoutPage() {
             variants: item.variants || [],
           };
           const variant = item.variantId ? product.variants?.find((candidate) => candidate.id === item.variantId) || null : null;
-          return { product, quantity: item.quantity, variantId: item.variantId ?? null, variant };
+          return {
+            product,
+            quantity: item.quantity,
+            variantId: item.variantId ?? null,
+            variant,
+            isCustomSale: Boolean(item.isCustomSale),
+            customName: item.isCustomSale ? item.name : undefined,
+            customPriceTTC: item.isCustomSale ? item.price : undefined,
+            customVatRate: undefined, // non exposé par la route GET draft, on laisse le backend utiliser 20% par défaut
+          };
         });
 
         replaceItems(nextItems);
@@ -584,7 +595,10 @@ export default function CheckoutPage() {
     if (!win.paypal?.Buttons) return;
 
     const buildPayload = () => ({
-      cartItems: items.map((item) => ({ productId: item.product.id, variantId: item.variantId || item.variant?.id || null, quantity: item.quantity })),
+      cartItems: items.map((item) => item.isCustomSale
+        ? { productId: null, variantId: null, quantity: item.quantity, isCustomItem: true, customName: item.customName || item.product.name, customPriceTTC: item.customPriceTTC ?? item.product.price, customVatRate: item.customVatRate ?? 20 }
+        : { productId: item.product.id, variantId: item.variantId || item.variant?.id || null, quantity: item.quantity }),
+
       customerEmail: form.email,
       customerId: isAuthenticated && customer ? customer.id : undefined,
       cartSessionId,
@@ -712,7 +726,7 @@ export default function CheckoutPage() {
       body: JSON.stringify({
         sessionId: cartSessionId,
         email: form.email,
-        cartItems: items.map((item) => ({
+        cartItems: items.filter((item) => !item.isCustomSale).map((item) => ({
           productId: item.product.id,
           quantity: item.quantity,
         })),
@@ -800,7 +814,9 @@ export default function CheckoutPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          cartItems: items.map((item) => ({ productId: item.product.id, variantId: item.variantId || item.variant?.id || null, quantity: item.quantity })),
+          cartItems: items.map((item) => item.isCustomSale
+            ? { productId: null, variantId: null, quantity: item.quantity, isCustomItem: true, customName: item.customName || item.product.name, customPriceTTC: item.customPriceTTC ?? item.product.price, customVatRate: item.customVatRate ?? 20 }
+            : { productId: item.product.id, variantId: item.variantId || item.variant?.id || null, quantity: item.quantity }),
           customerEmail: form.email,
           customerId: isAuthenticated && customer ? customer.id : undefined,
           cartSessionId,

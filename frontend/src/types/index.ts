@@ -102,6 +102,11 @@ export interface CartItem {
   quantity: number;
   variantId?: string | null;
   variant?: ProductVariant | null;
+  /** Article personnalisé hors catalogue (pas de productId en base) */
+  isCustomSale?: boolean;
+  customName?: string;
+  customPriceTTC?: number;
+  customVatRate?: number;
 }
 
 export interface Category {

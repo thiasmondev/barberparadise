@@ -29,6 +29,11 @@ type CheckoutCartItem = {
   id?: string;
   variantId?: string | null;
   quantity: number;
+  /** Article personnalisé hors catalogue (pas de productId en base) */
+  isCustomItem?: boolean;
+  customName?: string;
+  customPriceTTC?: number;
+  customVatRate?: number;
 };
 
 type CheckoutAddress = {
@@ -505,6 +510,7 @@ checkoutRouter.get("/draft/:token", async (req: Request, res: Response): Promise
             discountAmount: item.discountAmount,
             lineDiscountType: item.lineDiscountType,
             lineDiscountValue: item.lineDiscountValue,
+            isCustomSale: item.isCustomSale,
             discountedLineTotal: money(Math.max(0, item.price * item.quantity - item.discountAmount)),
             image: item.image || images[0] || "",
             slug: item.product?.slug || "",
@@ -975,9 +981,32 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
     for (const item of body.cartItems) {
       const productId = item.productId || item.id;
       const variantId = typeof item.variantId === "string" && item.variantId.trim() ? item.variantId.trim() : null;
-      if (!productId || !Number.isInteger(item.quantity) || item.quantity <= 0) {
+      if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
         res.status(400).json({ error: "Article de panier invalide" });
         return;
+      }
+      // Articles personnalisés hors catalogue : pas de productId en base, toujours disponibles
+      if (item.isCustomItem || !productId) {
+        const customPriceTTC = typeof item.customPriceTTC === "number" ? item.customPriceTTC : 0;
+        const customVatRate = typeof item.customVatRate === "number" ? item.customVatRate : 20;
+        const unitTTC = money(customPriceTTC);
+        const unitHT = money(unitTTC / (1 + customVatRate / 100));
+        subtotalHT += unitHT * item.quantity;
+        subtotalTTC += unitTTC * item.quantity;
+        orderItems.push({
+          productId: null as unknown as string,
+          variantId: null,
+          variantLabel: null,
+          name: typeof item.customName === "string" ? item.customName.trim() : (item.id || "Article personnalisé"),
+          price: unitTTC,
+          quantity: item.quantity,
+          image: "",
+          discountAmount: 0,
+          lineDiscountType: null,
+          lineDiscountValue: null,
+          isCustomSale: true,
+        });
+        continue;
       }
       const product = await prisma.product.findUnique({
         where: { id: productId },
@@ -1483,7 +1512,18 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
       for (const item of body.cartItems) {
         const productId = item.productId || item.id;
         const variantId = typeof item.variantId === "string" && item.variantId.trim() ? item.variantId.trim() : null;
-        if (!productId || !Number.isInteger(item.quantity) || item.quantity <= 0) { res.status(400).json({ error: "Article de panier invalide" }); return; }
+        if (!Number.isInteger(item.quantity) || item.quantity <= 0) { res.status(400).json({ error: "Article de panier invalide" }); return; }
+        // Articles personnalisés hors catalogue : pas de productId en base, toujours disponibles
+        if (item.isCustomItem || !productId) {
+          const customPriceTTC = typeof item.customPriceTTC === "number" ? item.customPriceTTC : 0;
+          const customVatRate = typeof item.customVatRate === "number" ? item.customVatRate : 20;
+          const unitTTC = money(customPriceTTC);
+          const unitHT = money(unitTTC / (1 + customVatRate / 100));
+          subtotalTTC = money(subtotalTTC + unitTTC * item.quantity);
+          subtotalHT = money(subtotalHT + unitHT * item.quantity);
+          orderItems.push({ productId: null as unknown as string, variantId: null, variantLabel: null, name: typeof item.customName === "string" ? item.customName.trim() : (item.id || "Article personnalisé"), price: unitTTC, quantity: item.quantity, image: undefined, discountAmount: 0, lineDiscountType: null, lineDiscountValue: null, isCustomSale: true });
+          continue;
+        }
         const product = await prisma.product.findUnique({ where: { id: productId }, include: { variants: { orderBy: { order: "asc" } } } });
         if (!product || product.status !== "active") { res.status(400).json({ error: `Produit indisponible : ${productId}` }); return; }
         const hasVariants = product.variants.length > 0;
