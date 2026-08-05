@@ -257,7 +257,7 @@ export default function AdminOrderDraftsPage() {
   useEffect(() => {
     const timeout = window.setTimeout(async () => {
       if (!productSearch.trim()) return setProducts([]);
-      const data = await getAdminProducts({ search: productSearch, status: "active", limit: 12 });
+      const data = await getAdminProducts({ search: productSearch, status: "active", limit: 12, includeVariants: true });
       setProducts(data.products || []);
     }, 250);
     return () => window.clearTimeout(timeout);

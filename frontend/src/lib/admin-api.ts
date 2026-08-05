@@ -168,6 +168,8 @@ export function getAdminProducts(params?: {
   search?: string;
   category?: string;
   status?: string;
+  /** Inclure les variantes dans la réponse (utile pour les recherches de produits dans les brouillons/commandes) */
+  includeVariants?: boolean;
 }) {
   const sp = new URLSearchParams();
   if (params) {
@@ -558,6 +560,7 @@ export interface AdminOrderDraftPayload {
   paymentDueDate?: string | null; // ISO date string (YYYY-MM-DD) ou null pour effacer
   items: Array<{
     productId?: string;
+    variantId?: string | null;
     quantity: number;
     lineDiscountType?: DiscountType | null;
     lineDiscountValue?: number | null;

@@ -990,7 +990,7 @@ export default function OrderDetailPage() {
     }
     setProductSearchLoading(true);
     try {
-      const result = await getAdminProducts({ search: query.trim(), limit: 8, status: "active" });
+      const result = await getAdminProducts({ search: query.trim(), limit: 8, status: "active", includeVariants: true });
       setProductSearchResults(result.products);
     } catch {
       setProductSearchResults([]);

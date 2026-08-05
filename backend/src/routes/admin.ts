@@ -2852,7 +2852,9 @@ adminRouter.get(
         search,
         category,
         status,
+        includeVariants,
       } = req.query as Record<string, string>;
+      const withVariants = includeVariants === "true" || includeVariants === "1";
       const skip = (parseInt(page) - 1) * parseInt(limit);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const where: any = {};
@@ -2866,6 +2868,7 @@ adminRouter.get(
           orderBy: { updatedAt: "desc" },
           skip,
           take: parseInt(limit),
+          ...(withVariants ? { include: { variants: { orderBy: { order: "asc" } } } } : {}),
         }),
         prisma.product.count({ where }),
       ]);
