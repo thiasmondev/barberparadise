@@ -38,6 +38,8 @@ const emptyAddress: AdminDraftAddressPayload = {
 
 type DraftLine = {
   productId: string;
+  variantId?: string | null;
+  variantLabel?: string | null;
   name: string;
   quantity: number;
   image?: string;
@@ -273,28 +275,33 @@ export default function AdminOrderDraftsPage() {
     setCustomers([]);
   }
 
-  function addProduct(product: Product) {
+  function addProduct(product: Product, variant?: import("@/types").ProductVariant) {
+    const key = `${product.id}:${variant?.id ?? ""}`;
     setForm((current) => {
-      const existing = current.items.find((line) => line.productId === product.id);
+      const existing = current.items.find((line) => `${line.productId}:${line.variantId ?? ""}` === key);
       if (existing) {
         return {
           ...current,
           items: current.items.map((line) =>
-            line.productId === product.id ? { ...line, quantity: line.quantity + 1, product } : line
+            `${line.productId}:${line.variantId ?? ""}` === key ? { ...line, quantity: line.quantity + 1 } : line
           ),
         };
       }
+      const image = variant?.image || productImages(product)[0] || "";
+      const price = variant?.price ?? product.price;
       return {
         ...current,
         items: [
           ...current.items,
           {
             productId: product.id,
-            name: product.name,
+            variantId: variant?.id ?? null,
+            variantLabel: variant?.name ?? null,
+            name: variant ? `${product.name} — ${variant.name}` : product.name,
             quantity: 1,
-            image: productImages(product)[0],
+            image,
             product,
-            fallbackPrice: product.price,
+            fallbackPrice: price,
             lineDiscountType: "fixed",
             lineDiscountValue: "",
           },
@@ -305,11 +312,11 @@ export default function AdminOrderDraftsPage() {
     setProducts([]);
   }
 
-  function updateLineDiscount(productId: string, type: DiscountType, value: string) {
+  function updateLineDiscount(lineKey: string, type: DiscountType, value: string) {
     const cleanedValue = value === "" ? "" : String(Math.max(0, Number(value || 0)));
     setForm((current) => ({
       ...current,
-      items: current.items.map((item) => item.productId === productId ? { ...item, lineDiscountType: type, lineDiscountValue: cleanedValue } : item),
+      items: current.items.map((item) => `${item.productId}:${item.variantId ?? ""}` === lineKey ? { ...item, lineDiscountType: type, lineDiscountValue: cleanedValue } : item),
     }));
   }
 
@@ -348,6 +355,7 @@ export default function AdminOrderDraftsPage() {
         }
         return {
           productId: line.productId,
+          variantId: line.variantId ?? undefined,
           quantity: line.quantity,
           lineDiscountType: numericValue(line.lineDiscountValue) > 0 ? line.lineDiscountType : null,
           lineDiscountValue: numericValue(line.lineDiscountValue) > 0 ? numericValue(line.lineDiscountValue) : null,
@@ -579,13 +587,22 @@ export default function AdminOrderDraftsPage() {
               <div className="mb-4 flex items-center gap-2"><PackagePlus size={18} className="text-gray-400" /><h2 className="font-semibold text-dark-800">Articles</h2></div>
               <div className="relative mb-2">
                 <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Rechercher un produit à ajouter" className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-dark-800" />
-                {products.length > 0 && (
+{products.length > 0 && (
                   <div className="absolute z-20 mt-2 max-h-80 w-full overflow-auto rounded-xl border border-gray-200 bg-white shadow-xl">
                     {products.map((product) => (
-                      <button key={product.id} type="button" onClick={() => addProduct(product)} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-50">
-                        <div className="h-10 w-10 overflow-hidden rounded-lg bg-gray-100">{productImages(product)[0] ? <img src={productImages(product)[0]} alt="" className="h-full w-full object-cover" /> : null}</div>
-                        <div className="min-w-0 flex-1"><p className="truncate font-semibold">{product.name}</p><p className="text-gray-500">Public {eur(product.price)} · Pro {eur(product.priceProEur ?? product.price / 1.2)}</p></div>
-                      </button>
+                      product.variants && product.variants.length > 0 ? (
+                        product.variants.map((variant) => (
+                          <button key={`${product.id}:${variant.id}`} type="button" onClick={() => addProduct(product, variant)} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-50">
+                            <div className="h-10 w-10 overflow-hidden rounded-lg bg-gray-100">{variant.image ? <img src={variant.image} alt="" className="h-full w-full object-cover" /> : productImages(product)[0] ? <img src={productImages(product)[0]} alt="" className="h-full w-full object-cover" /> : null}</div>
+                            <div className="min-w-0 flex-1"><p className="truncate font-semibold">{product.name} <span className="font-normal text-gray-600">— {variant.name}</span></p><p className="text-gray-500">Public {eur(variant.price ?? product.price)} · Pro {eur(variant.priceProEur ?? (variant.price ?? product.price) / 1.2)}</p></div>
+                          </button>
+                        ))
+                      ) : (
+                        <button key={product.id} type="button" onClick={() => addProduct(product)} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-50">
+                          <div className="h-10 w-10 overflow-hidden rounded-lg bg-gray-100">{productImages(product)[0] ? <img src={productImages(product)[0]} alt="" className="h-full w-full object-cover" /> : null}</div>
+                          <div className="min-w-0 flex-1"><p className="truncate font-semibold">{product.name}</p><p className="text-gray-500">Public {eur(product.price)} · Pro {eur(product.priceProEur ?? product.price / 1.2)}</p></div>
+                        </button>
+                      )
                     ))}
                   </div>
                 )}
@@ -634,8 +651,10 @@ export default function AdminOrderDraftsPage() {
                 )}
               </div>
               <div className="divide-y divide-gray-100 rounded-xl border border-gray-100">
-                {form.items.length === 0 ? <div className="p-6 text-center text-sm text-gray-500">Ajoutez au moins un produit au brouillon.</div> : form.items.map((line) => (
-                  <div key={line.productId} className="grid gap-3 p-3 sm:grid-cols-[1fr_95px_190px_120px_36px] sm:items-center">
+  {form.items.length === 0 ? <div className="p-6 text-center text-sm text-gray-500">Ajoutez au moins un produit au brouillon.</div> : form.items.map((line) => {
+                  const lineKey = `${line.productId}:${line.variantId ?? ""}`;
+                  return (
+                  <div key={lineKey} className="grid gap-3 p-3 sm:grid-cols-[1fr_95px_190px_120px_36px] sm:items-center">
                     <div className="flex min-w-0 items-center gap-3">
                       <div className="h-11 w-11 flex-shrink-0 overflow-hidden rounded-lg bg-gray-100 flex items-center justify-center">{line.isCustomItem ? <PenLine size={18} className="text-violet-400" /> : line.image ? <img src={line.image} alt="" className="h-full w-full object-cover" /> : null}</div>
                       <div className="min-w-0">
@@ -643,18 +662,19 @@ export default function AdminOrderDraftsPage() {
                         <span className="text-sm text-gray-500">{form.isB2B ? "HT" : "TTC"} : {eur(lineGrossTotal(line, form.isB2B) / line.quantity)}</span>
                       </div>
                     </div>
-                    <input type="number" min={1} value={line.quantity} onChange={(event) => setForm((current) => ({ ...current, items: current.items.map((item) => item.productId === line.productId ? { ...item, quantity: Math.max(1, Number(event.target.value || 1)) } : item) }))} className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-dark-800" />
+                    <input type="number" min={1} value={line.quantity} onChange={(event) => setForm((current) => ({ ...current, items: current.items.map((item) => `${item.productId}:${item.variantId ?? ""}` === lineKey ? { ...item, quantity: Math.max(1, Number(event.target.value || 1)) } : item) }))} className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-dark-800" />
                     <div className="grid grid-cols-[82px_1fr] gap-2">
-                      <select value={line.lineDiscountType} onChange={(event) => updateLineDiscount(line.productId, event.target.value as DiscountType, line.lineDiscountValue)} className="rounded-xl border border-gray-200 px-2 py-2 text-sm outline-none focus:border-dark-800">
+                      <select value={line.lineDiscountType} onChange={(event) => updateLineDiscount(lineKey, event.target.value as DiscountType, line.lineDiscountValue)} className="rounded-xl border border-gray-200 px-2 py-2 text-sm outline-none focus:border-dark-800">
                         <option value="fixed">€</option>
                         <option value="percent">%</option>
                       </select>
-                      <input type="number" min="0" step="0.01" value={line.lineDiscountValue} onChange={(event) => updateLineDiscount(line.productId, line.lineDiscountType, event.target.value)} onFocus={(event) => event.currentTarget.select()} className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-dark-800" placeholder="Remise" />
+                      <input type="number" min="0" step="0.01" value={line.lineDiscountValue} onChange={(event) => updateLineDiscount(lineKey, line.lineDiscountType, event.target.value)} onFocus={(event) => event.currentTarget.select()} className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-dark-800" placeholder="Remise" />
                     </div>
                     <div className="text-sm font-semibold sm:text-right"><span>{eur(Math.max(0, lineGrossTotal(line, form.isB2B) - lineDiscountAmount(line, form.isB2B)))}</span>{lineDiscountAmount(line, form.isB2B) > 0 ? <span className="block text-xs font-medium text-emerald-700">-{eur(lineDiscountAmount(line, form.isB2B))}</span> : null}</div>
-                    <button type="button" onClick={() => setForm((current) => ({ ...current, items: current.items.filter((item) => item.productId !== line.productId) }))} className="rounded-lg p-2 text-red-500 hover:bg-red-50"><Trash2 size={16} /></button>
+                    <button type="button" onClick={() => setForm((current) => ({ ...current, items: current.items.filter((item) => `${item.productId}:${item.variantId ?? ""}` !== lineKey) }))} className="rounded-lg p-2 text-red-500 hover:bg-red-50"><Trash2 size={16} /></button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
