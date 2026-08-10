@@ -167,12 +167,21 @@ async function getClientIdentity(order: LoadedOrder) {
 }
 
 function buildInvoiceLines(order: LoadedOrder): InvoiceLine[] {
-  const lines = order.items.map((item: { name: string; variantLabel?: string | null; quantity: number; price: number }) => ({
-    designation: item.variantLabel ? `${item.name} — ${item.variantLabel}` : item.name,
-    quantity: item.quantity,
-    unitHT: item.price,
-    vatRate: order.vatRate,
-  }));
+  const lines = order.items.map((item: { name: string; variantLabel?: string | null; quantity: number; price: number; discountAmount?: number | null }) => {
+    // item.price est le prix unitaire HT (backend stocke HT en B2B).
+    // discountAmount est la remise totale sur la ligne (HT pour B2B).
+    // On calcule le prix unitaire HT net après remise pour l'afficher sur la facture.
+    const grossLineHT = item.price * item.quantity;
+    const discountHT = Math.max(0, Number(item.discountAmount) || 0);
+    const netLineHT = Math.max(0, grossLineHT - discountHT);
+    const unitHTNet = item.quantity > 0 ? money(netLineHT / item.quantity) : item.price;
+    return {
+      designation: item.variantLabel ? `${item.name} — ${item.variantLabel}` : item.name,
+      quantity: item.quantity,
+      unitHT: unitHTNet,
+      vatRate: order.vatRate,
+    };
+  });
 
   if (order.shipping > 0) {
     lines.push({
