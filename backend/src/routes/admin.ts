@@ -5507,10 +5507,11 @@ adminRouter.patch(
         res.status(404).json({ error: "Commande introuvable" });
         return;
       }
-      // Seules les commandes payées (ou en cours de traitement) peuvent être modifiées
-      const modifiableStatuses = new Set(["paid", "processing", "shipped", "delivered", "partially_refunded"]);
+      // Les commandes payées, en cours de traitement, et les commandes en attente de paiement
+      // (créées manuellement depuis un brouillon) peuvent être modifiées.
+      const modifiableStatuses = new Set(["paid", "processing", "shipped", "delivered", "partially_refunded", "pending", "pending_payment", "open"]);
       if (!modifiableStatuses.has(order.status)) {
-        res.status(400).json({ error: `Impossible de modifier les articles d'une commande avec le statut '${order.status}'. Seules les commandes payées, en traitement, expédiées, livrées ou partiellement remboursées peuvent être modifiées.` });
+        res.status(400).json({ error: `Impossible de modifier les articles d'une commande avec le statut '${order.status}'.` });
         return;
       }
 

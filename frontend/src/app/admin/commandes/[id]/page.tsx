@@ -1379,7 +1379,7 @@ export default function OrderDetailPage() {
             <section className="rounded-2xl border border-gray-200 bg-white shadow-sm">
               <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
                 <h2 className="font-semibold text-gray-950">Articles</h2>
-                {["paid", "processing", "shipped", "delivered", "partially_refunded"].includes(order.status) && !isPosOrder && (
+                {["paid", "processing", "shipped", "delivered", "partially_refunded", "pending", "pending_payment", "open"].includes(order.status) && !isPosOrder && (
                   <button
                     onClick={openModifyItemsPanel}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50"
