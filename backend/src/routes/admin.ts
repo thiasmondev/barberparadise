@@ -3932,16 +3932,19 @@ adminRouter.post(
         res.status(404).json({ error: "Commande non trouvée" });
         return;
       }
-      // Les commandes B2B en virement bancaire ou paiement différé peuvent être expédiées avant réception des fonds.
-      // L'admin est responsable de la décision d'expédition.
+      // Statuts qui bloquent définitivement la génération d'étiquette :
+      // - cancelled / refunded / partially_refunded : commande annulée ou remboursée
+      // - draft : brouillon non confirmé (sauf B2B pré-expédition, voir ci-dessous)
+      // Tous les autres statuts (pending, pending_payment, paid, processing, shipped, delivered, open, ...)
+      // sont autorisés — l'admin est responsable de la décision d'expédition.
+      const BLOCKED_STATUSES = ["cancelled", "refunded", "partially_refunded"];
       const BANK_TRANSFER_METHODS = ["paybybank", "pay_by_bank", "banktransfer", "bank_transfer", "bank-transfer", "virement"];
       const isB2BBankTransfer = order.isB2B && BANK_TRANSFER_METHODS.includes((order.paymentMethod || "").toLowerCase());
       const isB2BDeferred = order.paymentMethod === "b2b_deferred";
-      const ELIGIBLE_STATUSES = ["paid", "processing", "shipped"];
-      // "draft" est inclus pour les brouillons b2b_deferred non encore confirmés (statut non encore promu)
-      const isPendingB2BPreShip = (isB2BBankTransfer || isB2BDeferred) && ["draft", "pending", "pending_payment", "open"].includes(order.status);
+      // Les brouillons B2B (virement ou différé) peuvent être expédiés avant réception des fonds.
+      const isDraftB2BPreShip = order.status === "draft" && (isB2BBankTransfer || isB2BDeferred);
 
-      if (!ELIGIBLE_STATUSES.includes(order.status) && !isPendingB2BPreShip) {
+      if (BLOCKED_STATUSES.includes(order.status) || (order.status === "draft" && !isDraftB2BPreShip)) {
         res.status(400).json({ error: "Commande non éligible à l'achat d'étiquette" });
         return;
       }
