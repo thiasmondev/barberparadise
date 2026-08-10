@@ -357,6 +357,8 @@ export default function OrderDetailPage() {
     image: string;
     price: number;
     quantity: number;
+    lineDiscountType: "percent" | "fixed";
+    lineDiscountValue: string;
     // Article personnalisé (hors catalogue)
     isCustomItem?: boolean;
     customPriceTTC?: string;
@@ -957,6 +959,8 @@ export default function OrderDetailPage() {
       image: item.image || "",
       price: item.price,
       quantity: item.quantity,
+      lineDiscountType: (item.lineDiscountType as "percent" | "fixed") || "fixed",
+      lineDiscountValue: String(item.lineDiscountValue ?? item.discountAmount ?? ""),
     }));
     setEditableItems(items);
     setModifyItemsStep("edit");
@@ -1016,6 +1020,8 @@ export default function OrderDetailPage() {
           image: variant?.image || images[0] || "",
           price: variant?.price ?? product.price,
           quantity: 1,
+          lineDiscountType: "fixed" as const,
+          lineDiscountValue: "",
         },
       ]);
     }
@@ -1072,7 +1078,14 @@ export default function OrderDetailPage() {
               quantity: i.quantity,
             };
           }
-          return { productId: i.productId, variantId: i.variantId, quantity: i.quantity };
+          const discountVal = Number(i.lineDiscountValue);
+          return {
+            productId: i.productId,
+            variantId: i.variantId,
+            quantity: i.quantity,
+            lineDiscountType: discountVal > 0 ? i.lineDiscountType : null,
+            lineDiscountValue: discountVal > 0 ? discountVal : null,
+          };
         }),
         adjustmentMode: modifyAdjustmentMode,
       });
@@ -2287,6 +2300,26 @@ export default function OrderDetailPage() {
                           ) : (
                             <p className="text-xs text-gray-500">{formatPrice(item.price, order.currency)}</p>
                           )}
+                          {/* Remise par ligne */}
+                          <div className="mt-1 flex items-center gap-1">
+                            <select
+                              value={item.lineDiscountType}
+                              onChange={(e) => setEditableItems((prev) => prev.map((it, i) => i === index ? { ...it, lineDiscountType: e.target.value as "percent" | "fixed" } : it))}
+                              className="rounded border border-gray-200 bg-white py-0.5 pl-1 pr-4 text-xs text-gray-600 outline-none focus:border-gray-900"
+                            >
+                              <option value="fixed">€</option>
+                              <option value="percent">%</option>
+                            </select>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.lineDiscountValue}
+                              onChange={(e) => setEditableItems((prev) => prev.map((it, i) => i === index ? { ...it, lineDiscountValue: e.target.value } : it))}
+                              placeholder="Remise"
+                              className="w-20 rounded border border-gray-200 bg-white px-1.5 py-0.5 text-xs text-gray-700 outline-none focus:border-gray-900"
+                            />
+                          </div>
                         </div>
                         <div className="flex items-center gap-1">
                           <button onClick={() => updateEditableItemQty(index, -1)} className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">
@@ -2392,7 +2425,7 @@ export default function OrderDetailPage() {
                             if (!customItemNameEdit.trim() || !customItemPriceEdit) return;
                             const id = `custom_${Date.now()}`;
                             const priceTTC = Number(customItemPriceEdit) || 0;
-                            setEditableItems((prev) => [...prev, { productId: id, variantId: null, name: customItemNameEdit.trim(), variantLabel: null, image: "", price: priceTTC, quantity: Math.max(1, Number(customItemQtyEdit) || 1), isCustomItem: true, customPriceTTC: customItemPriceEdit, customVatRate: customItemVatEdit }]);
+                            setEditableItems((prev) => [...prev, { productId: id, variantId: null, name: customItemNameEdit.trim(), variantLabel: null, image: "", price: priceTTC, quantity: Math.max(1, Number(customItemQtyEdit) || 1), lineDiscountType: "fixed" as const, lineDiscountValue: "", isCustomItem: true, customPriceTTC: customItemPriceEdit, customVatRate: customItemVatEdit }]);
                             setCustomItemNameEdit(""); setCustomItemPriceEdit(""); setCustomItemVatEdit("20"); setCustomItemQtyEdit("1"); setShowCustomItemFormEdit(false);
                           }} className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50" disabled={!customItemNameEdit.trim() || !customItemPriceEdit}>
                             Ajouter
