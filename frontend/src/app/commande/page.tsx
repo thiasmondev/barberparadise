@@ -391,6 +391,9 @@ export default function CheckoutPage() {
             : item.quantity > 0 && item.discountAmount
               ? money(Math.max(0, item.price * item.quantity - item.discountAmount) / item.quantity)
               : item.price;
+          // Pour les brouillons B2B, item.price est stocké en HT par le backend.
+          // hasPriceProEur=true indique au calcul frontend d'utiliser le prix tel quel (HT)
+          // sans diviser par 1.2 — évite la double division qui causait un sous-total -20%.
           const product: Product = {
             id: item.productId || item.id,
             handle: item.slug || item.productId || item.id,
@@ -402,6 +405,7 @@ export default function CheckoutPage() {
             subsubcategory: "",
             price: discountedUnitPrice,
             pricePublic: discountedUnitPrice,
+            hasPriceProEur: Boolean(data.draft?.isB2B), // true = price est déjà en HT, pas de division supplémentaire
             originalPrice: null,
             images,
             description: "",
