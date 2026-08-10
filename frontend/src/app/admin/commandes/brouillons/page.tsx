@@ -45,6 +45,11 @@ type DraftLine = {
   image?: string;
   product?: Product;
   fallbackPrice?: number;
+  /**
+   * true si fallbackPrice est en HT (brouillon chargé depuis la base en mode B2B).
+   * false/undefined si fallbackPrice est en TTC (brouillon B2C ou article nouvellement ajouté).
+   */
+  fallbackPriceIsHT?: boolean;
   lineDiscountType: DiscountType;
   lineDiscountValue: string;
   // Article personnalisé (hors catalogue)
@@ -108,7 +113,13 @@ function productImages(product: Product): string[] {
 }
 
 function unitPrice(line: DraftLine, isB2B: boolean) {
-  if (!line.product) return Number(line.fallbackPrice || 0);
+  if (!line.product) {
+    const fp = Number(line.fallbackPrice || 0);
+    // Convertir le fallbackPrice selon le mode courant vs le mode dans lequel il a été stocké
+    if (line.fallbackPriceIsHT && !isB2B) return fp * 1.2; // HT stocké, mode B2C demandé → convertir en TTC
+    if (!line.fallbackPriceIsHT && isB2B) return fp / 1.2; // TTC stocké, mode B2B demandé → convertir en HT
+    return fp; // même mode : retourner tel quel
+  }
   return isB2B ? Number(line.product.priceProEur ?? line.product.price / 1.2) : Number(line.product.price);
 }
 
@@ -170,6 +181,10 @@ function draftToForm(draft: AdminOrderDraft): DraftForm {
       quantity: item.quantity,
       image: item.image,
       fallbackPrice: item.price,
+      // item.price est HT si le brouillon a été créé en mode B2B (backend stocke HT en B2B),
+      // TTC sinon. On mémorise ce flag pour que unitPrice() puisse faire la bonne conversion
+      // si l'admin bascule le mode B2B/B2C après chargement.
+      fallbackPriceIsHT: Boolean(draft.isB2B),
       lineDiscountType: (item.lineDiscountType as DiscountType) || (Number(item.discountAmount || 0) > 0 ? "fixed" : "fixed"),
       lineDiscountValue: String(item.lineDiscountValue ?? item.discountAmount ?? ""),
     })),
