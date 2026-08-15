@@ -16,12 +16,13 @@ import {
   getAdminCustomers,
   getAdminOrderDrafts,
   getAdminProducts,
+  getProductVariants,
   getCustomerExtraEmails,
   sendAdminOrderDraftEmail,
   sendAdminPaymentReminder,
   updateAdminOrderDraft,
 } from "@/lib/admin-api";
-import type { Customer, OrderItem, Product } from "@/types";
+import type { Customer, OrderItem, Product, ProductVariant } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -166,12 +167,15 @@ function draftToForm(draft: AdminOrderDraft): DraftForm {
     shippingAddress: address,
     items: (draft.items || []).map((item: OrderItem) => ({
       productId: item.productId,
+      variantId: item.variantId || null,
+      variantLabel: item.variantLabel || null,
       name: item.name,
       quantity: item.quantity,
       image: item.image,
       fallbackPrice: item.price,
       lineDiscountType: (item.lineDiscountType as DiscountType) || (Number(item.discountAmount || 0) > 0 ? "fixed" : "fixed"),
       lineDiscountValue: String(item.lineDiscountValue ?? item.discountAmount ?? ""),
+      isCustomItem: Boolean(item.isCustomSale),
     })),
   };
 }
@@ -200,6 +204,8 @@ export default function AdminOrderDraftsPage() {
   const [customerSearch, setCustomerSearch] = useState("");
   const [products, setProducts] = useState<Product[]>([]);
   const [productSearch, setProductSearch] = useState("");
+  // Variantes des produits déjà présents dans le brouillon, chargées à la demande.
+  const [draftVariantsByProductId, setDraftVariantsByProductId] = useState<Record<string, ProductVariant[]>>({});
   const [saving, setSaving] = useState(false);
   const [sendingDraftEmailId, setSendingDraftEmailId] = useState<string | null>(null);
   const [sendingReminderId, setSendingReminderId] = useState<string | null>(null);
@@ -241,6 +247,43 @@ export default function AdminOrderDraftsPage() {
     }
   }
 
+  async function loadDraftLineVariants(items: OrderItem[]) {
+    const productIds = Array.from(new Set(
+      items
+        .filter((item) => !item.isCustomSale && Boolean(item.productId))
+        .map((item) => item.productId)
+    ));
+    if (productIds.length === 0) return;
+
+    const results = await Promise.all(productIds.map(async (productId) => {
+      try {
+        return [productId, await getProductVariants(productId)] as const;
+      } catch {
+        return [productId, []] as const;
+      }
+    }));
+    setDraftVariantsByProductId((current) => ({ ...current, ...Object.fromEntries(results) }));
+  }
+
+  function selectDraftLineVariant(index: number, variant: ProductVariant) {
+    setForm((current) => ({
+      ...current,
+      items: current.items.map((line, lineIndex) => {
+        if (lineIndex !== index) return line;
+        const variantPrice = current.isB2B
+          ? Number(variant.priceProEur ?? (variant.price ?? line.fallbackPrice ?? 0) / 1.2)
+          : Number(variant.price ?? line.fallbackPrice ?? 0);
+        return {
+          ...line,
+          variantId: variant.id,
+          variantLabel: variant.name,
+          image: variant.image || line.image,
+          fallbackPrice: variantPrice,
+        };
+      }),
+    }));
+  }
+
   useEffect(() => {
     loadDrafts("");
   }, []);
@@ -275,7 +318,7 @@ export default function AdminOrderDraftsPage() {
     setCustomers([]);
   }
 
-  function addProduct(product: Product, variant?: import("@/types").ProductVariant) {
+  function addProduct(product: Product, variant?: ProductVariant) {
     const key = `${product.id}:${variant?.id ?? ""}`;
     setForm((current) => {
       const existing = current.items.find((line) => `${line.productId}:${line.variantId ?? ""}` === key);
@@ -521,6 +564,7 @@ export default function AdminOrderDraftsPage() {
                   onClick={() => {
                     setEditingId(draft.id);
                     setForm(draftToForm(draft));
+                    void loadDraftLineVariants(draft.items || []);
                     setCustomerSearch(customerName(draft.customer));
                     setError(null);
                     setMessage(null);
@@ -651,15 +695,36 @@ export default function AdminOrderDraftsPage() {
                 )}
               </div>
               <div className="divide-y divide-gray-100 rounded-xl border border-gray-100">
-  {form.items.length === 0 ? <div className="p-6 text-center text-sm text-gray-500">Ajoutez au moins un produit au brouillon.</div> : form.items.map((line) => {
+  {form.items.length === 0 ? <div className="p-6 text-center text-sm text-gray-500">Ajoutez au moins un produit au brouillon.</div> : form.items.map((line, index) => {
                   const lineKey = `${line.productId}:${line.variantId ?? ""}`;
+                  const availableVariants = line.isCustomItem ? [] : (draftVariantsByProductId[line.productId] || []);
                   return (
-                  <div key={lineKey} className="grid gap-3 p-3 sm:grid-cols-[1fr_95px_190px_120px_36px] sm:items-center">
+                  <div key={`${lineKey}:${index}`} className="grid gap-3 p-3 sm:grid-cols-[1fr_95px_190px_120px_36px] sm:items-center">
                     <div className="flex min-w-0 items-center gap-3">
                       <div className="h-11 w-11 flex-shrink-0 overflow-hidden rounded-lg bg-gray-100 flex items-center justify-center">{line.isCustomItem ? <PenLine size={18} className="text-violet-400" /> : line.image ? <img src={line.image} alt="" className="h-full w-full object-cover" /> : null}</div>
                       <div className="min-w-0">
                         <p className="truncate font-medium">{line.name}{line.isCustomItem && <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-700">Personnalisé</span>}</p>
                         <span className="text-sm text-gray-500">{form.isB2B ? "HT" : "TTC"} : {eur(lineGrossTotal(line, form.isB2B) / line.quantity)}</span>
+                        {availableVariants.length > 0 && (
+                          <div className="mt-2">
+                            <label className="mb-1 block text-xs font-medium text-gray-600">Variante <span className="text-red-600">*</span></label>
+                            <select
+                              value={line.variantId || ""}
+                              onChange={(event) => {
+                                const variant = availableVariants.find((item) => item.id === event.target.value);
+                                if (variant) selectDraftLineVariant(index, variant);
+                              }}
+                              className={`w-full rounded-lg border px-2 py-1.5 text-sm outline-none focus:border-dark-800 ${line.variantId ? "border-gray-200" : "border-amber-400 bg-amber-50"}`}
+                            >
+                              <option value="" disabled>Choisir une variante disponible</option>
+                              {availableVariants.map((variant) => (
+                                <option key={variant.id} value={variant.id} disabled={!variant.inStock}>
+                                  {variant.name}{variant.inStock ? "" : " — indisponible"}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <input type="number" min={1} value={line.quantity} onChange={(event) => setForm((current) => ({ ...current, items: current.items.map((item) => `${item.productId}:${item.variantId ?? ""}` === lineKey ? { ...item, quantity: Math.max(1, Number(event.target.value || 1)) } : item) }))} className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-dark-800" />
