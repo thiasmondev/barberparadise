@@ -149,6 +149,9 @@ function paymentMethodLabel(method?: string | null, provider?: string | null): s
   const m = (method || "").toLowerCase();
   const p = (provider || "").toLowerCase();
   if (m === "cash" || m === "especes" || m === "espèces") return "Espèces";
+  if (m === "split") return "Paiement divisé";
+  if (m === "indy") return "Indy";
+  if (m === "mollie_manual") return "Mollie";
   if (m === "manual") return "Encaissement manuel";
   if (m === "paypal" || p === "paypal") return "PayPal";
   if (m === "paybybank") return "Paiement bancaire instantané";
@@ -158,6 +161,24 @@ function paymentMethodLabel(method?: string | null, provider?: string | null): s
   if (m === "googlepay" || m === "google_pay") return "Google Pay";
   if (!m && !p) return "Paiement non initié";
   return method || provider || "Non renseigné";
+}
+
+function splitPaymentBreakdownLabel(order: Order): string | null {
+  if (order.paymentMethod !== "split" || !Array.isArray(order.posPaymentBreakdown) || order.posPaymentBreakdown.length === 0) {
+    return null;
+  }
+
+  const labels: Record<"indy" | "mollie_manual" | "cash" | "virement", string> = {
+    indy: "Indy",
+    mollie_manual: "Mollie",
+    cash: "Espèces",
+    virement: "Virement",
+  };
+
+  return order.posPaymentBreakdown
+    .filter((line) => Number.isFinite(line.amount) && line.amount > 0)
+    .map((line) => `${formatPrice(line.amount, order.currency)} ${labels[line.method]}`)
+    .join(" + ") || null;
 }
 
 function carrierLabel(carrier?: string | null) {
@@ -1471,7 +1492,15 @@ export default function OrderDetailPage() {
                     <span>{formatPrice(order.pendingComplementAmount, order.currency)}</span>
                   </div>
                 )}
-                <div className="flex justify-between border-t border-gray-100 pt-3 text-sm"><span className="text-gray-500">Moyen de paiement</span><span className="font-medium text-gray-800">{paymentMethodLabel(order.paymentMethod, order.paymentProvider)}</span></div>
+                <div className="flex items-start justify-between gap-4 border-t border-gray-100 pt-3 text-sm">
+                  <span className="shrink-0 text-gray-500">Moyen de paiement</span>
+                  <span className="text-right font-medium text-gray-800">
+                    {paymentMethodLabel(order.paymentMethod, order.paymentProvider)}
+                    {splitPaymentBreakdownLabel(order) && (
+                      <span className="mt-1 block text-xs font-normal text-gray-500">{splitPaymentBreakdownLabel(order)}</span>
+                    )}
+                  </span>
+                </div>
               </div>
             </section>
 

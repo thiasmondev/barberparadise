@@ -82,7 +82,9 @@ export async function generateFinanceExcel(monthParam?: unknown): Promise<Buffer
     const dateStr = order.createdAt.toISOString().split("T")[0]; // YYYY-MM-DD
     const client = order.customer ? `${order.customer.firstName} ${order.customer.lastName}`.trim() : "Client inconnu";
 
-    if (order.channel === "pos" && (order.paymentMethod || "").toLowerCase() === "split") {
+    // paymentMethod="split" reste prioritaire même sur une ancienne vente
+    // dont le channel POS serait absent ou incorrect.
+    if ((order.paymentMethod || "").toLowerCase() === "split") {
       const allocations = getPosSplitAllocations(order);
       if (!allocations) {
         throw new Error(`La vente POS ${order.orderNumber} est marquée DIVISER sans ventilation de paiement valide.`);

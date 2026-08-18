@@ -202,6 +202,10 @@ export interface Order {
   terminalId?: string | null;
   posSessionId?: string | null;
   posPaymentStatus?: string | null;
+  posPaymentBreakdown?: Array<{
+    method: "indy" | "mollie_manual" | "cash" | "virement";
+    amount: number;
+  }> | null;
   posPaidAt?: string | null;
   posCashierId?: string | null;
   posCashierEmail?: string | null;

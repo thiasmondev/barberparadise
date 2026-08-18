@@ -145,7 +145,9 @@ function mapPsp(order: Pick<OrderForIndy, "paymentMethod" | "paymentProvider" | 
 }
 
 function getPaymentAllocations(order: OrderForIndy): Array<{ psp: IndyPspName; amount: number }> {
-  if (order.channel === "pos" && (order.paymentMethod || "").toLowerCase() === "split") {
+  // Certaines anciennes ventes caisse peuvent ne pas avoir channel="pos" :
+  // paymentMethod="split" reste la source de vérité pour exiger la ventilation.
+  if ((order.paymentMethod || "").toLowerCase() === "split") {
     const splitAllocations = getPosSplitAllocations(order);
     if (!splitAllocations) {
       throw new Error(`La vente POS ${order.id} est marquée DIVISER sans ventilation de paiement valide.`);

@@ -117,6 +117,9 @@ function paymentMethodLabel(method?: string | null, provider?: string | null): s
   const m = (method || "").toLowerCase();
   const p = (provider || "").toLowerCase();
   if (m === "cash" || m === "especes" || m === "espèces") return "Espèces";
+  if (m === "split") return "Paiement divisé";
+  if (m === "indy") return "Indy";
+  if (m === "mollie_manual") return "Mollie";
   if (m === "manual") return "Encaissement manuel";
   if (m === "paypal" || p === "paypal") return "PayPal";
   if (m === "paybybank") return "Paiement bancaire instantané";
