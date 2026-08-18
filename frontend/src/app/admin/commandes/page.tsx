@@ -30,7 +30,9 @@ const PAYMENT_BADGES: Record<string, { label: string; className: string }> = {
   delivered: { label: "Payée", className: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
   pending_payment: { label: "En attente", className: "bg-amber-50 text-amber-700 ring-amber-200" },
   pending: { label: "En attente", className: "bg-amber-50 text-amber-700 ring-amber-200" },
-  cancelled: { label: "Remboursée", className: "bg-rose-50 text-rose-700 ring-rose-200" },
+  cancelled: { label: "Annulée", className: "bg-gray-100 text-gray-700 ring-gray-200" },
+  refunded: { label: "Remboursée", className: "bg-rose-50 text-rose-700 ring-rose-200" },
+  partially_refunded: { label: "Partiellement remboursée", className: "bg-rose-50 text-rose-700 ring-rose-200" },
 };
 
 // ─── Couleurs de fond de ligne par statut ─────────────────────────────────────
@@ -299,7 +301,9 @@ export default function AdminOrdersPage() {
                   <option value="processing">Traitée</option>
                   <option value="shipped">Expédiée</option>
                   <option value="delivered">Livrée</option>
-                  <option value="cancelled">Remboursée / annulée</option>
+                  <option value="cancelled">Annulée</option>
+                  <option value="refunded">Remboursée</option>
+                  <option value="partially_refunded">Partiellement remboursée</option>
                 </select>
                 <select
                   value={channel}

@@ -79,7 +79,9 @@ const PAYMENT_BADGES: Record<string, { label: string; className: string }> = {
   delivered: { label: "Payée", className: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
   pending_payment: { label: "En attente", className: "bg-amber-50 text-amber-700 ring-amber-200" },
   pending: { label: "En attente", className: "bg-amber-50 text-amber-700 ring-amber-200" },
-  cancelled: { label: "Remboursée", className: "bg-rose-50 text-rose-700 ring-rose-200" },
+  cancelled: { label: "Annulée", className: "bg-gray-100 text-gray-700 ring-gray-200" },
+  refunded: { label: "Remboursée", className: "bg-rose-50 text-rose-700 ring-rose-200" },
+  partially_refunded: { label: "Partiellement remboursée", className: "bg-rose-50 text-rose-700 ring-rose-200" },
 };
 
 function formatPrice(value: number, currency = "EUR") {
