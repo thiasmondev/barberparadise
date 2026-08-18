@@ -1,47 +1,58 @@
 import assert from "node:assert/strict";
-import { getAvailableMethods, getPaymentProvider, MOLLIE_METHOD_MAP } from "./paymentRouter";
+import {
+  assertSupportedPaymentMethod,
+  getAvailableMethods,
+  getMollieLocale,
+  getPaymentProvider,
+  MOLLIE_METHOD_MAP,
+  normalizeCountry,
+} from "./paymentRouter";
 
-assert.deepEqual(getAvailableMethods("FR", false), [
+const b2cCommon = [
   "card",
-  "pay_by_bank",
-  "paypal_4x",
+  "paybybank",
+  "paypal",
+  ...(process.env.PAYPAL_PAY_LATER_ENABLED === "true" ? ["paypal_4x"] : []),
   "apple_pay",
   "google_pay",
-  "sepa",
-]);
+];
 
-assert.deepEqual(getAvailableMethods("BE", false), [
-  "card",
-  "pay_by_bank",
-  "paypal_4x",
-  "apple_pay",
-  "google_pay",
-  "sepa",
-  "bancontact",
-]);
+// B2C : seules les méthodes réellement proposées au checkout sont attendues.
+assert.deepEqual(getAvailableMethods("FR", false), b2cCommon);
+assert.deepEqual(getAvailableMethods("BE", false), [...b2cCommon, "bancontact"]);
+assert.deepEqual(getAvailableMethods("NL", false), [...b2cCommon, "ideal"]);
+assert.deepEqual(getAvailableMethods("PL", false), [...b2cCommon, "blik"]);
+assert.deepEqual(getAvailableMethods("PT", false), [...b2cCommon, "mb_way", "multibanco"]);
 
-assert.deepEqual(getAvailableMethods("NL", false), [
-  "card",
-  "pay_by_bank",
-  "paypal_4x",
-  "apple_pay",
-  "google_pay",
-  "sepa",
-  "ideal",
-]);
+// B2B : le parcours professionnel est volontairement limité au paiement bancaire instantané.
+assert.deepEqual(getAvailableMethods("FR", true), ["paybybank"]);
+assert.deepEqual(getAvailableMethods("BE", true), ["paybybank"]);
+assert.equal(getAvailableMethods("FR", true).includes("sepa"), false);
+assert.equal(getAvailableMethods("FR", true).includes("pay_by_bank"), false);
 
-// Pays hors EEE : aucune méthode disponible
+// Hors EEE : aucune option en ligne ne doit être rendue disponible.
 assert.deepEqual(getAvailableMethods("US", false), []);
-assert.deepEqual(getAvailableMethods("FR", true), ["pay_by_bank"]);
 assert.deepEqual(getAvailableMethods("US", true), []);
 
-assert.equal(getPaymentProvider({ method: "card", country: "FR", isB2B: false }), "mollie");
-assert.equal(getPaymentProvider({ method: "bancontact", country: "BE", isB2B: false }), "mollie");
-assert.equal(getPaymentProvider({ method: "paypal_4x", country: "FR", isB2B: false }), "paypal");
+// Les alias historiques restent routables pour les anciennes commandes, mais ne sont plus proposés.
+assert.equal(getPaymentProvider({ method: "paybybank", country: "FR", isB2B: false }), "mollie");
 assert.equal(getPaymentProvider({ method: "pay_by_bank", country: "FR", isB2B: true }), "mollie");
-assert.equal(getAvailableMethods("FR", true).includes("sepa"), false);
-assert.equal(getAvailableMethods("US", true).includes("sepa"), false);
+assert.equal(getPaymentProvider({ method: "sepa", country: "FR", isB2B: false }), "mollie");
+assert.equal(getPaymentProvider({ method: "paypal", country: "FR", isB2B: false }), "paypal");
+assert.equal(getPaymentProvider({ method: "paypal_4x", country: "FR", isB2B: false }), "paypal");
+assert.equal(getPaymentProvider({ method: "bancontact", country: "BE", isB2B: false }), "mollie");
+
+assert.deepEqual(MOLLIE_METHOD_MAP.paybybank, ["paybybank"]);
 assert.deepEqual(MOLLIE_METHOD_MAP.pay_by_bank, ["banktransfer"]);
 assert.deepEqual(MOLLIE_METHOD_MAP.sepa, ["directdebit"]);
+assert.deepEqual(MOLLIE_METHOD_MAP.card, ["creditcard"]);
+assert.deepEqual(MOLLIE_METHOD_MAP.ideal, ["ideal"]);
 
-console.log("paymentRouter regression tests passed");
+assert.equal(normalizeCountry(" fr "), "FR");
+assert.equal(getMollieLocale("NL"), "nl_NL");
+assert.equal(getMollieLocale("unknown"), "fr_FR");
+assert.doesNotThrow(() => assertSupportedPaymentMethod("paybybank"));
+assert.doesNotThrow(() => assertSupportedPaymentMethod("pay_by_bank"));
+assert.throws(() => assertSupportedPaymentMethod("split"), /non supportée/i);
+
+console.log("✓ Tests de régression du routeur de paiement validés");
