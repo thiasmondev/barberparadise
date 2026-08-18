@@ -68,6 +68,17 @@ import {
   type LogisticsPreparationDetail,
   type LogisticsPreparationItem,
   type ShipmentRecord,
+  getAdminOrderExchanges,
+  createAdminOrderExchange,
+  markAdminExchangeReturnReceived,
+  settleAdminExchange,
+  markAdminExchangeReplacementShipped,
+  completeAdminExchange,
+  cancelAdminExchange,
+  getAdminExchangeQuotes,
+  createAdminExchangeReturnLabel,
+  createAdminExchangeReplacementLabel,
+  type AdminOrderExchange,
 } from "@/lib/admin-api";
 import type { Order, Packaging, ShippingAddress, Product, ProductVariant, Customer } from "@/types";
 import { EmailPickerModal, type EmailOption } from "@/components/admin/EmailPickerModal";
@@ -437,6 +448,151 @@ export default function OrderDetailPage() {
   const [manualTrackingLoading, setManualTrackingLoading] = useState(false);
   const [manualTrackingError, setManualTrackingError] = useState("");
 
+  // ─── Échanges après expédition ────────────────────────────────────────────
+  const [exchanges, setExchanges] = useState<AdminOrderExchange[]>([]);
+  const [exchangeLoading, setExchangeLoading] = useState(false);
+  const [exchangeError, setExchangeError] = useState("");
+  const [showExchangePanel, setShowExchangePanel] = useState(false);
+  const [exchangeReturnedItemId, setExchangeReturnedItemId] = useState("");
+  const [exchangeQuantity, setExchangeQuantity] = useState("1");
+  const [exchangeReplacementSearch, setExchangeReplacementSearch] = useState("");
+  const [exchangeReplacementResults, setExchangeReplacementResults] = useState<Product[]>([]);
+  const [exchangeReplacementProduct, setExchangeReplacementProduct] = useState<Product | null>(null);
+  const [exchangeReplacementVariant, setExchangeReplacementVariant] = useState<ProductVariant | null>(null);
+  const [exchangeNotes, setExchangeNotes] = useState("");
+  const [exchangeSubmitting, setExchangeSubmitting] = useState(false);
+  const [exchangeLabelTarget, setExchangeLabelTarget] = useState<{ exchange: AdminOrderExchange; direction: "return" | "replacement" } | null>(null);
+  const [exchangeLabelQuotes, setExchangeLabelQuotes] = useState<LogisticsCarrierQuote[]>([]);
+  const [exchangeLabelQuoteId, setExchangeLabelQuoteId] = useState("");
+  const [exchangeRelayPointId, setExchangeRelayPointId] = useState("");
+  const [exchangeLabelLoading, setExchangeLabelLoading] = useState(false);
+
+  const loadExchanges = async () => {
+    if (!id) return;
+    const result = await getAdminOrderExchanges(id);
+    setExchanges(result.exchanges);
+  };
+
+  const refreshExchangeData = async () => {
+    await Promise.all([loadOrder(), loadExchanges()]);
+  };
+
+  const openExchangePanel = () => {
+    if (!order) return;
+    const firstEligible = order.items.find((item) => item.productId && !item.isCustomSale);
+    setExchangeReturnedItemId(firstEligible?.id || "");
+    setExchangeQuantity("1");
+    setExchangeReplacementSearch("");
+    setExchangeReplacementResults([]);
+    setExchangeReplacementProduct(null);
+    setExchangeReplacementVariant(null);
+    setExchangeNotes("");
+    setExchangeError("");
+    setShowExchangePanel(true);
+  };
+
+  const searchExchangeReplacement = async (query: string) => {
+    setExchangeReplacementSearch(query);
+    if (query.trim().length < 2) {
+      setExchangeReplacementResults([]);
+      return;
+    }
+    try {
+      const result = await getAdminProducts({ search: query.trim(), limit: 8, includeVariants: true });
+      setExchangeReplacementResults(result.products);
+    } catch (error) {
+      setExchangeError(error instanceof Error ? error.message : "Recherche produit impossible.");
+    }
+  };
+
+  const submitExchange = async () => {
+    if (!order || !exchangeReturnedItemId || !exchangeReplacementProduct) {
+      setExchangeError("Sélectionnez l’article retourné et l’article de remplacement.");
+      return;
+    }
+    if ((exchangeReplacementProduct.variants?.length || 0) > 0 && !exchangeReplacementVariant) {
+      setExchangeError("Sélectionnez une variante disponible pour l’article de remplacement.");
+      return;
+    }
+    setExchangeSubmitting(true);
+    setExchangeError("");
+    try {
+      await createAdminOrderExchange(order.id, {
+        returnedOrderItemId: exchangeReturnedItemId,
+        quantity: Number.parseInt(exchangeQuantity, 10) || 0,
+        replacementProductId: exchangeReplacementProduct.id,
+        replacementVariantId: exchangeReplacementVariant?.id || null,
+        notes: exchangeNotes || null,
+      });
+      setShowExchangePanel(false);
+      await refreshExchangeData();
+    } catch (error) {
+      setExchangeError(error instanceof Error ? error.message : "Création de l’échange impossible.");
+    } finally {
+      setExchangeSubmitting(false);
+    }
+  };
+
+  const openExchangeLabelDrawer = async (exchange: AdminOrderExchange, direction: "return" | "replacement") => {
+    setExchangeLabelTarget({ exchange, direction });
+    setExchangeLabelQuotes([]);
+    setExchangeLabelQuoteId("");
+    setExchangeRelayPointId("");
+    setExchangeError("");
+    setExchangeLabelLoading(true);
+    try {
+      const result = await getAdminExchangeQuotes(exchange.id, direction);
+      setExchangeLabelQuotes(result.quotes);
+      setExchangeLabelQuoteId(result.quotes[0]?.id || "");
+    } catch (error) {
+      setExchangeError(error instanceof Error ? error.message : "Offres de transport indisponibles.");
+    } finally {
+      setExchangeLabelLoading(false);
+    }
+  };
+
+  const purchaseExchangeLabel = async () => {
+    if (!exchangeLabelTarget) return;
+    const quote = exchangeLabelQuotes.find((entry) => entry.id === exchangeLabelQuoteId);
+    if (!quote) {
+      setExchangeError("Sélectionnez une offre de transport.");
+      return;
+    }
+    if (quote.carrier === "mondial_relay" && !exchangeRelayPointId.trim()) {
+      setExchangeError("Indiquez le point relais de livraison pour Mondial Relay.");
+      return;
+    }
+    setExchangeLabelLoading(true);
+    setExchangeError("");
+    try {
+      const payload = { carrier: quote.carrier as "colissimo" | "mondial_relay" | "colissimo_international", offerId: quote.id, relayPointId: exchangeRelayPointId.trim() || null };
+      if (exchangeLabelTarget.direction === "return") {
+        await createAdminExchangeReturnLabel(exchangeLabelTarget.exchange.id, payload);
+      } else {
+        await createAdminExchangeReplacementLabel(exchangeLabelTarget.exchange.id, payload);
+      }
+      setExchangeLabelTarget(null);
+      await refreshExchangeData();
+    } catch (error) {
+      setExchangeError(error instanceof Error ? error.message : "Création d’étiquette impossible.");
+    } finally {
+      setExchangeLabelLoading(false);
+    }
+  };
+
+  const runExchangeAction = async (action: () => Promise<unknown>) => {
+    setExchangeLoading(true);
+    setExchangeError("");
+    try {
+      await action();
+      await refreshExchangeData();
+    } catch (error) {
+      setExchangeError(error instanceof Error ? error.message : "Action d’échange impossible.");
+    } finally {
+      setExchangeLoading(false);
+    }
+  };
+
   const loadOrder = async () => {
     if (!id) return;
     setLoading(true);
@@ -446,6 +602,7 @@ export default function OrderDetailPage() {
       setShipment((data.shipment as ShipmentRecord | null) || null);
       setNotes(data.notes || "");
       setEditForm(buildEditForm(data));
+      getAdminOrderExchanges(data.id).then((result) => setExchanges(result.exchanges)).catch(() => setExchanges([]));
       // Charger les emails secondaires du client si disponible
       if (data.customerId) {
         getCustomerExtraEmails(data.customerId)
@@ -1415,6 +1572,15 @@ export default function OrderDetailPage() {
             <section className="rounded-2xl border border-gray-200 bg-white shadow-sm">
               <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
                 <h2 className="font-semibold text-gray-950">Articles</h2>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {["shipped", "delivered"].includes(order.status) && !isPosOrder && !isNoShipping && (
+                    <button
+                      onClick={openExchangePanel}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-100"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> Échanger un article
+                    </button>
+                  )}
                 {["paid", "processing", "shipped", "delivered", "partially_refunded", "pending", "pending_payment", "open"].includes(order.status) && !isPosOrder && (
                   <button
                     onClick={openModifyItemsPanel}
@@ -1423,6 +1589,7 @@ export default function OrderDetailPage() {
                     <Pencil className="h-3.5 w-3.5" /> Modifier les articles
                   </button>
                 )}
+                </div>
               </div>
               <div className="divide-y divide-gray-100">
                 {order.items.map((item) => (
@@ -1471,6 +1638,73 @@ export default function OrderDetailPage() {
                 )}
               </div>
             </section>
+
+            {(exchanges.length > 0 || ["shipped", "delivered"].includes(order.status)) && !isPosOrder && !isNoShipping && (
+              <section className="rounded-2xl border border-violet-200 bg-white p-5 shadow-sm">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="font-semibold text-gray-950">Échanges après expédition</h2>
+                    <p className="mt-1 text-sm text-gray-500">Le retour, le règlement et le renvoi sont suivis séparément ; la commande initiale reste inchangée.</p>
+                  </div>
+                  {["shipped", "delivered"].includes(order.status) && (
+                    <button onClick={openExchangePanel} className="inline-flex items-center gap-2 rounded-xl bg-violet-700 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-800">
+                      <RotateCcw className="h-4 w-4" /> Nouvel échange
+                    </button>
+                  )}
+                </div>
+                {exchangeError && <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{exchangeError}</div>}
+                {exchanges.length === 0 ? (
+                  <div className="rounded-xl bg-violet-50 px-4 py-3 text-sm text-violet-800">Aucun échange ouvert sur cette commande.</div>
+                ) : (
+                  <div className="space-y-4">
+                    {exchanges.map((exchange) => {
+                      const returnShipment = exchange.shipments.find((shipment) => shipment.direction === "return");
+                      const replacementShipment = exchange.shipments.find((shipment) => shipment.direction === "replacement");
+                      const statusLabels: Record<string, string> = {
+                        initiated: "En attente de retour",
+                        return_in_transit: "Retour en attente de réception",
+                        settlement_pending: "Règlement à finaliser",
+                        ready_to_ship: "Prêt à renvoyer",
+                        replacement_shipped: "Remplacement expédié",
+                        completed: "Échange terminé",
+                        cancelled: "Échange annulé",
+                      };
+                      return (
+                        <article key={exchange.id} className="rounded-xl border border-violet-100 bg-violet-50/30 p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-gray-950">{exchange.returnName} × {exchange.returnQuantity} <span className="text-gray-400">→</span> {exchange.replacementName} × {exchange.replacementQuantity}</p>
+                              <p className="mt-1 text-xs text-gray-600">Statut : <strong>{statusLabels[exchange.status] || exchange.status}</strong> · Différence : <strong className={exchange.differenceAmount > 0 ? "text-amber-700" : exchange.differenceAmount < 0 ? "text-emerald-700" : "text-gray-700"}>{exchange.differenceAmount > 0 ? "+" : ""}{formatPrice(exchange.differenceAmount, exchange.currency)}</strong> ({exchange.priceTaxLabel})</p>
+                            </div>
+                            <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-violet-800 ring-1 ring-violet-200">{statusLabels[exchange.status] || exchange.status}</span>
+                          </div>
+                          <div className="mt-3 grid gap-2 text-xs text-gray-600 sm:grid-cols-2">
+                            <p>Retour : {returnShipment?.trackingNumber ? `étiquette ${returnShipment.trackingNumber}` : "étiquette à créer"}</p>
+                            <p>Renvoi : {replacementShipment?.trackingNumber ? `étiquette ${replacementShipment.trackingNumber}` : "non créé"}</p>
+                            <p>Stock retour : {exchange.returnedStockRestored ? "réintégré après inspection" : "non réintégré"}</p>
+                            <p>Stock remplacement : {exchange.replacementStockReserved ? "réservé" : "non réservé"}</p>
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {(["initiated", "return_in_transit"].includes(exchange.status) && !returnShipment) && <button disabled={exchangeLoading} onClick={() => openExchangeLabelDrawer(exchange, "return")} className="rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-xs font-semibold text-violet-800 hover:bg-violet-50">Créer l’étiquette retour</button>}
+                            {exchange.status === "return_in_transit" && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReturnReceived(exchange.id))} className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-800">Confirmer retour reçu et inspecté</button>}
+                            {exchange.status === "settlement_pending" && <>
+                              <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => settleAdminExchange(exchange.id, "real"))} className="rounded-lg bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800">{exchange.differenceAmount >= 0 ? "Règlement réel" : "Remboursement réel"}</button>
+                              <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => settleAdminExchange(exchange.id, "internal"))} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50">Ajustement interne</button>
+                              <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => settleAdminExchange(exchange.id, "gift"))} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50">Geste commercial</button>
+                            </>}
+                            {exchange.status === "ready_to_ship" && !replacementShipment && <button disabled={exchangeLoading} onClick={() => openExchangeLabelDrawer(exchange, "replacement")} className="rounded-lg bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800">Créer l’étiquette de renvoi</button>}
+                            {exchange.status === "ready_to_ship" && replacementShipment && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReplacementShipped(exchange.id))} className="rounded-lg bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800">Marquer le remplacement expédié</button>}
+                            {exchange.status === "replacement_shipped" && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => completeAdminExchange(exchange.id))} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800">Clôturer l’échange</button>}
+                            {!(["completed", "cancelled", "replacement_shipped"].includes(exchange.status)) && <button disabled={exchangeLoading} onClick={() => { if (window.confirm("Annuler cet échange ? Le stock réservé sera libéré.")) runExchangeAction(() => cancelAdminExchange(exchange.id)); }} className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">Annuler l’échange</button>}
+                          </div>
+                          {exchange.events.length > 0 && <details className="mt-3 text-xs text-gray-500"><summary className="cursor-pointer font-medium text-gray-700">Historique de l’échange ({exchange.events.length})</summary><div className="mt-2 space-y-1">{exchange.events.map((event) => <p key={event.id}>• {formatDate(event.createdAt)} — {event.message}</p>)}</div></details>}
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            )}
 
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <h2 className="mb-4 font-semibold text-gray-950">Récapitulatif financier</h2>
@@ -2105,6 +2339,55 @@ export default function OrderDetailPage() {
           </aside>
         </div>
       </div>
+
+      {showExchangePanel && order && (
+        <div className="fixed inset-0 z-[70] overflow-y-auto bg-black/50 p-4">
+          <div className="mx-auto my-6 w-full max-w-3xl rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-gray-200 px-6 py-5">
+              <div><h2 className="text-lg font-semibold text-gray-950">Échanger un article</h2><p className="mt-1 text-sm text-gray-500">La commande initiale, ses prix et son stock ne seront pas modifiés.</p></div>
+              <button onClick={() => setShowExchangePanel(false)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="space-y-5 p-6">
+              {exchangeError && <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{exchangeError}</div>}
+              <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_120px]">
+                <label className="block text-sm font-medium text-gray-800">Article reçu à retourner
+                  <select value={exchangeReturnedItemId} onChange={(event) => setExchangeReturnedItemId(event.target.value)} className="mt-1.5 w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm">
+                    <option value="">Sélectionner un article</option>
+                    {order.items.filter((item) => item.productId && !item.isCustomSale).map((item) => <option key={item.id} value={item.id}>{item.name}{item.variantLabel ? ` — ${item.variantLabel}` : ""} · {formatPrice(item.price, order.currency)} · qté vendue : {item.quantity}</option>)}
+                  </select>
+                </label>
+                <label className="block text-sm font-medium text-gray-800">Quantité
+                  <input type="number" min="1" value={exchangeQuantity} onChange={(event) => setExchangeQuantity(event.target.value)} className="mt-1.5 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm" />
+                </label>
+              </div>
+              <div className="rounded-xl border border-gray-200 p-4">
+                <label className="block text-sm font-medium text-gray-800">Article de remplacement
+                  <input value={exchangeReplacementSearch} onChange={(event) => searchExchangeReplacement(event.target.value)} placeholder="Rechercher par nom, marque ou référence" className="mt-1.5 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm" />
+                </label>
+                {exchangeReplacementResults.length > 0 && !exchangeReplacementProduct && <div className="mt-3 max-h-52 overflow-y-auto rounded-xl border border-gray-200 divide-y divide-gray-100">{exchangeReplacementResults.map((product) => <button key={product.id} onClick={() => { setExchangeReplacementProduct(product); setExchangeReplacementVariant(null); setExchangeReplacementResults([]); }} className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-gray-50"><span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{product.name}</span><span className="text-xs text-gray-500">{formatPrice(order.isB2B ? (product.priceProEur ?? product.price / 1.2) : product.price, order.currency)}</span></button>)}</div>}
+                {exchangeReplacementProduct && <div className="mt-3 rounded-xl bg-violet-50 p-3"><div className="flex items-center justify-between gap-3"><p className="text-sm font-semibold text-violet-950">{exchangeReplacementProduct.name}</p><button onClick={() => { setExchangeReplacementProduct(null); setExchangeReplacementVariant(null); }} className="text-xs font-semibold text-violet-700">Changer</button></div>{(exchangeReplacementProduct.variants?.length || 0) > 0 && <label className="mt-3 block text-xs font-semibold text-violet-900">Variante obligatoire<select value={exchangeReplacementVariant?.id || ""} onChange={(event) => setExchangeReplacementVariant(exchangeReplacementProduct.variants?.find((variant) => variant.id === event.target.value) || null)} className="mt-1 w-full rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm"><option value="">Choisir une variante disponible</option>{exchangeReplacementProduct.variants?.filter((variant) => variant.inStock && variant.stock > 0).map((variant) => <option key={variant.id} value={variant.id}>{variant.name} · {formatPrice(order.isB2B ? (variant.priceProEur ?? (variant.price ?? 0) / 1.2) : (variant.price ?? 0), order.currency)} · stock {variant.stock}</option>)}</select></label>}</div>}
+              </div>
+              <label className="block text-sm font-medium text-gray-800">Note interne (facultative)<textarea value={exchangeNotes} onChange={(event) => setExchangeNotes(event.target.value)} rows={3} className="mt-1.5 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm" placeholder="Motif, état du produit, accord client…" /></label>
+              <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">À la création, l’article de remplacement est <strong>réservé</strong>. L’article retourné ne sera remis en stock qu’après réception et inspection physique.</div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-gray-200 px-6 py-4"><button onClick={() => setShowExchangePanel(false)} className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700">Annuler</button><button disabled={exchangeSubmitting} onClick={submitExchange} className="inline-flex items-center gap-2 rounded-xl bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-800 disabled:opacity-50">{exchangeSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}Créer l’échange</button></div>
+          </div>
+        </div>
+      )}
+
+      {exchangeLabelTarget && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-5"><div><h2 className="text-lg font-semibold text-gray-950">{exchangeLabelTarget.direction === "return" ? "Étiquette de retour" : "Étiquette de renvoi"}</h2><p className="mt-1 text-sm text-gray-500">Sélectionnez une offre. L’étiquette sera associée uniquement à ce dossier d’échange.</p></div><button onClick={() => setExchangeLabelTarget(null)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100"><X className="h-5 w-5" /></button></div>
+            <div className="space-y-3 p-6">
+              {exchangeError && <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{exchangeError}</div>}
+              {exchangeLabelLoading ? <div className="flex items-center gap-2 py-8 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Chargement des offres…</div> : exchangeLabelQuotes.map((quote) => <label key={quote.id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 ${exchangeLabelQuoteId === quote.id ? "border-violet-500 bg-violet-50" : "border-gray-200"}`}><input type="radio" name="exchange-label-quote" checked={exchangeLabelQuoteId === quote.id} onChange={() => setExchangeLabelQuoteId(quote.id)} className="mt-1" /><span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-gray-950">{quote.carrierLabel} — {quote.serviceLabel}</span><span className="mt-1 block text-xs text-gray-500">{quote.estimatedDeliveryDays} · {quote.deliveryMode === "relay" ? "Point relais requis" : "Livraison à domicile"}</span>{quote.configurationError && <span className="mt-1 block text-xs text-rose-700">{quote.configurationError}</span>}</span><span className="text-sm font-semibold text-gray-950">{formatPrice(quote.totalWithTaxCents / 100, quote.currency)}</span></label>)}
+              {exchangeLabelQuotes.find((quote) => quote.id === exchangeLabelQuoteId)?.requiresRelayPoint && <label className="block text-sm font-medium text-gray-800">Identifiant du point relais de destination<input value={exchangeRelayPointId} onChange={(event) => setExchangeRelayPointId(event.target.value)} placeholder="Ex. 025775" className="mt-1.5 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm" /></label>}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-gray-200 px-6 py-4"><button onClick={() => setExchangeLabelTarget(null)} className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700">Annuler</button><button disabled={exchangeLabelLoading || !exchangeLabelQuoteId} onClick={purchaseExchangeLabel} className="inline-flex items-center gap-2 rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{exchangeLabelLoading && <Loader2 className="h-4 w-4 animate-spin" />}Créer l’étiquette</button></div>
+          </div>
+        </div>
+      )}
 
       {drawerOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-gray-950/45 p-0 sm:p-4" onClick={() => setDrawerOpen(false)}>

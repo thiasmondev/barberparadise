@@ -59,6 +59,8 @@ model Product {
   reviews    Review[]
   variants   ProductVariant[]
   stockAlerts StockAlert[]
+  returnedExchanges    OrderExchange[] @relation("ExchangeReturnedProduct")
+  replacementExchanges OrderExchange[] @relation("ExchangeReplacementProduct")
 
   @@index([category])
   @@index([subcategory])
@@ -179,6 +181,7 @@ model Packaging {
   isActive          Boolean @default(true)
 
   shipments Shipment[]
+  exchangeShipments OrderExchangeShipment[]
 }
 
 // ─── MARQUES ─────────────────────────────────────────────────
@@ -216,6 +219,8 @@ model ProductVariant {
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   orderItems OrderItem[]
   stockAlerts StockAlert[]
+  returnedExchanges    OrderExchange[] @relation("ExchangeReturnedVariant")
+  replacementExchanges OrderExchange[] @relation("ExchangeReplacementVariant")
 
   @@index([productId])
 }
@@ -385,6 +390,7 @@ model Order {
   promoCode       PromoCode?       @relation(fields: [promoCodeId], references: [id])
   promotion       Promotion?      @relation(fields: [promotionId], references: [id])
   posSession     PosSession?     @relation(fields: [posSessionId], references: [id])
+  exchanges       OrderExchange[]
 
   @@index([status])
   @@index([customerId])
@@ -416,9 +422,124 @@ model OrderItem {
   order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product?        @relation(fields: [productId], references: [id])
   variant ProductVariant? @relation(fields: [variantId], references: [id])
+  returnExchanges OrderExchange[] @relation("ExchangeReturnedOrderItem")
 
   @@index([productId])
   @@index([variantId])
+}
+
+model OrderExchange {
+  id                       String    @id @default(cuid())
+  orderId                  String
+  returnedOrderItemId      String
+  status                   String    @default("initiated") // initiated, return_in_transit, return_received, settlement_pending, ready_to_ship, replacement_shipped, completed, cancelled
+  returnProductId          String?
+  returnVariantId          String?
+  returnVariantLabel       String?
+  returnName               String
+  returnImage              String    @default("")
+  returnQuantity           Int
+  returnUnitPrice          Float
+  returnDiscountAmount     Float     @default(0)
+  returnValue              Float
+  replacementProductId     String
+  replacementVariantId     String?
+  replacementVariantLabel  String?
+  replacementName          String
+  replacementImage         String    @default("")
+  replacementQuantity      Int
+  replacementUnitPrice     Float
+  replacementValue         Float
+  differenceAmount         Float
+  vatRate                  Float     @default(20)
+  priceTaxLabel            String    @default("TTC")
+  currency                 String    @default("EUR")
+  settlementMode           String?
+  settlementStatus         String    @default("not_required")
+  settlementPaymentId      String?   @unique
+  settlementPaymentUrl     String?
+  settlementRefundedAmount Float     @default(0)
+  replacementStockReserved Boolean   @default(false)
+  replacementStockReleased Boolean   @default(false)
+  returnedStockRestored    Boolean   @default(false)
+  initiatedBy              String?
+  initiatedAt              DateTime  @default(now())
+  returnReceivedAt         DateTime?
+  settlementHandledAt      DateTime?
+  replacementShippedAt     DateTime?
+  completedAt              DateTime?
+  cancelledAt              DateTime?
+  notes                    String?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  order              Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  returnedOrderItem  OrderItem               @relation("ExchangeReturnedOrderItem", fields: [returnedOrderItemId], references: [id])
+  returnProduct      Product?                @relation("ExchangeReturnedProduct", fields: [returnProductId], references: [id])
+  returnVariant      ProductVariant?         @relation("ExchangeReturnedVariant", fields: [returnVariantId], references: [id])
+  replacementProduct Product                 @relation("ExchangeReplacementProduct", fields: [replacementProductId], references: [id])
+  replacementVariant ProductVariant?         @relation("ExchangeReplacementVariant", fields: [replacementVariantId], references: [id])
+  shipments          OrderExchangeShipment[]
+  events             OrderExchangeEvent[]
+
+  @@index([orderId, status])
+  @@index([returnedOrderItemId])
+  @@index([replacementProductId])
+  @@index([replacementVariantId])
+  @@index([createdAt])
+}
+
+model OrderExchangeShipment {
+  id                  String    @id @default(cuid())
+  exchangeId          String
+  direction           String // return, replacement
+  carrier             String
+  carrierShipmentId   String?
+  trackingNumber      String?
+  trackingUrl         String?
+  packagingId         Int?
+  totalWeightG        Int?
+  offerId             String?
+  serviceCode         String?
+  deliveryMode        String?
+  relayPointId        String?
+  labelPriceCents     Int?
+  labelCurrency       String?   @default("EUR")
+  insuranceValueCents Int?
+  labelPdfBase64      String?
+  labelFormat         String?
+  labelSource         String?
+  labelStatus         String?
+  labelGeneratedAt    DateTime?
+  carrierRawResponse  Json?
+  lastTrackingStatus  String?
+  shippedAt           DateTime?
+  shippedBy           String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  exchange  OrderExchange @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
+  packaging Packaging?    @relation(fields: [packagingId], references: [id])
+
+  @@unique([exchangeId, direction])
+  @@index([trackingNumber])
+  @@index([carrier])
+  @@index([shippedAt])
+}
+
+model OrderExchangeEvent {
+  id         String   @id @default(cuid())
+  exchangeId String
+  type       String
+  message    String
+  actorEmail String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  exchange OrderExchange @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
+
+  @@index([exchangeId, createdAt])
+  @@index([type])
 }
 
 model Shipment {

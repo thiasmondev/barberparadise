@@ -22,6 +22,8 @@ export type ShipmentAddress = {
   city: string;
   country: string;
   phone?: string | null;
+  email?: string | null;
+  companyName?: string | null;
 };
 
 export type ShipmentDimensions = {
@@ -39,6 +41,8 @@ export type ShipmentQuoteInput = {
   orderNumber: string;
   customerEmail: string;
   recipient: ShipmentAddress;
+  /** Expéditeur alternatif, utilisé pour une étiquette de retour client → Barber Paradise. */
+  sender?: ShipmentAddress | null;
   totalWeightG: number;
   orderValueCents: number;
   packageDimensions?: ShipmentDimensions | null;
@@ -550,6 +554,13 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
     ? `\n            <insuranceValue>${insuranceValue}</insuranceValue>`
     : "";
   const signatureRequired = Boolean(input.signatureRequired);
+  const sender = input.sender || null;
+  const senderName = sender?.companyName || `${sender?.firstName || ""} ${sender?.lastName || ""}`.trim() || process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise";
+  const senderAddress = sender?.address || process.env.LOGISTICS_SENDER_ADDRESS || "Adresse expéditeur à configurer";
+  const senderCountryCode = normalizeCountryCode(sender?.country || "France");
+  const senderCity = sender?.city || process.env.LOGISTICS_SENDER_CITY || "Ville";
+  const senderPostalCode = sender?.postalCode || process.env.LOGISTICS_SENDER_POSTAL_CODE || "00000";
+  const senderEmail = sender?.email || process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr";
 
   const envelope = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sls="http://sls.ws.coliposte.fr">
@@ -579,12 +590,12 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
           <sender>
             <senderParcelRef>${xmlEscape(input.orderNumber)}</senderParcelRef>
             <address>
-              <companyName>${xmlEscape(process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise")}</companyName>
-              <line2>${xmlEscape(process.env.LOGISTICS_SENDER_ADDRESS || "Adresse expéditeur à configurer")}</line2>
-              <countryCode>FR</countryCode>
-              <city>${xmlEscape(process.env.LOGISTICS_SENDER_CITY || "Ville")}</city>
-              <zipCode>${xmlEscape(process.env.LOGISTICS_SENDER_POSTAL_CODE || "00000")}</zipCode>
-              <email>${xmlEscape(process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr")}</email>
+              <companyName>${xmlEscape(senderName)}</companyName>
+              <line2>${xmlEscape(senderAddress)}</line2>
+              <countryCode>${xmlEscape(senderCountryCode)}</countryCode>
+              <city>${xmlEscape(senderCity)}</city>
+              <zipCode>${xmlEscape(senderPostalCode)}</zipCode>
+              <email>${xmlEscape(senderEmail)}</email>
             </address>
           </sender>
           <addressee>
@@ -667,6 +678,14 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
   }
 
   const countryCode = normalizeCountryCode(input.recipient.country);
+  const sender = input.sender || null;
+  const senderCompanyRaw = sender?.companyName || `${sender?.firstName || ""} ${sender?.lastName || ""}`.trim() || process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise";
+  const senderAddressRaw = sender?.address || process.env.LOGISTICS_SENDER_ADDRESS || "";
+  const senderExtensionRaw = sender?.extension || process.env.LOGISTICS_SENDER_ADDRESS_2 || "";
+  const senderCityRaw = sender?.city || process.env.LOGISTICS_SENDER_CITY || "";
+  const senderPostalCodeRaw = sender?.postalCode || process.env.LOGISTICS_SENDER_POSTAL_CODE || "";
+  const senderPhoneRaw = sender?.phone || process.env.LOGISTICS_SENDER_PHONE;
+  const senderEmailRaw = sender?.email || process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr";
   // Poids en grammes. Mondial Relay exige un minimum de 100g (STAT 20 si < 100).
   // Si les produits n'ont pas de poids renseigné en base, totalWeightG peut être 0.
   const poids = Math.max(input.totalWeightG, 100).toString();
@@ -681,21 +700,19 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
   const nClient = buildMondialRelayNClient(input.customerEmail);
   // Normalisation ASCII des champs expéditeur (suppression accents, apostrophes doubles, etc.)
   // DOIT être identique entre le tableau values (hash MD5) et l'enveloppe SOAP.
-  const expeAd1 = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise", 32);
-  // Spec MR v5.11 : Expe_Ad3 est obligatoire (min 2 car.). Si la variable d'env est vide, on utilise
-  // le nom de la société comme fallback pour éviter STAT 33 (L3 invalide).
-  const expeAd3Raw = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_ADDRESS || "", 32);
-  const expeAd3 = expeAd3Raw.length >= 2 ? expeAd3Raw : normalizeMondialRelayText(process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise", 32);
+  const expeAd1 = normalizeMondialRelayText(senderCompanyRaw, 32);
+  // Spec MR v5.11 : Expe_Ad3 est obligatoire (min 2 car.). Si l'adresse est vide, on utilise
+  // le nom de l'expéditeur comme fallback pour éviter STAT 33 (L3 invalide).
+  const expeAd3Raw = normalizeMondialRelayText(senderAddressRaw, 32);
+  const expeAd3 = expeAd3Raw.length >= 2 ? expeAd3Raw : normalizeMondialRelayText(senderCompanyRaw, 32);
   // Spec MR v5.11 : Expe_Ad4 est optionnel. Mondial Relay rejette une chaîne vide (STAT 34) :
   // il faut soit une valeur valide (min 2 car.), soit ne pas envoyer le tag du tout.
-  const expeAd4Raw = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_ADDRESS_2 || "", 32);
-  const expeAd4 = expeAd4Raw.length >= 2 ? expeAd4Raw : null; // null = tag omis dans l'enveloppe
-  const expeVille = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_CITY || "", 26);
+  const expeAd4Raw = normalizeMondialRelayText(senderExtensionRaw, 32);
+  const expeAd4 = expeAd4Raw.length >= 2 ? expeAd4Raw : null;
+  const expeVille = normalizeMondialRelayText(senderCityRaw, 26);
   // Spec MR v5.11 : Expe_Tel1 doit être au format 0XXXXXXXXX (10 chiffres).
-  // normalizeMondialRelayPhone gère +33, 0033, espaces, tirets.
-  // Si null (format invalide ou variable absente), le tag est omis pour éviter STAT 38.
-  const expeTel1 = normalizeMondialRelayPhone(process.env.LOGISTICS_SENDER_PHONE);
-  const expeMail = normalizeMondialRelayText(process.env.LOGISTICS_SENDER_EMAIL || "contact@barberparadise.fr", 70, false);
+  const expeTel1 = normalizeMondialRelayPhone(senderPhoneRaw);
+  const expeMail = normalizeMondialRelayText(senderEmailRaw, 70, false);
 
   // Normalisation ASCII des champs texte destinataire (suppression accents, apostrophes doubles, etc.)
   // DOIT être identique entre le tableau values (hash MD5) et l'enveloppe SOAP.
@@ -706,16 +723,17 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
   // Spec MR v5.11 : Dest_Tel1 doit être au format 0XXXXXXXXX.
   // Si le client n'a pas de téléphone ou format invalide, le tag est omis.
   const destPhone = normalizeMondialRelayPhone(input.recipient.phone);
+  const destMail = normalizeMondialRelayText(input.recipient.email || input.customerEmail, 70, false);
 
   const values = [
     enseigne, modeCol, modeLiv, nDossier, nClient,
     "FR", expeAd1, "", expeAd3,
     // expeAd4 est null quand LOGISTICS_SENDER_ADDRESS_2 est vide : le hash doit utiliser "" dans ce cas
-    expeAd4 ?? "", expeVille, process.env.LOGISTICS_SENDER_POSTAL_CODE || "", "FR",
+    expeAd4 ?? "", expeVille, senderPostalCodeRaw, "FR",
     // expeTel1 est null si le téléphone est absent/invalide : le hash utilise "" dans ce cas
     expeTel1 ?? "", "", expeMail,
     "FR", destName, "", destAd3, destAd4,
-    destVille, input.recipient.postalCode, countryCode, destPhone ?? "", "", input.customerEmail,
+    destVille, input.recipient.postalCode, countryCode, destPhone ?? "", "", destMail,
     poids, input.packageDimensions?.lengthCm || "", "", "1", "0", "EUR", expValeur, "EUR",
     // COL_Rel_Pays, COL_Rel (vide), LIV_Rel_Pays, LIV_Rel (point relais de livraison)
     // Ordre identique à l'enveloppe SOAP : COL_Rel="", LIV_Rel=relayPointId
@@ -737,7 +755,7 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
     expeAd3,
     expeAd4: expeAd4 !== null ? expeAd4 : "(null — tag omis)",
     expeVille,
-    expeCP: process.env.LOGISTICS_SENDER_POSTAL_CODE || "",
+    expeCP: senderPostalCodeRaw,
     expeTel1: expeTel1 !== null ? expeTel1 : "(null — tag omis)",
     expeMail,
   }));
@@ -749,6 +767,7 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
     destCP: input.recipient.postalCode,
     countryCode,
     destPhone: destPhone !== null ? destPhone : "(null — tag omis)",
+    destMail,
   }));
   console.log("[MondialRelay][DIAG-V2] Autres:", JSON.stringify({ enseigne, nDossier, nClient, poids, relayPointId: input.relayPointId, assurance }));
   const envelope = `<?xml version="1.0" encoding="utf-8"?>
@@ -758,9 +777,9 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
       <Enseigne>${xmlEscape(enseigne)}</Enseigne><ModeCol>${xmlEscape(modeCol)}</ModeCol><ModeLiv>${xmlEscape(modeLiv)}</ModeLiv>
       <NDossier>${xmlEscape(nDossier)}</NDossier><NClient>${xmlEscape(nClient)}</NClient><Expe_Langage>FR</Expe_Langage>
       <Expe_Ad1>${xmlEscape(expeAd1)}</Expe_Ad1><Expe_Ad2></Expe_Ad2><Expe_Ad3>${xmlEscape(expeAd3)}</Expe_Ad3>${expeAd4 !== null ? `<Expe_Ad4>${xmlEscape(expeAd4)}</Expe_Ad4>` : ""}
-      <Expe_Ville>${xmlEscape(expeVille)}</Expe_Ville><Expe_CP>${xmlEscape(process.env.LOGISTICS_SENDER_POSTAL_CODE || "")}</Expe_CP><Expe_Pays>FR</Expe_Pays>${expeTel1 !== null ? `<Expe_Tel1>${xmlEscape(expeTel1)}</Expe_Tel1>` : ""}<Expe_Tel2></Expe_Tel2><Expe_Mail>${xmlEscape(expeMail)}</Expe_Mail>
+      <Expe_Ville>${xmlEscape(expeVille)}</Expe_Ville><Expe_CP>${xmlEscape(senderPostalCodeRaw)}</Expe_CP><Expe_Pays>FR</Expe_Pays>${expeTel1 !== null ? `<Expe_Tel1>${xmlEscape(expeTel1)}</Expe_Tel1>` : ""}<Expe_Tel2></Expe_Tel2><Expe_Mail>${xmlEscape(expeMail)}</Expe_Mail>
       <Dest_Langage>FR</Dest_Langage><Dest_Ad1>${xmlEscape(destName)}</Dest_Ad1><Dest_Ad2></Dest_Ad2><Dest_Ad3>${xmlEscape(destAd3)}</Dest_Ad3>${destAd4.length >= 2 ? `<Dest_Ad4>${xmlEscape(destAd4)}</Dest_Ad4>` : ""}
-      <Dest_Ville>${xmlEscape(destVille)}</Dest_Ville><Dest_CP>${xmlEscape(input.recipient.postalCode)}</Dest_CP><Dest_Pays>${xmlEscape(countryCode)}</Dest_Pays>${destPhone !== null ? `<Dest_Tel1>${xmlEscape(destPhone)}</Dest_Tel1>` : ""}<Dest_Tel2></Dest_Tel2><Dest_Mail>${xmlEscape(input.customerEmail)}</Dest_Mail>
+      <Dest_Ville>${xmlEscape(destVille)}</Dest_Ville><Dest_CP>${xmlEscape(input.recipient.postalCode)}</Dest_CP><Dest_Pays>${xmlEscape(countryCode)}</Dest_Pays>${destPhone !== null ? `<Dest_Tel1>${xmlEscape(destPhone)}</Dest_Tel1>` : ""}<Dest_Tel2></Dest_Tel2><Dest_Mail>${xmlEscape(destMail)}</Dest_Mail>
       <Poids>${xmlEscape(poids)}</Poids><Longueur>${xmlEscape(input.packageDimensions?.lengthCm || "")}</Longueur><Taille></Taille><NbColis>1</NbColis>
       <CRT_Valeur>0</CRT_Valeur><CRT_Devise>EUR</CRT_Devise><Exp_Valeur>${xmlEscape(expValeur)}</Exp_Valeur><Exp_Devise>EUR</Exp_Devise><COL_Rel_Pays>FR</COL_Rel_Pays><COL_Rel></COL_Rel><LIV_Rel_Pays>FR</LIV_Rel_Pays><LIV_Rel>${xmlEscape(input.relayPointId)}</LIV_Rel><TAvisage></TAvisage><TReprise></TReprise><Montage></Montage><TRDV></TRDV><Assurance>${xmlEscape(assurance)}</Assurance><Instructions></Instructions><Security>${security}</Security>
     </WSI2_CreationExpedition>

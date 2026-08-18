@@ -5,6 +5,7 @@ import { ensureProInvoiceForOrder } from "../services/proInvoiceService";
 import { ensureB2CInvoiceForOrder, generateB2CInvoicePdfBuffer } from "../services/b2cInvoiceService";
 import promotionService from "../services/promotionService";
 import { notifyAdminNewOrder } from "../services/adminNotificationService";
+import { confirmOrderExchangeRealSettlement, markOrderExchangeRealSettlementFailed } from "../services/orderExchangeService";
 
 export const webhooksRouter = Router();
 
@@ -344,12 +345,12 @@ webhooksRouter.post("/mollie", async (req: Request, res: Response): Promise<void
   }
 
   // Étape 1 : Vérifier le paiement auprès de Mollie
-  let payment: { id: string; status?: string; metadata?: { orderId?: string }; orderNumber?: string };
+  let payment: { id: string; status?: string; metadata?: { orderId?: string; exchangeId?: string; type?: string }; orderNumber?: string };
   try {
     const response = await fetch(`https://api.mollie.com/v2/payments/${paymentId}`, {
       headers: { Authorization: `Bearer ${requireEnv("MOLLIE_API_KEY")}` },
     });
-    payment = (await response.json()) as { id: string; status?: string; metadata?: { orderId?: string } };
+    payment = (await response.json()) as { id: string; status?: string; metadata?: { orderId?: string; exchangeId?: string; type?: string } };
     if (!response.ok) {
       console.error(`[webhook][mollie] Vérification paiement échouée — paymentId=${paymentId} status=${response.status}`);
       res.status(401).json({ error: "Webhook Mollie non vérifié" });
@@ -362,9 +363,30 @@ webhooksRouter.post("/mollie", async (req: Request, res: Response): Promise<void
     return;
   }
 
-  // Étape 2 : Trouver la commande
+  // Étape 2 : Les règlements d’échange sont indépendants de la commande historique.
+  const exchangeId = payment.metadata?.exchangeId;
+  const isExchangeSettlement = payment.metadata?.type === "exchange_settlement";
+  if (isExchangeSettlement && exchangeId) {
+    try {
+      if (payment.status === "paid") {
+        await confirmOrderExchangeRealSettlement(exchangeId, payment.id);
+        console.log(`[webhook][mollie] Règlement échange confirmé — exchangeId=${exchangeId} paymentId=${payment.id}`);
+      } else if (["failed", "canceled", "expired"].includes(payment.status || "")) {
+        await markOrderExchangeRealSettlementFailed(exchangeId, payment.id, payment.status || "unknown");
+        console.log(`[webhook][mollie] Règlement échange non finalisé — exchangeId=${exchangeId} paymentId=${payment.id} status=${payment.status}`);
+      }
+      res.json({ received: true });
+      return;
+    } catch (err) {
+      console.error(`[webhook][mollie] Erreur règlement échange — exchangeId=${exchangeId}:`, err instanceof Error ? err.stack : err);
+      res.status(500).json({ error: "Erreur traitement règlement échange" });
+      return;
+    }
+  }
+
+  // Étape 3 : Trouver la commande
   const orderId = payment.metadata?.orderId || (await findOrderIdByProviderPaymentId(payment.id));
-  const isComplement = (payment as { metadata?: { orderId?: string; type?: string } }).metadata?.type === "complement";
+  const isComplement = payment.metadata?.type === "complement";
 
   if (payment.status === "paid" && orderId && isComplement) {
     // ── Paiement COMPLÉMENTAIRE confirmé ──────────────────────────────────────

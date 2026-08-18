@@ -419,6 +419,119 @@ export function markShippedManual(
   );
 }
 
+export type AdminOrderExchangeShipment = {
+  id: string;
+  direction: "return" | "replacement";
+  carrier: string;
+  trackingNumber?: string | null;
+  trackingUrl?: string | null;
+  labelStatus?: string | null;
+  labelGeneratedAt?: string | null;
+  shippedAt?: string | null;
+};
+
+export type AdminOrderExchangeEvent = {
+  id: string;
+  type: string;
+  message: string;
+  actorEmail?: string | null;
+  createdAt: string;
+};
+
+export type AdminOrderExchange = {
+  id: string;
+  orderId: string;
+  status: string;
+  returnName: string;
+  returnImage: string;
+  returnQuantity: number;
+  returnVariantLabel?: string | null;
+  returnValue: number;
+  replacementName: string;
+  replacementImage: string;
+  replacementQuantity: number;
+  replacementVariantLabel?: string | null;
+  replacementValue: number;
+  differenceAmount: number;
+  currency: string;
+  priceTaxLabel: "HT" | "TTC";
+  settlementMode?: "real" | "internal" | "gift" | null;
+  settlementStatus: string;
+  settlementPaymentUrl?: string | null;
+  returnedStockRestored: boolean;
+  replacementStockReserved: boolean;
+  replacementStockReleased: boolean;
+  createdAt: string;
+  returnReceivedAt?: string | null;
+  replacementShippedAt?: string | null;
+  completedAt?: string | null;
+  cancelledAt?: string | null;
+  shipments: AdminOrderExchangeShipment[];
+  events: AdminOrderExchangeEvent[];
+};
+
+export function getAdminOrderExchanges(orderId: string) {
+  return adminFetch<{ exchanges: AdminOrderExchange[] }>(`/api/admin/exchanges/orders/${orderId}`);
+}
+
+export function createAdminOrderExchange(orderId: string, payload: {
+  returnedOrderItemId: string;
+  quantity: number;
+  replacementProductId: string;
+  replacementVariantId?: string | null;
+  notes?: string | null;
+}) {
+  return adminFetch<{ exchange: AdminOrderExchange }>(`/api/admin/exchanges/orders/${orderId}`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getAdminOrderExchange(exchangeId: string) {
+  return adminFetch<{ exchange: AdminOrderExchange }>(`/api/admin/exchanges/${exchangeId}`);
+}
+
+export function getAdminExchangeQuotes(exchangeId: string, direction: "return" | "replacement") {
+  return adminFetch<{ quotes: LogisticsCarrierQuote[]; totalWeightG: number; direction: "return" | "replacement" }>(`/api/admin/exchanges/${exchangeId}/${direction}/quotes`);
+}
+
+export function createAdminExchangeReturnLabel(exchangeId: string, payload: { carrier: "colissimo" | "mondial_relay" | "colissimo_international"; offerId: string; relayPointId?: string | null }) {
+  return adminFetch<{ success: boolean; shipment: AdminOrderExchangeShipment; downloadUrl: string }>(`/api/admin/exchanges/${exchangeId}/return-label`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function markAdminExchangeReturnReceived(exchangeId: string) {
+  return adminFetch<{ success: boolean; exchange: AdminOrderExchange }>(`/api/admin/exchanges/${exchangeId}/return-received`, { method: "POST" });
+}
+
+export function settleAdminExchange(exchangeId: string, mode: "real" | "internal" | "gift") {
+  return adminFetch<{ success: boolean; exchange: AdminOrderExchange; paymentUrl?: string }>(`/api/admin/exchanges/${exchangeId}/settlement`, {
+    method: "POST",
+    body: JSON.stringify({ mode }),
+  });
+}
+
+export function createAdminExchangeReplacementLabel(exchangeId: string, payload: { carrier: "colissimo" | "mondial_relay" | "colissimo_international"; offerId: string; relayPointId?: string | null }) {
+  return adminFetch<{ success: boolean; shipment: AdminOrderExchangeShipment; downloadUrl: string }>(`/api/admin/exchanges/${exchangeId}/replacement-label`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function markAdminExchangeReplacementShipped(exchangeId: string) {
+  return adminFetch<{ success: boolean; exchange: AdminOrderExchange }>(`/api/admin/exchanges/${exchangeId}/replacement-shipped`, { method: "POST" });
+}
+
+export function completeAdminExchange(exchangeId: string) {
+  return adminFetch<{ success: boolean; exchange: AdminOrderExchange }>(`/api/admin/exchanges/${exchangeId}/complete`, { method: "POST" });
+}
+
+export function cancelAdminExchange(exchangeId: string) {
+  return adminFetch<{ success: boolean; exchange: AdminOrderExchange }>(`/api/admin/exchanges/${exchangeId}/cancel`, { method: "POST" });
+}
+
 export function modifyOrderItems(
   id: string,
   payload: {
