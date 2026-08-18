@@ -3206,7 +3206,6 @@ export interface PosStats {
     mollie_manual: { revenue: number; count: number };
     cash: { revenue: number; count: number };
     virement: { revenue: number; count: number };
-    split: { revenue: number; count: number };
     // Rétrocompatibilité
     card?: { revenue: number; count: number };
   };

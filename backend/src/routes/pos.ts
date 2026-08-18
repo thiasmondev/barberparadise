@@ -4,6 +4,7 @@ import { prisma } from "../utils/prisma";
 import { AuthRequest } from "../middleware/auth";
 import { ensureB2CInvoiceForOrder } from "../services/b2cInvoiceService";
 import { ensureProInvoiceForOrder } from "../services/proInvoiceService";
+import { getPosSplitAllocations } from "../utils/posPaymentBreakdown";
 
 export const posRouter = Router();
 
@@ -696,6 +697,19 @@ posRouter.get("/stats", async (req: AuthRequest, res: Response) => {
       (acc, order) => {
         const amount = order.totalTTC || order.total || 0;
         const method = order.paymentMethod as string;
+
+        if (method === "split") {
+          const allocations = getPosSplitAllocations(order);
+          if (!allocations) {
+            throw new Error(`La vente POS ${order.orderNumber} est marquée DIVISER sans ventilation de paiement valide.`);
+          }
+          for (const allocation of allocations) {
+            acc[allocation.method].revenue = money(acc[allocation.method].revenue + allocation.amount);
+            acc[allocation.method].count += 1;
+          }
+          return acc;
+        }
+
         if (method === "cash") {
           acc.cash.revenue = money(acc.cash.revenue + amount);
           acc.cash.count += 1;
@@ -705,9 +719,6 @@ posRouter.get("/stats", async (req: AuthRequest, res: Response) => {
         } else if (method === "mollie_manual") {
           acc.mollie_manual.revenue = money(acc.mollie_manual.revenue + amount);
           acc.mollie_manual.count += 1;
-        } else if (method === "split") {
-          acc.split.revenue = money(acc.split.revenue + amount);
-          acc.split.count += 1;
         } else {
           // indy + rétrocompatibilité card/manual
           acc.indy.revenue = money(acc.indy.revenue + amount);
@@ -720,7 +731,6 @@ posRouter.get("/stats", async (req: AuthRequest, res: Response) => {
         mollie_manual: { revenue: 0, count: 0 },
         cash: { revenue: 0, count: 0 },
         virement: { revenue: 0, count: 0 },
-        split: { revenue: 0, count: 0 },
         // Rétrocompatibilité pour l'ancien frontend stats qui lit .card
         card: { revenue: 0, count: 0 },
       }

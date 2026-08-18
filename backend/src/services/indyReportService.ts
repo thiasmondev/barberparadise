@@ -1,6 +1,7 @@
 import { prisma } from "../utils/prisma";
+import { getPosPaymentMethodLabel, getPosSplitAllocations } from "../utils/posPaymentBreakdown";
 
-export type IndyPspName = "Mollie" | "PayPal";
+export type IndyPspName = string;
 
 export interface IndyReport {
   month: string;
@@ -51,7 +52,7 @@ type OrderForIndy = Awaited<ReturnType<typeof fetchOrdersForIndy>>[number];
 
 const SALES_STATUSES = ["paid", "shipped"];
 const REFUND_STATUSES = ["cancelled", "refunded"];
-const PSP_ORDER: IndyPspName[] = ["Mollie", "PayPal"];
+const PSP_ORDER: IndyPspName[] = ["Indy", "Mollie", "Espèces", "Virement", "PayPal"];
 const EU_COUNTRIES = new Set([
   "AT", "AUTRICHE",
   "BE", "BELGIQUE", "BELGIUM",
@@ -129,10 +130,33 @@ function getOrderTotalTTC(order: OrderForIndy): number {
   return money(Number.isFinite(total) ? total : 0);
 }
 
-function mapPsp(order: Pick<OrderForIndy, "paymentMethod" | "paymentProvider">): IndyPspName {
+function mapPsp(order: Pick<OrderForIndy, "paymentMethod" | "paymentProvider" | "channel">): IndyPspName {
+  if (order.channel === "pos") {
+    const method = (order.paymentMethod || "").toLowerCase();
+    if (method === "cash") return "Espèces";
+    if (method === "virement") return "Virement";
+    if (method === "mollie_manual") return "Mollie";
+    return "Indy";
+  }
+
   const raw = `${order.paymentProvider || ""} ${order.paymentMethod || ""}`.toLowerCase();
   if (raw.includes("paypal")) return "PayPal";
   return "Mollie";
+}
+
+function getPaymentAllocations(order: OrderForIndy): Array<{ psp: IndyPspName; amount: number }> {
+  if (order.channel === "pos" && (order.paymentMethod || "").toLowerCase() === "split") {
+    const splitAllocations = getPosSplitAllocations(order);
+    if (!splitAllocations) {
+      throw new Error(`La vente POS ${order.id} est marquée DIVISER sans ventilation de paiement valide.`);
+    }
+    return splitAllocations.map(allocation => ({
+      psp: getPosPaymentMethodLabel(allocation.method),
+      amount: allocation.amount,
+    }));
+  }
+
+  return [{ psp: mapPsp(order), amount: getOrderTotalTTC(order) }];
 }
 
 function getVatRateForIndy(order: OrderForIndy): 0 | 20 {
@@ -186,6 +210,8 @@ async function fetchOrdersForIndy(start: Date, end: Date, statuses: string[]) {
       status: true,
       paymentMethod: true,
       paymentProvider: true,
+      channel: true,
+      posPaymentBreakdown: true,
       total: true,
       totalTTC: true,
       isB2B: true,
@@ -215,16 +241,18 @@ export async function buildIndyReport(monthParam?: unknown): Promise<IndyReport>
 
   for (const order of salesOrders) {
     const totalTTC = getOrderTotalTTC(order);
-    const psp = mapPsp(order);
+    const paymentAllocations = getPaymentAllocations(order);
     const country = getDeliveryCountry(order);
     const tauxTVA = getVatRateForIndy(order);
     const totalHT = tauxTVA === 20 ? money(totalTTC / 1.2) : totalTTC;
     const montantTVA = money(totalTTC - totalHT);
 
-    const pspLine = pspMap.get(psp) || { psp, ventesRealisees: 0, commissionsPrelevees: 0, variationTotale: 0 };
-    pspLine.ventesRealisees = money(pspLine.ventesRealisees + totalTTC);
-    pspLine.variationTotale = money(pspLine.ventesRealisees - pspLine.commissionsPrelevees);
-    pspMap.set(psp, pspLine);
+    for (const allocation of paymentAllocations) {
+      const pspLine = pspMap.get(allocation.psp) || { psp: allocation.psp, ventesRealisees: 0, commissionsPrelevees: 0, variationTotale: 0 };
+      pspLine.ventesRealisees = money(pspLine.ventesRealisees + allocation.amount);
+      pspLine.variationTotale = money(pspLine.ventesRealisees - pspLine.commissionsPrelevees);
+      pspMap.set(allocation.psp, pspLine);
+    }
 
     const countryKey = `${country}::${tauxTVA}`;
     const countryLine = countryVatMap.get(countryKey) || { paysLivraison: country, tauxTVA, totalHT: 0, montantTVA: 0, totalTTC: 0, nbCommandes: 0 };
@@ -234,10 +262,12 @@ export async function buildIndyReport(monthParam?: unknown): Promise<IndyReport>
     countryLine.nbCommandes += 1;
     countryVatMap.set(countryKey, countryLine);
 
-    const csvKey = `${psp}::${country}::${tauxTVA}`;
-    const csvLine = csvRowMap.get(csvKey) || { type: "Marchandise", pays_expedition: "France", pays_livraison: country, tva_pct: tauxTVA, total_ttc: 0, moyen_paiement: psp };
-    csvLine.total_ttc = money(csvLine.total_ttc + totalTTC);
-    csvRowMap.set(csvKey, csvLine);
+    for (const allocation of paymentAllocations) {
+      const csvKey = `${allocation.psp}::${country}::${tauxTVA}`;
+      const csvLine = csvRowMap.get(csvKey) || { type: "Marchandise", pays_expedition: "France", pays_livraison: country, tva_pct: tauxTVA, total_ttc: 0, moyen_paiement: allocation.psp };
+      csvLine.total_ttc = money(csvLine.total_ttc + allocation.amount);
+      csvRowMap.set(csvKey, csvLine);
+    }
   }
 
   const ventesParPaysEtTVA = [...countryVatMap.values()].sort((a, b) =>

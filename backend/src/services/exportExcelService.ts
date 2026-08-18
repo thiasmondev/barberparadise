@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { PrismaClient } from "@prisma/client";
 import { parseIndyMonth } from "./indyReportService";
+import { getPosPaymentMethodLabel, getPosSplitAllocations } from "../utils/posPaymentBreakdown";
 
 const prisma = new PrismaClient();
 
@@ -25,6 +26,7 @@ export async function generateFinanceExcel(monthParam?: unknown): Promise<Buffer
       paymentMethod: true,
       paymentProvider: true,
       channel: true,
+      posPaymentBreakdown: true,
       customer: {
         select: {
           firstName: true,
@@ -47,9 +49,11 @@ export async function generateFinanceExcel(monthParam?: unknown): Promise<Buffer
     const method = (order.paymentMethod || "").toLowerCase();
     
     if (order.channel === "pos") {
-      if (method.includes("cash") || method.includes("espèce") || method.includes("espece")) return "Espèces";
-      if (method.includes("card") || method.includes("carte") || method.includes("tap")) return "Carte (POS)";
-      return "Manuel";
+      if (method === "cash") return "Espèces";
+      if (method === "virement") return "Virement";
+      if (method === "mollie_manual") return "Mollie";
+      // Indy + rétrocompatibilité des anciennes ventes card/manual.
+      return "Indy";
     }
 
     if (provider.includes("mollie")) return "Carte/Mollie";
@@ -63,30 +67,44 @@ export async function generateFinanceExcel(monthParam?: unknown): Promise<Buffer
     return order.paymentMethod || order.paymentProvider || "Manuel";
   };
 
-  // Préparer les données
-  const data = orders.map(order => {
-    const net = Number(order.totalTTC || order.total || 0);
-    
+  // Préparer les données. Une vente POS DIVISER devient une ligne par moyen réel.
+  const data = orders.flatMap(order => {
+    const totalTTC = Number(order.totalTTC || order.total || 0);
+
     // Extraire le pays du JSON billingAddress si présent
     let billingCountry = "";
     if (order.billingAddress && typeof order.billingAddress === "object" && !Array.isArray(order.billingAddress)) {
       const ba = order.billingAddress as any;
       billingCountry = ba.country || "";
     }
-    
+
     const pays = billingCountry.trim() || order.shippingAddress?.country?.trim() || "France";
     const dateStr = order.createdAt.toISOString().split("T")[0]; // YYYY-MM-DD
     const client = order.customer ? `${order.customer.firstName} ${order.customer.lastName}`.trim() : "Client inconnu";
-    const passerelle = getPasserelle(order);
 
-    return {
+    if (order.channel === "pos" && (order.paymentMethod || "").toLowerCase() === "split") {
+      const allocations = getPosSplitAllocations(order);
+      if (!allocations) {
+        throw new Error(`La vente POS ${order.orderNumber} est marquée DIVISER sans ventilation de paiement valide.`);
+      }
+      return allocations.map(allocation => ({
+        orderNumber: order.orderNumber,
+        date: dateStr,
+        client,
+        passerelle: getPosPaymentMethodLabel(allocation.method),
+        net: allocation.amount,
+        pays,
+      }));
+    }
+
+    return [{
       orderNumber: order.orderNumber,
       date: dateStr,
       client,
-      passerelle,
-      net,
+      passerelle: getPasserelle(order),
+      net: totalTTC,
       pays,
-    };
+    }];
   });
 
   const workbook = new ExcelJS.Workbook();

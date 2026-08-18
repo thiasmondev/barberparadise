@@ -43,8 +43,8 @@ function formatMonth(month: string) {
 }
 
 function formatPspLabel(value: string) {
-  const normalized = value.trim().toLowerCase();
-  if (normalized.startsWith("mol")) return "Virement bancaire sécurisé";
+  // Ce rapport est réservé à l’administration : conserver le moyen réel
+  // pour permettre le rapprochement de caisse et bancaire.
   return value;
 }
 
