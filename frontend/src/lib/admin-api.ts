@@ -607,6 +607,16 @@ export async function createPaymentAdjustment(
   };
 }
 
+export function confirmAdminOrderPaymentManually(
+  id: string,
+  payload: { amount: number; paymentMethod: "external_card" | "indy" | "mollie_manual" | "cash" | "virement" | "other" },
+) {
+  return adminFetch<{ success: boolean; order: Order; fullyPaid: boolean; paidAmount: number; remainingAmount: number }>(
+    `/api/admin/orders/${encodeURIComponent(id)}/mark-paid-manual`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
 export function refundAdminOrder(id: string, payload: { amount: number; mode: "real" | "manual" }) {
   return adminFetch<{ success: boolean; status: string; refundedAmount: number }>(`/api/admin/orders/${id}/refund`, {
     method: "POST",

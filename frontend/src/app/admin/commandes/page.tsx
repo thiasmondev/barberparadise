@@ -121,6 +121,8 @@ function paymentMethodLabel(method?: string | null, provider?: string | null): s
   if (m === "indy") return "Indy";
   if (m === "mollie_manual") return "Mollie";
   if (m === "manual") return "Encaissement manuel";
+  if (m === "external_card") return "Carte via lien externe";
+  if (m === "other") return "Autre moyen confirmé";
   if (m === "paypal" || p === "paypal") return "PayPal";
   if (m === "paybybank") return "Paiement bancaire instantané";
   if (["pay_by_bank", "banktransfer", "bank_transfer", "bank-transfer", "virement"].includes(m)) return "Virement bancaire";

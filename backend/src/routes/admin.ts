@@ -5305,6 +5305,121 @@ adminRouter.get(
   }
 );
 
+// POST /api/admin/orders/:id/mark-paid-manual — Confirmer un paiement hors site
+adminRouter.post(
+  "/orders/:id/mark-paid-manual",
+  requireAdmin,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const order = await prisma.order.findUnique({
+        where: { id: req.params.id },
+        include: { items: true },
+      });
+      if (!order) {
+        res.status(404).json({ error: "Commande introuvable." });
+        return;
+      }
+      if (order.channel === "pos") {
+        res.status(400).json({ error: "Les ventes Caisse disposent de leur propre confirmation de paiement." });
+        return;
+      }
+
+      const eligibleStatuses = ["draft", "pending", "pending_payment", "open", "cancelled"];
+      if (!eligibleStatuses.includes(order.status)) {
+        res.status(400).json({ error: "Cette commande ne peut pas être confirmée manuellement dans son statut actuel." });
+        return;
+      }
+
+      const total = Number(order.totalTTC || order.total || 0);
+      const currentPaidAmount = Number(order.paidAmount || 0);
+      const amount = Math.round(Number(req.body?.amount) * 100) / 100;
+      const paymentMethod = String(req.body?.paymentMethod || "").trim().toLowerCase();
+      const validMethods = ["external_card", "indy", "mollie_manual", "cash", "virement", "other"];
+      if (!Number.isFinite(amount) || amount <= 0) {
+        res.status(400).json({ error: "Le montant confirmé doit être supérieur à 0 €." });
+        return;
+      }
+      if (amount > total - currentPaidAmount + 0.01) {
+        res.status(400).json({ error: "Le montant confirmé dépasse le solde restant de la commande." });
+        return;
+      }
+      if (!validMethods.includes(paymentMethod)) {
+        res.status(400).json({ error: "Moyen de paiement manuel invalide." });
+        return;
+      }
+
+      const paymentLabels: Record<string, string> = {
+        external_card: "Carte via lien externe",
+        indy: "Indy",
+        mollie_manual: "Carte manuelle",
+        cash: "Espèces",
+        virement: "Virement bancaire",
+        other: "Autre moyen",
+      };
+      const newPaidAmount = Math.min(total, Math.round((currentPaidAmount + amount) * 100) / 100);
+      const fullyPaid = newPaidAmount >= total - 0.01;
+      const confirmedBy = req.user?.email || req.user?.id || "admin";
+      const previousProviderPaymentId = order.providerPaymentId;
+      const note = `[${new Date().toISOString()}] Paiement confirmé manuellement — ${paymentLabels[paymentMethod]} — ${amount.toFixed(2)} € — par ${confirmedBy}${previousProviderPaymentId ? ` — ancien paiement en ligne annulé : ${previousProviderPaymentId}` : ""}.`;
+
+      const updatedOrder = await prisma.$transaction(async (tx) => {
+        // Le stock n’est décrémenté qu’au moment où le règlement devient intégral.
+        // La commande source n’avait jamais été payée : il ne s’agit pas d’un ajustement rétroactif.
+        if (fullyPaid) {
+          for (const item of order.items) {
+            if (!item.productId) continue;
+            if (item.variantId) {
+              const variant = await tx.productVariant.findUnique({ where: { id: item.variantId } });
+              if (!variant) continue;
+              const nextStock = Math.max(0, variant.stock - item.quantity);
+              await tx.productVariant.update({
+                where: { id: item.variantId },
+                data: { stock: nextStock, inStock: nextStock > 0 },
+              });
+              const remainingVariants = await tx.productVariant.count({
+                where: { productId: item.productId, inStock: true, stock: { gt: 0 } },
+              });
+              await tx.product.update({ where: { id: item.productId }, data: { inStock: remainingVariants > 0 } });
+            } else {
+              const product = await tx.product.findUnique({ where: { id: item.productId } });
+              if (!product) continue;
+              const nextStock = Math.max(0, product.stockCount - item.quantity);
+              await tx.product.update({
+                where: { id: item.productId },
+                data: { stockCount: nextStock, inStock: nextStock > 0 },
+              });
+            }
+          }
+        }
+
+        return tx.order.update({
+          where: { id: order.id },
+          data: {
+            status: fullyPaid ? "paid" : "pending_payment",
+            paidAmount: newPaidAmount,
+            paymentMethod,
+            paymentProvider: "manual",
+            // Un ancien paiement en ligne annulé ne doit plus pouvoir écraser la confirmation manuelle via webhook.
+            providerPaymentId: null,
+            notes: order.notes ? `${order.notes}\n${note}` : note,
+          },
+        });
+      });
+
+      res.json({
+        success: true,
+        order: updatedOrder,
+        fullyPaid,
+        paidAmount: newPaidAmount,
+        remainingAmount: Math.max(0, Math.round((total - newPaidAmount) * 100) / 100),
+      });
+    } catch (err) {
+      console.error("[admin][mark-paid-manual]", err);
+      res.status(500).json({ error: "Impossible de confirmer manuellement le paiement." });
+    }
+  },
+);
+
 // POST /api/admin/orders/:id/refund — Rembourser une commande
 adminRouter.post("/orders/:id/refund", requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {

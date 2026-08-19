@@ -55,6 +55,7 @@ import {
   getShipmentLabelPdfUrl,
   purchaseLogisticsLabel,
   refundAdminOrder,
+  confirmAdminOrderPaymentManually,
   resendOrderConfirmation,
   resendOrderTracking,
   updateAdminOrder,
@@ -164,6 +165,8 @@ function paymentMethodLabel(method?: string | null, provider?: string | null): s
   if (m === "indy") return "Indy";
   if (m === "mollie_manual") return "Mollie";
   if (m === "manual") return "Encaissement manuel";
+  if (m === "external_card") return "Carte via lien externe";
+  if (m === "other") return "Autre moyen confirmé";
   if (m === "paypal" || p === "paypal") return "PayPal";
   if (m === "paybybank") return "Paiement bancaire instantané";
   if (["pay_by_bank", "banktransfer", "bank_transfer", "bank-transfer", "virement"].includes(m)) return "Virement bancaire";
@@ -340,6 +343,14 @@ export default function OrderDetailPage() {
   const [refundMode, setRefundMode] = useState<"real" | "manual">("real");
   const [refundError, setRefundError] = useState("");
   const [refundSuccess, setRefundSuccess] = useState("");
+
+  // ─── Confirmation manuelle d’un paiement hors site ─────────────────────────
+  type ManualPaymentMethod = "external_card" | "indy" | "mollie_manual" | "cash" | "virement" | "other";
+  const [manualPaymentAmount, setManualPaymentAmount] = useState("");
+  const [manualPaymentMethod, setManualPaymentMethod] = useState<ManualPaymentMethod>("external_card");
+  const [manualPaymentLoading, setManualPaymentLoading] = useState(false);
+  const [manualPaymentError, setManualPaymentError] = useState("");
+  const [manualPaymentSuccess, setManualPaymentSuccess] = useState("");
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
   const [isSendingInvoice, setIsSendingInvoice] = useState(false);
   const [invoiceSentSuccess, setInvoiceSentSuccess] = useState(false);
@@ -1385,6 +1396,44 @@ export default function OrderDetailPage() {
     }
   };
 
+  const handleManualPaymentConfirmation = async () => {
+    if (!order) return;
+    setManualPaymentError("");
+    setManualPaymentSuccess("");
+    const remaining = Math.max(0, (order.totalTTC || order.total) - (order.paidAmount || 0));
+    const amount = parseFloat((manualPaymentAmount || remaining.toFixed(2)).replace(",", "."));
+    if (!Number.isFinite(amount) || amount <= 0 || amount > remaining + 0.01) {
+      setManualPaymentError(`Saisissez un montant compris entre 0,01 € et ${formatPrice(remaining, order.currency)}.`);
+      return;
+    }
+    const labels: Record<ManualPaymentMethod, string> = {
+      external_card: "carte via lien externe",
+      indy: "Indy",
+      mollie_manual: "carte manuelle",
+      cash: "espèces",
+      virement: "virement bancaire",
+      other: "autre moyen",
+    };
+    if (!window.confirm(`Confirmer manuellement ${formatPrice(amount, order.currency)} payé par ${labels[manualPaymentMethod]} ?\n\nCette action enregistre la confirmation hors site, met à jour le montant payé et réactive la commande si le solde est intégralement réglé.`)) return;
+
+    setManualPaymentLoading(true);
+    try {
+      const result = await confirmAdminOrderPaymentManually(order.id, { amount, paymentMethod: manualPaymentMethod });
+      setOrder(result.order);
+      setManualPaymentAmount("");
+      setManualPaymentSuccess(
+        result.fullyPaid
+          ? "Paiement intégral confirmé. La commande est désormais payée."
+          : `Paiement partiel confirmé. Solde restant : ${formatPrice(result.remainingAmount, order.currency)}.`,
+      );
+      await loadOrder();
+    } catch (err: unknown) {
+      setManualPaymentError(err instanceof Error ? err.message : "Impossible de confirmer ce paiement manuellement.");
+    } finally {
+      setManualPaymentLoading(false);
+    }
+  };
+
   const handleRefund = async () => {
     if (!order) return;
     setRefundError("");
@@ -1534,6 +1583,8 @@ export default function OrderDetailPage() {
     ["pending", "pending_payment", "open"].includes(order.status);
   const labelBlockerMessage = hasZeroWeight ? "Veuillez renseigner le poids des articles" : "";
   const totalItemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
+  const manualPaymentRemaining = Math.max(0, (order.totalTTC || order.total) - (order.paidAmount || 0));
+  const canConfirmManualPayment = !isPosOrder && ["draft", "pending", "pending_payment", "open", "cancelled"].includes(order.status) && manualPaymentRemaining > 0.01;
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 text-gray-900 sm:p-6 lg:p-8">
@@ -1737,6 +1788,41 @@ export default function OrderDetailPage() {
                 </div>
               </div>
             </section>
+
+            {canConfirmManualPayment && (
+              <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-700" />
+                  <div className="flex-1">
+                    <h2 className="font-semibold text-emerald-950">Confirmer un paiement hors site</h2>
+                    <p className="mt-1 text-sm text-emerald-800">Utilisez cette action uniquement après avoir constaté l’encaissement réel par un autre moyen. Elle ne simule pas un paiement automatique.</p>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <label>
+                        <span className="mb-1 block text-xs font-medium text-emerald-900">Moyen réellement utilisé</span>
+                        <select value={manualPaymentMethod} onChange={(event) => setManualPaymentMethod(event.target.value as ManualPaymentMethod)} className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-600">
+                          <option value="external_card">Carte via lien externe</option>
+                          <option value="indy">Indy</option>
+                          <option value="mollie_manual">Carte manuelle</option>
+                          <option value="cash">Espèces</option>
+                          <option value="virement">Virement bancaire</option>
+                          <option value="other">Autre moyen</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span className="mb-1 block text-xs font-medium text-emerald-900">Montant confirmé (€)</span>
+                        <input type="number" min="0.01" max={manualPaymentRemaining} step="0.01" value={manualPaymentAmount || manualPaymentRemaining.toFixed(2)} onChange={(event) => setManualPaymentAmount(event.target.value)} className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-600" />
+                      </label>
+                    </div>
+                    <p className="mt-2 text-xs text-emerald-800">Solde restant avant confirmation : {formatPrice(manualPaymentRemaining, order.currency)}.</p>
+                    {manualPaymentError && <p className="mt-3 rounded-lg bg-rose-100 px-3 py-2 text-xs text-rose-700">{manualPaymentError}</p>}
+                    {manualPaymentSuccess && <p className="mt-3 rounded-lg bg-white px-3 py-2 text-xs text-emerald-800">{manualPaymentSuccess}</p>}
+                    <button onClick={handleManualPaymentConfirmation} disabled={manualPaymentLoading} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">
+                      {manualPaymentLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Confirmer le paiement manuellement
+                    </button>
+                  </div>
+                </div>
+              </section>
+            )}
 
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <h2 className="mb-4 font-semibold text-gray-950">Calendrier</h2>
