@@ -43,6 +43,7 @@ import { calculateShippingOptions, ensureDefaultShippingZones } from "../service
 import { generateProductRecommendations } from "../services/seo-agent";
 import { notifyIfRestocked, notifySingleStockAlert } from "../services/stockAlertService";
 import { applyProductSearch } from "../utils/searchUtils";
+import { isDeferredDraftPaymentMethod, resolveDraftPaymentMethod } from "../services/draftPaymentService";
 
 // ─── Cloudinary Config ───────────────────────────────────────
 cloudinary.config({
@@ -4749,7 +4750,8 @@ adminRouter.post(
         orderDiscountValue: req.body?.orderDiscountValue,
         enforceProMinimum: false,
       });
-            const paymentLater = Boolean(req.body?.paymentLater);
+      const paymentMethod = resolveDraftPaymentMethod({ paymentLater: req.body?.paymentLater });
+      const paymentLater = isDeferredDraftPaymentMethod(paymentMethod);
       const rawDueDate = req.body?.paymentDueDate;
       const paymentDueDate = rawDueDate ? new Date(rawDueDate) : null;
       const order = await prisma.order.create({
@@ -4759,7 +4761,7 @@ adminRouter.post(
           customerEmail: email,
           customerId,
           status: "draft",
-          paymentMethod: paymentLater ? "b2b_deferred" : "card",
+          paymentMethod,
           paymentProvider: paymentLater ? "manual" : null,
           isB2B,
           noShipping,
@@ -4936,7 +4938,11 @@ adminRouter.patch(
         orderDiscountValue: req.body?.orderDiscountValue,
         enforceProMinimum: false,
       });
-            const paymentLater = Boolean(req.body?.paymentLater);
+      const paymentMethod = resolveDraftPaymentMethod({
+        paymentLater: req.body?.paymentLater,
+        currentPaymentMethod: current.paymentMethod,
+      });
+      const paymentLater = isDeferredDraftPaymentMethod(paymentMethod);
       const rawDueDatePatch = req.body?.paymentDueDate;
       const paymentDueDatePatch = rawDueDatePatch !== undefined
         ? (rawDueDatePatch ? new Date(rawDueDatePatch) : null)
@@ -4950,7 +4956,7 @@ adminRouter.patch(
             email,
             customerEmail: email,
             customerId,
-            paymentMethod: paymentLater ? "b2b_deferred" : "card",
+            paymentMethod,
             paymentProvider: paymentLater ? "manual" : null,
             isB2B,
             noShipping,
@@ -5010,13 +5016,14 @@ adminRouter.post(
       // Note : le minimum de commande professionnel (200€ HT) ne s'applique PAS aux commandes créées manuellement par l'admin.
 
       const paymentMethod = typeof req.body?.paymentMethod === "string" ? req.body.paymentMethod : draft.paymentMethod;
-      const status = paymentMethod === "b2b_deferred" ? "pending_payment" : "pending";
+      const isDeferredPayment = isDeferredDraftPaymentMethod(paymentMethod);
+      const status = isDeferredPayment ? "pending_payment" : "pending";
       const order = await prisma.order.update({
         where: { id: draft.id },
         data: {
           status,
           paymentMethod,
-          paymentProvider: paymentMethod === "b2b_deferred" ? "manual" : draft.paymentProvider,
+          paymentProvider: isDeferredPayment ? "manual" : draft.paymentProvider,
         },
         include: { items: true, shippingAddress: true, customer: true },
       });

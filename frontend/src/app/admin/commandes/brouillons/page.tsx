@@ -491,7 +491,10 @@ export default function AdminOrderDraftsPage() {
     setSaving(true);
     setError(null);
     try {
-      const paymentMethod = form.paymentLater ? "b2b_deferred" : null;
+      // La confirmation persiste toujours les réglages actuellement visibles,
+      // notamment Paiement ultérieur, même si l’admin n’a pas cliqué sur Enregistrer.
+      const saved = await updateAdminOrderDraft(editingId, buildPayload());
+      const paymentMethod = saved.draft.paymentMethod === "b2b_deferred" ? "b2b_deferred" : null;
       const data = await confirmAdminOrderDraft(editingId, paymentMethod);
       setMessage(`Commande ${data.order.orderNumber} créée avec succès.`);
       setEditingId(null);
@@ -782,7 +785,7 @@ export default function AdminOrderDraftsPage() {
             <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
               <p className="mb-2 text-xs font-semibold text-emerald-800">⚠️ Étape obligatoire pour activer la commande</p>
               <p className="mb-3 text-xs text-emerald-700">Cliquer sur ce bouton convertit le brouillon en commande active (statut : en attente de paiement). Sans cette étape, la commande reste en état brouillon et certaines fonctions (expédition, facturation) peuvent être limitées.</p>
-              <button type="button" onClick={confirmDraft} disabled={!editingId || saving} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"><CheckCircle2 size={16} /> Créer la commande</button>
+              <button type="button" onClick={confirmDraft} disabled={!editingId || saving} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"><CheckCircle2 size={16} /> Enregistrer et créer la commande</button>
             </div>
             {editingId && form.paymentDueDate && (
               <button
