@@ -6429,6 +6429,9 @@ adminRouter.get(
             lastName: true,
             phone: true,
             createdAt: true,
+            addresses: {
+              orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+            },
             orders: { select: { total: true } },
             proAccount: {
               select: { id: true, companyName: true, status: true, activity: true, phone: true, siret: true, vatNumber: true, approvedAt: true },

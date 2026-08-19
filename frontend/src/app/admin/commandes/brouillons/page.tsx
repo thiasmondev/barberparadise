@@ -180,17 +180,18 @@ function draftToForm(draft: AdminOrderDraft): DraftForm {
   };
 }
 
-function addressFromCustomer(customer: Customer): AdminDraftAddressPayload {
+function addressFromCustomer(customer: Customer): AdminDraftAddressPayload | null {
   const defaultAddress = customer.addresses?.find((address) => address.isDefault) || customer.addresses?.[0];
+  if (!defaultAddress) return null;
   return {
-    firstName: defaultAddress?.firstName || customer.firstName || "",
-    lastName: defaultAddress?.lastName || customer.lastName || "",
-    address: defaultAddress?.address || "",
+    firstName: defaultAddress.firstName || customer.firstName || "",
+    lastName: defaultAddress.lastName || customer.lastName || "",
+    address: defaultAddress.address || "",
     extension: "",
-    city: defaultAddress?.city || "",
-    postalCode: defaultAddress?.postalCode || "",
-    country: defaultAddress?.country || "FR",
-    phone: defaultAddress?.phone || customer.phone || "",
+    city: defaultAddress.city || "",
+    postalCode: defaultAddress.postalCode || "",
+    country: defaultAddress.country || "FR",
+    phone: defaultAddress.phone || customer.phone || "",
   };
 }
 
@@ -307,12 +308,14 @@ export default function AdminOrderDraftsPage() {
   }, [productSearch]);
 
   function selectCustomer(customer: Customer) {
+    const savedAddress = addressFromCustomer(customer);
     setForm((current) => ({
       ...current,
       customerId: customer.id,
       email: customer.email,
       isB2B: customer.proAccount?.status === "approved" ? true : current.isB2B,
-      shippingAddress: addressFromCustomer(customer),
+      // Ne jamais effacer une adresse saisie dans le brouillon si le client n’a pas encore d’adresse enregistrée.
+      shippingAddress: savedAddress || current.shippingAddress,
     }));
     setCustomerSearch(customerName(customer));
     setCustomers([]);
