@@ -337,6 +337,12 @@ model Order {
   vatRate           Float    @default(20)
   vatAmount         Float    @default(0)
   totalTTC          Float    @default(0)
+  // Frais B2B calculés une seule fois au démarrage du paiement : aucune vente existante n’est recalculée.
+  paymentFeePercent   Float    @default(0)
+  paymentFeeHT        Float    @default(0)
+  paymentFeeVatRate   Float    @default(0)
+  paymentFeeVatAmount Float    @default(0)
+  paymentFeeTTC       Float    @default(0)
   currency          String   @default("EUR")
   customerEmail     String?
   billingAddress    Json?

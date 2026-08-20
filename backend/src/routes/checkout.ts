@@ -21,6 +21,7 @@ import {
   verifyAbandonedCartToken,
 } from "../services/abandonedCartReminderService";
 import { getActiveAutomaticProductPromotions, getBestAutomaticPromotionForProduct } from "../services/productPricingService";
+import { calculateB2BSurcharge, getB2BConfiguredSurcharges } from "../services/b2bPaymentSurchargeService";
 
 export const checkoutRouter = Router();
 
@@ -79,6 +80,52 @@ function generateOrderNumber(): string {
 
 function money(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+type CheckoutPaymentFee = {
+  percent: number;
+  feeHT: number;
+  feeVatRate: number;
+  feeVatAmount: number;
+  feeTTC: number;
+  totalWithFeeTTC: number;
+};
+
+/**
+ * Source de vérité des frais de paiement B2B. Le frontend ne transmet jamais de montant :
+ * le total est reconstruit depuis les prix serveur, puis le frais est persisté avec la commande.
+ */
+function calculateCheckoutPaymentFee(params: {
+  isB2B: boolean;
+  method: PaymentMethod;
+  totalTTC: number;
+  vatRate: number;
+}): CheckoutPaymentFee {
+  const baseTotalTTC = money(Math.max(0, Number.isFinite(params.totalTTC) ? params.totalTTC : 0));
+  const normalizedVatRate = Math.max(0, Number.isFinite(params.vatRate) ? params.vatRate : 0);
+
+  if (!params.isB2B || baseTotalTTC <= 0 || (params.method !== "card" && params.method !== "paypal")) {
+    return {
+      percent: 0,
+      feeHT: 0,
+      feeVatRate: normalizedVatRate,
+      feeVatAmount: 0,
+      feeTTC: 0,
+      totalWithFeeTTC: baseTotalTTC,
+    };
+  }
+
+  const feeBaseHT = normalizedVatRate > 0
+    ? money(baseTotalTTC / (1 + normalizedVatRate / 100))
+    : baseTotalTTC;
+  const surcharge = calculateB2BSurcharge(feeBaseHT, normalizedVatRate, params.method);
+
+  return {
+    ...surcharge,
+    // Conserver strictement le total du checkout comme base : aucun arrondi intermédiaire
+    // ne peut modifier le montant déjà calculé pour les lignes et la livraison.
+    totalWithFeeTTC: money(baseTotalTTC + surcharge.feeTTC),
+  };
 }
 
 function normalizePromoCode(code: string): string {
@@ -401,7 +448,8 @@ checkoutRouter.get("/available-methods", (req: Request, res: Response): void => 
   const isPro = req.query.isPro === "true";
   const isB2B = req.query.isB2B === "true" || isPro;
   const methods = getAvailableMethods(country, isB2B);
-  res.json({ methods, country, isB2B, isPro });
+  const surcharges = isB2B ? getB2BConfiguredSurcharges() : {};
+  res.json({ methods, surcharges, country, isB2B, isPro });
 });
 
 checkoutRouter.get("/shipping-options", async (req: Request, res: Response): Promise<void> => {
@@ -824,10 +872,17 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
 
     if (checkoutDraft && shouldUseDraftPricing) {
       const provider = getProvider(body.paymentMethod, country);
-      const orderTotalTTC = money(checkoutDraft.totalTTC || checkoutDraft.total);
+      const draftBaseTotalTTC = money(checkoutDraft.totalTTC || checkoutDraft.total);
+      const paymentFee = calculateCheckoutPaymentFee({
+        isB2B: checkoutDraft.isB2B,
+        method: body.paymentMethod,
+        totalTTC: draftBaseTotalTTC,
+        vatRate: checkoutDraft.vatRate,
+      });
+      const orderTotalTTC = paymentFee.totalWithFeeTTC;
       const isNoShipping = Boolean(checkoutDraft.noShipping);
       const draftPostalCode = shippingAddress?.postalCode || undefined;
-      const draftShippingOptions = isNoShipping ? [] : await calculateShippingOptions(country, checkoutDraft.isB2B ? checkoutDraft.subtotal : Math.max(0, orderTotalTTC - checkoutDraft.shipping), checkoutDraft.isB2B, draftPostalCode);
+      const draftShippingOptions = isNoShipping ? [] : await calculateShippingOptions(country, checkoutDraft.isB2B ? checkoutDraft.subtotal : Math.max(0, draftBaseTotalTTC - checkoutDraft.shipping), checkoutDraft.isB2B, draftPostalCode);
       const draftShippingOption = isNoShipping
         ? { carrier: "retrait_magasin", label: "Retrait en magasin", id: "retrait_magasin" }
         : resolveShippingOptionForPaidOrder(draftShippingOptions, body.shippingOptionId, checkoutDraft.shipping);
@@ -862,11 +917,16 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
           isB2B: checkoutDraft.isB2B,
           subtotal: checkoutDraft.subtotal,
           shipping: checkoutDraft.shipping,
-          total: checkoutDraft.total,
-          totalHT: checkoutDraft.totalHT,
+          total: orderTotalTTC,
+          totalHT: money(checkoutDraft.totalHT + paymentFee.feeHT),
           vatRate: checkoutDraft.vatRate,
-          vatAmount: checkoutDraft.vatAmount,
+          vatAmount: money(checkoutDraft.vatAmount + paymentFee.feeVatAmount),
           totalTTC: orderTotalTTC,
+          paymentFeePercent: paymentFee.percent,
+          paymentFeeHT: paymentFee.feeHT,
+          paymentFeeVatRate: paymentFee.feeVatRate,
+          paymentFeeVatAmount: paymentFee.feeVatAmount,
+          paymentFeeTTC: paymentFee.feeTTC,
           currency: CURRENCY,
           vatNumber: vatNumber || checkoutDraft.vatNumber || null,
           discountAmount: checkoutDraft.discountAmount,
@@ -1119,10 +1179,14 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
     const shippingDiscount = promoResolution.discountType === "free_shipping" ? Math.min(shipping, discountAmount) : 0;
     const productDiscount = promoResolution.discountType === "free_shipping" ? 0 : discountAmount;
     const chargedShipping = money(Math.max(0, shipping - shippingDiscount));
-    const totalHT = money(isB2B ? Math.max(0, subtotalHT - productDiscount) : subtotalHT);
+    const baseTotalHT = money(isB2B ? Math.max(0, subtotalHT - productDiscount) : subtotalHT);
     const vatRate = getVatRate(country, isB2B, vatNumber);
-    const vatAmount = money(totalHT * (vatRate / 100));
-    const totalTTC = money(Math.max(0, totalHT + vatAmount + chargedShipping - (isB2B ? 0 : productDiscount)));
+    const baseVatAmount = money(baseTotalHT * (vatRate / 100));
+    const baseTotalTTC = money(Math.max(0, baseTotalHT + baseVatAmount + chargedShipping - (isB2B ? 0 : productDiscount)));
+    const paymentFee = calculateCheckoutPaymentFee({ isB2B, method: body.paymentMethod, totalTTC: baseTotalTTC, vatRate });
+    const totalHT = money(baseTotalHT + paymentFee.feeHT);
+    const vatAmount = money(baseVatAmount + paymentFee.feeVatAmount);
+    const totalTTC = paymentFee.totalWithFeeTTC;
     const provider = getProvider(body.paymentMethod, country);
 
     // --- DÉTECTION DE DOUBLON (FLUX STANDARD) ---
@@ -1163,6 +1227,11 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         vatRate,
         vatAmount,
         totalTTC,
+        paymentFeePercent: paymentFee.percent,
+        paymentFeeHT: paymentFee.feeHT,
+        paymentFeeVatRate: paymentFee.feeVatRate,
+        paymentFeeVatAmount: paymentFee.feeVatAmount,
+        paymentFeeTTC: paymentFee.feeTTC,
         currency: CURRENCY,
         vatNumber: vatNumber || null,
         billingAddress: (body.billingAddress || shippingAddress) as object,
@@ -1440,7 +1509,14 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
 
     if (checkoutDraft && shouldUseDraftPricing) {
       // Flux brouillon
-      const orderTotalTTC = money(checkoutDraft.totalTTC || checkoutDraft.total);
+      const draftBaseTotalTTC = money(checkoutDraft.totalTTC || checkoutDraft.total);
+      const paymentFee = calculateCheckoutPaymentFee({
+        isB2B: checkoutDraft.isB2B,
+        method: body.paymentMethod,
+        totalTTC: draftBaseTotalTTC,
+        vatRate: checkoutDraft.vatRate,
+      });
+      const orderTotalTTC = paymentFee.totalWithFeeTTC;
       totalTTC = orderTotalTTC;
       discountAmount = checkoutDraft.discountTotal || 0;
 
@@ -1456,7 +1532,7 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
         order = recentPendingOrder;
       } else {
         const draftPostalCodePaypal = shippingAddress?.postalCode || undefined;
-        const draftShippingOptions = isNoShippingPaypal ? [] : await calculateShippingOptions(country, checkoutDraft.isB2B ? checkoutDraft.subtotal : Math.max(0, orderTotalTTC - checkoutDraft.shipping), checkoutDraft.isB2B, draftPostalCodePaypal);
+        const draftShippingOptions = isNoShippingPaypal ? [] : await calculateShippingOptions(country, checkoutDraft.isB2B ? checkoutDraft.subtotal : Math.max(0, draftBaseTotalTTC - checkoutDraft.shipping), checkoutDraft.isB2B, draftPostalCodePaypal);
         const draftShippingOption = isNoShippingPaypal
           ? { carrier: "retrait_magasin", label: "Retrait en magasin", id: "retrait_magasin" }
           : resolveShippingOptionForPaidOrder(draftShippingOptions, body.shippingOptionId, checkoutDraft.shipping);
@@ -1472,11 +1548,16 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
             isB2B: checkoutDraft.isB2B,
             subtotal: checkoutDraft.subtotal,
             shipping: checkoutDraft.shipping,
-            total: checkoutDraft.total,
-            totalHT: checkoutDraft.totalHT,
+            total: orderTotalTTC,
+            totalHT: money(checkoutDraft.totalHT + paymentFee.feeHT),
             vatRate: checkoutDraft.vatRate,
-            vatAmount: checkoutDraft.vatAmount,
+            vatAmount: money(checkoutDraft.vatAmount + paymentFee.feeVatAmount),
             totalTTC: orderTotalTTC,
+            paymentFeePercent: paymentFee.percent,
+            paymentFeeHT: paymentFee.feeHT,
+            paymentFeeVatRate: paymentFee.feeVatRate,
+            paymentFeeVatAmount: paymentFee.feeVatAmount,
+            paymentFeeTTC: paymentFee.feeTTC,
             currency: CURRENCY,
             vatNumber: vatNumber || checkoutDraft.vatNumber || null,
             discountAmount: checkoutDraft.discountAmount,
@@ -1551,17 +1632,21 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
       const shippingDiscount = promoResolution.discountType === "free_shipping" ? Math.min(shipping, discountAmount) : 0;
       const productDiscount = promoResolution.discountType === "free_shipping" ? 0 : discountAmount;
       const chargedShipping = money(Math.max(0, shipping - shippingDiscount));
-      const totalHT = money(isB2B ? Math.max(0, subtotalHT - productDiscount) : subtotalHT);
+      const baseTotalHT = money(isB2B ? Math.max(0, subtotalHT - productDiscount) : subtotalHT);
       const vatRate = getVatRate(country, isB2B, vatNumber);
-      const vatAmount = money(totalHT * (vatRate / 100));
-      totalTTC = money(Math.max(0, totalHT + vatAmount + chargedShipping - (isB2B ? 0 : productDiscount)));
+      const baseVatAmount = money(baseTotalHT * (vatRate / 100));
+      const baseTotalTTC = money(Math.max(0, baseTotalHT + baseVatAmount + chargedShipping - (isB2B ? 0 : productDiscount)));
+      const paymentFee = calculateCheckoutPaymentFee({ isB2B, method: body.paymentMethod, totalTTC: baseTotalTTC, vatRate });
+      const totalHT = money(baseTotalHT + paymentFee.feeHT);
+      const vatAmount = money(baseVatAmount + paymentFee.feeVatAmount);
+      totalTTC = paymentFee.totalWithFeeTTC;
 
       const recentPendingOrder = await prisma.order.findFirst({ where: { customerEmail: body.customerEmail, totalTTC, status: "pending", createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) } }, include: { items: true }, orderBy: { createdAt: "desc" } });
       let order;
       if (recentPendingOrder && normalizeDraftItemsSignature(recentPendingOrder.items) === normalizeCheckoutItemsSignature(body.cartItems)) {
         order = recentPendingOrder;
       } else {
-        order = await prisma.order.create({ data: { orderNumber: generateOrderNumber(), email: body.customerEmail, customerEmail: body.customerEmail, customerId: body.customerId || null, status: "pending", paymentMethod: body.paymentMethod, paymentProvider: "paypal", isB2B, subtotal: isB2B ? subtotalHT : subtotalTTC, shipping: chargedShipping, total: totalTTC, totalHT, promoCodeId: promoResolution.promoCode?.id || null, promotionId: promoResolution.promotion?.promotionId || null, discountAmount, vatRate, vatAmount, totalTTC, currency: CURRENCY, vatNumber: vatNumber || null, billingAddress: (body.billingAddress || shippingAddress) as object, items: { create: orderItems }, shippingAddress: { create: { firstName: shippingAddress.firstName, lastName: shippingAddress.lastName, address: shippingAddress.address, extension: shippingAddress.extension || "", city: shippingAddress.city, postalCode: shippingAddress.postalCode, country, phone: shippingAddress.phone || "" } }, relayPointId: body.relayPointId || null, relayPointName: body.relayPointName || null, relayPointAddress: body.relayPointAddress || null, shipment: { create: { carrier: normalizeShipmentCarrier(selectedShippingOption) || "livraison_standard" } } } });
+        order = await prisma.order.create({ data: { orderNumber: generateOrderNumber(), email: body.customerEmail, customerEmail: body.customerEmail, customerId: body.customerId || null, status: "pending", paymentMethod: body.paymentMethod, paymentProvider: "paypal", isB2B, subtotal: isB2B ? subtotalHT : subtotalTTC, shipping: chargedShipping, total: totalTTC, totalHT, promoCodeId: promoResolution.promoCode?.id || null, promotionId: promoResolution.promotion?.promotionId || null, discountAmount, vatRate, vatAmount, totalTTC, paymentFeePercent: paymentFee.percent, paymentFeeHT: paymentFee.feeHT, paymentFeeVatRate: paymentFee.feeVatRate, paymentFeeVatAmount: paymentFee.feeVatAmount, paymentFeeTTC: paymentFee.feeTTC, currency: CURRENCY, vatNumber: vatNumber || null, billingAddress: (body.billingAddress || shippingAddress) as object, items: { create: orderItems }, shippingAddress: { create: { firstName: shippingAddress.firstName, lastName: shippingAddress.lastName, address: shippingAddress.address, extension: shippingAddress.extension || "", city: shippingAddress.city, postalCode: shippingAddress.postalCode, country, phone: shippingAddress.phone || "" } }, relayPointId: body.relayPointId || null, relayPointName: body.relayPointName || null, relayPointAddress: body.relayPointAddress || null, shipment: { create: { carrier: normalizeShipmentCarrier(selectedShippingOption) || "livraison_standard" } } } });
       }
 
       if (body.cartSessionId) await prisma.abandonedCartSession.updateMany({ where: { id: body.cartSessionId }, data: { convertedOrderId: order.id, convertedAt: new Date(), itemCount: 0 } });

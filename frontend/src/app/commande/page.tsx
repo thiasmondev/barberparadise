@@ -159,8 +159,8 @@ const METHOD_CONFIG: Record<PaymentMethod, { label: string; badge: string; icon:
   paybybank: { label: "PAIEMENT BANCAIRE INSTANTANÉ", badge: "BANK", icon: Landmark },
   pay_by_bank: { label: "VIREMENT BANCAIRE", badge: "BANK", icon: Landmark },
   sepa: { label: "PRÉLÈVEMENT SEPA", badge: "SEPA", icon: ReceiptText },
-  paypal: { label: "PAYPAL", badge: "PP", icon: WalletCards },
-  paypal_4x: { label: "PAYPAL 4X SANS FRAIS", badge: "PP4X", icon: WalletCards },
+  paypal: { label: "PAIEMENT PAR PORTEFEUILLE", badge: "PAY", icon: WalletCards },
+  paypal_4x: { label: "PAIEMENT EN 4 FOIS", badge: "4X", icon: WalletCards },
   apple_pay: { label: "APPLE PAY", badge: "APPLE", icon: Smartphone },
   google_pay: { label: "GOOGLE PAY", badge: "GPAY", icon: Smartphone },
   bancontact: { label: "BANCONTACT", badge: "BE", icon: Landmark },
@@ -209,6 +209,7 @@ export default function CheckoutPage() {
   const [orderSummaryOpen, setOrderSummaryOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
   const [availableMethods, setAvailableMethods] = useState<PaymentMethod[]>([]);
+  const [b2bSurchargePercents, setB2BSurchargePercents] = useState<Partial<Record<"card" | "paypal", number>>>({});
   const [methodsLoading, setMethodsLoading] = useState(false);
   const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
   const [shippingLoading, setShippingLoading] = useState(false);
@@ -299,6 +300,12 @@ export default function CheckoutPage() {
   }), [effectiveIsB2B, items]);
   const promoDiscount = draftPricingActive ? 0 : promoResult?.valid ? Math.min(promoResult.discount || 0, grandTotal) : 0;
   const discountedGrandTotal = draftPricingActive && draftPricing ? draftPricing.totalTTC : Math.max(0, grandTotal - promoDiscount);
+  const selectedPaymentSurchargePercent = effectiveIsB2B && (paymentMethod === "card" || paymentMethod === "paypal")
+    ? b2bSurchargePercents[paymentMethod] || 0
+    : 0;
+  // Aperçu uniquement : le backend recalcule toujours le frais avec le total serveur avant toute création de paiement.
+  const paymentFeeTTC = money(discountedGrandTotal * (selectedPaymentSurchargePercent / 100));
+  const totalWithPaymentFeeTTC = money(discountedGrandTotal + paymentFeeTTC);
 
   const displayMethods = useMemo(
     () => availableMethods.filter((method) => {
@@ -753,14 +760,16 @@ export default function CheckoutPage() {
         const res = await fetch(`${API_URL}/api/checkout/available-methods?${params.toString()}`, {
           signal: controller.signal,
         });
-        const data = (await res.json()) as { methods?: PaymentMethod[]; error?: string };
+        const data = (await res.json()) as { methods?: PaymentMethod[]; surcharges?: Partial<Record<"card" | "paypal", number>>; error?: string };
         if (!res.ok) throw new Error(data.error || "Impossible de récupérer les moyens de paiement");
         const methods = data.methods || [];
         setAvailableMethods(methods);
+        setB2BSurchargePercents(data.surcharges || {});
         setPaymentMethod((current) => (methods.includes(current) ? current : methods[0] || "card"));
       } catch (err) {
         if ((err as Error).name !== "AbortError") {
           setAvailableMethods([]);
+          setB2BSurchargePercents({});
           setPaymentError(err instanceof Error ? err.message : "Erreur lors du chargement des moyens de paiement");
         }
       } finally {
@@ -1235,9 +1244,14 @@ export default function CheckoutPage() {
                     const config = METHOD_CONFIG[method];
                     const Icon = config.icon;
                     const active = paymentMethod === method;
+                    const surchargePercent = effectiveIsB2B && (method === "card" || method === "paypal")
+                      ? b2bSurchargePercents[method] || 0
+                      : 0;
+                    const surchargePreview = money(discountedGrandTotal * (surchargePercent / 100));
+                    const isRecommended = effectiveIsB2B && method === "paybybank";
                     return (
                       <button key={method} type="button" onClick={() => setPaymentMethod(method)} className={`w-full text-left border p-5 transition-colors ${active ? "border-[#ff4a8d] bg-[#ff4a8d]/10" : "border-white/10 bg-[#1c1b1b] hover:border-white/25"}`}>
-                        <div className="flex items-center gap-4"><div className={`w-11 h-11 flex items-center justify-center border text-[10px] font-black ${active ? "border-[#ff4a8d] text-[#ff4a8d]" : "border-white/10 text-gray-500"}`}><Icon size={16} /></div><div className="flex-1 min-w-0"><div className="flex items-center justify-between gap-3"><span className="text-sm font-black tracking-widest uppercase">{config.label}</span><span className="text-[10px] font-black tracking-widest text-gray-500 border border-white/10 px-2 py-1">{config.badge}</span></div></div></div>
+                        <div className="flex items-center gap-4"><div className={`w-11 h-11 flex items-center justify-center border text-[10px] font-black ${active ? "border-[#ff4a8d] text-[#ff4a8d]" : "border-white/10 text-gray-500"}`}><Icon size={16} /></div><div className="flex-1 min-w-0"><div className="flex items-center justify-between gap-3"><span className="text-sm font-black tracking-widest uppercase">{config.label}</span><span className="text-[10px] font-black tracking-widest text-gray-500 border border-white/10 px-2 py-1">{config.badge}</span></div>{isRecommended ? <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-emerald-300">Recommandé — Sans frais</p> : surchargePercent > 0 ? <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-amber-300">Frais de paiement : +{surchargePercent}% · {formatPrice(surchargePreview)}</p> : null}</div></div>
                       </button>
                     );
                   })}
@@ -1259,7 +1273,7 @@ export default function CheckoutPage() {
                   {paypalSdkLoaded && !paypalButtonsRendered && <div className="w-full bg-white/5 text-gray-600 py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2"><Loader2 size={12} className="animate-spin" />INITIALISATION...</div>}
                 </div>
               ) : (
-                <button onClick={handleCheckout} disabled={isSubmittingPayment || displayMethods.length === 0 || methodsLoading || shippingLoading || (!draftPricingActive && !selectedShippingOption)} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-wait text-white py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 transition-colors"><Lock size={12} />{isSubmittingPayment ? "REDIRECTION EN COURS..." : `PAYER ${formatPrice(discountedGrandTotal)}`}</button>
+                <button onClick={handleCheckout} disabled={isSubmittingPayment || displayMethods.length === 0 || methodsLoading || shippingLoading || (!draftPricingActive && !selectedShippingOption)} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-wait text-white py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 transition-colors"><Lock size={12} />{isSubmittingPayment ? "REDIRECTION EN COURS..." : `PAYER ${formatPrice(totalWithPaymentFeeTTC)}`}</button>
               )}
               <button onClick={() => setStep("livraison")} className="w-full text-center text-xs text-gray-500 hover:text-white transition-colors uppercase tracking-widest font-black">← Retour à la livraison</button>
             </div>
@@ -1289,7 +1303,8 @@ export default function CheckoutPage() {
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>{draftNoShipping ? <span className="text-xs font-black text-amber-400 uppercase tracking-widest">RETRAIT EN MAGASIN</span> : (shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>)}</div>
                   {draftPricingActive && draftPricing && draftPricing.discountTotal > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise brouillon</span><span className="text-sm font-black">-{formatPrice(draftPricing.discountTotal)}</span></div>}
                   {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="text-sm font-black">-{formatPrice(promoDiscount)}</span></div>}
-                  <div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL TTC</span><span className="text-2xl font-black">{formatPrice(discountedGrandTotal)}</span></div>
+                  {paymentFeeTTC > 0 && <div className="flex justify-between text-amber-300"><span className="text-xs uppercase tracking-widest">Frais de paiement ({selectedPaymentSurchargePercent}%)</span><span className="text-sm font-black">+{formatPrice(paymentFeeTTC)}</span></div>}
+                  <div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL TTC</span><span className="text-2xl font-black">{formatPrice(totalWithPaymentFeeTTC)}</span></div>
                 </>
               ) : (
                 <>

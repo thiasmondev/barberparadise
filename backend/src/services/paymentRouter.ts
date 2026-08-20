@@ -1,3 +1,5 @@
+import { isB2BMethodEnabled } from "./b2bPaymentSurchargeService";
+
 export type PaymentMethod =
   | "card"
   | "paybybank"
@@ -110,8 +112,13 @@ export function getAvailableMethods(country: string, isB2B: boolean): PaymentMet
   }
 
   if (isB2B) {
-    // B2B : Pay by Bank uniquement (open banking Mollie — confirmation quasi instantanée)
-    return ["paybybank"];
+    // Pay by Bank reste la première option B2B, sans frais.
+    // Les méthodes surtaxées ne deviennent accessibles qu’avec un taux explicitement configuré.
+    return [
+      "paybybank",
+      ...(isB2BMethodEnabled("card") ? ["card" as PaymentMethod] : []),
+      ...(isB2BMethodEnabled("paypal") ? ["paypal" as PaymentMethod] : []),
+    ];
   }
 
   // B2C : carte + Pay by Bank + PayPal standard + Apple Pay + Google Pay (conditionnel côté client)

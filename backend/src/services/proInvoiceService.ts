@@ -192,6 +192,21 @@ function buildInvoiceLines(order: LoadedOrder): InvoiceLine[] {
     });
   }
 
+  if (order.paymentFeeTTC > 0) {
+    const feeVatRate = order.paymentFeeVatRate;
+    const feeHT = order.paymentFeeHT > 0
+      ? order.paymentFeeHT
+      : feeVatRate > 0
+        ? money(order.paymentFeeTTC / (1 + feeVatRate / 100))
+        : order.paymentFeeTTC;
+    lines.push({
+      designation: "Frais de paiement",
+      quantity: 1,
+      unitHT: feeHT,
+      vatRate: feeVatRate,
+    });
+  }
+
   return lines;
 }
 
