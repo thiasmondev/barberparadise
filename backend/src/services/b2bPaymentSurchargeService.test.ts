@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  B2B_PAYMENT_FEE_VAT_RATE,
   calculateB2BSurcharge,
   getB2BConfiguredSurcharges,
   getB2BSurchargePercent,
@@ -18,6 +19,7 @@ try {
   delete process.env.B2B_CARD_SURCHARGE_PERCENT;
   delete process.env.B2B_PAYPAL_SURCHARGE_PERCENT;
 
+  assert.equal(B2B_PAYMENT_FEE_VAT_RATE, 20);
   assert.equal(getB2BSurchargePercent("card"), 0);
   assert.equal(isB2BMethodEnabled("card"), false);
   assert.deepEqual(getB2BConfiguredSurcharges(), {});

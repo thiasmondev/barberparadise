@@ -9,6 +9,9 @@ export type B2BSurcharge = {
   totalWithFeeTTC: number;
 };
 
+/** Taux français fixé pour la prestation distincte « Frais de paiement » B2B. */
+export const B2B_PAYMENT_FEE_VAT_RATE = 20;
+
 const ENV_BY_METHOD: Record<B2BSurchargePaymentMethod, string> = {
   card: "B2B_CARD_SURCHARGE_PERCENT",
   paypal: "B2B_PAYPAL_SURCHARGE_PERCENT",

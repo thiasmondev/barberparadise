@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts, rgb, PDFPage, PDFFont, RGB } from "pdf-lib"
 import { v2 as cloudinary } from "cloudinary";
 import { prisma } from "../utils/prisma";
 import { sendEmail } from "./emailService";
+import { B2B_PAYMENT_FEE_VAT_RATE } from "./b2bPaymentSurchargeService";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -193,12 +194,9 @@ function buildInvoiceLines(order: LoadedOrder): InvoiceLine[] {
   }
 
   if (order.paymentFeeTTC > 0) {
-    const feeVatRate = order.paymentFeeVatRate;
-    const feeHT = order.paymentFeeHT > 0
-      ? order.paymentFeeHT
-      : feeVatRate > 0
-        ? money(order.paymentFeeTTC / (1 + feeVatRate / 100))
-        : order.paymentFeeTTC;
+    // Prestation distincte : taux normal français fixe, indépendant du contenu du panier.
+    const feeVatRate = B2B_PAYMENT_FEE_VAT_RATE;
+    const feeHT = money(order.paymentFeeTTC / (1 + feeVatRate / 100));
     lines.push({
       designation: "Frais de paiement",
       quantity: 1,
@@ -426,14 +424,24 @@ async function generateInvoicePdf(order: LoadedOrder, invoiceNumber: string): Pr
 
   const totalsX = 360;
   const totalsValX = 470;
+  const paymentFeeVatAmount = order.paymentFeeTTC > 0
+    ? money(order.paymentFeeTTC - money(order.paymentFeeTTC / (1 + B2B_PAYMENT_FEE_VAT_RATE / 100)))
+    : 0;
+  const orderVatAmountExcludingPaymentFee = money(Math.max(0, order.vatAmount - paymentFeeVatAmount));
 
   drawText(ctx, "Montant HT", totalsX, 10, bold);
   currentPage(ctx).drawText(euro(order.totalHT), { x: totalsValX, y: ctx.y, size: 10, font: regular, color: accent });
   ctx.y -= 18;
 
   drawText(ctx, `TVA (${order.vatRate}%)`, totalsX, 10, bold);
-  currentPage(ctx).drawText(euro(order.vatAmount), { x: totalsValX, y: ctx.y, size: 10, font: regular, color: accent });
+  currentPage(ctx).drawText(euro(orderVatAmountExcludingPaymentFee), { x: totalsValX, y: ctx.y, size: 10, font: regular, color: accent });
   ctx.y -= 18;
+
+  if (order.paymentFeeTTC > 0) {
+    drawText(ctx, `TVA (${B2B_PAYMENT_FEE_VAT_RATE}%) — frais de paiement`, totalsX, 10, bold);
+    currentPage(ctx).drawText(euro(paymentFeeVatAmount), { x: totalsValX, y: ctx.y, size: 10, font: regular, color: accent });
+    ctx.y -= 18;
+  }
 
   // Ligne remise commerciale (mode gift) — affichée si présente
   if (order.commercialDiscountAmount && order.commercialDiscountAmount > 0) {

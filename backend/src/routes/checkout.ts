@@ -21,7 +21,7 @@ import {
   verifyAbandonedCartToken,
 } from "../services/abandonedCartReminderService";
 import { getActiveAutomaticProductPromotions, getBestAutomaticPromotionForProduct } from "../services/productPricingService";
-import { calculateB2BSurcharge, getB2BConfiguredSurcharges } from "../services/b2bPaymentSurchargeService";
+import { B2B_PAYMENT_FEE_VAT_RATE, calculateB2BSurcharge, getB2BConfiguredSurcharges } from "../services/b2bPaymentSurchargeService";
 
 export const checkoutRouter = Router();
 
@@ -99,26 +99,23 @@ function calculateCheckoutPaymentFee(params: {
   isB2B: boolean;
   method: PaymentMethod;
   totalTTC: number;
-  vatRate: number;
 }): CheckoutPaymentFee {
   const baseTotalTTC = money(Math.max(0, Number.isFinite(params.totalTTC) ? params.totalTTC : 0));
-  const normalizedVatRate = Math.max(0, Number.isFinite(params.vatRate) ? params.vatRate : 0);
+  const paymentFeeVatRate = B2B_PAYMENT_FEE_VAT_RATE;
 
   if (!params.isB2B || baseTotalTTC <= 0 || (params.method !== "card" && params.method !== "paypal")) {
     return {
       percent: 0,
       feeHT: 0,
-      feeVatRate: normalizedVatRate,
+      feeVatRate: paymentFeeVatRate,
       feeVatAmount: 0,
       feeTTC: 0,
       totalWithFeeTTC: baseTotalTTC,
     };
   }
 
-  const feeBaseHT = normalizedVatRate > 0
-    ? money(baseTotalTTC / (1 + normalizedVatRate / 100))
-    : baseTotalTTC;
-  const surcharge = calculateB2BSurcharge(feeBaseHT, normalizedVatRate, params.method);
+  const feeBaseHT = money(baseTotalTTC / (1 + paymentFeeVatRate / 100));
+  const surcharge = calculateB2BSurcharge(feeBaseHT, paymentFeeVatRate, params.method);
 
   return {
     ...surcharge,
@@ -877,7 +874,6 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         isB2B: checkoutDraft.isB2B,
         method: body.paymentMethod,
         totalTTC: draftBaseTotalTTC,
-        vatRate: checkoutDraft.vatRate,
       });
       const orderTotalTTC = paymentFee.totalWithFeeTTC;
       const isNoShipping = Boolean(checkoutDraft.noShipping);
@@ -1183,7 +1179,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
     const vatRate = getVatRate(country, isB2B, vatNumber);
     const baseVatAmount = money(baseTotalHT * (vatRate / 100));
     const baseTotalTTC = money(Math.max(0, baseTotalHT + baseVatAmount + chargedShipping - (isB2B ? 0 : productDiscount)));
-    const paymentFee = calculateCheckoutPaymentFee({ isB2B, method: body.paymentMethod, totalTTC: baseTotalTTC, vatRate });
+    const paymentFee = calculateCheckoutPaymentFee({ isB2B, method: body.paymentMethod, totalTTC: baseTotalTTC });
     const totalHT = money(baseTotalHT + paymentFee.feeHT);
     const vatAmount = money(baseVatAmount + paymentFee.feeVatAmount);
     const totalTTC = paymentFee.totalWithFeeTTC;
@@ -1514,7 +1510,6 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
         isB2B: checkoutDraft.isB2B,
         method: body.paymentMethod,
         totalTTC: draftBaseTotalTTC,
-        vatRate: checkoutDraft.vatRate,
       });
       const orderTotalTTC = paymentFee.totalWithFeeTTC;
       totalTTC = orderTotalTTC;
@@ -1636,7 +1631,7 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
       const vatRate = getVatRate(country, isB2B, vatNumber);
       const baseVatAmount = money(baseTotalHT * (vatRate / 100));
       const baseTotalTTC = money(Math.max(0, baseTotalHT + baseVatAmount + chargedShipping - (isB2B ? 0 : productDiscount)));
-      const paymentFee = calculateCheckoutPaymentFee({ isB2B, method: body.paymentMethod, totalTTC: baseTotalTTC, vatRate });
+      const paymentFee = calculateCheckoutPaymentFee({ isB2B, method: body.paymentMethod, totalTTC: baseTotalTTC });
       const totalHT = money(baseTotalHT + paymentFee.feeHT);
       const vatAmount = money(baseVatAmount + paymentFee.feeVatAmount);
       totalTTC = paymentFee.totalWithFeeTTC;
