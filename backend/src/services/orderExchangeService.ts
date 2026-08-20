@@ -86,9 +86,17 @@ async function addExchangeEvent(
   });
 }
 
-function assertEligibleOrderStatus(status: string) {
-  if (!EXCHANGE_ELIGIBLE_STATUSES.has(status)) {
-    throw new Error("Seules les commandes déjà expédiées ou livrées peuvent faire l’objet d’un échange.");
+export function isOrderExchangeEligible(input: { status: string; channel?: string | null; noShipping?: boolean | null }) {
+  // Une vente POS payée est remise immédiatement : elle suit le parcours retour/renvoi en boutique.
+  if (input.channel === "pos") return input.status === "paid" || EXCHANGE_ELIGIBLE_STATUSES.has(input.status);
+  // Une commande web sans livraison (retrait / déjà remis) n’a pas de retour physique à gérer.
+  if (input.noShipping) return false;
+  return EXCHANGE_ELIGIBLE_STATUSES.has(input.status);
+}
+
+function assertEligibleOrderStatus(input: { status: string; channel?: string | null; noShipping?: boolean | null }) {
+  if (!isOrderExchangeEligible(input)) {
+    throw new Error("Seules les commandes expédiées, livrées ou les ventes POS remises en boutique peuvent faire l’objet d’un échange.");
   }
 }
 
@@ -184,8 +192,8 @@ export async function initiateOrderExchange(input: ExchangeInitiationInput) {
       },
     });
     if (!order) throw new Error("Commande introuvable.");
-    assertEligibleOrderStatus(order.status);
-    if (!order.shipment?.shippedAt && !["shipped", "delivered"].includes(order.status)) {
+    assertEligibleOrderStatus({ status: order.status, channel: order.channel, noShipping: order.noShipping });
+    if (order.channel !== "pos" && !order.shipment?.shippedAt && !["shipped", "delivered"].includes(order.status)) {
       throw new Error("La commande doit avoir une expédition confirmée avant de créer un échange.");
     }
 
@@ -384,7 +392,11 @@ export async function cancelOrderExchange(exchangeId: string, actorEmail?: strin
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
-export async function markOrderExchangeReplacementShipped(exchangeId: string, actorEmail?: string | null) {
+export async function markOrderExchangeReplacementShipped(
+  exchangeId: string,
+  actorEmail?: string | null,
+  fulfillment: "shipment" | "in_store" = "shipment",
+) {
   return prisma.$transaction(async (tx) => {
     const exchange = await tx.orderExchange.findUnique({ where: { id: exchangeId } });
     if (!exchange) throw new Error("Dossier d’échange introuvable.");
@@ -396,8 +408,10 @@ export async function markOrderExchangeReplacementShipped(exchangeId: string, ac
       where: { id: exchange.id },
       data: { status: "replacement_shipped", replacementShippedAt: new Date() },
     });
-    const message = `Remplacement expédié : ${exchange.replacementQuantity} × ${exchange.replacementName}.`;
-    await addExchangeEvent(tx, exchange.id, "replacement_shipped", message, actorEmail);
+    const message = fulfillment === "in_store"
+      ? `Remplacement remis en boutique : ${exchange.replacementQuantity} × ${exchange.replacementName}.`
+      : `Remplacement expédié : ${exchange.replacementQuantity} × ${exchange.replacementName}.`;
+    await addExchangeEvent(tx, exchange.id, fulfillment === "in_store" ? "replacement_handed_over" : "replacement_shipped", message, actorEmail);
     await appendOrderExchangeNote(tx, exchange.orderId, message);
     return updated;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });

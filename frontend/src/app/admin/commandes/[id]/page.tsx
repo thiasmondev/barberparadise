@@ -1585,6 +1585,9 @@ export default function OrderDetailPage() {
   const totalItemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
   const manualPaymentRemaining = Math.max(0, (order.totalTTC || order.total) - (order.paidAmount || 0));
   const canConfirmManualPayment = !isPosOrder && ["draft", "pending", "pending_payment", "open", "cancelled"].includes(order.status) && manualPaymentRemaining > 0.01;
+  // Une vente POS payée est remise immédiatement : son échange se déroule en boutique, sans étiquette.
+  const isExchangeEligible = ["shipped", "delivered"].includes(order.status) || (isPosOrder && ["paid", "processing"].includes(order.status));
+  const isInStoreExchange = isPosOrder && isExchangeEligible;
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 text-gray-900 sm:p-6 lg:p-8">
@@ -1624,7 +1627,7 @@ export default function OrderDetailPage() {
               <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
                 <h2 className="font-semibold text-gray-950">Articles</h2>
                 <div className="flex flex-wrap items-center justify-end gap-2">
-                  {["shipped", "delivered"].includes(order.status) && !isPosOrder && !isNoShipping && (
+                  {isExchangeEligible && (isPosOrder || !isNoShipping) && (
                     <button
                       onClick={openExchangePanel}
                       className="inline-flex items-center gap-1.5 rounded-xl border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-100"
@@ -1690,14 +1693,14 @@ export default function OrderDetailPage() {
               </div>
             </section>
 
-            {(exchanges.length > 0 || ["shipped", "delivered"].includes(order.status)) && !isPosOrder && !isNoShipping && (
+            {(exchanges.length > 0 || isExchangeEligible) && (isPosOrder || !isNoShipping) && (
               <section className="rounded-2xl border border-violet-200 bg-white p-5 shadow-sm">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 className="font-semibold text-gray-950">Échanges après expédition</h2>
-                    <p className="mt-1 text-sm text-gray-500">Le retour, le règlement et le renvoi sont suivis séparément ; la commande initiale reste inchangée.</p>
+                    <h2 className="font-semibold text-gray-950">{isInStoreExchange ? "Échanges en boutique" : "Échanges après expédition"}</h2>
+                    <p className="mt-1 text-sm text-gray-500">{isInStoreExchange ? "Le retour et la remise du remplacement sont confirmés en boutique ; aucun transport n’est créé." : "Le retour, le règlement et le renvoi sont suivis séparément ; la commande initiale reste inchangée."}</p>
                   </div>
-                  {["shipped", "delivered"].includes(order.status) && (
+                  {isExchangeEligible && (
                     <button onClick={openExchangePanel} className="inline-flex items-center gap-2 rounded-xl bg-violet-700 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-800">
                       <RotateCcw className="h-4 w-4" /> Nouvel échange
                     </button>
@@ -1730,21 +1733,23 @@ export default function OrderDetailPage() {
                             <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-violet-800 ring-1 ring-violet-200">{statusLabels[exchange.status] || exchange.status}</span>
                           </div>
                           <div className="mt-3 grid gap-2 text-xs text-gray-600 sm:grid-cols-2">
-                            <p>Retour : {returnShipment?.trackingNumber ? `étiquette ${returnShipment.trackingNumber}` : "étiquette à créer"}</p>
-                            <p>Renvoi : {replacementShipment?.trackingNumber ? `étiquette ${replacementShipment.trackingNumber}` : "non créé"}</p>
+                            <p>Retour : {isInStoreExchange ? (exchange.returnedStockRestored ? "reçu et inspecté en boutique" : "à rapporter en boutique") : returnShipment?.trackingNumber ? `étiquette ${returnShipment.trackingNumber}` : "étiquette à créer"}</p>
+                            <p>Renvoi : {isInStoreExchange ? (exchange.status === "replacement_shipped" || exchange.status === "completed" ? "remis en boutique" : "à remettre en boutique") : replacementShipment?.trackingNumber ? `étiquette ${replacementShipment.trackingNumber}` : "non créé"}</p>
                             <p>Stock retour : {exchange.returnedStockRestored ? "réintégré après inspection" : "non réintégré"}</p>
                             <p>Stock remplacement : {exchange.replacementStockReserved ? "réservé" : "non réservé"}</p>
                           </div>
                           <div className="mt-4 flex flex-wrap gap-2">
-                            {(["initiated", "return_in_transit"].includes(exchange.status) && !returnShipment) && <button disabled={exchangeLoading} onClick={() => openExchangeLabelDrawer(exchange, "return")} className="rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-xs font-semibold text-violet-800 hover:bg-violet-50">Créer l’étiquette retour</button>}
-                            {exchange.status === "return_in_transit" && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReturnReceived(exchange.id))} className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-800">Confirmer retour reçu et inspecté</button>}
+                            {isInStoreExchange && exchange.status === "initiated" && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReturnReceived(exchange.id))} className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-800">Confirmer retour reçu et inspecté en boutique</button>}
+                            {!isInStoreExchange && (["initiated", "return_in_transit"].includes(exchange.status) && !returnShipment) && <button disabled={exchangeLoading} onClick={() => openExchangeLabelDrawer(exchange, "return")} className="rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-xs font-semibold text-violet-800 hover:bg-violet-50">Créer l’étiquette retour</button>}
+                            {!isInStoreExchange && exchange.status === "return_in_transit" && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReturnReceived(exchange.id))} className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-800">Confirmer retour reçu et inspecté</button>}
                             {exchange.status === "settlement_pending" && <>
                               <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => settleAdminExchange(exchange.id, "real"))} className="rounded-lg bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800">{exchange.differenceAmount >= 0 ? "Règlement réel" : "Remboursement réel"}</button>
                               <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => settleAdminExchange(exchange.id, "internal"))} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50">Ajustement interne</button>
                               <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => settleAdminExchange(exchange.id, "gift"))} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50">Geste commercial</button>
                             </>}
-                            {exchange.status === "ready_to_ship" && !replacementShipment && <button disabled={exchangeLoading} onClick={() => openExchangeLabelDrawer(exchange, "replacement")} className="rounded-lg bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800">Créer l’étiquette de renvoi</button>}
-                            {exchange.status === "ready_to_ship" && replacementShipment && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReplacementShipped(exchange.id))} className="rounded-lg bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800">Marquer le remplacement expédié</button>}
+                            {isInStoreExchange && exchange.status === "ready_to_ship" && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReplacementShipped(exchange.id))} className="rounded-lg bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800">Confirmer remise du remplacement en boutique</button>}
+                            {!isInStoreExchange && exchange.status === "ready_to_ship" && !replacementShipment && <button disabled={exchangeLoading} onClick={() => openExchangeLabelDrawer(exchange, "replacement")} className="rounded-lg bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800">Créer l’étiquette de renvoi</button>}
+                            {!isInStoreExchange && exchange.status === "ready_to_ship" && replacementShipment && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReplacementShipped(exchange.id))} className="rounded-lg bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800">Marquer le remplacement expédié</button>}
                             {exchange.status === "replacement_shipped" && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => completeAdminExchange(exchange.id))} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800">Clôturer l’échange</button>}
                             {!(["completed", "cancelled", "replacement_shipped"].includes(exchange.status)) && <button disabled={exchangeLoading} onClick={() => { if (window.confirm("Annuler cet échange ? Le stock réservé sera libéré.")) runExchangeAction(() => cancelAdminExchange(exchange.id)); }} className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">Annuler l’échange</button>}
                           </div>

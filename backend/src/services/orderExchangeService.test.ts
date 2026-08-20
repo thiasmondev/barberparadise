@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { calculateOrderExchangeFinancials } from "./orderExchangeService";
+import { calculateOrderExchangeFinancials, isOrderExchangeEligible } from "./orderExchangeService";
 
 function testB2CWithLineDiscount() {
   const result = calculateOrderExchangeFinancials({
@@ -38,6 +38,14 @@ function testB2BUsesProfessionalHtPrice() {
   assert.equal(result.differenceAmount, 10);
 }
 
+function testPosExchangeEligibility() {
+  assert.equal(isOrderExchangeEligible({ status: "paid", channel: "pos", noShipping: true }), true);
+  assert.equal(isOrderExchangeEligible({ status: "shipped", channel: "pos", noShipping: true }), true);
+  assert.equal(isOrderExchangeEligible({ status: "paid", channel: "online", noShipping: false }), false);
+  assert.equal(isOrderExchangeEligible({ status: "shipped", channel: "online", noShipping: true }), false);
+  assert.equal(isOrderExchangeEligible({ status: "delivered", channel: "online", noShipping: false }), true);
+}
+
 function testB2BFallbackPublicTtcToHt() {
   const result = calculateOrderExchangeFinancials({
     returnedUnitPrice: 50,
@@ -57,4 +65,5 @@ function testB2BFallbackPublicTtcToHt() {
 testB2CWithLineDiscount();
 testB2BUsesProfessionalHtPrice();
 testB2BFallbackPublicTtcToHt();
-console.log("✓ Calculs financiers d’échange validés");
+testPosExchangeEligibility();
+console.log("✓ Calculs financiers et éligibilité POS d’échange validés");

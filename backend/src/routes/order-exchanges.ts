@@ -224,6 +224,7 @@ orderExchangesRouter.get("/:exchangeId/:direction/quotes", requireAdmin, async (
     const direction = req.params.direction;
     if (direction !== "return" && direction !== "replacement") throw new Error("Direction d’étiquette invalide.");
     const exchange = await getExchange(req.params.exchangeId);
+    if (exchange?.order.channel === "pos") throw new Error("Cet échange est traité en boutique : aucune offre de transport n’est nécessaire.");
     if (!exchange?.order.shippingAddress) throw new Error("Adresse d’expédition introuvable.");
     if (direction === "return" && !["initiated", "return_in_transit"].includes(exchange.status)) {
       throw new Error("Les offres de retour ne sont plus disponibles à cette étape.");
@@ -261,6 +262,7 @@ orderExchangesRouter.post("/:exchangeId/return-label", requireAdmin, async (req:
     if (!activeCarrier(carrier) || !offerId) throw new Error("Transporteur et offre de retour obligatoires.");
 
     const exchange = await getExchange(req.params.exchangeId);
+    if (exchange?.order.channel === "pos") throw new Error("Cet échange est traité en boutique : aucune étiquette de retour n’est nécessaire.");
     if (!exchange?.order.shippingAddress) throw new Error("Adresse client introuvable pour l’étiquette de retour.");
     if (!["initiated", "return_in_transit"].includes(exchange.status)) throw new Error("L’étiquette de retour ne peut être créée qu’au début de l’échange.");
 
@@ -302,7 +304,7 @@ orderExchangesRouter.post("/:exchangeId/return-received", requireAdmin, async (r
   try {
     const exchange = await markOrderExchangeReturnReceived(req.params.exchangeId, req.user?.email || null);
     const fullExchange = await getExchange(exchange.id);
-    if (fullExchange) {
+    if (fullExchange && fullExchange.order.channel !== "pos") {
       await sendEmail({
         to: fullExchange.order.email,
         subject: `Retour reçu — échange ${fullExchange.order.orderNumber}`,
@@ -384,6 +386,7 @@ orderExchangesRouter.post("/:exchangeId/replacement-label", requireAdmin, async 
     const offerId = String(req.body?.offerId || "").trim();
     if (!activeCarrier(carrier) || !offerId) throw new Error("Transporteur et offre de remplacement obligatoires.");
     const exchange = await getExchange(req.params.exchangeId);
+    if (exchange?.order.channel === "pos") throw new Error("Cet échange est traité en boutique : aucune étiquette de renvoi n’est nécessaire.");
     if (!exchange?.order.shippingAddress) throw new Error("Adresse client introuvable.");
     if (exchange.status !== "ready_to_ship") throw new Error("Le remplacement n’est pas encore prêt à être expédié.");
 
@@ -415,6 +418,11 @@ orderExchangesRouter.post("/:exchangeId/replacement-shipped", requireAdmin, asyn
   try {
     const fullExchange = await getExchange(req.params.exchangeId);
     if (!fullExchange) throw new Error("Dossier d’échange introuvable.");
+    if (fullExchange.order.channel === "pos") {
+      const exchange = await markOrderExchangeReplacementShipped(fullExchange.id, req.user?.email || null, "in_store");
+      res.json({ success: true, exchange });
+      return;
+    }
     const replacementShipment = fullExchange.shipments.find(shipment => shipment.direction === "replacement");
     if (!replacementShipment?.trackingNumber) throw new Error("Créez d’abord l’étiquette de remplacement.");
     const exchange = await markOrderExchangeReplacementShipped(fullExchange.id, req.user?.email || null);
