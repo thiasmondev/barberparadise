@@ -43,6 +43,7 @@ export default function AdminAbandonedCartsPage() {
   const [carts, setCarts] = useState<AdminAbandonedCartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [exportError, setExportError] = useState<{ cartId: string; message: string } | null>(null);
   const [success, setSuccess] = useState("");
   const [convertingId, setConvertingId] = useState<string | null>(null);
   // Map cartId -> email saisi manuellement par l'admin (pour les paniers sans email)
@@ -66,17 +67,19 @@ export default function AdminAbandonedCartsPage() {
   }, [loadCarts]);
 
   const handleExportToDraft = async (cart: AdminAbandonedCartItem) => {
+    // Toute nouvelle tentative efface l’erreur de la tentative précédente,
+    // y compris si elle porte sur un autre panier de la liste.
+    setExportError(null);
     const emailMissing = !cart.email || cart.email === EMAIL_MISSING_PLACEHOLDER;
     const overrideEmail = emailMissing ? (manualEmails[cart.id] || "").trim() : undefined;
 
-    // Si l'email est manquant et qu'aucun email manuel n'a été saisi, bloquer
+    // Si l'email est manquant et qu'aucun email manuel n'a été saisi, bloquer uniquement cette ligne.
     if (emailMissing && (!overrideEmail || !overrideEmail.includes("@"))) {
-      setError(`Veuillez saisir l'email du client pour le panier ${cart.id.slice(-6)} avant de l'exporter.`);
+      setExportError({ cartId: cart.id, message: `Veuillez saisir l'email du client pour le panier ${cart.id.slice(-6)} avant de l'exporter.` });
       return;
     }
 
     setConvertingId(cart.id);
-    setError("");
     setSuccess("");
     try {
       const data = await exportAbandonedCartToDraft(cart.id, overrideEmail ? { email: overrideEmail } : undefined);
@@ -84,7 +87,7 @@ export default function AdminAbandonedCartsPage() {
       await loadCarts();
       router.push("/admin/commandes/brouillons");
     } catch (err: any) {
-      setError(err.message || "Erreur lors de l'export du panier en brouillon");
+      setExportError({ cartId: cart.id, message: err.message || "Erreur lors de l'export du panier en brouillon" });
     } finally {
       setConvertingId(null);
     }
@@ -186,6 +189,11 @@ export default function AdminAbandonedCartsPage() {
                           {convertingId === cart.id ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
                           Exporter en brouillon
                         </button>
+                        {exportError?.cartId === cart.id && (
+                          <p className="mt-2 max-w-xs text-left text-xs leading-relaxed text-red-600" role="alert">
+                            {exportError.message}
+                          </p>
+                        )}
                       </td>
                     </tr>
                   );

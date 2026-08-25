@@ -5123,8 +5123,8 @@ adminRouter.post(
       const items = normalizeDraftItems(
         rawItems.map((item) => {
           if (!item || typeof item !== "object" || Array.isArray(item)) return null;
-          const line = item as { productId?: unknown; id?: unknown; quantity?: unknown };
-          return { productId: line.productId || line.id, quantity: line.quantity };
+          const line = item as { productId?: unknown; id?: unknown; variantId?: unknown; quantity?: unknown };
+          return { productId: line.productId || line.id, variantId: line.variantId, quantity: line.quantity };
         }).filter(Boolean)
       );
       // Résoudre l'email : 1) depuis la session (email enregistré lors du suivi panier)
