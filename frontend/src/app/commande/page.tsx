@@ -125,6 +125,7 @@ type RelayPoint = {
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
+const PICKUP_LOCATION_LABEL = "RETRAIT SUR PLACE — 31 RUE DE PONT-À-MOUSSON";
 
 const EU_COUNTRIES = ["FR", "BE", "NL", "DE", "IT", "ES", "PT", "AT", "LU", "IE", "GR", "FI", "SE", "DK", "PL", "CZ", "HU", "RO", "SK", "SI", "HR", "BG", "LT", "LV", "EE", "CY", "MT"];
 
@@ -500,12 +501,18 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (customerLoading) return;
     if (isAuthenticated) {
-      setStep("livraison");
+      setStep(draftNoShipping ? "paiement" : "livraison");
       setGuestCheckout(false);
-    } else {
+    } else if (!draftNoShipping) {
       setStep((current) => (current === "paiement" ? "livraison" : current));
     }
-  }, [customerLoading, isAuthenticated]);
+  }, [customerLoading, draftNoShipping, isAuthenticated]);
+
+  // Garde-fou contre toute transition asynchrone (connexion ou profil)
+  // qui tenterait de réafficher la livraison pour un retrait en boutique.
+  useEffect(() => {
+    if (draftNoShipping && step === "livraison") setStep("paiement");
+  }, [draftNoShipping, step]);
 
   useEffect(() => {
     if (!customer) return;
@@ -942,12 +949,13 @@ export default function CheckoutPage() {
                   <>
                     <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Sous-total HT</span><span className="font-black">{formatPrice(subtotalHT)}</span></div>
                     <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">TVA ({vatRate}%)</span><span className="font-black">{formatPrice(vatAmount)}</span></div>
-                    <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">{draftNoShipping ? "Livraison" : "Livraison"}</span>{draftNoShipping ? <span className="text-xs font-black text-amber-400 uppercase tracking-widest">RETRAIT EN MAGASIN</span> : (shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="font-black">{formatPrice(shipping)}</span>)}</div>
+                    <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">{draftNoShipping ? "Retrait" : "Livraison"}</span>{draftNoShipping ? <span className="text-xs font-black text-amber-400 uppercase tracking-widest">{PICKUP_LOCATION_LABEL}</span> : (shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="font-black">{formatPrice(shipping)}</span>)}</div>
                     {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="font-black">-{formatPrice(promoDiscount)}</span></div>}
                     <div className="border-t border-white/5 pt-3 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL TTC</span><span className="font-black">{formatPrice(discountedGrandTotal)}</span></div>
                   </>
                 ) : (
                   <>
+                    {draftNoShipping && <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Retrait</span><span className="text-xs font-black text-amber-400 uppercase tracking-widest">{PICKUP_LOCATION_LABEL}</span></div>}
                     {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="font-black">-{formatPrice(promoDiscount)}</span></div>}
                     <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Total</span><span className="font-black">{formatPrice(discountedGrandTotal)}</span></div>
                   </>
@@ -1300,7 +1308,7 @@ export default function CheckoutPage() {
                 <>
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total HT</span><span className="text-sm font-black">{formatPrice(subtotalHT)}</span></div>
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">TVA ({vatRate}%)</span><span className="text-sm font-black">{formatPrice(vatAmount)}</span></div>
-                  <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>{draftNoShipping ? <span className="text-xs font-black text-amber-400 uppercase tracking-widest">RETRAIT EN MAGASIN</span> : (shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>)}</div>
+                  <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">{draftNoShipping ? "Retrait" : "Livraison"}</span>{draftNoShipping ? <span className="text-xs font-black text-amber-400 uppercase tracking-widest">{PICKUP_LOCATION_LABEL}</span> : (shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>)}</div>
                   {draftPricingActive && draftPricing && draftPricing.discountTotal > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise brouillon</span><span className="text-sm font-black">-{formatPrice(draftPricing.discountTotal)}</span></div>}
                   {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="text-sm font-black">-{formatPrice(promoDiscount)}</span></div>}
                   {paymentFeeTTC > 0 && <div className="flex justify-between text-amber-300"><span className="text-xs uppercase tracking-widest">Frais de paiement ({selectedPaymentSurchargePercent}%)</span><span className="text-sm font-black">+{formatPrice(paymentFeeTTC)}</span></div>}
@@ -1309,7 +1317,7 @@ export default function CheckoutPage() {
               ) : (
                 <>
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total</span><span className="text-sm font-black">{formatPrice(displaySubtotalTTC)}</span></div>
-                  <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>{draftNoShipping ? <span className="text-xs font-black text-amber-400 uppercase tracking-widest">RETRAIT EN MAGASIN</span> : (shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>)}</div>
+                  <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">{draftNoShipping ? "Retrait" : "Livraison"}</span>{draftNoShipping ? <span className="text-xs font-black text-amber-400 uppercase tracking-widest">{PICKUP_LOCATION_LABEL}</span> : (shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>)}</div>
                   {draftPricingActive && draftPricing && draftPricing.discountTotal > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise brouillon</span><span className="text-sm font-black">-{formatPrice(draftPricing.discountTotal)}</span></div>}
                   {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="text-sm font-black">-{formatPrice(promoDiscount)}</span></div>}
                   <div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL</span><span className="text-2xl font-black">{formatPrice(discountedGrandTotal)}</span></div>
