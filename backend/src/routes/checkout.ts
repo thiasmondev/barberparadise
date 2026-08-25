@@ -248,6 +248,54 @@ function normalizeDraftItemsSignature(items: Array<{ productId: string | null; v
     .join("|");
 }
 
+/**
+ * Un brouillon peut être préparé sans stock disponible, mais le stock est vérifié
+ * à nouveau juste avant la création d’un paiement afin d’éviter toute vente non livrable.
+ */
+async function assertDraftItemsAvailableForPayment(items: Array<{
+  productId: string | null;
+  variantId: string | null;
+  quantity: number;
+  isCustomSale?: boolean;
+}>): Promise<void> {
+  const catalogItems = items.filter((item) => !item.isCustomSale && item.productId && Number.isInteger(item.quantity) && item.quantity > 0);
+  if (catalogItems.length === 0) return;
+
+  const products = await prisma.product.findMany({
+    where: { id: { in: [...new Set(catalogItems.map((item) => item.productId!))] } },
+    include: { variants: true },
+  });
+  const productsById = new Map(products.map((product) => [product.id, product]));
+
+  for (const item of catalogItems) {
+    const product = productsById.get(item.productId!);
+    if (!product || product.status !== "active" || !product.inStock) {
+      throw new Error(`Produit indisponible : ${product?.name || item.productId}`);
+    }
+
+    const selectedVariant = item.variantId ? product.variants.find((variant) => variant.id === item.variantId) : null;
+    if (product.variants.length > 0 && !selectedVariant) {
+      throw new Error(`La variante sélectionnée n’est plus disponible pour ${product.name}.`);
+    }
+    if (selectedVariant) {
+      if (!selectedVariant.inStock || selectedVariant.stock <= 0) {
+        throw new Error(`Variante indisponible : ${product.name} - ${selectedVariant.name}`);
+      }
+      if (selectedVariant.stock < item.quantity) {
+        throw new Error(`Stock insuffisant pour ${product.name} - ${selectedVariant.name}`);
+      }
+      continue;
+    }
+
+    if (product.stockCount !== null && product.stockCount <= 0) {
+      throw new Error(`Produit hors-stock : ${product.name}`);
+    }
+    if (product.stockCount !== null && product.stockCount < item.quantity) {
+      throw new Error(`Stock insuffisant pour ${product.name}`);
+    }
+  }
+}
+
 function getBackendUrl(req: Request): string {
   return (process.env.BACKEND_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
 }
@@ -868,6 +916,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
     );
 
     if (checkoutDraft && shouldUseDraftPricing) {
+      await assertDraftItemsAvailableForPayment(checkoutDraft.items);
       const provider = getProvider(body.paymentMethod, country);
       const draftBaseTotalTTC = money(checkoutDraft.totalTTC || checkoutDraft.total);
       const paymentFee = calculateCheckoutPaymentFee({
@@ -1504,6 +1553,7 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
     let discountAmount = 0;
 
     if (checkoutDraft && shouldUseDraftPricing) {
+      await assertDraftItemsAvailableForPayment(checkoutDraft.items);
       // Flux brouillon
       const draftBaseTotalTTC = money(checkoutDraft.totalTTC || checkoutDraft.total);
       const paymentFee = calculateCheckoutPaymentFee({

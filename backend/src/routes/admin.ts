@@ -364,6 +364,8 @@ async function calculateAdminDraftTotals(params: {
   shippingOverride?: unknown;
   enforceProMinimum?: boolean;
   allowInactiveProducts?: boolean;
+  /** Utilisé pour préparer un brouillon depuis un panier abandonné sans réserver ni décrémenter le stock. */
+  enforceStock?: boolean;
   orderDiscountType?: unknown;
   orderDiscountValue?: unknown;
 }): Promise<DraftCalculationResult> {
@@ -422,8 +424,12 @@ async function calculateAdminDraftTotals(params: {
     const selectedVariant = item.variantId ? product.variants.find((variant) => variant.id === item.variantId) : null;
     // En mode modification de commande existante (allowInactiveProducts: true), on tolère les variantes
     // historiques supprimées ou inactives — on ne bloque pas la sauvegarde de l'adresse.
-    if (!params.allowInactiveProducts) {
-      if (product.variants.length > 0 && !selectedVariant) throw new Error(`Sélectionnez une variante disponible pour ${product.name}`);
+    if (!params.allowInactiveProducts && product.variants.length > 0 && !selectedVariant) {
+      throw new Error(`Sélectionnez une variante disponible pour ${product.name}`);
+    }
+    // Un brouillon issu d’un panier abandonné est une préparation commerciale : il ne réserve
+    // ni ne décrémente de stock. La sélection de variante reste néanmoins obligatoire.
+    if (!params.allowInactiveProducts && params.enforceStock !== false) {
       if (selectedVariant) {
         if (!selectedVariant.inStock || selectedVariant.stock <= 0) throw new Error(`Variante indisponible : ${product.name} - ${selectedVariant.name}`);
         if (selectedVariant.stock < item.quantity) throw new Error(`Stock insuffisant pour ${product.name} - ${selectedVariant.name}`);
@@ -5173,6 +5179,7 @@ adminRouter.post(
         orderDiscountType: req.body?.orderDiscountType,
         orderDiscountValue: req.body?.orderDiscountValue,
         enforceProMinimum: false,
+        enforceStock: false,
       });
 
       const order = await prisma.order.create({
