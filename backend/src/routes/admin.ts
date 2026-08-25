@@ -4942,7 +4942,10 @@ adminRouter.patch(
         shippingOverride: noShipping ? 0 : req.body?.shipping,
         orderDiscountType: req.body?.orderDiscountType,
         orderDiscountValue: req.body?.orderDiscountValue,
+        // Un brouillon est une préparation commerciale : son édition ne réserve pas de stock.
+        // Le contrôle strict reste effectué au moment du paiement réel.
         enforceProMinimum: false,
+        enforceStock: false,
       });
       const paymentMethod = resolveDraftPaymentMethod({
         paymentLater: req.body?.paymentLater,
