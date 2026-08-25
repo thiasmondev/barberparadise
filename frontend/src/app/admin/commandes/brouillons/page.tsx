@@ -460,6 +460,15 @@ export default function AdminOrderDraftsPage() {
     setError(null);
     setMessage(null);
     try {
+      // Quand le brouillon affiché vient d’être modifié (articles, quantités, remises,
+      // retrait, adresse…), l’enregistrer avant de générer ou renouveler son lien.
+      // Le client reçoit ainsi strictement la version visible dans le panneau admin.
+      if (editingId === draftId) {
+        const saved = await updateAdminOrderDraft(draftId, buildPayload());
+        setDrafts((current) => current.map((draft) => (draft.id === draftId ? saved.draft : draft)));
+        setForm(draftToForm(saved.draft));
+      }
+
       const data = await sendAdminOrderDraftEmail(draftId, overrideEmail);
       setDrafts((current) => current.map((draft) => (draft.id === draftId ? data.draft : draft)));
       if (editingId === draftId) setForm(draftToForm(data.draft));
