@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import {
   getSalesPaymentAllocations,
   resolveSalesDashboardPeriod,
+  SALES_DASHBOARD_STATUSES,
 } from "./salesDashboardService";
+
+assert.deepEqual(SALES_DASHBOARD_STATUSES, ["processing", "paid", "shipped", "delivered"]);
 
 const splitOrder = {
   id: "split-test",

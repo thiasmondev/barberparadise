@@ -1,7 +1,8 @@
 import { prisma } from "../utils/prisma";
 import { getPosSplitAllocations, type PosRealPaymentMethod } from "../utils/posPaymentBreakdown";
 
-export const SALES_DASHBOARD_STATUSES = ["paid", "shipped", "delivered"] as const;
+// processing est affiché comme « Traitée » dans l’administration : paiement confirmé et traitement opérationnel engagé.
+export const SALES_DASHBOARD_STATUSES = ["processing", "paid", "shipped", "delivered"] as const;
 
 export const SALES_PAYMENT_CATEGORIES = [
   "Carte bancaire",
