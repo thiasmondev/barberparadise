@@ -8,7 +8,8 @@ import { ArrowLeft, Lock, ChevronDown, ShoppingBag, CreditCard, Landmark, Wallet
 import { useCart } from "@/contexts/CartContext";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
 import { getCustomerAddresses, type CustomerAddress } from "@/lib/customer-api";
-import { parseImages, formatPrice } from "@/lib/utils";
+import { formatPrice } from "@/lib/utils";
+import { getVariantImage } from "@/lib/product-images";
 import { validatePromotionCode, type PromotionValidationResult } from "@/lib/api";
 import type { CartItem, Product } from "@/types";
 
@@ -935,7 +936,7 @@ export default function CheckoutPage() {
           {orderSummaryOpen && (
             <div className="lg:hidden bg-[#1c1b1b] p-5 mb-8 space-y-4">
               {items.map((item) => {
-                const img = parseImages(item.product.images)[0] || "";
+                const img = getVariantImage(item.product, item.variant);
                 return (
                   <div key={`${item.product.id}-${item.variantId || item.variant?.id || "product"}`} className="flex items-center gap-4">
                     <div className="w-14 h-14 bg-[#2a2a2a] flex-shrink-0 relative">{img && <Image src={img} alt={item.product.name} fill className="object-contain p-1" />}<span className="absolute -top-2 -right-2 w-5 h-5 bg-[#ff4a8d] text-white text-[10px] font-black flex items-center justify-center">{item.quantity}</span></div>
@@ -1293,7 +1294,7 @@ export default function CheckoutPage() {
             <h2 className="text-xs font-black tracking-[0.3em] uppercase text-gray-500 mb-8">VOTRE COMMANDE</h2>
             <div className="space-y-6 mb-8">
               {items.map((item) => {
-                const img = parseImages(item.product.images)[0] || "";
+                const img = getVariantImage(item.product, item.variant);
                 return (
                   <div key={`${item.product.id}-${item.variantId || item.variant?.id || "product"}`} className="flex items-center gap-4">
                     <div className="w-16 h-16 bg-[#2a2a2a] flex-shrink-0 relative overflow-hidden">{img && <Image src={img} alt={item.product.name} fill className="object-contain p-2 opacity-90" />}<span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#ff4a8d] text-white text-[10px] font-black flex items-center justify-center">{item.quantity}</span></div>

@@ -1,12 +1,13 @@
 "use client";
 
-import { type FormEvent, useEffect, useState, useMemo } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ShoppingCart, Minus, Plus, Check, Truck, Shield, RotateCcw, ChevronLeft, Heart, Loader2 } from "lucide-react";
 import { Product, ProductVariant } from "@/types";
-import { parseImages, formatPrice, getDiscount } from "@/lib/utils";
+import { formatPrice, getDiscount } from "@/lib/utils";
+import { getVariantImages } from "@/lib/product-images";
 import { useCart } from "@/contexts/CartContext";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
 import { addCustomerWishlist, getCustomerWishlist, removeCustomerWishlist } from "@/lib/customer-api";
@@ -16,7 +17,6 @@ export default function ProductDetail({ product }: { product: Product }) {
   const router = useRouter();
   const { addItem } = useCart();
   const { customer, isAuthenticated, isLoading: authLoading } = useCustomerAuth();
-  const images = parseImages(product.images);
   const [selectedImage, setSelectedImage] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
@@ -62,12 +62,7 @@ export default function ProductDetail({ product }: { product: Product }) {
   const canSubmitCart = isInStock && !requiresVariantSelection;
   const canRequestStockAlert = !isInStock && !requiresVariantSelection;
 
-  const displayImages = useMemo(() => {
-    if (selectedVariant?.image) {
-      return [selectedVariant.image, ...images.filter((img) => img !== selectedVariant.image)];
-    }
-    return images;
-  }, [selectedVariant, images]);
+  const displayImages = getVariantImages(product, selectedVariant);
 
   const hasMultipleImages = displayImages.length > 1;
 
@@ -154,7 +149,7 @@ export default function ProductDetail({ product }: { product: Product }) {
           priceProEur: selectedVariant.priceProEur ?? product.priceProEur,
           hasPriceProEur: selectedVariant.hasPriceProEur ?? product.hasPriceProEur,
           name: `${product.name} - ${selectedVariant.name}`,
-          images: selectedVariant.image ? [selectedVariant.image, ...images.filter((img) => img !== selectedVariant.image)] : product.images,
+          images: getVariantImages(product, selectedVariant),
           stockCount: selectedVariant.stock,
           inStock: selectedVariant.inStock && selectedVariant.stock > 0,
         }

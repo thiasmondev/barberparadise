@@ -32,6 +32,7 @@ import {
   type PosVariant,
 } from "@/lib/admin-api";
 import type { Customer } from "@/types";
+import { getVariantImage } from "@/lib/product-images";
 
 const currency = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
 
@@ -75,7 +76,7 @@ const SPLIT_METHODS: { value: Exclude<PosPaymentMethod, "split">; label: string 
 ];
 
 function getProductImage(product: PosProduct, variant?: PosVariant | null) {
-  return variant?.image || product.image || "/placeholder-product.png";
+  return getVariantImage(product, variant) || "/placeholder-product.png";
 }
 
 function customerName(customer: Customer) {

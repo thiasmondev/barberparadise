@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, type ChangeEvent } from "react";
 import {
   getProductVariants,
   createProductVariant,
@@ -7,9 +7,10 @@ import {
   deleteProductVariant,
   type ProductVariant,
 } from "@/lib/admin-api";
+import { uploadProductImageToCloudinary } from "@/lib/cloudinary";
 import {
   Plus, Pencil, Trash2, X, Check, ChevronDown, Palette, Ruler, Tag,
-  Package, AlertCircle, Loader2,
+  Package, AlertCircle, Loader2, ImagePlus,
 } from "lucide-react";
 
 const PRESET_COLORS = [
@@ -66,6 +67,8 @@ export default function VariantManager({ productId, productPrice, onVariantsChan
   const [error, setError] = useState("");
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showSizePicker, setShowSizePicker] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
     try {
@@ -160,6 +163,23 @@ export default function VariantManager({ productId, productPrice, onVariantsChan
     setShowSizePicker(false);
   };
 
+  const uploadVariantImage = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setUploadingImage(true);
+    setError("");
+    try {
+      const image = await uploadProductImageToCloudinary(file);
+      setForm((current) => ({ ...current, image }));
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Impossible d’importer l’image de la variante");
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
   const typeIcon = (type: string) => {
     if (type === "color") return <Palette size={13} className="text-violet-500" />;
     if (type === "size") return <Ruler size={13} className="text-blue-500" />;
@@ -203,13 +223,15 @@ export default function VariantManager({ productId, productPrice, onVariantsChan
               key={v.id}
               className="flex items-center gap-3 px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg group border border-gray-100"
             >
-              {/* Aperçu couleur */}
-              {v.type === "color" && v.colorHex && (
+              {/* Image spécifique de variante ; sinon aperçu couleur si disponible. */}
+              {v.image ? (
+                <img src={v.image} alt={`Variante ${v.name}`} className="h-9 w-9 shrink-0 rounded-lg border border-gray-200 object-cover" />
+              ) : v.type === "color" && v.colorHex ? (
                 <div
                   className="w-5 h-5 rounded-full border border-gray-200 shrink-0"
                   style={{ backgroundColor: v.colorHex }}
                 />
-              )}
+              ) : null}
               {/* Icône type */}
               <div className="shrink-0">{typeIcon(v.type)}</div>
 
@@ -482,6 +504,40 @@ export default function VariantManager({ productId, productPrice, onVariantsChan
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-300"
               />
             </div>
+          </div>
+
+          {/* Image spécifique de variante (optionnelle) */}
+          <div>
+            <div className="mb-1.5 flex items-center justify-between gap-3">
+              <label className="text-xs font-medium text-gray-600">Image de la variante <span className="font-normal text-gray-400">— vide = image du produit</span></label>
+              {form.image && (
+                <button
+                  type="button"
+                  onClick={() => setForm((current) => ({ ...current, image: "" }))}
+                  className="text-xs font-medium text-red-600 hover:text-red-700"
+                >
+                  Retirer
+                </button>
+              )}
+            </div>
+            <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={uploadVariantImage} disabled={uploadingImage} />
+            {form.image ? (
+              <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-2.5">
+                <img src={form.image} alt="Aperçu de l’image de variante" className="h-16 w-16 rounded-md border border-gray-100 object-cover" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-dark-700">Image de variante prête</p>
+                  <p className="mt-0.5 truncate text-[11px] text-gray-400">Elle remplacera l’image produit partout où cette variante est sélectionnée.</p>
+                </div>
+                <button type="button" onClick={() => imageInputRef.current?.click()} disabled={uploadingImage} className="rounded-lg border border-violet-200 px-2.5 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-50">
+                  Remplacer
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => imageInputRef.current?.click()} disabled={uploadingImage} className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-violet-300 bg-white px-3 py-3 text-xs font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-50">
+                {uploadingImage ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
+                {uploadingImage ? "Import de l’image..." : "Importer une image de variante"}
+              </button>
+            )}
           </div>
 
           {/* Boutons */}

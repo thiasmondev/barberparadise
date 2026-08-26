@@ -1,10 +1,9 @@
 "use client";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { getAdminToken } from "@/lib/admin-api";
+import { uploadProductImageToCloudinary } from "@/lib/cloudinary";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
-const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "dopr7tgf8";
-const CLOUDINARY_UPLOAD_PRESET = "barberparadise_unsigned";
 
 interface ImageManagerProps {
   productId: string;
@@ -111,28 +110,10 @@ export default function ImageManager({ productId, images, imageAlts = [], onChan
     setError(null);
 
     try {
-      // Étape 1 : Upload vers Cloudinary directement depuis le navigateur
-      const cloudForm = new FormData();
-      cloudForm.append("file", file);
-      cloudForm.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-      cloudForm.append("folder", "barberparadise/products");
-
+      // Étape 1 : même upload Cloudinary partagé avec les images de variantes.
       setUploadProgress(30);
-
-      const cloudRes = await fetch(
-        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
-        { method: "POST", body: cloudForm }
-      );
-
+      const secureUrl = await uploadProductImageToCloudinary(file);
       setUploadProgress(70);
-
-      if (!cloudRes.ok) {
-        const cloudErr = await cloudRes.json().catch(() => ({}));
-        throw new Error(cloudErr.error?.message || `Erreur Cloudinary (${cloudRes.status})`);
-      }
-
-      const cloudData = await cloudRes.json();
-      const secureUrl: string = cloudData.secure_url;
 
       // Étape 2 : Enregistrer l'URL dans la base via le backend
       const token = getAdminToken();

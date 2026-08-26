@@ -6,7 +6,8 @@ import Image from "next/image";
 import { Trash2, Minus, Plus, ArrowLeft, ArrowRight, ShoppingBag, CreditCard, Landmark, WalletCards } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
-import { parseImages, formatPrice } from "@/lib/utils";
+import { formatPrice } from "@/lib/utils";
+import { getVariantImage } from "@/lib/product-images";
 import { validatePromotionCode, type PromotionValidationResult } from "@/lib/api";
 
 type PaymentMethod = "card" | "paybybank" | "pay_by_bank" | "paypal" | "paypal_4x";
@@ -241,8 +242,7 @@ export default function CartPage() {
             </div>
 
             {items.map((item) => {
-              const images = parseImages(item.product.images);
-              const img = images[0] || "";
+              const img = getVariantImage(item.product, item.variant);
               const lineTotal = item.product.price * item.quantity;
               const selectedVariantId = item.variantId || item.variant?.id || null;
 

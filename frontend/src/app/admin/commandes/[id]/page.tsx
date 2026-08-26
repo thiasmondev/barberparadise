@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import {
   getAdminOrder,
+  getAdminProduct,
   getAdminToken,
   cancelShipmentLabel,
   deleteAdminOrder,
@@ -82,6 +83,7 @@ import {
   type AdminOrderExchange,
 } from "@/lib/admin-api";
 import type { Order, Packaging, ShippingAddress, Product, ProductVariant, Customer } from "@/types";
+import { getVariantImage } from "@/lib/product-images";
 import { EmailPickerModal, type EmailOption } from "@/components/admin/EmailPickerModal";
 
 const PAYMENT_BADGES: Record<string, { label: string; className: string }> = {
@@ -422,6 +424,7 @@ export default function OrderDetailPage() {
   const [modifyDoneMessage, setModifyDoneMessage] = useState("");
   // Cache des variantes par productId (pour le sélecteur de variante inline)
   const [productVariantsCache, setProductVariantsCache] = useState<Record<string, ProductVariant[]>>({});
+  const [productImageCache, setProductImageCache] = useState<Record<string, string>>({});
   // Recherche produit pour ajout
   const [productSearch, setProductSearch] = useState("");
   const [productSearchResults, setProductSearchResults] = useState<Product[]>([]);
@@ -1165,12 +1168,13 @@ export default function OrderDetailPage() {
     // Charger les variantes disponibles pour chaque produit (en arrière-plan)
     const productIds = Array.from(new Set(order.items.map((i) => i.productId).filter(Boolean)));
     productIds.forEach(async (productId) => {
-      if (!productId || productVariantsCache[productId]) return; // Déjà en cache
+      if (!productId || (productVariantsCache[productId] && productImageCache[productId])) return; // Déjà en cache
       try {
-        const variants = await getProductVariants(productId);
+        const [variants, product] = await Promise.all([getProductVariants(productId), getAdminProduct(productId)]);
         if (variants.length > 0) {
           setProductVariantsCache((prev) => ({ ...prev, [productId]: variants }));
         }
+        setProductImageCache((prev) => ({ ...prev, [productId]: getVariantImage(product) }));
       } catch {
         // Silencieux : si les variantes ne se chargent pas, le sélecteur n'apparaît pas
       }
@@ -1200,7 +1204,6 @@ export default function OrderDetailPage() {
     if (existing) {
       setEditableItems((prev) => prev.map((i) => `${i.productId}:${i.variantId ?? ""}` === key ? { ...i, quantity: i.quantity + 1 } : i));
     } else {
-      const images = Array.isArray(product.images) ? product.images : (typeof product.images === "string" ? JSON.parse(product.images || "[]") : []);
       setEditableItems((prev) => [
         ...prev,
         {
@@ -1208,7 +1211,7 @@ export default function OrderDetailPage() {
           variantId: variant?.id || null,
           name: variant ? `${product.name} - ${variant.name}` : product.name,
           variantLabel: variant?.name || null,
-          image: variant?.image || images[0] || "",
+          image: getVariantImage(product, variant),
           price: variant?.price ?? product.price,
           quantity: 1,
           lineDiscountType: "fixed" as const,
@@ -1240,6 +1243,7 @@ export default function OrderDetailPage() {
     const variants = productVariantsCache[item.productId] || [];
     const variant = variants.find((v) => v.id === variantId);
     if (!variant) return;
+    const product = productSearchResults.find((candidate) => candidate.id === item.productId);
     setEditableItems((prev) => {
       const updated = [...prev];
       updated[index] = {
@@ -1247,7 +1251,7 @@ export default function OrderDetailPage() {
         variantId: variant.id,
         variantLabel: variant.name,
         price: variant.price ?? updated[index].price,
-        image: variant.image || updated[index].image,
+        image: getVariantImage(product || { image: productImageCache[item.productId] || updated[index].image }, variant),
       };
       return updated;
     });
@@ -2455,8 +2459,8 @@ export default function OrderDetailPage() {
                 <label className="block text-sm font-medium text-gray-800">Article de remplacement
                   <input value={exchangeReplacementSearch} onChange={(event) => searchExchangeReplacement(event.target.value)} placeholder="Rechercher par nom, marque ou référence" className="mt-1.5 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm" />
                 </label>
-                {exchangeReplacementResults.length > 0 && !exchangeReplacementProduct && <div className="mt-3 max-h-52 overflow-y-auto rounded-xl border border-gray-200 divide-y divide-gray-100">{exchangeReplacementResults.map((product) => <button key={product.id} onClick={() => { setExchangeReplacementProduct(product); setExchangeReplacementVariant(null); setExchangeReplacementResults([]); }} className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-gray-50"><span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{product.name}</span><span className="text-xs text-gray-500">{formatPrice(order.isB2B ? (product.priceProEur ?? product.price / 1.2) : product.price, order.currency)}</span></button>)}</div>}
-                {exchangeReplacementProduct && <div className="mt-3 rounded-xl bg-violet-50 p-3"><div className="flex items-center justify-between gap-3"><p className="text-sm font-semibold text-violet-950">{exchangeReplacementProduct.name}</p><button onClick={() => { setExchangeReplacementProduct(null); setExchangeReplacementVariant(null); }} className="text-xs font-semibold text-violet-700">Changer</button></div>{(exchangeReplacementProduct.variants?.length || 0) > 0 && <label className="mt-3 block text-xs font-semibold text-violet-900">Variante obligatoire<select value={exchangeReplacementVariant?.id || ""} onChange={(event) => setExchangeReplacementVariant(exchangeReplacementProduct.variants?.find((variant) => variant.id === event.target.value) || null)} className="mt-1 w-full rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm"><option value="">Choisir une variante disponible</option>{exchangeReplacementProduct.variants?.filter((variant) => variant.inStock && variant.stock > 0).map((variant) => <option key={variant.id} value={variant.id}>{variant.name} · {formatPrice(order.isB2B ? (variant.priceProEur ?? (variant.price ?? 0) / 1.2) : (variant.price ?? 0), order.currency)} · stock {variant.stock}</option>)}</select></label>}</div>}
+                {exchangeReplacementResults.length > 0 && !exchangeReplacementProduct && <div className="mt-3 max-h-52 overflow-y-auto rounded-xl border border-gray-200 divide-y divide-gray-100">{exchangeReplacementResults.map((product) => <button key={product.id} onClick={() => { setExchangeReplacementProduct(product); setExchangeReplacementVariant(null); setExchangeReplacementResults([]); }} className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-gray-50">{getVariantImage(product) && <img src={getVariantImage(product)} alt="" className="h-9 w-9 shrink-0 rounded-md border border-gray-100 object-cover" />}<span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{product.name}</span><span className="text-xs text-gray-500">{formatPrice(order.isB2B ? (product.priceProEur ?? product.price / 1.2) : product.price, order.currency)}</span></button>)}</div>}
+                {exchangeReplacementProduct && <div className="mt-3 rounded-xl bg-violet-50 p-3"><div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-3">{getVariantImage(exchangeReplacementProduct, exchangeReplacementVariant) && <img src={getVariantImage(exchangeReplacementProduct, exchangeReplacementVariant)} alt="" className="h-12 w-12 shrink-0 rounded-lg border border-violet-200 object-cover" />}<p className="truncate text-sm font-semibold text-violet-950">{exchangeReplacementProduct.name}</p></div><button onClick={() => { setExchangeReplacementProduct(null); setExchangeReplacementVariant(null); }} className="text-xs font-semibold text-violet-700">Changer</button></div>{(exchangeReplacementProduct.variants?.length || 0) > 0 && <label className="mt-3 block text-xs font-semibold text-violet-900">Variante obligatoire<select value={exchangeReplacementVariant?.id || ""} onChange={(event) => setExchangeReplacementVariant(exchangeReplacementProduct.variants?.find((variant) => variant.id === event.target.value) || null)} className="mt-1 w-full rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm"><option value="">Choisir une variante disponible</option>{exchangeReplacementProduct.variants?.filter((variant) => variant.inStock && variant.stock > 0).map((variant) => <option key={variant.id} value={variant.id}>{variant.name} · {formatPrice(order.isB2B ? (variant.priceProEur ?? (variant.price ?? 0) / 1.2) : (variant.price ?? 0), order.currency)} · stock {variant.stock}</option>)}</select></label>}</div>}
               </div>
               <label className="block text-sm font-medium text-gray-800">Note interne (facultative)<textarea value={exchangeNotes} onChange={(event) => setExchangeNotes(event.target.value)} rows={3} className="mt-1.5 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm" placeholder="Motif, état du produit, accord client…" /></label>
               <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">À la création, l’article de remplacement est <strong>réservé</strong>. L’article retourné ne sera remis en stock qu’après réception et inspection physique.</div>
@@ -2768,7 +2772,7 @@ export default function OrderDetailPage() {
                                   className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50"
                                 >
                                   <div className="h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-gray-100 bg-gray-50">
-                                    {variant.image ? <img src={variant.image} alt="" className="h-full w-full object-cover" /> : null}
+                                    {getVariantImage(product, variant) ? <img src={getVariantImage(product, variant)} alt="" className="h-full w-full object-cover" /> : null}
                                   </div>
                                   <div className="min-w-0 flex-1">
                                     <p className="truncate text-sm font-medium text-gray-950">{product.name} — {variant.name}</p>

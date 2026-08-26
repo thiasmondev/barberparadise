@@ -23,6 +23,7 @@ import {
   updateAdminOrderDraft,
 } from "@/lib/admin-api";
 import type { Customer, OrderItem, Product, ProductVariant } from "@/types";
+import { getVariantImage, getVariantImages } from "@/lib/product-images";
 
 export const dynamic = "force-dynamic";
 
@@ -96,16 +97,7 @@ function customerName(customer?: Customer | AdminOrderDraft["customer"] | null) 
 }
 
 function productImages(product: Product): string[] {
-  if (Array.isArray(product.images)) return product.images.filter((item): item is string => typeof item === "string");
-  if (typeof product.images === "string") {
-    try {
-      const parsed = JSON.parse(product.images);
-      if (Array.isArray(parsed)) return parsed.filter((item): item is string => typeof item === "string");
-    } catch {
-      return product.images ? [product.images] : [];
-    }
-  }
-  return [];
+  return getVariantImages(product);
 }
 
 function unitPrice(line: DraftLine, isB2B: boolean) {
@@ -278,7 +270,7 @@ export default function AdminOrderDraftsPage() {
           ...line,
           variantId: variant.id,
           variantLabel: variant.name,
-          image: variant.image || line.image,
+          image: getVariantImage(line.product, variant) || line.image,
           fallbackPrice: variantPrice,
         };
       }),
@@ -333,7 +325,7 @@ export default function AdminOrderDraftsPage() {
           ),
         };
       }
-      const image = variant?.image || productImages(product)[0] || "";
+      const image = getVariantImage(product, variant);
       const price = variant?.price ?? product.price;
       return {
         ...current,
@@ -652,7 +644,7 @@ export default function AdminOrderDraftsPage() {
                       product.variants && product.variants.length > 0 ? (
                         product.variants.map((variant) => (
                           <button key={`${product.id}:${variant.id}`} type="button" onClick={() => addProduct(product, variant)} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-50">
-                            <div className="h-10 w-10 overflow-hidden rounded-lg bg-gray-100">{variant.image ? <img src={variant.image} alt="" className="h-full w-full object-cover" /> : productImages(product)[0] ? <img src={productImages(product)[0]} alt="" className="h-full w-full object-cover" /> : null}</div>
+                            <div className="h-10 w-10 overflow-hidden rounded-lg bg-gray-100">{getVariantImage(product, variant) ? <img src={getVariantImage(product, variant)} alt="" className="h-full w-full object-cover" /> : null}</div>
                             <div className="min-w-0 flex-1"><p className="truncate font-semibold">{product.name} <span className="font-normal text-gray-600">— {variant.name}</span></p><p className="text-gray-500">Public {eur(variant.price ?? product.price)} · Pro {eur(variant.priceProEur ?? (variant.price ?? product.price) / 1.2)}</p></div>
                           </button>
                         ))

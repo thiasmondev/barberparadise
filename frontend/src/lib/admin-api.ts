@@ -186,6 +186,10 @@ export function getAdminProducts(params?: {
   }>(`/api/admin/products${q ? `?${q}` : ""}`);
 }
 
+export function getAdminProduct(id: string): Promise<Product> {
+  return adminFetch<Product>(`/api/admin/products/${id}`);
+}
+
 export function createProduct(data: Record<string, unknown>) {
   return adminFetch<Product>("/api/admin/products", {
     method: "POST",
