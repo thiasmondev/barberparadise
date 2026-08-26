@@ -48,6 +48,36 @@ function deriveExcerpt(content: string, fallback = ""): string {
   return stripMarkdown(content || fallback).substring(0, 220);
 }
 
+function extractDraftLine(content: string, labels: string[]): string | null {
+  const escaped = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const match = content.match(new RegExp(`^\\s*(?:${escaped})\\s*:\\s*(.+)$`, "im"));
+  return match?.[1]?.trim() || null;
+}
+
+function normalizeDraftContent(content: string): string {
+  return content
+    .replace(/^\s*(?:Titre|Title|Meta Title|Meta Description|Meta description|Mots[- ]clés|Keywords?|Slug)\s*:\s*.*$/gim, "")
+    .replace(/^\s*---\s*$/gm, "")
+    .replace(/^\s*\n/gm, "")
+    .trim();
+}
+
+function getBlogDraftPrefill(draft: { title: string; content: string; seoMetaTitle: string | null; seoMetaDescription: string | null; seoKeywords: string[]; seoSlug: string | null; metadata: unknown }) {
+  const metadata = draft.metadata && typeof draft.metadata === "object" && !Array.isArray(draft.metadata)
+    ? draft.metadata as Record<string, unknown>
+    : {};
+  const content = normalizeDraftContent(draft.content);
+  const title = extractDraftLine(draft.content, ["Titre", "Title"]) || draft.title;
+  const metaTitle = draft.seoMetaTitle || extractDraftLine(draft.content, ["Meta Title", "Titre SEO"]) || title;
+  const metaDescription = draft.seoMetaDescription || extractDraftLine(draft.content, ["Meta Description", "Meta description", "Description SEO"]) || deriveExcerpt(content, title).substring(0, 160);
+  const keywords = draft.seoKeywords.length
+    ? draft.seoKeywords
+    : toStringArray(metadata.keywords ?? extractDraftLine(draft.content, ["Mots-clés", "Mots clés", "Keywords"]));
+  const category = typeof metadata.category === "string" && metadata.category.trim() ? metadata.category.trim() : "Conseils barbier";
+  const linkedProductIds = toStringArray(metadata.linkedProductIds ?? metadata.productIds ?? metadata.products);
+  return { title, content, metaTitle, metaDescription, keywords, category, linkedProductIds, slug: draft.seoSlug || extractDraftLine(draft.content, ["Slug"]) || title };
+}
+
 async function ensureUniqueSlug(baseSlug: string, currentId?: string): Promise<string> {
   const base = slugify(baseSlug);
   let candidate = base;
@@ -221,6 +251,72 @@ adminBlogRouter.get("/", async (req: Request, res: Response): Promise<void> => {
   } catch (err) {
     console.error("Erreur liste admin blog:", err);
     res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+adminBlogRouter.get("/drafts", async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const drafts = await prisma.contentDraft.findMany({
+      where: { type: "blog", status: { in: ["draft", "review", "approved"] } },
+      select: {
+        id: true,
+        title: true,
+        content: true,
+        status: true,
+        seoMetaTitle: true,
+        seoMetaDescription: true,
+        seoKeywords: true,
+        seoSlug: true,
+        metadata: true,
+        createdAt: true,
+        updatedAt: true,
+        blogArticle: { select: { id: true, title: true, status: true, slug: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({ drafts: drafts.map((draft) => ({ ...draft, prefill: getBlogDraftPrefill(draft) })) });
+  } catch (err) {
+    console.error("Erreur liste brouillons blog:", err);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+adminBlogRouter.post("/from-draft/:draftId", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const draft = await prisma.contentDraft.findUnique({ where: { id: req.params.draftId } });
+    if (!draft || draft.type !== "blog") {
+      res.status(404).json({ error: "Brouillon blog introuvable" });
+      return;
+    }
+    const existing = await prisma.blogArticle.findUnique({ where: { sourceDraftId: draft.id }, select: blogArticleSelect() });
+    if (existing) {
+      res.json(existing);
+      return;
+    }
+    const prefill = getBlogDraftPrefill(draft);
+    const article = await prisma.blogArticle.create({
+      data: {
+        slug: await ensureUniqueSlug(prefill.slug),
+        title: prefill.title,
+        excerpt: deriveExcerpt(prefill.content, prefill.title),
+        content: prefill.content,
+        category: prefill.category,
+        tags: prefill.keywords,
+        readTime: estimateReadTime(prefill.content),
+        seoMetaTitle: prefill.metaTitle,
+        seoMetaDescription: prefill.metaDescription,
+        seoKeywords: prefill.keywords,
+        linkedProductIds: prefill.linkedProductIds,
+        sourceDraftId: draft.id,
+        status: "draft",
+      },
+      select: blogArticleSelect(),
+    });
+    await prisma.contentDraft.update({ where: { id: draft.id }, data: { status: "review" } });
+    res.status(201).json(article);
+  } catch (err) {
+    console.error("Erreur création article depuis brouillon:", err);
+    res.status(500).json({ error: err instanceof Error ? err.message : "Erreur création article" });
   }
 });
 

@@ -98,7 +98,8 @@ class ContentEngine {
       const type = typeMap[rawType] || rawType;
 
       const firstLine = content.split("\n")[0].replace(/^#+\s*/, "").trim();
-      const title = firstLine.substring(0, 120) || `Brouillon ${type}`;
+      const explicitTitle = content.match(/^\s*(?:Titre|Title)\s*:\s*(.+)$/im)?.[1]?.trim();
+      const title = (explicitTitle || firstLine).substring(0, 120) || `Brouillon ${type}`;
       const seoMeta = this.extractSeoMeta(content);
 
       const draft = await prisma.contentDraft.create({
@@ -124,10 +125,10 @@ class ContentEngine {
   }
 
   private extractSeoMeta(content: string) {
-    const metaTitleMatch = content.match(/Meta Title:\s*(.+)/i);
-    const metaDescMatch = content.match(/Meta Description:\s*(.+)/i);
-    const keywordsMatch = content.match(/Keywords?:\s*(.+)/i);
-    const slugMatch = content.match(/Slug:\s*(.+)/i);
+    const metaTitleMatch = content.match(/(?:Meta Title|Titre SEO)\s*:\s*(.+)/i);
+    const metaDescMatch = content.match(/(?:Meta Description|Meta description|Description SEO)\s*:\s*(.+)/i);
+    const keywordsMatch = content.match(/(?:Keywords?|Mots[- ]clés)\s*:\s*(.+)/i);
+    const slugMatch = content.match(/Slug\s*:\s*(.+)/i);
 
     return {
       metaTitle: metaTitleMatch?.[1]?.trim() || null,

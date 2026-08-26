@@ -28,6 +28,7 @@ import {
   Images,
   KeyRound,
   Store,
+  BookOpen,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -42,6 +43,7 @@ const NAV_ITEMS = [
   { href: "/admin/categories", label: "Catégories", icon: FolderTree },
   { href: "/admin/brands", label: "Marques", icon: Tag },
   { href: "/admin/seo", label: "Agent SEO", icon: Search },
+  { href: "/admin/blog", label: "Blog", icon: BookOpen },
   { href: "/admin/marketing", label: "Agent Marketing", icon: Megaphone },
   { href: "/admin/promotions", label: "Promotions", icon: Tag },
   { href: "/admin/carousel", label: "Carrousel", icon: Images },

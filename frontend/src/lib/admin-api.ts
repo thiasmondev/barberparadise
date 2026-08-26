@@ -2675,6 +2675,30 @@ export interface HermesDraftsResponse {
   totalPages: number;
 }
 
+export interface BlogContentDraft {
+  id: string;
+  title: string;
+  content: string;
+  status: string;
+  seoMetaTitle: string | null;
+  seoMetaDescription: string | null;
+  seoKeywords: string[];
+  seoSlug: string | null;
+  createdAt: string;
+  updatedAt: string;
+  blogArticle?: { id: string; title: string; status: string; slug: string } | null;
+  prefill: {
+    title: string;
+    content: string;
+    metaTitle: string;
+    metaDescription: string;
+    keywords: string[];
+    category: string;
+    linkedProductIds: string[];
+    slug: string;
+  };
+}
+
 export interface BlogArticle {
   id: string;
   slug: string;
@@ -2761,6 +2785,14 @@ export function updateHermesDraft(id: string, data: Partial<HermesContentDraft>)
 
 export function publishHermesDraft(id: string) {
   return adminFetch<PublishHermesDraftResponse>(`/api/hermes/drafts/${id}/publish`, { method: "POST" });
+}
+
+export function getAdminBlogDrafts() {
+  return adminFetch<{ drafts: BlogContentDraft[] }>("/api/admin/blog/articles/drafts");
+}
+
+export function createAdminBlogArticleFromDraft(draftId: string) {
+  return adminFetch<BlogArticle>(`/api/admin/blog/articles/from-draft/${draftId}`, { method: "POST" });
 }
 
 export function getAdminBlogArticles(params?: { status?: string; category?: string; page?: number; limit?: number }) {
