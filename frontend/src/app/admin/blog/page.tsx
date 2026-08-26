@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   BookOpen,
   CheckCircle2,
+  Eye,
   FilePlus2,
   ImagePlus,
   Loader2,
@@ -20,6 +21,7 @@ import {
   createAdminBlogArticleFromDraft,
   getAdminBlogArticles,
   getAdminBlogDrafts,
+  getAdminProduct,
   getAdminProducts,
   updateAdminBlogArticle,
   type BlogArticle,
@@ -27,6 +29,7 @@ import {
 } from "@/lib/admin-api";
 import { uploadBlogCoverToCloudinary } from "@/lib/cloudinary";
 import type { Product } from "@/types";
+import BlogArticlePreview from "@/components/admin/BlogArticlePreview";
 
 const TEMPLATES = [
   {
@@ -209,6 +212,7 @@ export default function AdminBlogPage() {
   const [productSearch, setProductSearch] = useState("");
   const [productResults, setProductResults] = useState<Product[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
+  const [previewing, setPreviewing] = useState(false);
 
   const linkedProductSet = useMemo(() => new Set(editor?.linkedProductIds || []), [editor?.linkedProductIds]);
 
@@ -246,16 +250,39 @@ export default function AdminBlogPage() {
   const chooseTemplate = (templateId: string) => {
     const template = TEMPLATES.find((item) => item.id === templateId);
     if (!template) return;
-    setEditor({
+    if (editor && editor.content.trim() && !window.confirm("Appliquer ce template remplacera le contenu actuel de l’article. Continuer ?")) return;
+    setEditor((current) => current ? {
+      ...current,
+      title: current.title || template.title,
+      content: template.content,
+      category: current.category === "Conseils barbier" ? template.category : current.category,
+      seoMetaTitle: current.seoMetaTitle || template.title,
+    } : {
       ...EMPTY_EDITOR,
       title: template.title,
       content: template.content,
       category: template.category,
       seoMetaTitle: template.title,
     });
-    setSelectedProducts([]);
+    if (!editor) setSelectedProducts([]);
     setError("");
     setNotice("");
+  };
+
+  const hydrateLinkedProducts = async (productIds: string[]) => {
+    if (!productIds.length) {
+      setSelectedProducts([]);
+      return;
+    }
+    const products = await Promise.all(productIds.map((id) => getAdminProduct(id).catch(() => null)));
+    setSelectedProducts(products.filter((product): product is Product => Boolean(product)));
+  };
+
+  const openArticleEditor = (article: BlogArticle) => {
+    setEditor(articleToEditor(article));
+    setNotice("");
+    setError("");
+    void hydrateLinkedProducts(article.linkedProductIds);
   };
 
   const finalizeDraft = async (draft: BlogContentDraft) => {
@@ -265,7 +292,7 @@ export default function AdminBlogPage() {
     try {
       const article = await createAdminBlogArticleFromDraft(draft.id);
       setEditor(articleToEditor(article));
-      setSelectedProducts([]);
+      await hydrateLinkedProducts(article.linkedProductIds);
       setNotice("Le brouillon Hermes a été transformé en article éditable. Il reste non publié tant que vous ne le décidez pas.");
       await load();
     } catch (saveError) {
@@ -303,6 +330,7 @@ export default function AdminBlogPage() {
         ? await updateAdminBlogArticle(editor.id, payload)
         : await createAdminBlogArticle({ ...payload, status: "draft" });
       setEditor(articleToEditor(article));
+      await hydrateLinkedProducts(article.linkedProductIds);
       setNotice("Article sauvegardé en brouillon. La publication reste une action humaine explicite.");
       await load();
     } catch (saveError) {
@@ -372,7 +400,7 @@ export default function AdminBlogPage() {
             {drafts.map((draft) => (
               <article key={draft.id} className="rounded-xl border border-white bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-[#fd2786]">{draft.status === "review" ? "En finalisation" : "À valider"}</p><h3 className="mt-1 font-semibold text-gray-900">{draft.prefill.title}</h3><p className="mt-1 line-clamp-2 text-sm text-gray-600">{draft.prefill.metaDescription || draft.content}</p></div><BookOpen className="shrink-0 text-[#0f056b]" size={20} /></div>
-                <div className="mt-3 flex items-center justify-between gap-2"><span className="text-xs text-gray-500">{new Date(draft.createdAt).toLocaleDateString("fr-FR")}</span>{draft.blogArticle ? <button onClick={() => { const article = articles.find((item) => item.id === draft.blogArticle?.id); if (article) setEditor(articleToEditor(article)); }} className="rounded-lg border border-[#0f056b]/20 px-3 py-2 text-xs font-semibold text-[#0f056b] hover:bg-[#0f056b]/5">Ouvrir l’article</button> : <button disabled={saving} onClick={() => void finalizeDraft(draft)} className="inline-flex items-center gap-1 rounded-lg bg-[#fd2786] px-3 py-2 text-xs font-semibold text-white hover:bg-[#df1d70] disabled:opacity-50">{saving ? <Loader2 size={13} className="animate-spin" /> : <Pencil size={13} />} Finaliser cette idée</button>}</div>
+                <div className="mt-3 flex items-center justify-between gap-2"><span className="text-xs text-gray-500">{new Date(draft.createdAt).toLocaleDateString("fr-FR")}</span>{draft.blogArticle ? <button onClick={() => { const article = articles.find((item) => item.id === draft.blogArticle?.id); if (article) openArticleEditor(article); }} className="rounded-lg border border-[#0f056b]/20 px-3 py-2 text-xs font-semibold text-[#0f056b] hover:bg-[#0f056b]/5">Ouvrir l’article</button> : <button disabled={saving} onClick={() => void finalizeDraft(draft)} className="inline-flex items-center gap-1 rounded-lg bg-[#fd2786] px-3 py-2 text-xs font-semibold text-white hover:bg-[#df1d70] disabled:opacity-50">{saving ? <Loader2 size={13} className="animate-spin" /> : <Pencil size={13} />} Finaliser cette idée</button>}</div>
               </article>
             ))}
           </div>
@@ -391,7 +419,8 @@ export default function AdminBlogPage() {
 
       {editor && (
         <section className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-6">
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold text-[#0f056b]">{editor.id ? "Éditer l’article" : "Nouvel article"}</h2><p className="text-sm text-gray-600">Sauvegardez d’abord le contenu. La publication immédiate et la planification arrivent dans l’étape suivante.</p></div><div className="flex gap-2"><button onClick={() => setEditor(null)} className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700">Fermer</button><button disabled={saving} onClick={() => void saveArticle()} className="inline-flex items-center gap-2 rounded-lg bg-[#0f056b] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} Sauvegarder le brouillon</button></div></div>
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold text-[#0f056b]">{editor.id ? "Éditer l’article" : "Nouvel article"}</h2><p className="text-sm text-gray-600">Sauvegardez d’abord le contenu. La publication immédiate et la planification arrivent dans l’étape suivante.</p></div><div className="flex flex-wrap gap-2"><button onClick={() => setPreviewing(true)} className="inline-flex items-center gap-2 rounded-lg border border-[#fd2786] px-3 py-2 text-sm font-semibold text-[#fd2786] hover:bg-[#fd2786]/5"><Eye size={16} /> Prévisualiser</button><button onClick={() => setEditor(null)} className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700">Fermer</button><button disabled={saving} onClick={() => void saveArticle()} className="inline-flex items-center gap-2 rounded-lg bg-[#0f056b] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} Sauvegarder le brouillon</button></div></div>
+          <div className="mb-5 rounded-xl border border-[#fd2786]/25 bg-[#fd2786]/5 p-4"><div className="flex flex-wrap items-end justify-between gap-2"><div><h3 className="font-semibold text-[#0f056b]">Choisir une structure</h3><p className="text-xs text-gray-600">Disponible aussi après « Finaliser cette idée ». L’application d’un modèle remplace le corps actuel après confirmation.</p></div><span className="text-xs font-semibold text-[#fd2786]">4 templates</span></div><div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{TEMPLATES.map((template) => <button key={template.id} onClick={() => chooseTemplate(template.id)} className="rounded-lg border border-white bg-white p-3 text-left transition hover:border-[#fd2786] hover:bg-[#fd2786]/5"><p className="text-sm font-semibold text-[#0f056b]">{template.label}</p><p className="mt-1 text-xs text-gray-600">{template.description}</p></button>)}</div></div>
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
             <div className="space-y-4">
               <label className="block text-sm font-medium text-gray-700">Titre<input value={editor.title} onChange={(event) => setEditor({ ...editor, title: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 focus:border-[#fd2786] focus:outline-none" /></label>
@@ -409,7 +438,9 @@ export default function AdminBlogPage() {
         </section>
       )}
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5"><div className="mb-4 flex items-center gap-2"><BookOpen size={19} className="text-[#0f056b]" /><div><h2 className="font-bold text-[#0f056b]">Articles</h2><p className="text-xs text-gray-600">Brouillons en cours et publications existantes.</p></div></div>{articles.length === 0 ? <p className="text-sm text-gray-600">Aucun article BlogArticle pour le moment.</p> : <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500"><tr><th className="pb-2">Titre</th><th className="pb-2">Catégorie</th><th className="pb-2">Statut</th><th className="pb-2">Mis à jour</th><th className="pb-2" /></tr></thead><tbody>{articles.map((article) => <tr key={article.id} className="border-b border-gray-100"><td className="py-3 font-medium text-gray-900">{article.title}</td><td className="py-3 text-gray-600">{article.category}</td><td className="py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${article.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-700"}`}>{article.status === "published" ? "Publié" : "Brouillon"}</span></td><td className="py-3 text-gray-500">{new Date(article.updatedAt).toLocaleDateString("fr-FR")}</td><td className="py-3 text-right"><button onClick={() => { setEditor(articleToEditor(article)); setNotice(""); setError(""); }} className="rounded-lg border border-[#0f056b]/20 px-3 py-1.5 text-xs font-semibold text-[#0f056b] hover:bg-[#0f056b]/5">Modifier</button></td></tr>)}</tbody></table></div>}</section>
+      {editor && previewing && <BlogArticlePreview article={{ title: editor.title, excerpt: editor.excerpt, content: editor.content, coverImage: editor.coverImage, category: editor.category, tags: splitValues(editor.tags) }} products={selectedProducts.filter((product) => editor.linkedProductIds.includes(product.id))} onClose={() => setPreviewing(false)} />}
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5"><div className="mb-4 flex items-center gap-2"><BookOpen size={19} className="text-[#0f056b]" /><div><h2 className="font-bold text-[#0f056b]">Articles</h2><p className="text-xs text-gray-600">Brouillons en cours et publications existantes.</p></div></div>{articles.length === 0 ? <p className="text-sm text-gray-600">Aucun article BlogArticle pour le moment.</p> : <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500"><tr><th className="pb-2">Titre</th><th className="pb-2">Catégorie</th><th className="pb-2">Statut</th><th className="pb-2">Mis à jour</th><th className="pb-2" /></tr></thead><tbody>{articles.map((article) => <tr key={article.id} className="border-b border-gray-100"><td className="py-3 font-medium text-gray-900">{article.title}</td><td className="py-3 text-gray-600">{article.category}</td><td className="py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${article.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-700"}`}>{article.status === "published" ? "Publié" : "Brouillon"}</span></td><td className="py-3 text-gray-500">{new Date(article.updatedAt).toLocaleDateString("fr-FR")}</td><td className="py-3 text-right"><button onClick={() => openArticleEditor(article)} className="rounded-lg border border-[#0f056b]/20 px-3 py-1.5 text-xs font-semibold text-[#0f056b] hover:bg-[#0f056b]/5">Modifier</button></td></tr>)}</tbody></table></div>}</section>
     </div>
   );
 }
