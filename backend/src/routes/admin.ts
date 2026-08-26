@@ -3630,6 +3630,7 @@ adminRouter.get(
       const orders = await prisma.order.findMany({
         where: {
           status: "paid",
+          noShipping: false,
           OR: [
             { shipment: null },
             { shipment: { is: { labelGeneratedAt: null, shippedAt: null } } },
@@ -4523,7 +4524,15 @@ adminRouter.get(
           where: { order: { ...summaryWhere, createdAt: { gte: startOfToday } } },
           _sum: { quantity: true },
         }),
-        prisma.order.count({ where: { ...summaryWhere, status: { in: ["processing", "shipped", "delivered"] } } }),
+        prisma.order.count({
+          where: {
+            ...summaryWhere,
+            OR: [
+              { status: { in: ["processing", "shipped", "delivered"] } },
+              { status: "paid", noShipping: true },
+            ],
+          },
+        }),
         prisma.order.count({ where: { ...summaryWhere, status: "delivered" } }),
       ]);
       res.json({
@@ -5405,7 +5414,7 @@ adminRouter.post(
         return tx.order.update({
           where: { id: order.id },
           data: {
-            status: fullyPaid ? "paid" : "pending_payment",
+            status: fullyPaid ? (order.noShipping ? "processing" : "paid") : "pending_payment",
             paidAmount: newPaidAmount,
             paymentMethod,
             paymentProvider: "manual",

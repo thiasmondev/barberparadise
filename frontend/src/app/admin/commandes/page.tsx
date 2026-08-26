@@ -43,10 +43,14 @@ type RowVariant = "active" | "done" | "muted";
 
 const DONE_STATUSES = new Set(["processing", "shipped", "delivered"]);
 
+function isStorePickup(order: Order): boolean {
+  return Boolean(order.noShipping) || order.shipment?.carrier === "retrait_magasin";
+}
+
 function getRowVariant(order: Order): RowVariant {
   const { status, channel } = order;
   if (status === "cancelled") return "muted";
-  if (channel === "pos" || DONE_STATUSES.has(status)) return "done";
+  if (channel === "pos" || isStorePickup(order) || DONE_STATUSES.has(status)) return "done";
   return "active";
 }
 
@@ -101,6 +105,9 @@ function fulfillmentBadge(order: Order) {
   if (order.channel === "pos") {
     return { label: "Remise immédiate", className: "bg-violet-50 text-violet-700 ring-violet-200" };
   }
+  if (isStorePickup(order)) {
+    return { label: "Traité", className: "bg-sky-50 text-sky-700 ring-sky-200" };
+  }
   const treated = ["processing", "shipped", "delivered"].includes(order.status);
   return treated
     ? { label: "Traité", className: "bg-sky-50 text-sky-700 ring-sky-200" }
@@ -135,6 +142,7 @@ function paymentMethodLabel(method?: string | null, provider?: string | null): s
 
 function shippingMode(order: Order) {
   if (order.channel === "pos") return "Vente en caisse";
+  if (isStorePickup(order)) return "Retrait en magasin";
   const carrier = order.shipment?.carrier;
   if (carrier === "mondial_relay") return "Mondial Relay";
   if (carrier === "colissimo_international") return "Colissimo International";

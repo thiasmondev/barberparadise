@@ -162,7 +162,8 @@ async function markOrderPaid(orderId: string, provider: WebhookProvider, provide
       await tx.order.update({
         where: { id: orderId },
         data: {
-          status: "paid",
+          // Un retrait magasin est achevé dès confirmation du paiement : aucune expédition à préparer.
+          status: order.noShipping ? "processing" : "paid",
           paymentProvider: provider,
           providerPaymentId: providerPaymentId || order.providerPaymentId,
           posPaymentStatus: order.channel === "pos" ? "paid" : order.posPaymentStatus,
