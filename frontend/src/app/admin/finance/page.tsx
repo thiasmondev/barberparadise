@@ -10,7 +10,9 @@ import {
 } from "lucide-react";
 import {
   downloadFinanceXlsx,
+  getFinanceOverview,
   getIndyReport,
+  FinanceOverview,
   IndyReport,
   sendIndyReportEmail,
 } from "@/lib/admin-api";
@@ -50,6 +52,7 @@ function formatPspLabel(value: string) {
 
 export default function AdminFinancePage() {
   const [month, setMonth] = useState(currentMonthKey);
+  const [overview, setOverview] = useState<FinanceOverview | null>(null);
   const [report, setReport] = useState<IndyReport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -73,11 +76,13 @@ export default function AdminFinancePage() {
     setError(null);
     setSuccess(null);
     try {
-      const data = await getIndyReport(month);
-      setReport(data);
+      const [overviewData, indyData] = await Promise.all([getFinanceOverview(month), getIndyReport(month)]);
+      setOverview(overviewData);
+      setReport(indyData);
     } catch (err) {
+      setOverview(null);
       setReport(null);
-      setError(err instanceof Error ? err.message : "Impossible de charger le rapport Indy");
+      setError(err instanceof Error ? err.message : "Impossible de charger le bilan Finance");
     } finally {
       setIsLoading(false);
     }
@@ -136,12 +141,11 @@ export default function AdminFinancePage() {
             Agent Finance
           </p>
           <h1 className="mt-2 font-heading text-3xl font-bold text-dark-900">
-            Export Indy
+            Finance
           </h1>
           <p className="mt-2 max-w-3xl text-sm text-gray-600">
-            Prépare le bilan mensuel commerçant pour Indy : CA HT, TVA collectée,
-            CA TTC, ventilation par PSP, pays de livraison et taux TVA. Le CSV
-            respecte l’ordre de colonnes attendu pour l’import comptable.
+            Consolide les ventes confirmées de tous les canaux et moyens de paiement.
+            Les exports Excel et CSV Indy restent séparés afin de préserver leur périmètre comptable.
           </p>
         </div>
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -153,7 +157,7 @@ export default function AdminFinancePage() {
       <section className="rounded-2xl border border-gray-200 bg-white shadow-sm">
         <div className="flex flex-col gap-4 border-b border-gray-100 p-4 sm:p-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h2 className="text-lg font-bold text-dark-900">Bilan mensuel Indy</h2>
+            <h2 className="text-lg font-bold text-dark-900">Bilan mensuel consolidé</h2>
             <p className="mt-1 text-sm text-gray-500">
               Période : {formatMonth(month)}.
             </p>
@@ -216,13 +220,13 @@ export default function AdminFinancePage() {
               <div key={item} className="h-28 animate-pulse rounded-2xl bg-gray-100" />
             ))}
           </div>
-        ) : report ? (
+        ) : overview && report ? (
           <div className="space-y-4 sm:space-y-6 p-4 sm:p-5">
             <div className="grid gap-3 sm:gap-4 grid-cols-2 md:grid-cols-4">
-              <MetricCard label="CA HT" value={formatCurrency(report.summary.caHTTotal)} />
-              <MetricCard label="TVA collectée" value={formatCurrency(report.summary.tvaCollecteeTotal)} />
-              <MetricCard label="CA TTC" value={formatCurrency(report.summary.caTTCTotal)} />
-              <MetricCard label="Commandes" value={String(report.summary.nbCommandesTotal)} />
+              <MetricCard label="CA HT" value={formatCurrency(overview.summary.caHTTotal)} helper="Ventes confirmées — tous canaux" />
+              <MetricCard label="TVA collectée" value={formatCurrency(overview.summary.tvaCollecteeTotal)} helper="Ventes confirmées — tous canaux" />
+              <MetricCard label="CA TTC" value={formatCurrency(overview.summary.caTTCTotal)} helper="Ventes confirmées — tous canaux" />
+              <MetricCard label="Commandes" value={String(overview.summary.nbCommandesTotal)} helper="processing, paid, shipped, delivered" />
             </div>
 
             {Boolean(report.summary.productsWithPurchasePriceCount) && (
@@ -242,20 +246,18 @@ export default function AdminFinancePage() {
 
             <div className="grid gap-6 xl:grid-cols-2">
               <DataTable
-                title="Détail PSP"
-                headers={["PSP", "Ventes", "Commissions", "Variation"]}
-                rows={report.ventesParPSP.map(line => [
-                  formatPspLabel(line.psp),
+                title="Détail par moyen de paiement"
+                headers={["Moyen", "Ventes TTC"]}
+                rows={overview.ventesParMoyenPaiement.map(line => [
+                  formatPspLabel(line.moyenPaiement),
                   formatCurrency(line.ventesRealisees),
-                  formatCurrency(line.commissionsPrelevees),
-                  formatCurrency(line.variationTotale),
                 ])}
-                empty="Aucune vente PSP sur ce mois."
+                empty="Aucune vente confirmée sur ce mois."
               />
               <DataTable
                 title="Détail pays / TVA"
                 headers={["Pays", "TVA", "HT", "TVA collectée", "TTC", "Cmdes"]}
-                rows={report.ventesParPaysEtTVA.map(line => [
+                rows={overview.ventesParPaysEtTVA.map(line => [
                   line.paysLivraison,
                   `${line.tauxTVA} %`,
                   formatCurrency(line.totalHT),
@@ -265,6 +267,10 @@ export default function AdminFinancePage() {
                 ])}
                 empty="Aucune ligne pays/TVA sur ce mois."
               />
+            </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <strong>Export comptable Indy préservé :</strong> les lignes ci-dessous et les boutons Excel / email conservent le rapport Indy existant. Le bilan consolidé affiché plus haut n’élargit pas automatiquement ce périmètre d’export.
             </div>
 
             <DataTable

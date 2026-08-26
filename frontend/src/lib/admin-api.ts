@@ -2277,6 +2277,29 @@ export function syncLogisticsTracking(orderId: string) {
 
 export type IndyPspName = string;
 
+export interface FinanceOverview {
+  month: string;
+  period: { start: string; end: string };
+  ventesParMoyenPaiement: Array<{
+    moyenPaiement: string;
+    ventesRealisees: number;
+  }>;
+  ventesParPaysEtTVA: Array<{
+    paysLivraison: string;
+    tauxTVA: number;
+    totalHT: number;
+    montantTVA: number;
+    totalTTC: number;
+    nbCommandes: number;
+  }>;
+  summary: {
+    caHTTotal: number;
+    tvaCollecteeTotal: number;
+    caTTCTotal: number;
+    nbCommandesTotal: number;
+  };
+}
+
 export interface IndyReport {
   month: string;
   period: { start: string; end: string };
@@ -2317,6 +2340,10 @@ export interface IndyReport {
     averageCatalogMarginRate?: number;
     productsWithPurchasePriceCount?: number;
   };
+}
+
+export function getFinanceOverview(month: string) {
+  return adminFetch<FinanceOverview>(`/api/admin/finance/overview?month=${encodeURIComponent(month)}`);
 }
 
 export function getIndyReport(month: string) {

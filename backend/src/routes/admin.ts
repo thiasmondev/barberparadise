@@ -31,6 +31,7 @@ import {
   parseIndyMonth,
 } from "../services/indyReportService";
 import { generateFinanceExcel } from "../services/exportExcelService";
+import { buildFinanceOverview } from "../services/financeOverviewService";
 import {
   buildShipmentQuotes,
   createOfficialShipmentLabel,
@@ -1522,6 +1523,22 @@ function getIndyEmailRecipient(req: AuthRequest): string {
   if (process.env.ADMIN_EMAIL) return process.env.ADMIN_EMAIL;
   return "contact@barberparadise.fr";
 }
+
+// GET /api/admin/finance/overview?month=YYYY-MM — Bilan consolidé de toutes les ventes confirmées
+adminRouter.get(
+  "/finance/overview",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      res.json(await buildFinanceOverview(req.query.month));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Bilan Finance impossible";
+      const isClientError = /format YYYY-MM|Mois Finance invalide/.test(message);
+      if (!isClientError) console.error("[finance-overview]", error);
+      res.status(isClientError ? 400 : 500).json({ error: message });
+    }
+  },
+);
 
 // GET /api/admin/finance/indy-report?month=YYYY-MM — Bilan mensuel commerçant Indy
 adminRouter.get(
