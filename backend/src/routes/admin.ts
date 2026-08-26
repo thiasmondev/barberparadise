@@ -44,7 +44,14 @@ import { generateProductRecommendations } from "../services/seo-agent";
 import { notifyIfRestocked, notifySingleStockAlert } from "../services/stockAlertService";
 import { applyProductSearch } from "../utils/searchUtils";
 import { isDeferredDraftPaymentMethod, resolveDraftPaymentMethod } from "../services/draftPaymentService";
-import { buildSalesDashboardStats } from "../services/salesDashboardService";
+import {
+  buildSalesDashboardStats,
+  getOrdersForSalesPaymentCategory,
+  isSalesPaymentCategory,
+  resolveSalesDashboardPeriod,
+  SALES_DASHBOARD_STATUSES,
+  type SalesPaymentCategory,
+} from "../services/salesDashboardService";
 
 // ─── Cloudinary Config ───────────────────────────────────────
 cloudinary.config({
@@ -4504,6 +4511,9 @@ adminRouter.get(
         status,
         search,
         channel,
+        paymentCategory,
+        startDate,
+        endDate,
       } = req.query as Record<string, string>;
       const pageNumber = Math.max(1, parseInt(page) || 1);
       const pageSize = Math.max(1, Math.min(100, parseInt(limit) || 20));
@@ -4525,22 +4535,58 @@ adminRouter.get(
           { customer: { lastName: { contains: term, mode: "insensitive" } } },
         ];
       }
-      const [orders, total, todayOrders, todayItems, processedOrders, deliveredOrders] = await Promise.all([
-        prisma.order.findMany({
+
+      let selectedPaymentCategory: SalesPaymentCategory | null = null;
+      if (paymentCategory) {
+        if (!isSalesPaymentCategory(paymentCategory)) {
+          res.status(400).json({ error: "Catégorie de paiement invalide" });
+          return;
+        }
+        if (!startDate || !endDate) {
+          res.status(400).json({ error: "Les dates de début et de fin sont requises avec une catégorie de paiement" });
+          return;
+        }
+        const range = resolveSalesDashboardPeriod({ period: "custom", startDate, endDate });
+        where.status = { in: [...SALES_DASHBOARD_STATUSES] };
+        where.createdAt = { gte: range.start, lt: range.end };
+        selectedPaymentCategory = paymentCategory;
+      }
+
+      const orderInclude = {
+        items: true,
+        shippingAddress: true,
+        shipment: true,
+        customer: {
+          select: { firstName: true, lastName: true, email: true },
+        },
+      } as const;
+
+      let orders: Array<Record<string, unknown>> = [];
+      let total = 0;
+      let paymentCategoryTotal: number | null = null;
+
+      if (selectedPaymentCategory) {
+        // Un paiement DIVISER peut contribuer à plusieurs catégories : filtrage avant pagination.
+        const candidates = await prisma.order.findMany({
           where,
-          include: {
-            items: true,
-            shippingAddress: true,
-            shipment: true,
-            customer: {
-              select: { firstName: true, lastName: true, email: true },
-            },
-          },
+          include: orderInclude,
           orderBy: { createdAt: "desc" },
-          skip,
-          take: pageSize,
-        }),
-        prisma.order.count({ where }),
+        });
+        const matches = getOrdersForSalesPaymentCategory(candidates, selectedPaymentCategory);
+
+        total = matches.length;
+        paymentCategoryTotal = Math.round((matches.reduce((sum, entry) => sum + entry.amount, 0) + Number.EPSILON) * 100) / 100;
+        orders = matches.slice(skip, skip + pageSize).map(({ order, amount }) => ({ ...order, dashboardPaymentAmount: amount }));
+      } else {
+        const [foundOrders, foundTotal] = await Promise.all([
+          prisma.order.findMany({ where, include: orderInclude, orderBy: { createdAt: "desc" }, skip, take: pageSize }),
+          prisma.order.count({ where }),
+        ]);
+        orders = foundOrders;
+        total = foundTotal;
+      }
+
+      const [todayOrders, todayItems, processedOrders, deliveredOrders] = await Promise.all([
         prisma.order.count({ where: { ...summaryWhere, createdAt: { gte: startOfToday } } }),
         prisma.orderItem.aggregate({
           where: { order: { ...summaryWhere, createdAt: { gte: startOfToday } } },
@@ -4558,9 +4604,12 @@ adminRouter.get(
         prisma.order.count({ where: { ...summaryWhere, status: "delivered" } }),
       ]);
       res.json({
-        orders,
-        total,
-        page: pageNumber,
+                  orders,
+          total,
+          paymentCategory: selectedPaymentCategory,
+          paymentCategoryTotal,
+          page: pageNumber,
+
         pages: Math.ceil(total / pageSize),
         summary: {
           ordersToday: todayOrders,

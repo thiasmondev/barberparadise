@@ -201,6 +201,8 @@ export interface Order {
   status: string;
   paymentMethod?: string | null;
   paymentProvider?: string | null;
+  /** Montant attribué à la catégorie de paiement lorsqu’un filtre dashboard est actif. */
+  dashboardPaymentAmount?: number;
   providerPaymentId?: string | null;
   subtotal: number;
   shipping: number;

@@ -17,6 +17,10 @@ export const SALES_PAYMENT_CATEGORIES = [
 export type SalesPaymentCategory = typeof SALES_PAYMENT_CATEGORIES[number];
 export type SalesDashboardPeriod = "current_month" | "current_year" | "custom";
 
+export function isSalesPaymentCategory(value: unknown): value is SalesPaymentCategory {
+  return typeof value === "string" && (SALES_PAYMENT_CATEGORIES as readonly string[]).includes(value);
+}
+
 type SalesOrder = {
   id: string;
   paymentMethod: string | null;
@@ -133,6 +137,20 @@ export function getSalesPaymentAllocations(order: SalesOrder): Array<{ category:
   }
 
   return [{ category: mapOrderPayment(order), amount: getOrderTotalTTC(order) }];
+}
+
+/**
+ * Sélectionne les commandes contribuant à une catégorie et expose leur seule part
+ * pertinente. Une commande DIVISER peut donc apparaître dans plusieurs vues, sans
+ * jamais afficher son total complet à la place de la part réellement encaissée.
+ */
+export function getOrdersForSalesPaymentCategory<T extends SalesOrder>(orders: T[], category: SalesPaymentCategory) {
+  return orders.map((order) => {
+    const amount = money(getSalesPaymentAllocations(order)
+      .filter((allocation) => allocation.category === category)
+      .reduce((sum, allocation) => sum + allocation.amount, 0));
+    return { order, amount };
+  }).filter((entry) => entry.amount > 0);
 }
 
 export async function buildSalesDashboardStats(params: {

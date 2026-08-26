@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { CalendarDays, CreditCard, Loader2, PieChart, ReceiptText } from "lucide-react";
 import { getSalesDashboardStats } from "@/lib/admin-api";
 import type { SalesDashboardPeriod, SalesDashboardStats } from "@/types";
@@ -24,6 +25,7 @@ function firstDayOfCurrentMonth() {
 type ChartLine = SalesDashboardStats["paymentBreakdown"][number] & { color: string; ratio: number };
 
 export default function SalesStatistics() {
+  const router = useRouter();
   const [period, setPeriod] = useState<SalesDashboardPeriod>("current_month");
   const [startDate, setStartDate] = useState(firstDayOfCurrentMonth);
   const [endDate, setEndDate] = useState(() => dateInputValue(new Date()));
@@ -63,6 +65,15 @@ export default function SalesStatistics() {
   }, [stats]);
 
   const hoveredLine = lines.find((line) => line.category === hoveredCategory) || null;
+  const openOrdersForCategory = (category: string) => {
+    if (!stats) return;
+    const params = new URLSearchParams({
+      paymentCategory: category,
+      startDate: stats.startDate,
+      endDate: stats.endDate,
+    });
+    router.push(`/admin/commandes?${params.toString()}`);
+  };
   let dashOffset = 0;
 
   return (
@@ -175,6 +186,8 @@ export default function SalesStatistics() {
                       onMouseLeave={() => setHoveredCategory(null)}
                       onFocus={() => setHoveredCategory(line.category)}
                       onBlur={() => setHoveredCategory(null)}
+                      onClick={() => openOrdersForCategory(line.category)}
+                      aria-label={`Voir les commandes ${line.category} pour ${stats?.label || "la période sélectionnée"}`}
                       className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${hoveredCategory === line.category ? "border-[#fd2786]/40 bg-[#fd2786]/5" : "border-gray-100 hover:border-[#0f056b]/20 hover:bg-gray-50"}`}
                     >
                       <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: line.color }} />

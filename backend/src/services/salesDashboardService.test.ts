@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   getSalesPaymentAllocations,
+  getOrdersForSalesPaymentCategory,
   resolveSalesDashboardPeriod,
   SALES_DASHBOARD_STATUSES,
 } from "./salesDashboardService";
@@ -24,6 +25,12 @@ assert.deepEqual(getSalesPaymentAllocations(splitOrder), [
   { category: "Indy", amount: 6 },
   { category: "Espèces", amount: 4 },
 ]);
+
+const cashOnlyOrder = { ...splitOrder, id: "cash-test", paymentMethod: "cash", posPaymentBreakdown: null, totalTTC: 3, total: 3 };
+const cashMatches = getOrdersForSalesPaymentCategory([splitOrder, cashOnlyOrder], "Espèces");
+assert.equal(cashMatches.length, 2);
+assert.deepEqual(cashMatches.map((entry) => entry.amount), [4, 3]);
+assert.equal(cashMatches.reduce((sum, entry) => sum + entry.amount, 0), 7);
 
 assert.deepEqual(getSalesPaymentAllocations({
   id: "paypal-test",

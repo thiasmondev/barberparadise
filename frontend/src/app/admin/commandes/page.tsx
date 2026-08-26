@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, Loader2, Search, Trash2 } from "lucide-react";
 import AdminOrdersTabs from "@/components/admin/AdminOrdersTabs";
 import { getAdminOrders, deleteAdminOrder } from "@/lib/admin-api";
@@ -164,6 +165,12 @@ export default function AdminOrdersPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [paymentCategoryTotal, setPaymentCategoryTotal] = useState<number | null>(null);
+  const searchParams = useSearchParams();
+  const dashboardPaymentCategory = searchParams.get("paymentCategory") || "";
+  const dashboardStartDate = searchParams.get("startDate") || "";
+  const dashboardEndDate = searchParams.get("endDate") || "";
+  const hasDashboardPaymentFilter = Boolean(dashboardPaymentCategory && dashboardStartDate && dashboardEndDate);
 
   // ─── Sélection multiple ───────────────────────────────────────────────────
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -203,9 +210,13 @@ export default function AdminOrdersPage() {
         status: status || undefined,
         search: search.trim() || undefined,
         channel: channel || undefined,
+        paymentCategory: hasDashboardPaymentFilter ? dashboardPaymentCategory : undefined,
+        startDate: hasDashboardPaymentFilter ? dashboardStartDate : undefined,
+        endDate: hasDashboardPaymentFilter ? dashboardEndDate : undefined,
       });
       setOrders(result.orders);
       setTotal(result.total);
+      setPaymentCategoryTotal(hasDashboardPaymentFilter ? result.paymentCategoryTotal ?? null : null);
       setPages(result.pages || 1);
       setSummary(result.summary || DEFAULT_SUMMARY);
       // Réinitialiser la sélection à chaque rechargement
@@ -221,7 +232,7 @@ export default function AdminOrdersPage() {
   useEffect(() => {
     loadOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, status, channel]);
+  }, [page, status, channel, dashboardPaymentCategory, dashboardStartDate, dashboardEndDate, hasDashboardPaymentFilter]);
 
   const kpis = useMemo(
     () => [
@@ -276,6 +287,17 @@ export default function AdminOrdersPage() {
         </div>
 
         <AdminOrdersTabs />
+
+        {hasDashboardPaymentFilter && (
+          <div className="flex flex-col gap-3 rounded-2xl border border-[#0f056b]/15 bg-[#0f056b]/5 px-4 py-3 text-sm text-[#0f056b] sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-semibold">Filtre issu des statistiques : {dashboardPaymentCategory}</p>
+              <p className="mt-0.5 text-xs text-[#0f056b]/70">Du {new Date(`${dashboardStartDate}T00:00:00`).toLocaleDateString("fr-FR")} au {new Date(`${dashboardEndDate}T00:00:00`).toLocaleDateString("fr-FR")}</p>
+              {paymentCategoryTotal !== null && <p className="mt-1 font-semibold">Montant ventilé : {formatPrice(paymentCategoryTotal)}</p>}
+            </div>
+            <Link href="/admin/commandes" className="inline-flex justify-center rounded-xl border border-[#0f056b]/20 bg-white px-3 py-2 text-xs font-semibold transition hover:border-[#0f056b]/50">Réinitialiser les filtres</Link>
+          </div>
+        )}
 
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {kpis.map((item) => (
@@ -433,7 +455,10 @@ export default function AdminOrdersPage() {
                         <td className="whitespace-nowrap px-4 py-3 hidden lg:table-cell">
                           <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${channelInfo.className} ${vc.badge}`}>{channelInfo.label}</span>
                         </td>
-                        <td className={`whitespace-nowrap px-4 py-3 text-right font-medium ${vc.text}`}>{formatPrice(order.total, order.currency)}</td>
+                        <td className={`whitespace-nowrap px-4 py-3 text-right font-medium ${vc.text}`}>
+                          {formatPrice(order.dashboardPaymentAmount ?? order.total, order.currency)}
+                          {order.dashboardPaymentAmount !== undefined && <span className={`block text-[10px] font-normal ${vc.subtext}`}>Part {dashboardPaymentCategory}</span>}
+                        </td>
                         <td className="whitespace-nowrap px-4 py-3">
                           <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${pay.className} ${vc.badge}`}>{pay.label}</span>
                         </td>
@@ -485,7 +510,10 @@ export default function AdminOrdersPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 mb-1">
                           <span className={`font-semibold text-sm ${vc.text}`}>{order.orderNumber}</span>
-                          <span className={`font-semibold text-sm tabular-nums ${vc.text}`}>{formatPrice(order.total, order.currency)}</span>
+                          <span className={`font-semibold text-sm tabular-nums ${vc.text}`}>
+                            {formatPrice(order.dashboardPaymentAmount ?? order.total, order.currency)}
+                            {order.dashboardPaymentAmount !== undefined && <span className={`block text-[10px] font-normal ${vc.subtext}`}>Part {dashboardPaymentCategory}</span>}
+                          </span>
                         </div>
                         <div className={`text-sm truncate ${vc.text}`}>{customerName(order)}</div>
                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
@@ -503,7 +531,7 @@ export default function AdminOrdersPage() {
           </div>
 
           <div className="flex flex-col gap-3 border-t border-gray-200 px-4 py-4 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between">
-            <p>{total.toLocaleString("fr-FR")} commande{total > 1 ? "s" : ""} · page {page} sur {pages}</p>
+            <p>{total.toLocaleString("fr-FR")} commande{total > 1 ? "s" : ""} · page {page} sur {pages}{paymentCategoryTotal !== null ? ` · ${formatPrice(paymentCategoryTotal)}` : ""}</p>
             <div className="flex gap-2">
               <button
                 onClick={() => setPage((current) => Math.max(1, current - 1))}

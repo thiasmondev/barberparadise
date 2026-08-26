@@ -350,6 +350,9 @@ export function getAdminOrders(params?: {
   status?: string;
   search?: string;
   channel?: string;
+  paymentCategory?: string;
+  startDate?: string;
+  endDate?: string;
 }) {
   const sp = new URLSearchParams();
   if (params) {
@@ -361,6 +364,8 @@ export function getAdminOrders(params?: {
   return adminFetch<{
     orders: Order[];
     total: number;
+    paymentCategory?: string | null;
+    paymentCategoryTotal?: number | null;
     page: number;
     pages: number;
     summary?: {
