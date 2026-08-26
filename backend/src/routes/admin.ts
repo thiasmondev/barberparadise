@@ -44,6 +44,7 @@ import { generateProductRecommendations } from "../services/seo-agent";
 import { notifyIfRestocked, notifySingleStockAlert } from "../services/stockAlertService";
 import { applyProductSearch } from "../utils/searchUtils";
 import { isDeferredDraftPaymentMethod, resolveDraftPaymentMethod } from "../services/draftPaymentService";
+import { buildSalesDashboardStats } from "../services/salesDashboardService";
 
 // ─── Cloudinary Config ───────────────────────────────────────
 cloudinary.config({
@@ -1616,6 +1617,27 @@ adminRouter.post(
       attachments: [{ filename: `barberparadise-finance-${report.month}.xlsx`, content: xlsxBuffer.toString("base64") }],
     });
     res.json({ sent: emailResult.sent, skipped: emailResult.skipped || false, id: emailResult.id, month: report.month, to, cfoAnalysis });
+  }
+);
+
+// GET /api/admin/dashboard/sales-stats — Chiffre d’affaires et ventilation des paiements par période
+adminRouter.get(
+  "/dashboard/sales-stats",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const stats = await buildSalesDashboardStats({
+        period: req.query.period,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+      });
+      res.json(stats);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Impossible de calculer les statistiques de vente";
+      const isClientError = /format YYYY-MM-DD|date de fin|invalide/.test(message);
+      if (!isClientError) console.error("[dashboard-sales-stats]", err);
+      res.status(isClientError ? 400 : 500).json({ error: message });
+    }
   }
 );
 

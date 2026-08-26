@@ -2,6 +2,7 @@
 export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import { getDashboardStats } from "@/lib/admin-api";
+import SalesStatistics from "@/components/admin/SalesStatistics";
 import type { DashboardStats } from "@/types";
 import {
   Package,
@@ -88,6 +89,7 @@ export default function AdminDashboard() {
           </div>
         ))}
       </div>
+      <SalesStatistics />
       <div className="grid lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Recent orders */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-gray-100">

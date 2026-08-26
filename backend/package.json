@@ -12,6 +12,7 @@
     "test:indy": "ts-node src/services/indyReportService.test.ts",
     "test:exchanges": "ts-node src/services/orderExchangeService.test.ts",
     "test:pos-payments": "ts-node src/utils/posPaymentBreakdown.test.ts",
+    "test:sales-dashboard": "ts-node src/services/salesDashboardService.test.ts",
     "start": "npx prisma migrate deploy && node dist/index.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

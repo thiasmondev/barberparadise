@@ -2,6 +2,8 @@ import { API_URL } from "./api";
 
 import type {
   DashboardStats,
+  SalesDashboardStats,
+  SalesDashboardPeriod,
   Product,
   Order,
   Customer,
@@ -79,6 +81,17 @@ export async function adminLogin(email: string, password: string) {
 
 export function getDashboardStats() {
   return adminFetch<DashboardStats>("/api/admin/stats");
+}
+
+export function getSalesDashboardStats(params: {
+  period: SalesDashboardPeriod;
+  startDate?: string;
+  endDate?: string;
+}) {
+  const searchParams = new URLSearchParams({ period: params.period });
+  if (params.startDate) searchParams.set("startDate", params.startDate);
+  if (params.endDate) searchParams.set("endDate", params.endDate);
+  return adminFetch<SalesDashboardStats>(`/api/admin/dashboard/sales-stats?${searchParams.toString()}`);
 }
 
 // ─── SEO Product URL Drafts ───────────────────────────────────

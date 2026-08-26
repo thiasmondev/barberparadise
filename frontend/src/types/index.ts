@@ -173,6 +173,24 @@ export interface DashboardStats {
   }[];
 }
 
+export type SalesDashboardPeriod = "current_month" | "current_year" | "custom";
+
+export interface SalesPaymentBreakdownLine {
+  category: string;
+  amount: number;
+  percentage: number;
+}
+
+export interface SalesDashboardStats {
+  period: SalesDashboardPeriod;
+  startDate: string;
+  endDate: string;
+  label: string;
+  totalRevenue: number;
+  orderCount: number;
+  paymentBreakdown: SalesPaymentBreakdownLine[];
+}
+
 export type DiscountType = "percent" | "fixed";
 
 export interface Order {
