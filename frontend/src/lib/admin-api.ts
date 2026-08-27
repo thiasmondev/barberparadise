@@ -2699,6 +2699,25 @@ export interface BlogContentDraft {
   };
 }
 
+export interface BlogImageAttribution {
+  provider: "Pexels";
+  photographer: string;
+  photographerUrl: string;
+  sourceUrl: string;
+  photoId: string;
+  imageUrl?: string;
+}
+
+export interface BlogVisualSuggestion {
+  id: string;
+  source: "ai" | "pexels";
+  previewUrl: string;
+  sourceUrl: string;
+  prompt: string;
+  altText: string;
+  attribution?: BlogImageAttribution;
+}
+
 export interface BlogArticle {
   id: string;
   slug: string;
@@ -2716,6 +2735,7 @@ export interface BlogArticle {
   publishedAt?: string | null;
   viewCount: number;
   linkedProductIds: string[];
+  imageAttributions?: BlogImageAttribution[] | null;
   sourceDraftId?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -2793,6 +2813,26 @@ export function getAdminBlogDrafts() {
 
 export function createAdminBlogArticleFromDraft(draftId: string) {
   return adminFetch<BlogArticle>(`/api/admin/blog/articles/from-draft/${draftId}`, { method: "POST" });
+}
+
+export function suggestAdminBlogVisuals(data: {
+  source: "ai" | "pexels";
+  articleTitle: string;
+  heading: string;
+  content: string;
+  category?: string;
+}) {
+  return adminFetch<{ brief: { imagePrompt: string; searchQuery: string; altText: string }; suggestions: BlogVisualSuggestion[] }>(
+    "/api/admin/blog/articles/visuals/suggest",
+    { method: "POST", body: JSON.stringify(data) },
+  );
+}
+
+export function importAdminBlogVisual(sourceUrl: string) {
+  return adminFetch<{ imageUrl: string }>("/api/admin/blog/articles/visuals/import", {
+    method: "POST",
+    body: JSON.stringify({ sourceUrl }),
+  });
 }
 
 export function getAdminBlogArticles(params?: { status?: string; category?: string; page?: number; limit?: number }) {

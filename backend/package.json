@@ -14,6 +14,7 @@
     "test:pos-payments": "ts-node src/utils/posPaymentBreakdown.test.ts",
     "test:sales-dashboard": "ts-node src/services/salesDashboardService.test.ts",
     "test:finance-overview": "ts-node src/services/financeOverviewService.test.ts",
+    "test:blog-visuals": "ts-node src/services/blogVisualService.test.ts",
     "start": "npx prisma migrate deploy && node dist/index.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

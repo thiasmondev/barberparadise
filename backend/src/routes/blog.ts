@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../utils/prisma";
+import { importBlogVisual, suggestBlogVisuals, validateBlogImageAttributions, type BlogVisualSource } from "../services/blogVisualService";
 
 export const blogRouter = Router();
 export const adminBlogRouter = Router();
@@ -109,6 +110,7 @@ function blogArticleSelect() {
     publishedAt: true,
     viewCount: true,
     linkedProductIds: true,
+    imageAttributions: true,
     sourceDraftId: true,
     createdAt: true,
     updatedAt: true,
@@ -138,6 +140,7 @@ function buildArticlePayload(body: Record<string, unknown>) {
     status,
     publishedAt,
     linkedProductIds: toStringArray(body.linkedProductIds),
+    ...(body.imageAttributions !== undefined ? { imageAttributions: JSON.parse(JSON.stringify(validateBlogImageAttributions(body.imageAttributions))) } : {}),
     sourceDraftId: typeof body.sourceDraftId === "string" && body.sourceDraftId.trim() ? body.sourceDraftId.trim() : null,
   };
 }
@@ -320,6 +323,46 @@ adminBlogRouter.post("/from-draft/:draftId", async (req: Request, res: Response)
   }
 });
 
+adminBlogRouter.post("/visuals/suggest", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const source = req.body?.source as BlogVisualSource;
+    const articleTitle = typeof req.body?.articleTitle === "string" ? req.body.articleTitle.trim() : "";
+    const heading = typeof req.body?.heading === "string" ? req.body.heading.trim() : "";
+    const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
+    const category = typeof req.body?.category === "string" ? req.body.category.trim() : undefined;
+
+    if (source !== "ai" && source !== "pexels") {
+      res.status(400).json({ error: "Source visuelle invalide." });
+      return;
+    }
+    if (!articleTitle || !heading || !content) {
+      res.status(400).json({ error: "Le titre, l’intertitre et le contenu de section sont requis." });
+      return;
+    }
+    if (articleTitle.length > 220 || heading.length > 220 || content.length > 8_000) {
+      res.status(400).json({ error: "Le contexte de section est trop long." });
+      return;
+    }
+
+    const result = await suggestBlogVisuals(source, { articleTitle, heading, content, category });
+    res.json(result);
+  } catch (err) {
+    console.error("Erreur suggestion visuelle Blog:", err);
+    res.status(500).json({ error: err instanceof Error ? err.message : "Impossible de proposer des visuels." });
+  }
+});
+
+adminBlogRouter.post("/visuals/import", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const sourceUrl = typeof req.body?.sourceUrl === "string" ? req.body.sourceUrl.trim() : "";
+    const imageUrl = await importBlogVisual(sourceUrl);
+    res.status(201).json({ imageUrl });
+  } catch (err) {
+    console.error("Erreur import visuel Blog:", err);
+    res.status(500).json({ error: err instanceof Error ? err.message : "Impossible d’importer ce visuel." });
+  }
+});
+
 adminBlogRouter.get("/:id", async (req: Request, res: Response): Promise<void> => {
   try {
     const article = await prisma.blogArticle.findUnique({ where: { id: req.params.id }, select: blogArticleSelect() });
@@ -370,6 +413,7 @@ adminBlogRouter.patch("/:id", async (req: Request, res: Response): Promise<void>
     if (body.tags !== undefined) data.tags = toStringArray(body.tags);
     if (body.seoKeywords !== undefined) data.seoKeywords = toStringArray(body.seoKeywords);
     if (body.linkedProductIds !== undefined) data.linkedProductIds = toStringArray(body.linkedProductIds);
+    if (body.imageAttributions !== undefined) data.imageAttributions = JSON.parse(JSON.stringify(validateBlogImageAttributions(body.imageAttributions)));
     if (typeof body.seoMetaTitle === "string") data.seoMetaTitle = body.seoMetaTitle.trim() || null;
     if (typeof body.seoMetaDescription === "string") data.seoMetaDescription = body.seoMetaDescription.trim() || null;
     if (Number.isFinite(Number(body.readTime)) && Number(body.readTime) > 0) data.readTime = Number(body.readTime);

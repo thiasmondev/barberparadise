@@ -9,7 +9,9 @@ import {
   Eye,
   FilePlus2,
   ImagePlus,
+  ImageIcon,
   Loader2,
+  RefreshCw,
   Pencil,
   Search,
   Sparkles,
@@ -23,9 +25,13 @@ import {
   getAdminBlogDrafts,
   getAdminProduct,
   getAdminProducts,
+  importAdminBlogVisual,
+  suggestAdminBlogVisuals,
   updateAdminBlogArticle,
   type BlogArticle,
   type BlogContentDraft,
+  type BlogImageAttribution,
+  type BlogVisualSuggestion,
 } from "@/lib/admin-api";
 import { uploadBlogCoverToCloudinary } from "@/lib/cloudinary";
 import type { Product } from "@/types";
@@ -162,6 +168,15 @@ type EditorState = {
   seoMetaDescription: string;
   seoKeywords: string;
   linkedProductIds: string[];
+  imageAttributions: BlogImageAttribution[];
+};
+
+type MarkdownSection = {
+  id: string;
+  heading: string;
+  level: number;
+  content: string;
+  insertAt: number;
 };
 
 const EMPTY_EDITOR: EditorState = {
@@ -176,10 +191,34 @@ const EMPTY_EDITOR: EditorState = {
   seoMetaDescription: "",
   seoKeywords: "",
   linkedProductIds: [],
+  imageAttributions: [],
 };
 
 function splitValues(value: string) {
   return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function getMarkdownSections(content: string): MarkdownSection[] {
+  const matches = Array.from(content.matchAll(/^(#{2,4})\s+(.+?)\s*$/gm));
+  return matches.map((match, index) => {
+    const headingEnd = (match.index || 0) + match[0].length;
+    const nextStart = index < matches.length - 1 ? (matches[index + 1].index || content.length) : content.length;
+    return {
+      id: `${match.index || 0}-${match[1].length}`,
+      heading: match[2].trim(),
+      level: match[1].length,
+      content: content.slice(headingEnd, nextStart).trim(),
+      insertAt: headingEnd,
+    };
+  }).filter((section) => section.content.length > 0);
+}
+
+function cleanMarkdownAlt(value: string) {
+  return value.replace(/[\[\]]/g, "").replace(/\s+/g, " ").trim().slice(0, 150);
+}
+
+function escapeMarkdownLabel(value: string) {
+  return value.replace(/[\[\]]/g, "").replace(/\s+/g, " ").trim();
 }
 
 function articleToEditor(article: BlogArticle): EditorState {
@@ -197,6 +236,7 @@ function articleToEditor(article: BlogArticle): EditorState {
     seoMetaDescription: article.seoMetaDescription || "",
     seoKeywords: article.seoKeywords.join(", "),
     linkedProductIds: article.linkedProductIds,
+    imageAttributions: article.imageAttributions || [],
   };
 }
 
@@ -215,9 +255,16 @@ export default function AdminBlogPage() {
   const [previewing, setPreviewing] = useState(false);
   const [contentImageAlt, setContentImageAlt] = useState("");
   const [uploadingContentImage, setUploadingContentImage] = useState(false);
+  const [visualSection, setVisualSection] = useState<MarkdownSection | null>(null);
+  const [visualSuggestions, setVisualSuggestions] = useState<BlogVisualSuggestion[]>([]);
+  const [visualSource, setVisualSource] = useState<"ai" | "pexels" | null>(null);
+  const [visualAlt, setVisualAlt] = useState("");
+  const [loadingVisuals, setLoadingVisuals] = useState(false);
+  const [importingVisualId, setImportingVisualId] = useState<string | null>(null);
   const contentTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const linkedProductSet = useMemo(() => new Set(editor?.linkedProductIds || []), [editor?.linkedProductIds]);
+  const markdownSections = useMemo(() => getMarkdownSections(editor?.content || ""), [editor?.content]);
 
   const load = async () => {
     setLoading(true);
@@ -326,6 +373,7 @@ export default function AdminBlogPage() {
       seoMetaDescription: editor.seoMetaDescription.trim() || null,
       seoKeywords: splitValues(editor.seoKeywords),
       linkedProductIds: editor.linkedProductIds,
+      imageAttributions: editor.imageAttributions,
       sourceDraftId: editor.sourceDraftId || null,
     };
     try {
@@ -385,6 +433,78 @@ export default function AdminBlogPage() {
     } finally {
       setUploadingContentImage(false);
       event.target.value = "";
+    }
+  };
+
+  const requestVisualSuggestions = async (source: "ai" | "pexels") => {
+    if (!editor || !visualSection) return;
+    setLoadingVisuals(true);
+    setVisualSource(source);
+    setVisualSuggestions([]);
+    setError("");
+    try {
+      const result = await suggestAdminBlogVisuals({
+        source,
+        articleTitle: editor.title || "Article Barber Paradise",
+        heading: visualSection.heading,
+        content: visualSection.content,
+        category: editor.category,
+      });
+      setVisualSuggestions(result.suggestions);
+      setVisualAlt(result.suggestions[0]?.altText || result.brief.altText);
+      if (result.suggestions.length === 0) setNotice("Aucun visuel n’a été trouvé pour cette section. Modifiez le texte ou essayez une autre source.");
+    } catch (suggestionError) {
+      setError(suggestionError instanceof Error ? suggestionError.message : "Impossible de proposer des visuels pour cette section.");
+    } finally {
+      setLoadingVisuals(false);
+    }
+  };
+
+  const openVisualSuggestions = (section: MarkdownSection) => {
+    setVisualSection(section);
+    setVisualSuggestions([]);
+    setVisualSource(null);
+    setVisualAlt(`Illustration : ${section.heading}`);
+    setError("");
+    setNotice("");
+  };
+
+  const insertSuggestedVisual = async (suggestion: BlogVisualSuggestion) => {
+    if (!editor || !visualSection) return;
+    setImportingVisualId(suggestion.id);
+    setError("");
+    try {
+      const { imageUrl } = await importAdminBlogVisual(suggestion.sourceUrl);
+      const activeSection = getMarkdownSections(editor.content).find((section) => section.id === visualSection.id);
+      const insertionIndex = activeSection?.insertAt ?? editor.content.length;
+      const alt = cleanMarkdownAlt(visualAlt || suggestion.altText || `Illustration : ${visualSection.heading}`) || "Illustration de l’article";
+      const attribution = suggestion.attribution;
+      const creditLine = attribution
+        ? `\n*Photo par [${escapeMarkdownLabel(attribution.photographer)}](${attribution.photographerUrl}) via [Pexels](${attribution.sourceUrl}).*\n`
+        : "";
+      const markdownImage = `\n\n![${alt}](${imageUrl})${creditLine}\n`;
+      const nextContent = `${editor.content.slice(0, insertionIndex)}${markdownImage}${editor.content.slice(insertionIndex)}`;
+      const imageAttributions = attribution
+        ? [
+            ...editor.imageAttributions.filter((item) => item.photoId !== attribution.photoId),
+            { ...attribution, imageUrl },
+          ]
+        : editor.imageAttributions;
+      setEditor({ ...editor, content: nextContent, imageAttributions });
+      setVisualSuggestions([]);
+      setVisualSource(null);
+      setVisualSection(null);
+      setNotice(attribution ? "Image libre de droit insérée avec son crédit Pexels. Sauvegardez le brouillon pour conserver l’attribution." : "Visuel IA inséré dans la section. Sauvegardez le brouillon pour le conserver.");
+      window.requestAnimationFrame(() => {
+        const textarea = contentTextareaRef.current;
+        textarea?.focus();
+        const cursor = insertionIndex + markdownImage.length;
+        textarea?.setSelectionRange(cursor, cursor);
+      });
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : "Impossible d’importer le visuel choisi.");
+    } finally {
+      setImportingVisualId(null);
     }
   };
 
@@ -457,6 +577,13 @@ export default function AdminBlogPage() {
             <div className="space-y-4">
               <label className="block text-sm font-medium text-gray-700">Titre<input value={editor.title} onChange={(event) => setEditor({ ...editor, title: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 focus:border-[#fd2786] focus:outline-none" /></label>
               <div className="space-y-2"><label className="block text-sm font-medium text-gray-700" htmlFor="blog-content">Contenu (Markdown)</label><div className="flex flex-col gap-2 rounded-lg border border-dashed border-[#0f056b]/25 bg-[#0f056b]/[0.03] p-3 sm:flex-row sm:items-end"><label className="min-w-0 flex-1 text-xs font-medium text-gray-700" htmlFor="blog-image-alt">Texte alternatif de l’image<input id="blog-image-alt" value={contentImageAlt} onChange={(event) => setContentImageAlt(event.target.value)} placeholder="Ex. Comparatif de cires coiffantes" className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2.5 py-2 text-sm text-gray-900 focus:border-[#fd2786] focus:outline-none" /></label><label className="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#0f056b]/20 bg-white px-3 py-2 text-sm font-semibold text-[#0f056b] transition hover:bg-[#0f056b]/5"><ImagePlus size={16} />{uploadingContentImage ? "Import en cours…" : "Insérer une image"}<input type="file" accept="image/*" disabled={uploadingContentImage} onChange={uploadContentImage} className="hidden" /></label></div><p className="text-xs text-gray-500">L’image est insérée à la position du curseur sous forme Markdown et son texte alternatif est utilisé pour l’accessibilité et le référencement.</p><textarea id="blog-content" ref={contentTextareaRef} value={editor.content} onChange={(event) => setEditor({ ...editor, content: event.target.value })} rows={20} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 font-mono text-sm text-gray-900 focus:border-[#fd2786] focus:outline-none" /></div>
+              <section className="rounded-xl border border-[#0f056b]/15 bg-[#0f056b]/[0.025] p-3 sm:p-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div><div className="flex items-center gap-2 text-sm font-semibold text-[#0f056b]"><ImageIcon size={17} /> Visuels section par section</div><p className="mt-1 text-xs text-gray-600">Chaque proposition est déclenchée manuellement. Les titres Markdown de niveau ## à #### définissent les sections illustrables.</p></div>
+                  <span className="text-xs font-medium text-[#fd2786]">{markdownSections.length} section{markdownSections.length > 1 ? "s" : ""} détectée{markdownSections.length > 1 ? "s" : ""}</span>
+                </div>
+                {markdownSections.length === 0 ? <p className="mt-3 rounded-lg bg-white px-3 py-2 text-xs text-gray-600">Ajoutez un titre commençant par ##, ### ou #### et du contenu sous ce titre pour demander un visuel contextuel.</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2">{markdownSections.map((section) => <div key={section.id} className="flex items-center justify-between gap-3 rounded-lg border border-white bg-white px-3 py-2.5"><div className="min-w-0"><p className="truncate text-sm font-semibold text-gray-900">{section.heading}</p><p className="text-xs text-gray-500">Titre niveau {section.level} · insertion sous le titre</p></div><button type="button" onClick={() => openVisualSuggestions(section)} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-[#fd2786]/40 px-2.5 py-1.5 text-xs font-semibold text-[#fd2786] hover:bg-[#fd2786]/5"><Sparkles size={14} /> Suggérer des visuels</button></div>)}</div>}
+              </section>
               <label className="block text-sm font-medium text-gray-700">Extrait<input value={editor.excerpt} onChange={(event) => setEditor({ ...editor, excerpt: event.target.value })} placeholder="Résumé court affiché dans la liste blog" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 focus:border-[#fd2786] focus:outline-none" /></label>
             </div>
             <aside className="space-y-4 rounded-xl bg-gray-50 p-4">
@@ -469,6 +596,8 @@ export default function AdminBlogPage() {
           </div>
         </section>
       )}
+
+      {editor && visualSection && <div className="fixed inset-0 z-50 flex items-end bg-slate-950/70 p-0 sm:items-center sm:justify-center sm:p-6" role="dialog" aria-modal="true" aria-label="Suggestions de visuels"><div className="max-h-[92vh] w-full overflow-y-auto rounded-t-2xl bg-white p-4 shadow-2xl sm:max-w-5xl sm:rounded-2xl sm:p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-wide text-[#fd2786]">Visuel contextuel</p><h2 className="mt-1 text-xl font-bold text-[#0f056b]">{visualSection.heading}</h2><p className="mt-1 max-w-2xl text-sm text-gray-600">Choisissez une source, puis sélectionnez une vignette : rien n’est généré ni inséré automatiquement.</p></div><button type="button" onClick={() => { if (!loadingVisuals && !importingVisualId) { setVisualSection(null); setVisualSuggestions([]); setVisualSource(null); } }} className="rounded-lg border border-gray-200 p-2 text-gray-600 hover:bg-gray-50" aria-label="Fermer"><X size={18} /></button></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><button type="button" disabled={loadingVisuals || importingVisualId !== null} onClick={() => void requestVisualSuggestions("ai")} className="rounded-xl border border-[#fd2786]/40 bg-[#fd2786]/5 p-4 text-left transition hover:border-[#fd2786] disabled:opacity-50"><div className="flex items-center gap-2 font-semibold text-[#0f056b]"><Sparkles size={18} className="text-[#fd2786]" /> Générer avec IA</div><p className="mt-1 text-xs text-gray-600">Trois compositions Flux 2 Pro basées sur le contexte de cette section.</p></button><button type="button" disabled={loadingVisuals || importingVisualId !== null} onClick={() => void requestVisualSuggestions("pexels")} className="rounded-xl border border-[#0f056b]/25 bg-[#0f056b]/[0.025] p-4 text-left transition hover:border-[#0f056b] disabled:opacity-50"><div className="flex items-center gap-2 font-semibold text-[#0f056b]"><ImageIcon size={18} /> Rechercher une image libre de droit</div><p className="mt-1 text-xs text-gray-600">Jusqu’à quatre propositions Pexels, avec source et photographe conservés.</p></button></div>{loadingVisuals && <div className="flex items-center gap-2 py-10 text-sm text-[#0f056b]"><Loader2 size={20} className="animate-spin" /> Préparation des propositions visuelles…</div>}{visualSource && !loadingVisuals && <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-gray-600">{visualSuggestions.length} proposition{visualSuggestions.length > 1 ? "s" : ""} disponible{visualSuggestions.length > 1 ? "s" : ""}.</p><button type="button" disabled={importingVisualId !== null} onClick={() => void requestVisualSuggestions(visualSource)} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"><RefreshCw size={15} /> Régénérer</button></div>}{visualSuggestions.length > 0 && <><label className="mt-4 block text-sm font-medium text-gray-700">Texte alternatif de l’image sélectionnée<input value={visualAlt} onChange={(event) => setVisualAlt(event.target.value)} maxLength={150} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-[#fd2786] focus:outline-none" /></label><div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{visualSuggestions.map((suggestion) => <article key={suggestion.id} className="overflow-hidden rounded-xl border border-gray-200 bg-white"><img src={suggestion.previewUrl} alt={suggestion.altText} className="aspect-video w-full object-cover" /><div className="space-y-2 p-3">{suggestion.attribution ? <p className="text-xs text-gray-600">Photo : <a href={suggestion.attribution.photographerUrl} target="_blank" rel="noreferrer" className="font-medium text-[#0f056b] underline">{suggestion.attribution.photographer}</a> · Pexels</p> : <p className="text-xs text-gray-600">Visuel généré pour cette section.</p>}<button type="button" disabled={importingVisualId !== null} onClick={() => void insertSuggestedVisual(suggestion)} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#0f056b] px-3 py-2 text-sm font-semibold text-white hover:bg-[#180a8d] disabled:opacity-50">{importingVisualId === suggestion.id ? <Loader2 size={15} className="animate-spin" /> : <ImagePlus size={15} />} Insérer dans cette section</button></div></article>)}</div></>}</div></div>}
 
       {editor && previewing && <BlogArticlePreview article={{ title: editor.title, excerpt: editor.excerpt, content: editor.content, coverImage: editor.coverImage, category: editor.category, tags: splitValues(editor.tags) }} products={selectedProducts.filter((product) => editor.linkedProductIds.includes(product.id))} onClose={() => setPreviewing(false)} />}
 
