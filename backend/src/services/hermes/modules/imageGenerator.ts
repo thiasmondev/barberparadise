@@ -1,6 +1,6 @@
 import { v2 as cloudinary } from "cloudinary";
 import { prisma } from "../../../utils/prisma";
-import replicateClient from "../../replicate/replicateClient";
+import replicateClient, { getSafeReplicateErrorDetails } from "../../replicate/replicateClient";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -90,6 +90,14 @@ class ImageGenerator {
         },
       });
     } catch (error) {
+      const details = getSafeReplicateErrorDetails(error);
+      console.error("[ImageGenerator] Génération échouée", {
+        imageId: hermesImage.id,
+        model,
+        status: details.status ?? null,
+        retryAfterSeconds: details.retryAfterSeconds ?? null,
+        message: details.message,
+      });
       await prisma.hermesImage.update({
         where: { id: hermesImage.id },
         data: { status: "failed" },

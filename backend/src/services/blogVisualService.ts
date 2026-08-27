@@ -168,28 +168,33 @@ export async function suggestBlogVisuals(source: BlogVisualSource, input: BlogVi
   if (source === "ai") {
     if (!imageGenerator) throw new Error("Le service de génération d’images est indisponible.");
 
-    const suggestions = await Promise.all(
-      ["wide editorial composition", "close detail composition", "human craft and tools composition"].map(async (variation, index) => {
-        const generated = await imageGenerator.generate({
-          prompt: `${brief.imagePrompt}\nComposition variation ${index + 1}: ${variation}.`,
-          category: "blog",
-          tags: ["blog", "article-visual", "manual-suggestion"],
-          aspectRatio: "16:9",
-          useFastModel: false,
-        });
-        const sourceUrl = generated.cloudinaryUrl || generated.replicateUrl;
-        if (!sourceUrl) throw new Error("La génération d’image n’a renvoyé aucune URL exploitable.");
-        return {
-          id: generated.id,
-          source: "ai" as const,
-          previewUrl: sourceUrl,
-          sourceUrl,
-          prompt: generated.prompt,
-          altText: brief.altText,
-        };
-      }),
-    );
+    const suggestions: BlogVisualSuggestion[] = [];
+    const variations = ["wide editorial composition", "close detail composition", "human craft and tools composition"];
 
+    // Flux 2 Pro est limité par compte : les appels sont volontairement séquentiels.
+    for (const [index, variation] of variations.entries()) {
+      const generated = await imageGenerator.generate({
+        prompt: `${brief.imagePrompt}\nComposition variation ${index + 1}: ${variation}.`,
+        category: "blog",
+        tags: ["blog", "article-visual", "manual-suggestion"],
+        aspectRatio: "16:9",
+        useFastModel: false,
+      });
+      const sourceUrl = generated.cloudinaryUrl || generated.replicateUrl;
+      if (!sourceUrl) throw new Error("La génération d’image n’a renvoyé aucune URL exploitable.");
+      suggestions.push({
+        id: generated.id,
+        source: "ai",
+        previewUrl: sourceUrl,
+        sourceUrl,
+        prompt: generated.prompt,
+        altText: brief.altText,
+      });
+    }
+
+    if (suggestions.length !== variations.length) {
+      throw new Error("La génération IA n’a pas retourné toutes les propositions attendues.");
+    }
     return { brief, suggestions };
   }
 

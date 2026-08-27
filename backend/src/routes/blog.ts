@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../utils/prisma";
 import { importBlogVisual, suggestBlogVisuals, validateBlogImageAttributions, type BlogVisualSource } from "../services/blogVisualService";
+import { getSafeReplicateErrorDetails } from "../services/replicate/replicateClient";
 
 export const blogRouter = Router();
 export const adminBlogRouter = Router();
@@ -347,7 +348,12 @@ adminBlogRouter.post("/visuals/suggest", async (req: Request, res: Response): Pr
     const result = await suggestBlogVisuals(source, { articleTitle, heading, content, category });
     res.json(result);
   } catch (err) {
-    console.error("Erreur suggestion visuelle Blog:", err);
+    const details = getSafeReplicateErrorDetails(err);
+    console.error("[BlogVisual] Suggestion échouée", {
+      status: details.status ?? null,
+      retryAfterSeconds: details.retryAfterSeconds ?? null,
+      message: details.message,
+    });
     res.status(500).json({ error: err instanceof Error ? err.message : "Impossible de proposer des visuels." });
   }
 });
@@ -358,7 +364,12 @@ adminBlogRouter.post("/visuals/import", async (req: Request, res: Response): Pro
     const imageUrl = await importBlogVisual(sourceUrl);
     res.status(201).json({ imageUrl });
   } catch (err) {
-    console.error("Erreur import visuel Blog:", err);
+    const details = getSafeReplicateErrorDetails(err);
+    console.error("[BlogVisual] Import échoué", {
+      status: details.status ?? null,
+      retryAfterSeconds: details.retryAfterSeconds ?? null,
+      message: details.message,
+    });
     res.status(500).json({ error: err instanceof Error ? err.message : "Impossible d’importer ce visuel." });
   }
 });
