@@ -4543,14 +4543,26 @@ adminRouter.get(
       if (channel && ["online", "pos"].includes(channel)) where.channel = channel;
       const summaryWhere = channel && ["online", "pos"].includes(channel) ? { channel } : {};
       if (search?.trim()) {
-        const term = search.trim();
-        where.OR = [
-          { orderNumber: { contains: term, mode: "insensitive" } },
-          { email: { contains: term, mode: "insensitive" } },
-          { customerEmail: { contains: term, mode: "insensitive" } },
-          { customer: { firstName: { contains: term, mode: "insensitive" } } },
-          { customer: { lastName: { contains: term, mode: "insensitive" } } },
-        ];
+        // Une commande peut être passée sans compte client : l’identité est alors uniquement portée
+        // par ShippingAddress. Chaque mot peut correspondre à un champ différent (prénom/nom).
+        const terms = search.trim().split(/\s+/).filter(Boolean);
+        where.AND = terms.map((term) => ({
+          OR: [
+            { orderNumber: { contains: term, mode: "insensitive" } },
+            { email: { contains: term, mode: "insensitive" } },
+            { customerEmail: { contains: term, mode: "insensitive" } },
+            { customer: { is: { firstName: { contains: term, mode: "insensitive" } } } },
+            { customer: { is: { lastName: { contains: term, mode: "insensitive" } } } },
+            { customer: { is: { email: { contains: term, mode: "insensitive" } } } },
+            { customer: { is: { phone: { contains: term, mode: "insensitive" } } } },
+            { shippingAddress: { is: { firstName: { contains: term, mode: "insensitive" } } } },
+            { shippingAddress: { is: { lastName: { contains: term, mode: "insensitive" } } } },
+            { shippingAddress: { is: { address: { contains: term, mode: "insensitive" } } } },
+            { shippingAddress: { is: { city: { contains: term, mode: "insensitive" } } } },
+            { shippingAddress: { is: { postalCode: { contains: term, mode: "insensitive" } } } },
+            { shippingAddress: { is: { phone: { contains: term, mode: "insensitive" } } } },
+          ],
+        }));
       }
 
       let selectedPaymentCategory: SalesPaymentCategory | null = null;
