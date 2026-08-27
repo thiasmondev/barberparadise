@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -213,6 +213,9 @@ export default function AdminBlogPage() {
   const [productResults, setProductResults] = useState<Product[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
   const [previewing, setPreviewing] = useState(false);
+  const [contentImageAlt, setContentImageAlt] = useState("");
+  const [uploadingContentImage, setUploadingContentImage] = useState(false);
+  const contentTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const linkedProductSet = useMemo(() => new Set(editor?.linkedProductIds || []), [editor?.linkedProductIds]);
 
@@ -356,6 +359,35 @@ export default function AdminBlogPage() {
     }
   };
 
+  const uploadContentImage = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !editor) return;
+
+    setUploadingContentImage(true);
+    setError("");
+    try {
+      const imageUrl = await uploadBlogCoverToCloudinary(file);
+      const textarea = contentTextareaRef.current;
+      const selectionStart = textarea?.selectionStart ?? editor.content.length;
+      const selectionEnd = textarea?.selectionEnd ?? selectionStart;
+      const alt = (contentImageAlt.trim() || "Illustration de l’article").replace(/[\[\]]/g, "");
+      const markdownImage = `\n\n![${alt}](${imageUrl})\n\n`;
+      const nextContent = `${editor.content.slice(0, selectionStart)}${markdownImage}${editor.content.slice(selectionEnd)}`;
+      setEditor({ ...editor, content: nextContent });
+      setContentImageAlt("");
+      window.requestAnimationFrame(() => {
+        textarea?.focus();
+        const nextCursor = selectionStart + markdownImage.length;
+        textarea?.setSelectionRange(nextCursor, nextCursor);
+      });
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Impossible d’importer l’image dans le contenu");
+    } finally {
+      setUploadingContentImage(false);
+      event.target.value = "";
+    }
+  };
+
   const addProduct = (product: Product) => {
     if (!editor || linkedProductSet.has(product.id)) return;
     setEditor({ ...editor, linkedProductIds: [...editor.linkedProductIds, product.id] });
@@ -424,7 +456,7 @@ export default function AdminBlogPage() {
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
             <div className="space-y-4">
               <label className="block text-sm font-medium text-gray-700">Titre<input value={editor.title} onChange={(event) => setEditor({ ...editor, title: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 focus:border-[#fd2786] focus:outline-none" /></label>
-              <label className="block text-sm font-medium text-gray-700">Contenu (Markdown)<textarea value={editor.content} onChange={(event) => setEditor({ ...editor, content: event.target.value })} rows={20} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 font-mono text-sm text-gray-900 focus:border-[#fd2786] focus:outline-none" /></label>
+              <div className="space-y-2"><label className="block text-sm font-medium text-gray-700" htmlFor="blog-content">Contenu (Markdown)</label><div className="flex flex-col gap-2 rounded-lg border border-dashed border-[#0f056b]/25 bg-[#0f056b]/[0.03] p-3 sm:flex-row sm:items-end"><label className="min-w-0 flex-1 text-xs font-medium text-gray-700" htmlFor="blog-image-alt">Texte alternatif de l’image<input id="blog-image-alt" value={contentImageAlt} onChange={(event) => setContentImageAlt(event.target.value)} placeholder="Ex. Comparatif de cires coiffantes" className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2.5 py-2 text-sm text-gray-900 focus:border-[#fd2786] focus:outline-none" /></label><label className="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#0f056b]/20 bg-white px-3 py-2 text-sm font-semibold text-[#0f056b] transition hover:bg-[#0f056b]/5"><ImagePlus size={16} />{uploadingContentImage ? "Import en cours…" : "Insérer une image"}<input type="file" accept="image/*" disabled={uploadingContentImage} onChange={uploadContentImage} className="hidden" /></label></div><p className="text-xs text-gray-500">L’image est insérée à la position du curseur sous forme Markdown et son texte alternatif est utilisé pour l’accessibilité et le référencement.</p><textarea id="blog-content" ref={contentTextareaRef} value={editor.content} onChange={(event) => setEditor({ ...editor, content: event.target.value })} rows={20} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 font-mono text-sm text-gray-900 focus:border-[#fd2786] focus:outline-none" /></div>
               <label className="block text-sm font-medium text-gray-700">Extrait<input value={editor.excerpt} onChange={(event) => setEditor({ ...editor, excerpt: event.target.value })} placeholder="Résumé court affiché dans la liste blog" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 focus:border-[#fd2786] focus:outline-none" /></label>
             </div>
             <aside className="space-y-4 rounded-xl bg-gray-50 p-4">
