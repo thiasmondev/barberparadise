@@ -226,7 +226,7 @@ async function applyPaidPosSideEffects(orderId: string) {
     });
 
     if (!order) throw new Error("Vente POS introuvable.");
-    if (order.status === "paid") {
+    if (["paid", "processing", "shipped", "delivered"].includes(order.status)) {
       return tx.order.findUniqueOrThrow({ where: { id: orderId }, include: { customer: true, items: true } });
     }
 
@@ -268,7 +268,8 @@ async function applyPaidPosSideEffects(orderId: string) {
     const updated = await tx.order.update({
       where: { id: orderId },
       data: {
-        status: "paid",
+        // Une vente encaissée en caisse est remise immédiatement : aucun traitement logistique n’est requis.
+        status: "processing",
         posPaymentStatus: "paid",
         posPaidAt: paidAt,
       },
@@ -461,6 +462,8 @@ posRouter.post("/payments", async (req: AuthRequest, res: Response) => {
         email: customer?.email || POS_EMAIL_FALLBACK,
         customerEmail: customer?.email || null,
         isB2B,
+        channel: "pos",
+        noShipping: true,
         status: "pending_payment",
         paymentMethod,
         paymentProvider: "manual",
@@ -549,6 +552,8 @@ posRouter.post("/quick-sale", async (req: AuthRequest, res: Response) => {
         email: customer?.email || POS_EMAIL_FALLBACK,
         customerEmail: customer?.email || null,
         isB2B: isB2BQuick,
+        channel: "pos",
+        noShipping: true,
         status: "pending_payment",
         paymentMethod,
         paymentProvider: "manual",
@@ -592,14 +597,14 @@ posRouter.post("/orders/:orderId/mark-paid", async (req: AuthRequest, res: Respo
   try {
     const { orderId } = req.params;
     const order = await prisma.order.findFirst({
-      where: { id: orderId, channel: "pos" },
+      where: { id: orderId, OR: [{ channel: "pos" }, { posPaymentStatus: { not: null } }] },
       include: { customer: true, items: true },
     });
     if (!order) {
       res.status(404).json({ error: "Vente POS introuvable." });
       return;
     }
-    if (order.status === "paid") {
+    if (["paid", "processing", "shipped", "delivered"].includes(order.status)) {
       res.json({ order: serializeOrder(order), alreadyPaid: true });
       return;
     }
@@ -621,14 +626,21 @@ posRouter.get("/history", async (req: AuthRequest, res: Response) => {
     const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
     const status = typeof req.query.status === "string" ? req.query.status.trim() : "";
 
-    const where: Prisma.OrderWhereInput = { channel: "pos" };
+    const where: Prisma.OrderWhereInput = {
+      AND: [{ OR: [{ channel: "pos" }, { posPaymentStatus: { not: null } }] }],
+    };
     if (status) where.status = status;
     if (search) {
-      where.OR = [
-        { orderNumber: { contains: search, mode: "insensitive" } },
-        { customer: { firstName: { contains: search, mode: "insensitive" } } },
-        { customer: { lastName: { contains: search, mode: "insensitive" } } },
-        { customer: { email: { contains: search, mode: "insensitive" } } },
+      where.AND = [
+        { OR: [{ channel: "pos" }, { posPaymentStatus: { not: null } }] },
+        {
+          OR: [
+            { orderNumber: { contains: search, mode: "insensitive" } },
+            { customer: { firstName: { contains: search, mode: "insensitive" } } },
+            { customer: { lastName: { contains: search, mode: "insensitive" } } },
+            { customer: { email: { contains: search, mode: "insensitive" } } },
+          ],
+        },
       ];
     }
 
@@ -660,7 +672,10 @@ posRouter.get("/history", async (req: AuthRequest, res: Response) => {
 
 posRouter.get("/history/:orderId", async (req: AuthRequest, res: Response) => {
   try {
-    const order = await prisma.order.findFirst({ where: { id: req.params.orderId, channel: "pos" }, include: { customer: true, items: true } });
+    const order = await prisma.order.findFirst({
+      where: { id: req.params.orderId, OR: [{ channel: "pos" }, { posPaymentStatus: { not: null } }] },
+      include: { customer: true, items: true },
+    });
     if (!order) {
       res.status(404).json({ error: "Vente POS introuvable." });
       return;
@@ -683,7 +698,11 @@ posRouter.get("/stats", async (req: AuthRequest, res: Response) => {
     else start.setHours(0, 0, 0, 0);
 
     const orders = await prisma.order.findMany({
-      where: { channel: "pos", status: "paid", createdAt: { gte: start } },
+      where: {
+        OR: [{ channel: "pos" }, { posPaymentStatus: "paid" }],
+        status: { in: ["paid", "processing"] },
+        createdAt: { gte: start },
+      },
       include: { items: true },
       orderBy: { createdAt: "desc" },
     });

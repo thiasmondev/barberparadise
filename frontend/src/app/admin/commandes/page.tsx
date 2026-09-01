@@ -48,10 +48,16 @@ function isStorePickup(order: Order): boolean {
   return Boolean(order.noShipping) || order.shipment?.carrier === "retrait_magasin";
 }
 
+// Les anciennes ventes caisse créées avant la correction de canal portent encore
+// leur marqueur POS (`posPaymentStatus`) même si leur channel historique est "online".
+function isPosSale(order: Order): boolean {
+  return order.channel === "pos" || order.posPaymentStatus === "paid" || Boolean(order.posPaidAt);
+}
+
 function getRowVariant(order: Order): RowVariant {
-  const { status, channel } = order;
+  const { status } = order;
   if (status === "cancelled") return "muted";
-  if (channel === "pos" || isStorePickup(order) || DONE_STATUSES.has(status)) return "done";
+  if (isPosSale(order) || isStorePickup(order) || DONE_STATUSES.has(status)) return "done";
   return "active";
 }
 
@@ -103,7 +109,7 @@ function paymentBadge(order: Order) {
 }
 
 function fulfillmentBadge(order: Order) {
-  if (order.channel === "pos") {
+  if (isPosSale(order)) {
     return { label: "Remise immédiate", className: "bg-violet-50 text-violet-700 ring-violet-200" };
   }
   if (isStorePickup(order)) {
@@ -116,7 +122,7 @@ function fulfillmentBadge(order: Order) {
 }
 
 function channelBadge(order: Order) {
-  if (order.channel === "pos") return { label: "Caisse POS", className: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200" };
+  if (isPosSale(order)) return { label: "Caisse POS", className: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200" };
   if (order.isB2B) return { label: "B2B", className: "bg-indigo-50 text-indigo-700 ring-indigo-200" };
   return { label: "Boutique web", className: "bg-gray-100 text-gray-700 ring-gray-200" };
 }
@@ -142,7 +148,7 @@ function paymentMethodLabel(method?: string | null, provider?: string | null): s
 }
 
 function shippingMode(order: Order) {
-  if (order.channel === "pos") return "Vente en caisse";
+  if (isPosSale(order)) return "Vente en caisse";
   if (isStorePickup(order)) return "Retrait en magasin";
   const carrier = order.shipment?.carrier;
   if (carrier === "mondial_relay") return "Mondial Relay";

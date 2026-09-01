@@ -4627,6 +4627,7 @@ adminRouter.get(
             OR: [
               { status: { in: ["processing", "shipped", "delivered"] } },
               { status: "paid", noShipping: true },
+              { posPaymentStatus: "paid" },
             ],
           },
         }),
