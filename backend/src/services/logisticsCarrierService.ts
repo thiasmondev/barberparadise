@@ -13,6 +13,20 @@ export const LOGISTICS_CARRIERS: Record<LogisticsCarrier, string> = {
 
 export type LabelSource = "carrier_api";
 
+/**
+ * Erreur de création d’étiquette enrichie d’un diagnostic transporteur.
+ * Elle ne contient jamais la clé privée Mondial Relay ni le hash Security.
+ */
+export class CarrierLabelCreationError extends Error {
+  constructor(
+    message: string,
+    public readonly rawResponse: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = "CarrierLabelCreationError";
+  }
+}
+
 export type ShipmentAddress = {
   firstName: string;
   lastName: string;
@@ -813,12 +827,41 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
   const xml = await postSoap("https://api.mondialrelay.com/Web_Services.asmx", "http://www.mondialrelay.fr/webservice/WSI2_CreationExpedition", envelope);
   const status = getXmlValue(xml, "STAT");
   if (status && status !== "0") {
-    throw new Error(`Mondial Relay a refusé la création d’expédition (STAT ${status}).`);
+    const rawResponse = {
+      carrier: "mondial_relay",
+      operation: "WSI2_CreationExpedition",
+      status,
+      // Exclure volontairement l’enveloppe et Security : elles contiennent le hash sensible.
+      responseXml: xml.slice(0, 4000),
+      orderNumber: input.orderNumber,
+      relayPointId: input.relayPointId || null,
+      recipientPostalCode: input.recipient.postalCode,
+      senderPostalCode: senderPostalCodeRaw,
+      countryCode,
+      totalWeightG: input.totalWeightG,
+      insuranceValueCents: input.insuranceValueCents,
+    };
+    const details = status === "36"
+      ? "Le code postal transmis a été refusé par Mondial Relay. Vérifiez le code postal de livraison et réessayez avec un point relais recherché pour cette adresse."
+      : "Vérifiez les coordonnées ou les options de l’expédition, puis réessayez.";
+    throw new CarrierLabelCreationError(
+      `Mondial Relay a refusé la création d’expédition (STAT ${status}). ${details}`,
+      rawResponse,
+    );
   }
   const expeditionNum = getXmlValue(xml, "ExpeditionNum");
   const labelUrlDirect = getXmlValue(xml, "URL_Etiquette");
   if (!expeditionNum) {
-    throw new Error(`Mondial Relay n’a pas retourné de numéro d’expédition. Réponse: ${xml.slice(0, 600)}`);
+    throw new CarrierLabelCreationError(
+      "Mondial Relay n’a pas retourné de numéro d’expédition.",
+      {
+        carrier: "mondial_relay",
+        operation: "WSI2_CreationExpedition",
+        responseXml: xml.slice(0, 4000),
+        orderNumber: input.orderNumber,
+        relayPointId: input.relayPointId || null,
+      },
+    );
   }
 
   // Doc Mondial Relay v5.14 p.26 : URL_Etiquette contient format=A4 dans l'URL.
@@ -896,7 +939,27 @@ export async function createOfficialShipmentLabel(input: ShipmentLabelInput): Pr
   const normalizedInsuranceValueCents = Number(input.insuranceValueCents || 0) > 0 ? input.insuranceValueCents : 0;
   const normalizedInput = { ...input, insuranceValueCents: normalizedInsuranceValueCents };
   if (serviceCode === "24R" || carrier === "mondial_relay") {
-    return createMondialRelayLabel(normalizedInput, quote);
+    try {
+      return await createMondialRelayLabel(normalizedInput, quote);
+    } catch (error) {
+      if (error instanceof CarrierLabelCreationError) {
+        throw error;
+      }
+      throw new CarrierLabelCreationError(
+        error instanceof Error ? error.message : "Erreur inconnue lors de la création Mondial Relay.",
+        {
+          carrier: "mondial_relay",
+          operation: "WSI2_CreationExpedition",
+          orderNumber: input.orderNumber,
+          relayPointId: input.relayPointId || null,
+          recipientPostalCode: input.recipient.postalCode,
+          senderPostalCode: input.sender?.postalCode || process.env.LOGISTICS_SENDER_POSTAL_CODE || null,
+          totalWeightG: input.totalWeightG,
+          insuranceValueCents: normalizedInsuranceValueCents,
+          errorType: error instanceof Error ? error.name : "UnknownError",
+        },
+      );
+    }
   }
   return createColissimoLabel(normalizedInput, quote);
 }

@@ -37,6 +37,7 @@ import {
   createOfficialShipmentLabel,
   cancelOfficialShipmentLabel,
   fetchShipmentTracking,
+  CarrierLabelCreationError,
   LOGISTICS_CARRIERS,
   LogisticsCarrier,
 } from "../services/logisticsCarrierService";
@@ -3947,6 +3948,16 @@ adminRouter.post(
   "/logistics/orders/:orderId/label",
   requireAdmin,
   async (req: AuthRequest, res: Response): Promise<void> => {
+    let labelFailureContext: {
+      orderId: string;
+      carrier: LogisticsCarrier;
+      offerId: string;
+      relayPointId: string | null;
+      packagingId: number | null;
+      totalWeightG: number;
+      insuranceValueCents: number;
+      hasOfficialLabel: boolean;
+    } | null = null;
     try {
       const carrier = String(req.body?.carrier || "") as LogisticsCarrier;
       const offerId = String(req.body?.offerId || "").trim();
@@ -3979,6 +3990,7 @@ adminRouter.post(
           items: { include: { product: true } },
           customer: true,
           shippingAddress: true,
+          shipment: true,
         },
       });
 
@@ -4030,6 +4042,16 @@ adminRouter.post(
       const labelPrintFormat: "100x150" | "A4" | null =
         rawLabelPrintFormat === "A4" ? "A4" : rawLabelPrintFormat === "100x150" ? "100x150" : null;
 
+      labelFailureContext = {
+        orderId: order.id,
+        carrier,
+        offerId,
+        relayPointId,
+        packagingId,
+        totalWeightG,
+        insuranceValueCents,
+        hasOfficialLabel: Boolean(order.shipment?.trackingNumber || order.shipment?.labelPdfBase64),
+      };
       const labelResult = await createOfficialShipmentLabel({
         carrier,
         offerId,
@@ -4143,7 +4165,53 @@ adminRouter.post(
         },
       });
     } catch (err) {
-      console.error(err);
+      if (err instanceof CarrierLabelCreationError && labelFailureContext && !labelFailureContext.hasOfficialLabel) {
+        const rawResponse = {
+          ...err.rawResponse,
+          failedAt: new Date().toISOString(),
+          errorMessage: err.message,
+        };
+        try {
+          await prisma.shipment.upsert({
+            where: { orderId: labelFailureContext.orderId },
+            create: {
+              orderId: labelFailureContext.orderId,
+              carrier: labelFailureContext.carrier,
+              packagingId: labelFailureContext.packagingId,
+              totalWeightG: labelFailureContext.totalWeightG,
+              offerId: labelFailureContext.offerId,
+              deliveryMode: labelFailureContext.carrier === "mondial_relay" ? "relay" : "home",
+              relayPointId: labelFailureContext.relayPointId,
+              insuranceValueCents: labelFailureContext.insuranceValueCents,
+              labelStatus: "carrier_label_failed",
+              carrierRawResponse: asPrismaJson(rawResponse),
+              lastTrackingStatus: err.message,
+              lastTrackingSyncAt: new Date(),
+              shippedBy: req.user?.email || null,
+            },
+            update: {
+              carrier: labelFailureContext.carrier,
+              packagingId: labelFailureContext.packagingId,
+              totalWeightG: labelFailureContext.totalWeightG,
+              offerId: labelFailureContext.offerId,
+              deliveryMode: labelFailureContext.carrier === "mondial_relay" ? "relay" : "home",
+              relayPointId: labelFailureContext.relayPointId,
+              insuranceValueCents: labelFailureContext.insuranceValueCents,
+              labelStatus: "carrier_label_failed",
+              carrierRawResponse: asPrismaJson(rawResponse),
+              lastTrackingStatus: err.message,
+              lastTrackingSyncAt: new Date(),
+              shippedBy: req.user?.email || null,
+            },
+          });
+        } catch (persistenceError) {
+          console.error(
+            "[Logistics] Échec de persistance du diagnostic transporteur",
+            persistenceError instanceof Error ? persistenceError.message : persistenceError,
+          );
+        }
+      }
+      console.error("[Logistics] Échec création étiquette", err instanceof Error ? err.message : err);
       res.status(500).json({ error: err instanceof Error ? err.message : "Erreur achat étiquette transporteur" });
     }
   }
