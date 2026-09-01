@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../utils/prisma";
+import { normalizeShippingAddressContact } from "../utils/shippingAddressNormalization";
 import { formatPaymentMethod, getCustomerName, sendOrderConfirmationEmail, sendOrderShippedEmail } from "../services/emailService";
 import { requireAuth, requireAdmin, AuthRequest } from "../middleware/auth";
 
@@ -16,7 +17,10 @@ function generateOrderNumber(): string {
 // POST /api/orders — Créer une commande
 ordersRouter.post("/", async (req: Request, res: Response): Promise<void> => {
   try {
-    const { items, shippingAddress, email, customerId, notes } = req.body;
+    const { items, shippingAddress: rawShippingAddress, email, customerId, notes } = req.body;
+    const shippingAddress = rawShippingAddress
+      ? normalizeShippingAddressContact(rawShippingAddress)
+      : rawShippingAddress;
 
     if (!items || items.length === 0) {
       res.status(400).json({ error: "Panier vide" });

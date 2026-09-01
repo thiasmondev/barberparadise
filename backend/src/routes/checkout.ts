@@ -22,6 +22,7 @@ import {
 } from "../services/abandonedCartReminderService";
 import { getActiveAutomaticProductPromotions, getBestAutomaticPromotionForProduct } from "../services/productPricingService";
 import { B2B_PAYMENT_FEE_VAT_RATE, calculateB2BSurcharge, getB2BConfiguredSurcharges } from "../services/b2bPaymentSurchargeService";
+import { normalizeShippingAddressContact } from "../utils/shippingAddressNormalization";
 
 export const checkoutRouter = Router();
 
@@ -862,7 +863,9 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const shippingAddress = body.shippingAddress;
+    const shippingAddress = body.shippingAddress
+      ? normalizeShippingAddressContact(body.shippingAddress)
+      : body.shippingAddress;
     // La validation de l'adresse est assouplie pour les brouillons noShipping (retrait/main propre)
     const isNoShippingRequest = body.shippingAddress?.address === "Retrait en magasin";
     if (!isNoShippingRequest && (!shippingAddress?.firstName || !shippingAddress?.lastName || !shippingAddress?.address || !shippingAddress?.city || !shippingAddress?.postalCode)) {
@@ -1501,7 +1504,9 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
       return;
     }
 
-    const shippingAddress = body.shippingAddress;
+    const shippingAddress = body.shippingAddress
+      ? normalizeShippingAddressContact(body.shippingAddress)
+      : body.shippingAddress;
     // La validation de l'adresse est assouplie pour les brouillons noShipping (retrait/main propre)
     const isNoShippingRequestPaypal = body.shippingAddress?.address === "Retrait en magasin";
     if (!isNoShippingRequestPaypal && (!shippingAddress?.firstName || !shippingAddress?.lastName || !shippingAddress?.address || !shippingAddress?.city || !shippingAddress?.postalCode)) {

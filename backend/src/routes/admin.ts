@@ -45,6 +45,7 @@ import { calculateShippingOptions, ensureDefaultShippingZones } from "../service
 import { generateProductRecommendations } from "../services/seo-agent";
 import { notifyIfRestocked, notifySingleStockAlert } from "../services/stockAlertService";
 import { applyProductSearch } from "../utils/searchUtils";
+import { normalizeShippingAddressContact } from "../utils/shippingAddressNormalization";
 import { isDeferredDraftPaymentMethod, resolveDraftPaymentMethod } from "../services/draftPaymentService";
 import {
   buildSalesDashboardStats,
@@ -293,16 +294,16 @@ function asOptionalString(value: unknown, fallback = ""): string {
 
 function normalizeDraftAddress(input?: AdminDraftAddressInput | null): NormalizedDraftAddress | null {
   if (!input) return null;
-  const address = {
+  const address = normalizeShippingAddressContact({
     firstName: asOptionalString(input.firstName),
     lastName: asOptionalString(input.lastName),
     address: asOptionalString(input.address),
     extension: asOptionalString(input.extension),
     city: asOptionalString(input.city),
-    postalCode: asOptionalString(input.postalCode),
+    postalCode: input.postalCode,
     country: normalizeCountry(input.country),
-    phone: asOptionalString(input.phone),
-  };
+    phone: input.phone,
+  });
   if (!address.firstName || !address.lastName || !address.address || !address.city || !address.postalCode) return null;
   return address;
 }

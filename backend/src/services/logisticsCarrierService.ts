@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { normalizeShippingAddressContact } from "../utils/shippingAddressNormalization";
 
 export type LogisticsCarrier =
   | "colissimo"
@@ -937,7 +938,13 @@ export async function createOfficialShipmentLabel(input: ShipmentLabelInput): Pr
   }
 
   const normalizedInsuranceValueCents = Number(input.insuranceValueCents || 0) > 0 ? input.insuranceValueCents : 0;
-  const normalizedInput = { ...input, insuranceValueCents: normalizedInsuranceValueCents };
+  // Dernière ligne de défense pour les anciennes adresses importées avant la normalisation à l’écriture.
+  const normalizedInput = {
+    ...input,
+    recipient: normalizeShippingAddressContact(input.recipient),
+    sender: input.sender ? normalizeShippingAddressContact(input.sender) : null,
+    insuranceValueCents: normalizedInsuranceValueCents,
+  };
   if (serviceCode === "24R" || carrier === "mondial_relay") {
     try {
       return await createMondialRelayLabel(normalizedInput, quote);
