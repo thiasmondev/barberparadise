@@ -172,7 +172,9 @@ const DEFAULT_TARIFFS: Record<LogisticsCarrier, TariffStep[]> = {
 const COLISSIMO_INSURANCE_LEVELS = [0, 15000, 30000, 50000, 100000, 200000, 500000];
 const COLISSIMO_MIN_INSURANCE_VALUE_CENTS = COLISSIMO_INSURANCE_LEVELS[1];
 // Codes produits Colissimo compatibles avec l'option valeur assurée (doc SLS v3.0)
-const COLISSIMO_INSURANCE_COMPATIBLE_PRODUCT_CODES = new Set(["DOM", "DOS", "COM", "CDS", "COLI"]);
+// Documentation Colissimo SLS : la valeur assurée est incompatible avec DOM sans signature.
+// En France métropolitaine, elle est disponible avec DOS (Colissimo domicile avec signature).
+const COLISSIMO_INSURANCE_COMPATIBLE_PRODUCT_CODES = new Set(["DOS", "CDS", "COLI"]);
 const MONDIAL_RELAY_INSURANCE_LEVELS = [0, 2500, 5000, 12500, 25000, 50000];
 const DEFAULT_CARRIER_VAT_RATE = 0.2;
 
@@ -431,9 +433,17 @@ export function buildShipmentQuotes(input: ShipmentQuoteInput): ShipmentRateQuot
     const carrierOption = input.carrierOptions?.[carrier];
     const requestedInsuranceValueCents = carrierOption?.insuranceValueCents ?? input.requestedInsuranceValueCents ?? undefined;
     const isColissimo = carrier === "colissimo" || carrier === "colissimo_international";
-    const signatureRequired = isColissimo ? Boolean(carrierOption?.signatureRequired) : false;
     const insuranceValueCents = insuranceLevel(carrier, input.orderValueCents, requestedInsuranceValueCents);
-    const serviceCode = carrier === "mondial_relay" ? "24R" : carrier === "colissimo" ? "DOM" : "COLI_INTER";
+    // La valeur assurée nationale n’est disponible que sur DOS : l’option signature
+    // est donc activée automatiquement et la proposition renseigne le bon code produit.
+    const signatureRequired = isColissimo
+      ? Boolean(carrierOption?.signatureRequired) || (carrier === "colissimo" && insuranceValueCents > 0)
+      : false;
+    const serviceCode = carrier === "mondial_relay"
+      ? "24R"
+      : carrier === "colissimo"
+        ? (signatureRequired ? "DOS" : "DOM")
+        : "COLI_INTER";
     const amountCents = calculateBaseAmount(carrier, input.totalWeightG) + insuranceSurcharge(carrier, insuranceValueCents) + signatureSurcharge(carrier, signatureRequired);
     const requiresRelayPoint = carrier === "mondial_relay";
     const tax = enrichCarrierTax(amountCents, carrier);
@@ -543,17 +553,19 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
   //   COM/CDS = DOM-TOM (Overseas France : Martinique, Guadeloupe, Réunion…) uniquement
   //   Note : COM retourne erreur 30213 pour les pays européens (BE, DE, etc.)
   const isFranceDom = input.carrier === "colissimo";
-  const productCode = isFranceDom
-    ? (input.signatureRequired ? "DOS" : "DOM")
-    : (input.signatureRequired ? "DOS" : "COLI");
   const countryCode = normalizeCountryCode(input.recipient.country);
   const rawInsuranceValue = input.insuranceValueCents;
   const insuranceValue = normalizeColissimoInsuranceValueCents(rawInsuranceValue);
+  // Réappliquer la règle côté serveur : le client ne peut pas transmettre une valeur assurée
+  // avec DOM sans signature, même si le devis a été calculé avant une modification de l’UI.
+  const signatureRequired = Boolean(input.signatureRequired) || (isFranceDom && insuranceValue > 0);
+  const productCode = isFranceDom
+    ? (signatureRequired ? "DOS" : "DOM")
+    : (signatureRequired ? "DOS" : "COLI");
   assertColissimoInsuranceProductCompatibility(productCode, insuranceValue);
   const insuranceBlock = insuranceValue > 0
     ? `\n            <insuranceValue>${insuranceValue}</insuranceValue>`
     : "";
-  const signatureRequired = Boolean(input.signatureRequired);
   const sender = input.sender || null;
   const senderName = sender?.companyName || `${sender?.firstName || ""} ${sender?.lastName || ""}`.trim() || process.env.LOGISTICS_SENDER_COMPANY || "Barber Paradise";
   const senderAddress = sender?.address || process.env.LOGISTICS_SENDER_ADDRESS || "Adresse expéditeur à configurer";
@@ -630,7 +642,19 @@ async function createColissimoLabel(input: ShipmentLabelInput, quote: ShipmentRa
   const labelBase64 = extractPdfBase64FromSoapResponse(soapResponse) || (pdfUrl ? await downloadPdfAsBase64(pdfUrl) : null);
 
   if (!trackingNumber) {
-    throw new Error(`Colissimo n'a pas retourné de numéro de colis. [productCode=${productCode} countryCode=${countryCode} postalCode=${input.recipient.postalCode}] Réponse: ${xml.slice(0, 600)}`);
+    const errorId = getXmlValue(xml, "id");
+    const messageContent = getXmlValue(xml, "messageContent");
+    if (errorId === "30309") {
+      throw new Error(
+        `Colissimo a refusé l’option valeur assurée (${insuranceValue / 100} €). ` +
+        `L’envoi a été préparé avec signature (service ${productCode}). ` +
+        `Si ce refus persiste, vérifiez dans votre contrat Colissimo que l’option valeur assurée est activée pour ce service.`
+      );
+    }
+    throw new Error(
+      `Colissimo n'a pas retourné de numéro de colis. ` +
+      `[id=${errorId || "inconnu"} message=${messageContent || "sans détail"} productCode=${productCode} countryCode=${countryCode} postalCode=${input.recipient.postalCode}]`
+    );
   }
   if (!labelBase64 && !pdfUrl) {
     throw new Error("Colissimo a créé l’expédition mais n’a pas retourné d’étiquette PDF exploitable.");

@@ -16,6 +16,7 @@
     "test:finance-overview": "ts-node src/services/financeOverviewService.test.ts",
     "test:blog-visuals": "ts-node src/services/blogVisualService.test.ts",
     "test:replicate-client": "ts-node src/services/replicate/replicateClient.test.ts",
+    "test:logistics": "ts-node src/services/logisticsCarrierService.test.ts",
     "start": "npx prisma migrate deploy && node dist/index.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
