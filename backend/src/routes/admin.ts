@@ -4019,6 +4019,12 @@ adminRouter.post(
         res.status(400).json({ error: "Adresse d’expédition obligatoire pour acheter l’étiquette" });
         return;
       }
+      if (order.shipment?.labelStatus === "cancellation_pending_manual") {
+        res.status(409).json({
+          error: "L’étiquette précédente doit d’abord être annulée manuellement dans l’espace Mondial Relay avant d’en créer une nouvelle.",
+        });
+        return;
+      }
 
       const packaging = packagingId
         ? await prisma.packaging.findUnique({ where: { id: packagingId } })
@@ -4462,7 +4468,7 @@ adminRouter.get(
         include: { order: true },
       });
 
-      if (!shipment || !shipment.labelPdfBase64 || shipment.labelStatus === "cancelled") {
+      if (!shipment || !shipment.labelPdfBase64 || ["cancelled", "cancellation_pending_manual"].includes(shipment.labelStatus || "")) {
         res.status(404).json({ error: "Étiquette non disponible" });
         return;
       }
@@ -4500,8 +4506,12 @@ adminRouter.post(
         res.status(400).json({ error: "Transporteur invalide" });
         return;
       }
-      if (shipment.labelStatus === "cancelled") {
-        res.status(400).json({ error: "Cette étiquette est déjà annulée" });
+      if (["cancelled", "cancellation_pending_manual"].includes(shipment.labelStatus || "")) {
+        res.status(400).json({
+          error: shipment.labelStatus === "cancellation_pending_manual"
+            ? "Cette étiquette est marquée à annuler manuellement dans l’espace du transporteur."
+            : "Cette étiquette est déjà annulée",
+        });
         return;
       }
       const scannedStatuses = ["in_transit", "shipped", "delivered", "scanned"];
@@ -4525,7 +4535,7 @@ adminRouter.post(
       const updatedShipment = await prisma.shipment.update({
         where: { id: shipment.id },
         data: {
-          labelStatus: "cancelled",
+          labelStatus: cancellation.status,
           lastTrackingStatus: cancellation.message,
           lastTrackingSyncAt: new Date(),
           carrierRawResponse: asPrismaJson(cancellation.rawResponse || shipment.carrierRawResponse),
@@ -4539,6 +4549,67 @@ adminRouter.post(
       res.status(500).json({ error: err instanceof Error ? err.message : "Erreur annulation étiquette" });
     }
   }
+);
+
+// POST /api/admin/shipments/:shipmentId/cancel/confirm-manual — Confirmer une annulation finalisée hors API Mondial Relay
+adminRouter.post(
+  "/shipments/:shipmentId/cancel/confirm-manual",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const shipment = await prisma.shipment.findUnique({
+        where: { id: req.params.shipmentId },
+        include: { packaging: true },
+      });
+
+      if (!shipment) {
+        res.status(404).json({ error: "Expédition non trouvée" });
+        return;
+      }
+      if (shipment.labelStatus !== "cancellation_pending_manual") {
+        res.status(400).json({ error: "Cette étiquette n’est pas en attente d’annulation manuelle" });
+        return;
+      }
+
+      const scannedStatuses = ["in_transit", "shipped", "delivered", "scanned"];
+      const normalizedTrackingStatus = String(shipment.lastTrackingStatus || "").toLowerCase();
+      const hasCarrierScan = Boolean(shipment.shippedAt)
+        || scannedStatuses.some(status => normalizedTrackingStatus.includes(status));
+      if (hasCarrierScan) {
+        res.status(400).json({
+          error: "Cette étiquette ne peut pas être annulée car elle a déjà été prise en charge par le transporteur.",
+        });
+        return;
+      }
+
+      const previousRawResponse = shipment.carrierRawResponse && typeof shipment.carrierRawResponse === "object"
+        ? shipment.carrierRawResponse as Record<string, unknown>
+        : {};
+      const updatedShipment = await prisma.shipment.update({
+        where: { id: shipment.id },
+        data: {
+          labelStatus: "cancelled",
+          lastTrackingStatus: "Annulation Mondial Relay confirmée manuellement par l’administrateur. Remboursement à vérifier auprès du transporteur.",
+          lastTrackingSyncAt: new Date(),
+          carrierRawResponse: asPrismaJson({
+            ...previousRawResponse,
+            manualCancellationConfirmedAt: new Date().toISOString(),
+            manualCancellationConfirmedBy: "admin",
+          }),
+        },
+        include: { packaging: true },
+      });
+
+      res.json({
+        success: true,
+        shipment: updatedShipment,
+        message: "L’annulation manuelle a été confirmée. Vous pouvez maintenant créer une nouvelle étiquette si nécessaire.",
+      });
+    } catch (err) {
+      console.error("[shipment][manual-cancellation-confirm]", err instanceof Error ? err.message : "Erreur inconnue");
+      res.status(500).json({ error: "Erreur lors de la confirmation de l’annulation manuelle" });
+    }
+  },
 );
 
 // POST /api/admin/logistics/orders/:orderId/tracking/sync — Synchroniser le suivi
@@ -4748,7 +4819,11 @@ adminRouter.get(
           orderNumber: shipment.order.orderNumber,
           carrier: shipment.carrier,
           trackingNumber: shipment.trackingNumber,
-          labelStatus: shipment.labelStatus === "cancelled" ? "cancelled" : shipment.shippedAt ? "shipped" : shipment.labelStatus || "generated",
+          labelStatus: ["cancelled", "cancellation_pending_manual"].includes(shipment.labelStatus || "")
+            ? shipment.labelStatus
+            : shipment.shippedAt
+              ? "shipped"
+              : shipment.labelStatus || "generated",
           labelGeneratedAt: shipment.labelGeneratedAt,
           shippedAt: shipment.shippedAt,
           downloadUrl: `/api/admin/shipments/${shipment.id}/label.pdf`,

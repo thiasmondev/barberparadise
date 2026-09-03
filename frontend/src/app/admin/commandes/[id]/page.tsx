@@ -695,7 +695,9 @@ export default function OrderDetailPage() {
   const hasZeroWeight = packageWeightG <= 0;
   const selectedQuote = quotes.find((quote) => quote.id === selectedQuoteId);
   const activeShipment = shipment || (order?.shipment as ShipmentRecord | null) || null;
-  const hasGeneratedLabel = activeShipment?.labelSource === "carrier_api" && Boolean(activeShipment?.trackingNumber) && activeShipment.labelStatus !== "cancelled";
+  const hasGeneratedLabel = activeShipment?.labelSource === "carrier_api"
+    && Boolean(activeShipment?.trackingNumber)
+    && !["cancelled", "cancellation_pending_manual"].includes(activeShipment.labelStatus || "");
   const hasCarrierScan = Boolean(activeShipment?.shippedAt) || ["in_transit", "shipped", "delivered", "scanned"].some((status) =>
     String(activeShipment?.lastTrackingStatus || "").toLowerCase().includes(status)
   );
@@ -1841,7 +1843,11 @@ export default function OrderDetailPage() {
                   { label: paymentBadge(order).label === "Payée" ? (isPosOrder ? "Paiement terminal confirmé" : "Paiement confirmé") : "Paiement en attente", date: order.posPaidAt || order.updatedAt, icon: CheckCircle2 },
                   ...(!isPosOrder ? [{ label: "Email de confirmation envoyé", date: order.createdAt, icon: Mail }] : []),
                   ...(!isPosOrder && order.shipment?.labelGeneratedAt ? [{ label: `Étiquette ${carrierLabel(order.shipment.carrier)} achetée${order.shipment.trackingNumber ? ` — Suivi ${order.shipment.trackingNumber}` : ""}`, date: order.shipment.labelGeneratedAt, icon: Truck }] : []),
-                  ...(!isPosOrder && order.shipment?.labelStatus === "cancelled" ? [{ label: "Étiquette annulée — remboursement sous 48h", date: order.shipment.updatedAt || order.shipment.labelGeneratedAt || order.updatedAt, icon: AlertCircle }] : []),
+                  ...(!isPosOrder && order.shipment?.labelStatus === "cancelled"
+                    ? [{ label: "Étiquette annulée", date: order.shipment.updatedAt || order.shipment.labelGeneratedAt || order.updatedAt, icon: AlertCircle }]
+                    : !isPosOrder && order.shipment?.labelStatus === "cancellation_pending_manual"
+                      ? [{ label: "Étiquette à annuler manuellement dans l’espace Mondial Relay", date: order.shipment.updatedAt || order.shipment.labelGeneratedAt || order.updatedAt, icon: AlertCircle }]
+                      : []),
                   ...(!isPosOrder && order.shipment?.shippedAt ? [{ label: "Commande expédiée", date: order.shipment.shippedAt, icon: Truck }] : []),
                 ].map((event, index) => {
                   const Icon = event.icon;

@@ -126,7 +126,10 @@ export default function AdminLogisticsPreparationPage() {
   const totalWeight =
     (detail?.recommendation.totalWeightG || 0) +
     (selectedPackaging?.selfWeightG || 0);
-  const hasGeneratedLabel = detail?.shipment?.labelSource === "carrier_api" && Boolean(detail?.shipment?.trackingNumber) && detail.shipment.labelStatus !== "cancelled";
+  const hasGeneratedLabel = detail?.shipment?.labelSource === "carrier_api"
+    && Boolean(detail?.shipment?.trackingNumber)
+    && !["cancelled", "cancellation_pending_manual"].includes(detail.shipment.labelStatus || "");
+  const hasManualCancellationPending = detail?.shipment?.labelStatus === "cancellation_pending_manual";
   const hasCarrierScan = Boolean(detail?.shipment?.shippedAt) || ["in_transit", "shipped", "delivered", "scanned"].some(status =>
     String(detail?.shipment?.lastTrackingStatus || "").toLowerCase().includes(status)
   );
@@ -585,12 +588,17 @@ export default function AdminLogisticsPreparationPage() {
               </label>
               <button
                 onClick={handlePurchaseLabel}
-                disabled={!selectedQuote || !selectedQuote.purchasable || purchasingLabel || saving || hasGeneratedLabel}
+                disabled={!selectedQuote || !selectedQuote.purchasable || purchasingLabel || saving || hasGeneratedLabel || hasManualCancellationPending}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-3 text-sm font-bold text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {purchasingLabel ? <Loader2 className="animate-spin" size={17} /> : <Download size={17} />}
                 Acheter l’étiquette officielle
               </button>
+              {hasManualCancellationPending && (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                  L’étiquette précédente doit être annulée dans l’espace Mondial Relay avant toute nouvelle création. Aucun remboursement n’est encore confirmé.
+                </p>
+              )}
               <button
                 onClick={downloadLabel}
                 disabled={!hasGeneratedLabel || purchasingLabel}

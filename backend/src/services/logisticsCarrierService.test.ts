@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { buildShipmentQuotes } from "./logisticsCarrierService";
+import { buildShipmentQuotes, cancelOfficialShipmentLabel } from "./logisticsCarrierService";
 
-function run() {
+async function run() {
   const quotes = buildShipmentQuotes({
     orderNumber: "BP-TEST-ASSURANCE",
     customerEmail: "client@example.test",
@@ -44,7 +44,18 @@ function run() {
   assert.ok(standardColissimo, "Le devis Colissimo standard doit être présent.");
   assert.equal(standardColissimo.serviceCode, "DOM", "Un envoi sans assurance conserve le service DOM sans signature.");
 
-  console.log("✓ Logistics carrier assurance tests passed");
+  const cancellation = await cancelOfficialShipmentLabel({
+    carrier: "mondial_relay",
+    trackingNumber: "12345678901234",
+    carrierShipmentId: "12345678901234",
+  });
+  assert.equal(cancellation.success, true, "La demande d’annulation Mondial Relay doit être prise en compte localement.");
+  assert.equal(cancellation.status, "cancellation_pending_manual", "L’annulation Mondial Relay doit rester en attente de validation manuelle.");
+  assert.equal(cancellation.rawResponse?.mode, "manual_cancellation_required", "Aucune opération SOAP non publiée ne doit être invoquée.");
+  console.log("✓ Logistics carrier assurance and cancellation tests passed");
 }
 
-run();
+run().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

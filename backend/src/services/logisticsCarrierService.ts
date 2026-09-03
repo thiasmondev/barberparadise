@@ -143,7 +143,8 @@ export type CancelShipmentLabelInput = {
 
 export type CancelShipmentLabelResult = {
   success: boolean;
-  status: "cancelled";
+  /** `cancellation_pending_manual` signifie qu’aucune annulation n’a été confirmée par le transporteur. */
+  status: "cancelled" | "cancellation_pending_manual";
   message: string;
   rawResponse: Record<string, unknown> | null;
 };
@@ -997,43 +998,26 @@ async function cancelColissimoLabel(input: CancelShipmentLabelInput): Promise<Ca
 }
 
 async function cancelMondialRelayLabel(input: CancelShipmentLabelInput): Promise<CancelShipmentLabelResult> {
-  const enseigne = getMondialRelayEnseigne();
-  if (!enseigne || !getMondialRelayPrivateKey()) {
-    throw new Error(carrierConfigurationError("mondial_relay") || "Configuration Mondial Relay absente.");
-  }
-
   const expeditionNum = input.carrierShipmentId || input.trackingNumber;
   if (!expeditionNum) {
     throw new Error("Numéro d’expédition Mondial Relay obligatoire pour annuler l’étiquette.");
   }
 
-  const values = [enseigne, expeditionNum];
-  const security = mondialRelaySecurity(values);
-  const envelope = `<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <WSI2_AnnulationExpedition xmlns="http://www.mondialrelay.fr/webservice/">
-      <Enseigne>${xmlEscape(enseigne)}</Enseigne>
-      <Expedition>${xmlEscape(expeditionNum)}</Expedition>
-      <Security>${security}</Security>
-    </WSI2_AnnulationExpedition>
-  </soap:Body>
-</soap:Envelope>`;
-
-  const xml = await postSoap("https://api.mondialrelay.com/Web_Services.asmx", "http://www.mondialrelay.fr/webservice/WSI2_AnnulationExpedition", envelope);
-  const status = getXmlValue(xml, "STAT");
-  if (status && status !== "0") {
-    throw new Error(`Mondial Relay a refusé l’annulation (STAT ${status}).`);
-  }
-
+  // Le WSDL actuellement exposé par https://api.mondialrelay.com/Web_Services.asmx
+  // ne déclare pas WSI2_AnnulationExpedition. L’appeler génère une Fault SOAP 500
+  // et ne peut donc pas confirmer une annulation ni un remboursement.
+  // L’étiquette non prise en charge doit être remboursée manuellement dans l’espace
+  // Mondial Relay, conformément aux instructions du transporteur.
   return {
     success: true,
-    status: "cancelled",
-    message: "L’étiquette a été annulée. Le remboursement sera crédité sous 48h.",
+    status: "cancellation_pending_manual",
+    message: "L’annulation doit être finalisée dans votre espace Mondial Relay : l’API ne propose pas cette opération. L’étiquette est marquée à annuler en interne, sans remboursement confirmé.",
     rawResponse: {
       carrier: "mondial_relay",
       trackingNumber: expeditionNum,
-      xml: xml.slice(0, 2000),
+      mode: "manual_cancellation_required",
+      reason: "Le WSDL Mondial Relay ne publie pas l’opération WSI2_AnnulationExpedition.",
+      officialAction: "Annuler ou rembourser l’étiquette non prise en charge depuis l’espace Mondial Relay.",
     },
   };
 }

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import AdminOrdersTabs from "@/components/admin/AdminOrdersTabs";
 import {
   cancelShipmentLabel,
+  confirmManualShipmentCancellation,
   getAdminShipmentLabels,
   getAdminToken,
   getShipmentLabelPdfUrl,
@@ -18,6 +19,7 @@ const STATUS_LABELS: Record<string, string> = {
   printed: "Imprimée",
   shipped: "Expédiée",
   cancelled: "Annulée",
+  cancellation_pending_manual: "À annuler manuellement",
 };
 
 function formatDate(value: string | null) {
@@ -33,12 +35,14 @@ function formatDate(value: string | null) {
 
 function normalizeStatus(label: AdminShipmentLabelItem) {
   if (label.labelStatus === "cancelled") return "Annulée";
+  if (label.labelStatus === "cancellation_pending_manual") return "À annuler manuellement";
   if (label.shippedAt) return "Expédiée";
   return STATUS_LABELS[label.labelStatus || ""] || "Générée";
 }
 
 function statusBadgeClass(label: AdminShipmentLabelItem) {
   if (label.labelStatus === "cancelled") return "bg-rose-50 text-rose-700 ring-rose-200";
+  if (label.labelStatus === "cancellation_pending_manual") return "bg-amber-50 text-amber-700 ring-amber-200";
   if (label.shippedAt || label.labelStatus === "shipped") return "bg-sky-50 text-sky-700 ring-sky-200";
   return "bg-primary/10 text-primary ring-primary/20";
 }
@@ -49,7 +53,9 @@ export default function AdminShipmentLabelsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [cancelTarget, setCancelTarget] = useState<AdminShipmentLabelItem | null>(null);
+  const [manualConfirmationTarget, setManualConfirmationTarget] = useState<AdminShipmentLabelItem | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [manualConfirmationId, setManualConfirmationId] = useState<string | null>(null);
 
   const loadLabels = useCallback(async () => {
     setLoading(true);
@@ -123,12 +129,46 @@ export default function AdminShipmentLabelsPage() {
             : label,
         ),
       );
-      setNotice(result.message || "L’étiquette a été annulée. Le remboursement sera crédité sous 48h.");
+      setNotice(result.message || "La demande d’annulation a été enregistrée.");
       setCancelTarget(null);
     } catch (err: any) {
       setError(err.message || "Impossible d’annuler l’étiquette");
     } finally {
       setCancellingId(null);
+    }
+  };
+
+  const requestManualCancellationConfirmation = (label: AdminShipmentLabelItem) => {
+    setError("");
+    setNotice("");
+    setManualConfirmationTarget(label);
+  };
+
+  const confirmManualCancellation = async () => {
+    if (!manualConfirmationTarget) return;
+    setManualConfirmationId(manualConfirmationTarget.id);
+    setError("");
+    setNotice("");
+    try {
+      const result = await confirmManualShipmentCancellation(manualConfirmationTarget.id);
+      setLabels((currentLabels) =>
+        currentLabels.map((label) =>
+          label.id === manualConfirmationTarget.id
+            ? {
+                ...label,
+                labelStatus: result.shipment.labelStatus || "cancelled",
+                shippedAt: result.shipment.shippedAt || null,
+                trackingNumber: result.shipment.trackingNumber || label.trackingNumber,
+              }
+            : label,
+        ),
+      );
+      setNotice(result.message || "L’annulation manuelle a été confirmée.");
+      setManualConfirmationTarget(null);
+    } catch (err: any) {
+      setError(err.message || "Impossible de confirmer l’annulation manuelle");
+    } finally {
+      setManualConfirmationId(null);
     }
   };
 
@@ -176,7 +216,8 @@ export default function AdminShipmentLabelsPage() {
               </thead>
               <tbody>
                 {labels.map((label) => {
-                  const isCancelled = label.labelStatus === "cancelled";
+                  const isCancelled = ["cancelled", "cancellation_pending_manual"].includes(label.labelStatus || "");
+                  const requiresManualCancellation = label.labelStatus === "cancellation_pending_manual";
                   const isCancelling = cancellingId === label.id;
                   return (
                     <tr key={label.id} className="border-b border-gray-50 hover:bg-gray-50/50">
@@ -192,6 +233,20 @@ export default function AdminShipmentLabelsPage() {
                       <td className="px-4 py-3 text-gray-500">{formatDate(label.labelGeneratedAt)}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex flex-wrap items-center justify-end gap-2">
+                          {requiresManualCancellation && (
+                            <>
+                              <p className="w-full text-right text-xs text-amber-700">À finaliser dans l’espace Mondial Relay ; aucun remboursement n’est confirmé.</p>
+                              <button
+                                type="button"
+                                onClick={() => requestManualCancellationConfirmation(label)}
+                                disabled={manualConfirmationId === label.id}
+                                className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {manualConfirmationId === label.id ? <Loader2 className="animate-spin" size={15} /> : <PackageCheck size={15} />}
+                                Confirmer l’annulation effectuée
+                              </button>
+                            </>
+                          )}
                           <button
                             type="button"
                             onClick={() => downloadLabel(label)}
@@ -223,6 +278,45 @@ export default function AdminShipmentLabelsPage() {
         )}
       </div>
 
+      {manualConfirmationTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+            <div className="border-b border-gray-100 px-5 py-4">
+              <h2 className="font-heading text-lg font-bold text-dark-800">Confirmer l’annulation effectuée</h2>
+              <p className="mt-1 text-sm text-gray-500">Commande {manualConfirmationTarget.orderNumber}</p>
+            </div>
+            <div className="space-y-3 px-5 py-5 text-sm leading-6 text-gray-700">
+              <p>
+                Confirmez uniquement après avoir finalisé l’annulation de l’étiquette dans votre espace Mondial Relay.
+              </p>
+              <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                Cette action ne confirme pas un remboursement. Vérifiez son éventuel traitement directement auprès du transporteur.
+              </p>
+              <p>Après confirmation, vous pourrez générer une nouvelle étiquette si nécessaire.</p>
+            </div>
+            <div className="flex flex-col-reverse gap-3 border-t border-gray-100 bg-gray-50 px-5 py-4 sm:flex-row sm:justify-end rounded-b-2xl">
+              <button
+                type="button"
+                onClick={() => setManualConfirmationTarget(null)}
+                disabled={manualConfirmationId === manualConfirmationTarget.id}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-white disabled:opacity-50"
+              >
+                Retour
+              </button>
+              <button
+                type="button"
+                onClick={confirmManualCancellation}
+                disabled={manualConfirmationId === manualConfirmationTarget.id}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+              >
+                {manualConfirmationId === manualConfirmationTarget.id && <Loader2 className="animate-spin" size={16} />}
+                Confirmer l’annulation effectuée
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {cancelTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
@@ -232,7 +326,7 @@ export default function AdminShipmentLabelsPage() {
             </div>
             <div className="px-5 py-5">
               <p className="text-sm leading-6 text-gray-700">
-                Confirmer l'annulation de cette étiquette ? Le remboursement sera crédité sous 48h.
+                Confirmer la demande d’annulation de cette étiquette ? Pour Mondial Relay, la finalisation et le remboursement doivent ensuite être effectués dans votre espace transporteur.
               </p>
             </div>
             <div className="flex justify-end gap-3 border-t border-gray-100 bg-gray-50 px-5 py-4 rounded-b-2xl">
@@ -251,7 +345,7 @@ export default function AdminShipmentLabelsPage() {
                 className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
               >
                 {cancellingId === cancelTarget.id && <Loader2 className="animate-spin" size={16} />}
-                Confirmer l’annulation
+                Marquer à annuler
               </button>
             </div>
           </div>

@@ -2264,6 +2264,16 @@ export function cancelShipmentLabel(shipmentId: string) {
   });
 }
 
+export function confirmManualShipmentCancellation(shipmentId: string) {
+  return adminFetch<{
+    success: boolean;
+    shipment: ShipmentRecord;
+    message: string;
+  }>(`/api/admin/shipments/${shipmentId}/cancel/confirm-manual`, {
+    method: "POST",
+  });
+}
+
 export function syncLogisticsTracking(orderId: string) {
   return adminFetch<{
     success: boolean;
