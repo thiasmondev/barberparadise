@@ -1825,6 +1825,7 @@ function SeoProductPageContent() {
               <VariantManager
                 productId={productId}
                 productPrice={product.price}
+                productImages={editImages}
               />
             </div>
           )}

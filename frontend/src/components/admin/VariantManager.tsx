@@ -54,10 +54,13 @@ const emptyForm = (): VariantFormData => ({
 interface VariantManagerProps {
   productId: string;
   productPrice: number;
+  /** Images déjà enregistrées sur la fiche produit, réutilisables sans nouvel import. */
+  productImages?: string[];
   onVariantsChange?: (variants: ProductVariant[]) => void;
 }
 
-export default function VariantManager({ productId, productPrice, onVariantsChange }: VariantManagerProps) {
+export default function VariantManager({ productId, productPrice, productImages = [], onVariantsChange }: VariantManagerProps) {
+  const availableProductImages = productImages.filter((image, index, allImages) => Boolean(image) && allImages.indexOf(image) === index);
   const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -521,23 +524,51 @@ export default function VariantManager({ productId, productPrice, onVariantsChan
               )}
             </div>
             <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={uploadVariantImage} disabled={uploadingImage} />
-            {form.image ? (
-              <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-2.5">
-                <img src={form.image} alt="Aperçu de l’image de variante" className="h-16 w-16 rounded-md border border-gray-100 object-cover" />
+            {form.image && (
+              <div className="mb-3 flex items-center gap-3 rounded-lg border border-violet-200 bg-violet-50/50 p-2.5">
+                <img src={form.image} alt="Aperçu de l’image de variante" className="h-16 w-16 rounded-md border border-violet-100 object-cover" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-medium text-dark-700">Image de variante prête</p>
-                  <p className="mt-0.5 truncate text-[11px] text-gray-400">Elle remplacera l’image produit partout où cette variante est sélectionnée.</p>
+                  <p className="text-xs font-medium text-dark-700">Image de variante sélectionnée</p>
+                  <p className="mt-0.5 text-[11px] text-gray-500">Elle remplacera l’image produit partout où cette variante est sélectionnée.</p>
                 </div>
-                <button type="button" onClick={() => imageInputRef.current?.click()} disabled={uploadingImage} className="rounded-lg border border-violet-200 px-2.5 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-50">
-                  Remplacer
-                </button>
               </div>
-            ) : (
-              <button type="button" onClick={() => imageInputRef.current?.click()} disabled={uploadingImage} className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-violet-300 bg-white px-3 py-3 text-xs font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-50">
-                {uploadingImage ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
-                {uploadingImage ? "Import de l’image..." : "Importer une image de variante"}
-              </button>
             )}
+
+            {availableProductImages.length > 0 && (
+              <div className="rounded-lg border border-gray-200 bg-white p-3">
+                <p className="text-xs font-medium text-dark-700">Choisir parmi les images déjà chargées</p>
+                <p className="mt-0.5 text-[11px] text-gray-500">Sélectionnez directement une image de cette fiche produit, sans nouveau téléversement.</p>
+                <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                  {availableProductImages.map((image, index) => {
+                    const isSelected = form.image === image;
+                    return (
+                      <button
+                        key={image}
+                        type="button"
+                        onClick={() => setForm((current) => ({ ...current, image }))}
+                        className={`group relative aspect-square overflow-hidden rounded-lg border-2 transition-all focus:outline-none focus:ring-2 focus:ring-violet-400 ${
+                          isSelected
+                            ? "border-violet-600 ring-2 ring-violet-200"
+                            : "border-gray-200 hover:border-violet-300"
+                        }`}
+                        aria-label={`Utiliser l’image ${index + 1} du produit pour cette variante`}
+                        aria-pressed={isSelected}
+                      >
+                        <img src={image} alt="" className="h-full w-full object-cover" />
+                        <span className={`absolute inset-x-0 bottom-0 flex items-center justify-center bg-violet-700/90 px-1 py-1 text-[10px] font-semibold text-white transition-opacity ${isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+                          {isSelected ? "Sélectionnée" : "Choisir"}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <button type="button" onClick={() => imageInputRef.current?.click()} disabled={uploadingImage} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-violet-300 bg-white px-3 py-3 text-xs font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-50">
+              {uploadingImage ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
+              {uploadingImage ? "Import de l’image..." : form.image ? "Importer une autre image" : "Importer une image de variante"}
+            </button>
           </div>
 
           {/* Boutons */}
