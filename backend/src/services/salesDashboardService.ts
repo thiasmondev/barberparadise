@@ -96,6 +96,8 @@ export function resolveSalesDashboardPeriod(params: {
 
 function mapPosMethod(method: PosRealPaymentMethod): SalesPaymentCategory {
   switch (method) {
+    case "external_card":
+      return "Carte bancaire";
     case "indy":
       return "Indy";
     case "mollie_manual":
@@ -104,6 +106,8 @@ function mapPosMethod(method: PosRealPaymentMethod): SalesPaymentCategory {
       return "Espèces";
     case "virement":
       return "Virement";
+    case "other":
+      return "Paiement manuel / autre";
   }
 }
 

@@ -1,4 +1,4 @@
-export const POS_REAL_PAYMENT_METHODS = ["indy", "mollie_manual", "cash", "virement"] as const;
+export const POS_REAL_PAYMENT_METHODS = ["external_card", "indy", "mollie_manual", "cash", "virement", "other"] as const;
 
 export type PosRealPaymentMethod = typeof POS_REAL_PAYMENT_METHODS[number];
 
@@ -56,6 +56,8 @@ export function getPosSplitAllocations(source: PosPaymentSource): PosPaymentAllo
 
 export function getPosPaymentMethodLabel(method: PosRealPaymentMethod): string {
   switch (method) {
+    case "external_card":
+      return "Carte via lien externe";
     case "indy":
       return "Indy";
     case "mollie_manual":
@@ -64,5 +66,7 @@ export function getPosPaymentMethodLabel(method: PosRealPaymentMethod): string {
       return "Espèces";
     case "virement":
       return "Virement";
+    case "other":
+      return "Autre moyen";
   }
 }

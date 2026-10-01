@@ -723,8 +723,12 @@ posRouter.get("/stats", async (req: AuthRequest, res: Response) => {
             throw new Error(`La vente POS ${order.orderNumber} est marquée DIVISER sans ventilation de paiement valide.`);
           }
           for (const allocation of allocations) {
-            acc[allocation.method].revenue = money(acc[allocation.method].revenue + allocation.amount);
-            acc[allocation.method].count += 1;
+            if (!["indy", "mollie_manual", "cash", "virement"].includes(allocation.method)) {
+              throw new Error(`La vente POS ${order.orderNumber} contient un moyen de paiement non pris en charge par la caisse.`);
+            }
+            const posMethod = allocation.method as "indy" | "mollie_manual" | "cash" | "virement";
+            acc[posMethod].revenue = money(acc[posMethod].revenue + allocation.amount);
+            acc[posMethod].count += 1;
           }
           return acc;
         }

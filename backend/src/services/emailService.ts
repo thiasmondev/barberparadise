@@ -119,6 +119,8 @@ export function formatPaymentMethod(method?: string | null): string {
       return "Carte bancaire";
     case "cash":
       return "Espèces";
+    case "split":
+      return "Paiement divisé";
     case "paypal":
       return "PayPal";
     case "paypal_4x":

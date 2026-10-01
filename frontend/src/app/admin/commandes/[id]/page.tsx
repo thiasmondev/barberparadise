@@ -184,11 +184,13 @@ function splitPaymentBreakdownLabel(order: Order): string | null {
     return null;
   }
 
-  const labels: Record<"indy" | "mollie_manual" | "cash" | "virement", string> = {
+  const labels: Record<"external_card" | "indy" | "mollie_manual" | "cash" | "virement" | "other", string> = {
+    external_card: "Carte via lien externe",
     indy: "Indy",
     mollie_manual: "Mollie",
     cash: "Espèces",
     virement: "Virement",
+    other: "Autre moyen",
   };
 
   return order.posPaymentBreakdown
@@ -348,8 +350,22 @@ export default function OrderDetailPage() {
 
   // ─── Confirmation manuelle d’un paiement hors site ─────────────────────────
   type ManualPaymentMethod = "external_card" | "indy" | "mollie_manual" | "cash" | "virement" | "other";
+  type ManualPaymentSelection = ManualPaymentMethod | "split";
+  type ManualPaymentSplitLine = { method: ManualPaymentMethod; amount: string };
+  const manualPaymentMethods: Array<{ value: ManualPaymentMethod; label: string }> = [
+    { value: "external_card", label: "Carte via lien externe" },
+    { value: "indy", label: "Indy" },
+    { value: "mollie_manual", label: "Carte manuelle" },
+    { value: "cash", label: "Espèces" },
+    { value: "virement", label: "Virement bancaire" },
+    { value: "other", label: "Autre moyen" },
+  ];
   const [manualPaymentAmount, setManualPaymentAmount] = useState("");
-  const [manualPaymentMethod, setManualPaymentMethod] = useState<ManualPaymentMethod>("external_card");
+  const [manualPaymentMethod, setManualPaymentMethod] = useState<ManualPaymentSelection>("external_card");
+  const [manualPaymentSplitLines, setManualPaymentSplitLines] = useState<ManualPaymentSplitLine[]>([
+    { method: "external_card", amount: "" },
+    { method: "cash", amount: "" },
+  ]);
   const [manualPaymentLoading, setManualPaymentLoading] = useState(false);
   const [manualPaymentError, setManualPaymentError] = useState("");
   const [manualPaymentSuccess, setManualPaymentSuccess] = useState("");
@@ -1407,26 +1423,39 @@ export default function OrderDetailPage() {
     setManualPaymentError("");
     setManualPaymentSuccess("");
     const remaining = Math.max(0, (order.totalTTC || order.total) - (order.paidAmount || 0));
-    const amount = parseFloat((manualPaymentAmount || remaining.toFixed(2)).replace(",", "."));
+    const isSplitPayment = manualPaymentMethod === "split";
+    const amount = isSplitPayment
+      ? manualPaymentSplitAllocated
+      : parseFloat((manualPaymentAmount || remaining.toFixed(2)).replace(",", "."));
     if (!Number.isFinite(amount) || amount <= 0 || amount > remaining + 0.01) {
       setManualPaymentError(`Saisissez un montant compris entre 0,01 € et ${formatPrice(remaining, order.currency)}.`);
       return;
     }
-    const labels: Record<ManualPaymentMethod, string> = {
-      external_card: "carte via lien externe",
-      indy: "Indy",
-      mollie_manual: "carte manuelle",
-      cash: "espèces",
-      virement: "virement bancaire",
-      other: "autre moyen",
-    };
-    if (!window.confirm(`Confirmer manuellement ${formatPrice(amount, order.currency)} payé par ${labels[manualPaymentMethod]} ?\n\nCette action enregistre la confirmation hors site, met à jour le montant payé et réactive la commande si le solde est intégralement réglé.`)) return;
+    if (isSplitPayment && (manualPaymentSplitLines.length < 2 || Math.abs(manualPaymentSplitRemaining) > 0.01)) {
+      setManualPaymentError(`La somme des lignes doit correspondre exactement au solde restant (${formatPrice(remaining, order.currency)}).`);
+      return;
+    }
+    const splitLines = isSplitPayment
+      ? manualPaymentSplitLines.map((line) => ({
+        method: line.method,
+        amount: Math.round(Number(line.amount.replace(",", ".")) * 100) / 100,
+      }))
+      : undefined;
+    const paymentDescription = isSplitPayment
+      ? `la répartition suivante : ${splitLines?.map((line) => `${formatPrice(line.amount, order.currency)} ${manualPaymentMethods.find((method) => method.value === line.method)?.label || line.method}`).join(" + ")}`
+      : manualPaymentMethods.find((method) => method.value === manualPaymentMethod)?.label || manualPaymentMethod;
+    if (!window.confirm(`Confirmer manuellement ${formatPrice(amount, order.currency)} payé par ${paymentDescription} ?\n\nCette action enregistre la confirmation hors site, met à jour le montant payé et réactive la commande si le solde est intégralement réglé.`)) return;
 
     setManualPaymentLoading(true);
     try {
-      const result = await confirmAdminOrderPaymentManually(order.id, { amount, paymentMethod: manualPaymentMethod });
+      const result = await confirmAdminOrderPaymentManually(order.id, {
+        amount,
+        paymentMethod: manualPaymentMethod,
+        splitLines,
+      });
       setOrder(result.order);
       setManualPaymentAmount("");
+      setManualPaymentSplitLines([{ method: "external_card", amount: "" }, { method: "cash", amount: "" }]);
       setManualPaymentSuccess(
         result.fullyPaid
           ? "Paiement intégral confirmé. La commande est désormais payée."
@@ -1591,6 +1620,35 @@ export default function OrderDetailPage() {
   const totalItemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
   const manualPaymentRemaining = Math.max(0, (order.totalTTC || order.total) - (order.paidAmount || 0));
   const canConfirmManualPayment = !isPosOrder && ["draft", "pending", "pending_payment", "open", "cancelled"].includes(order.status) && manualPaymentRemaining > 0.01;
+  const manualPaymentSplitAllocated = Math.round((manualPaymentSplitLines.reduce((sum, line) => {
+    const amount = Number(line.amount.replace(",", "."));
+    return sum + (Number.isFinite(amount) && amount > 0 ? amount : 0);
+  }, 0) + Number.EPSILON) * 100) / 100;
+  const manualPaymentSplitRemaining = Math.round((manualPaymentRemaining - manualPaymentSplitAllocated + Number.EPSILON) * 100) / 100;
+  const updateManualPaymentSplitLine = (index: number, field: "method" | "amount", value: string) => {
+    setManualPaymentSplitLines((lines) => lines.map((line, lineIndex) => (
+      lineIndex === index
+        ? { ...line, [field]: field === "method" ? value as ManualPaymentMethod : value }
+        : line
+    )));
+  };
+  const addManualPaymentSplitLine = () => {
+    setManualPaymentSplitLines((lines) => [...lines, { method: "cash", amount: "" }]);
+  };
+  const removeManualPaymentSplitLine = (index: number) => {
+    setManualPaymentSplitLines((lines) => lines.length > 2 ? lines.filter((_, lineIndex) => lineIndex !== index) : lines);
+  };
+  const completeManualPaymentSplitLine = () => {
+    setManualPaymentSplitLines((lines) => {
+      if (lines.length === 0) return lines;
+      const allocatedBeforeLast = lines.slice(0, -1).reduce((sum, line) => {
+        const amount = Number(line.amount.replace(",", "."));
+        return sum + (Number.isFinite(amount) && amount > 0 ? amount : 0);
+      }, 0);
+      const remaining = Math.max(0, Math.round((manualPaymentRemaining - allocatedBeforeLast + Number.EPSILON) * 100) / 100);
+      return lines.map((line, index) => index === lines.length - 1 ? { ...line, amount: remaining.toFixed(2) } : line);
+    });
+  };
   // Une vente POS payée est remise immédiatement : son échange se déroule en boutique, sans étiquette.
   const isExchangeEligible = ["shipped", "delivered"].includes(order.status) || (isPosOrder && ["paid", "processing"].includes(order.status));
   const isInStoreExchange = isPosOrder && isExchangeEligible;
@@ -1810,24 +1868,61 @@ export default function OrderDetailPage() {
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
                       <label>
                         <span className="mb-1 block text-xs font-medium text-emerald-900">Moyen réellement utilisé</span>
-                        <select value={manualPaymentMethod} onChange={(event) => setManualPaymentMethod(event.target.value as ManualPaymentMethod)} className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-600">
+                        <select value={manualPaymentMethod} onChange={(event) => setManualPaymentMethod(event.target.value as ManualPaymentSelection)} className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-600">
                           <option value="external_card">Carte via lien externe</option>
                           <option value="indy">Indy</option>
                           <option value="mollie_manual">Carte manuelle</option>
                           <option value="cash">Espèces</option>
                           <option value="virement">Virement bancaire</option>
                           <option value="other">Autre moyen</option>
+                          <option value="split">Paiement divisé</option>
                         </select>
                       </label>
-                      <label>
-                        <span className="mb-1 block text-xs font-medium text-emerald-900">Montant confirmé (€)</span>
-                        <input type="number" min="0.01" max={manualPaymentRemaining} step="0.01" value={manualPaymentAmount || manualPaymentRemaining.toFixed(2)} onChange={(event) => setManualPaymentAmount(event.target.value)} className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-600" />
-                      </label>
+                      {manualPaymentMethod === "split" ? (
+                        <div className="rounded-xl border border-emerald-200 bg-white px-3 py-2">
+                          <p className="text-xs font-medium text-emerald-900">Montant à répartir</p>
+                          <p className="mt-1 text-sm font-semibold text-emerald-800">{formatPrice(manualPaymentRemaining, order.currency)}</p>
+                        </div>
+                      ) : (
+                        <label>
+                          <span className="mb-1 block text-xs font-medium text-emerald-900">Montant confirmé (€)</span>
+                          <input type="number" min="0.01" max={manualPaymentRemaining} step="0.01" value={manualPaymentAmount || manualPaymentRemaining.toFixed(2)} onChange={(event) => setManualPaymentAmount(event.target.value)} className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-600" />
+                        </label>
+                      )}
                     </div>
+                    {manualPaymentMethod === "split" && (
+                      <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50/60 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold">
+                          <span className="text-violet-950">Répartition du paiement</span>
+                          <span className={Math.abs(manualPaymentSplitRemaining) <= 0.01 ? "text-emerald-700" : manualPaymentSplitRemaining < 0 ? "text-rose-700" : "text-amber-700"}>
+                            {Math.abs(manualPaymentSplitRemaining) <= 0.01
+                              ? "✓ Équilibré"
+                              : manualPaymentSplitRemaining > 0
+                                ? `Reste : ${formatPrice(manualPaymentSplitRemaining, order.currency)}`
+                                : `Dépassement : ${formatPrice(Math.abs(manualPaymentSplitRemaining), order.currency)}`}
+                          </span>
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {manualPaymentSplitLines.map((line, index) => (
+                            <div key={index} className="flex items-center gap-2">
+                              <select value={line.method} onChange={(event) => updateManualPaymentSplitLine(index, "method", event.target.value)} className="w-40 shrink-0 rounded-lg border border-violet-200 bg-white px-2 py-2 text-sm outline-none focus:border-violet-600">
+                                {manualPaymentMethods.map((method) => <option key={method.value} value={method.value}>{method.label}</option>)}
+                              </select>
+                              <input type="number" min="0" step="0.01" inputMode="decimal" value={line.amount} onChange={(event) => updateManualPaymentSplitLine(index, "amount", event.target.value)} onFocus={(event) => event.currentTarget.select()} className="min-w-0 flex-1 rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm outline-none focus:border-violet-600" placeholder="Montant (€)" />
+                              {manualPaymentSplitLines.length > 2 && <button type="button" onClick={() => removeManualPaymentSplitLine(index)} className="shrink-0 rounded-lg p-2 text-gray-500 transition hover:bg-white hover:text-rose-700" aria-label={`Supprimer la ligne ${index + 1}`}><Trash2 className="h-4 w-4" /></button>}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button type="button" onClick={addManualPaymentSplitLine} className="rounded-lg border border-dashed border-violet-300 bg-white px-3 py-2 text-xs font-semibold text-violet-800 transition hover:border-violet-500">+ Ajouter une ligne</button>
+                          {manualPaymentSplitRemaining > 0.01 && <button type="button" onClick={completeManualPaymentSplitLine} className="rounded-lg border border-violet-300 bg-white px-3 py-2 text-xs font-semibold text-violet-800 transition hover:bg-violet-100">Compléter ({formatPrice(manualPaymentSplitRemaining, order.currency)})</button>}
+                        </div>
+                      </div>
+                    )}
                     <p className="mt-2 text-xs text-emerald-800">Solde restant avant confirmation : {formatPrice(manualPaymentRemaining, order.currency)}.</p>
                     {manualPaymentError && <p className="mt-3 rounded-lg bg-rose-100 px-3 py-2 text-xs text-rose-700">{manualPaymentError}</p>}
                     {manualPaymentSuccess && <p className="mt-3 rounded-lg bg-white px-3 py-2 text-xs text-emerald-800">{manualPaymentSuccess}</p>}
-                    <button onClick={handleManualPaymentConfirmation} disabled={manualPaymentLoading} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">
+                    <button onClick={handleManualPaymentConfirmation} disabled={manualPaymentLoading || (manualPaymentMethod === "split" && Math.abs(manualPaymentSplitRemaining) > 0.01)} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">
                       {manualPaymentLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Confirmer le paiement manuellement
                     </button>
                   </div>

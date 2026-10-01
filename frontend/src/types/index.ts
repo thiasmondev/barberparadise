@@ -223,7 +223,7 @@ export interface Order {
   posSessionId?: string | null;
   posPaymentStatus?: string | null;
   posPaymentBreakdown?: Array<{
-    method: "indy" | "mollie_manual" | "cash" | "virement";
+    method: "external_card" | "indy" | "mollie_manual" | "cash" | "virement" | "other";
     amount: number;
   }> | null;
   posPaidAt?: string | null;

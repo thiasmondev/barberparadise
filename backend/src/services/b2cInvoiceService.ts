@@ -79,6 +79,8 @@ function paymentLabel(method?: string | null): string {
       return "Virement bancaire";
     case "cash":
       return "Espèces";
+    case "split":
+      return "Paiement divisé";
     case "pos_terminal":
     case "terminal":
       return "Terminal de paiement";

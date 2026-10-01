@@ -48,6 +48,13 @@ import { applyProductSearch } from "../utils/searchUtils";
 import { normalizeShippingAddressContact } from "../utils/shippingAddressNormalization";
 import { isDeferredDraftPaymentMethod, resolveDraftPaymentMethod } from "../services/draftPaymentService";
 import {
+  getManualPaymentMethodLabel,
+  isManualPaymentMethod,
+  manualPaymentMoney,
+  validateManualPaymentSplitLines,
+  type ManualPaymentSplitLine,
+} from "../utils/manualPaymentBreakdown";
+import {
   buildSalesDashboardStats,
   getOrdersForSalesPaymentCategory,
   isSalesPaymentCategory,
@@ -5598,7 +5605,7 @@ adminRouter.post(
       const currentPaidAmount = Number(order.paidAmount || 0);
       const amount = Math.round(Number(req.body?.amount) * 100) / 100;
       const paymentMethod = String(req.body?.paymentMethod || "").trim().toLowerCase();
-      const validMethods = ["external_card", "indy", "mollie_manual", "cash", "virement", "other"];
+      const validMethods = ["external_card", "indy", "mollie_manual", "cash", "virement", "other", "split"];
       if (!Number.isFinite(amount) || amount <= 0) {
         res.status(400).json({ error: "Le montant confirmé doit être supérieur à 0 €." });
         return;
@@ -5612,19 +5619,54 @@ adminRouter.post(
         return;
       }
 
-      const paymentLabels: Record<string, string> = {
-        external_card: "Carte via lien externe",
-        indy: "Indy",
-        mollie_manual: "Carte manuelle",
-        cash: "Espèces",
-        virement: "Virement bancaire",
-        other: "Autre moyen",
-      };
+      let confirmedLines: ManualPaymentSplitLine[];
+      if (paymentMethod === "split") {
+        try {
+          confirmedLines = validateManualPaymentSplitLines(req.body?.splitLines, amount);
+        } catch (error) {
+          res.status(400).json({ error: error instanceof Error ? error.message : "Ventilation de paiement divisé invalide." });
+          return;
+        }
+      } else if (isManualPaymentMethod(paymentMethod)) {
+        confirmedLines = [{ method: paymentMethod, amount: manualPaymentMoney(amount) }];
+      } else {
+        res.status(400).json({ error: "Moyen de paiement manuel invalide." });
+        return;
+      }
+
+      let previousLines: ManualPaymentSplitLine[] = [];
+      const hasPreviousManualPayment = currentPaidAmount > 0.01;
+      if (hasPreviousManualPayment) {
+        if (order.paymentMethod === "split") {
+          try {
+            previousLines = validateManualPaymentSplitLines(order.posPaymentBreakdown, currentPaidAmount);
+          } catch (error) {
+            res.status(409).json({
+              error: "La ventilation du paiement déjà confirmé est invalide : impossible d’enregistrer une nouvelle répartition sans corriger la commande.",
+            });
+            return;
+          }
+        } else if (isManualPaymentMethod(order.paymentMethod)) {
+          previousLines = [{ method: order.paymentMethod, amount: manualPaymentMoney(currentPaidAmount) }];
+        } else {
+          res.status(409).json({
+            error: "Un paiement antérieur utilise un moyen non ventilable. La répartition ne peut pas être ajoutée à cette commande.",
+          });
+          return;
+        }
+      }
+
+      const mustPersistBreakdown = paymentMethod === "split" || order.paymentMethod === "split";
+      const allPaymentLines = [...previousLines, ...confirmedLines];
+      const persistedPaymentMethod = mustPersistBreakdown ? "split" : paymentMethod;
       const newPaidAmount = Math.min(total, Math.round((currentPaidAmount + amount) * 100) / 100);
       const fullyPaid = newPaidAmount >= total - 0.01;
       const confirmedBy = req.user?.email || req.user?.id || "admin";
       const previousProviderPaymentId = order.providerPaymentId;
-      const note = `[${new Date().toISOString()}] Paiement confirmé manuellement — ${paymentLabels[paymentMethod]} — ${amount.toFixed(2)} € — par ${confirmedBy}${previousProviderPaymentId ? ` — ancien paiement en ligne annulé : ${previousProviderPaymentId}` : ""}.`;
+      const paymentDescription = paymentMethod === "split"
+        ? `Paiement divisé (${confirmedLines.map((line) => `${getManualPaymentMethodLabel(line.method)} : ${line.amount.toFixed(2)} €`).join(" + ")})`
+        : getManualPaymentMethodLabel(confirmedLines[0].method);
+      const note = `[${new Date().toISOString()}] Paiement confirmé manuellement — ${paymentDescription} — ${amount.toFixed(2)} € — par ${confirmedBy}${previousProviderPaymentId ? ` — ancien paiement en ligne annulé : ${previousProviderPaymentId}` : ""}.`;
 
       const updatedOrder = await prisma.$transaction(async (tx) => {
         // Le stock n’est décrémenté qu’au moment où le règlement devient intégral.
@@ -5661,8 +5703,9 @@ adminRouter.post(
           data: {
             status: fullyPaid ? (order.noShipping ? "processing" : "paid") : "pending_payment",
             paidAmount: newPaidAmount,
-            paymentMethod,
+            paymentMethod: persistedPaymentMethod,
             paymentProvider: "manual",
+            posPaymentBreakdown: mustPersistBreakdown ? (allPaymentLines as Prisma.InputJsonValue) : Prisma.DbNull,
             // Un ancien paiement en ligne annulé ne doit plus pouvoir écraser la confirmation manuelle via webhook.
             providerPaymentId: null,
             notes: order.notes ? `${order.notes}\n${note}` : note,

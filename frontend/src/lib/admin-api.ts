@@ -631,7 +631,14 @@ export async function createPaymentAdjustment(
 
 export function confirmAdminOrderPaymentManually(
   id: string,
-  payload: { amount: number; paymentMethod: "external_card" | "indy" | "mollie_manual" | "cash" | "virement" | "other" },
+  payload: {
+    amount: number;
+    paymentMethod: "external_card" | "indy" | "mollie_manual" | "cash" | "virement" | "other" | "split";
+    splitLines?: Array<{
+      method: "external_card" | "indy" | "mollie_manual" | "cash" | "virement" | "other";
+      amount: number;
+    }>;
+  },
 ) {
   return adminFetch<{ success: boolean; order: Order; fullyPaid: boolean; paidAmount: number; remainingAmount: number }>(
     `/api/admin/orders/${encodeURIComponent(id)}/mark-paid-manual`,

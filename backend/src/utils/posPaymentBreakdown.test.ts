@@ -17,6 +17,19 @@ assert.deepEqual(allocations, [
 ]);
 assert.equal(allocations?.reduce((sum, allocation) => sum + allocation.amount, 0), 10);
 
+const manualOrderAllocations = getPosSplitAllocations({
+  paymentMethod: "split",
+  totalTTC: 10,
+  posPaymentBreakdown: [
+    { method: "external_card", amount: 6.5 },
+    { method: "other", amount: 3.5 },
+  ],
+});
+assert.deepEqual(manualOrderAllocations, [
+  { method: "external_card", amount: 6.5 },
+  { method: "other", amount: 3.5 },
+]);
+
 const malformed = getPosSplitAllocations({
   paymentMethod: "split",
   totalTTC: 10,

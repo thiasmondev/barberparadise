@@ -14,6 +14,7 @@
     "test:pos-payments": "ts-node src/utils/posPaymentBreakdown.test.ts",
     "test:sales-dashboard": "ts-node src/services/salesDashboardService.test.ts",
     "test:finance-overview": "ts-node src/services/financeOverviewService.test.ts",
+    "test:manual-payment-breakdowns": "ts-node src/utils/manualPaymentBreakdown.test.ts",
     "test:blog-visuals": "ts-node src/services/blogVisualService.test.ts",
     "test:replicate-client": "ts-node src/services/replicate/replicateClient.test.ts",
     "test:logistics": "ts-node src/services/logisticsCarrierService.test.ts",
