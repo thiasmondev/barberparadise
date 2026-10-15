@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { calculateOrderExchangeFinancials, isOrderExchangeEligible } from "./orderExchangeService";
+import { calculateOrderExchangeFinancials, isOrderExchangeEligible, usesProfessionalExchangePricing } from "./orderExchangeService";
 
 function testB2CWithLineDiscount() {
   const result = calculateOrderExchangeFinancials({
@@ -46,6 +46,29 @@ function testPosExchangeEligibility() {
   assert.equal(isOrderExchangeEligible({ status: "delivered", channel: "online", noShipping: false }), true);
 }
 
+function testPosOrderUsesTtcEvenForProfessionalCustomer() {
+  assert.equal(usesProfessionalExchangePricing({ isB2B: true, channel: "pos" }), false);
+  assert.equal(usesProfessionalExchangePricing({ isB2B: true, channel: "online" }), true);
+  assert.equal(usesProfessionalExchangePricing({ isB2B: false, channel: "online" }), false);
+
+  const result = calculateOrderExchangeFinancials({
+    returnedUnitPrice: 259,
+    returnedLineDiscount: 0,
+    returnedLineQuantity: 1,
+    exchangeQuantity: 1,
+    replacementPublicUnitPrice: 299,
+    replacementProfessionalUnitPrice: 249.17,
+    // Une vente POS rattachée à un compte pro transmet false à ce calcul :
+    // ses lignes ont déjà été vendues et enregistrées TTC.
+    isB2B: usesProfessionalExchangePricing({ isB2B: true, channel: "pos" }),
+    vatRate: 20,
+  });
+
+  assert.equal(result.returnValue, 259);
+  assert.equal(result.replacementValue, 299);
+  assert.equal(result.differenceAmount, 40);
+}
+
 function testB2BFallbackPublicTtcToHt() {
   const result = calculateOrderExchangeFinancials({
     returnedUnitPrice: 50,
@@ -83,4 +106,5 @@ testB2BUsesProfessionalHtPrice();
 testB2BFallbackPublicTtcToHt();
 testHigherPricedReplacementRequiresExactComplement();
 testPosExchangeEligibility();
+testPosOrderUsesTtcEvenForProfessionalCustomer();
 console.log("✓ Calculs financiers et éligibilité POS d’échange validés");

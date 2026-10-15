@@ -94,6 +94,12 @@ export function isOrderExchangeEligible(input: { status: string; channel?: strin
   return EXCHANGE_ELIGIBLE_STATUSES.has(input.status);
 }
 
+export function usesProfessionalExchangePricing(input: { isB2B: boolean; channel?: string | null }) {
+  // Les ventes caisse sont saisies sur les prix publics TTC, même lorsqu’un client
+  // professionnel y est associé pour son historique ou sa facture.
+  return input.isB2B && input.channel !== "pos";
+}
+
 function assertEligibleOrderStatus(input: { status: string; channel?: string | null; noShipping?: boolean | null }) {
   if (!isOrderExchangeEligible(input)) {
     throw new Error("Seules les commandes expédiées, livrées ou les ventes POS remises en boutique peuvent faire l’objet d’un échange.");
@@ -237,6 +243,7 @@ export async function initiateOrderExchange(input: ExchangeInitiationInput) {
 
     const publicUnitPrice = replacementVariant?.price ?? replacementProduct.price;
     const professionalUnitPrice = replacementVariant?.priceProEur ?? replacementProduct.priceProEur;
+    const useProfessionalPricing = usesProfessionalExchangePricing({ isB2B: order.isB2B, channel: order.channel });
     const { allocatedReturnDiscount, returnValue, replacementUnitPrice, replacementValue, differenceAmount } = calculateOrderExchangeFinancials({
       returnedUnitPrice: returnedItem.price,
       returnedLineDiscount: returnedItem.discountAmount,
@@ -244,7 +251,7 @@ export async function initiateOrderExchange(input: ExchangeInitiationInput) {
       exchangeQuantity: input.quantity,
       replacementPublicUnitPrice: publicUnitPrice,
       replacementProfessionalUnitPrice: professionalUnitPrice,
-      isB2B: order.isB2B,
+      isB2B: useProfessionalPricing,
       vatRate: order.vatRate,
     });
 
@@ -274,7 +281,7 @@ export async function initiateOrderExchange(input: ExchangeInitiationInput) {
         replacementValue,
         differenceAmount,
         vatRate: order.vatRate,
-        priceTaxLabel: order.isB2B ? "HT" : "TTC",
+        priceTaxLabel: useProfessionalPricing ? "HT" : "TTC",
         currency: order.currency,
         settlementStatus: differenceAmount === 0 ? "not_required" : "pending",
         replacementStockReserved: true,
