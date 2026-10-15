@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -480,6 +480,7 @@ export default function OrderDetailPage() {
 
   // ─── Échanges après expédition ────────────────────────────────────────────
   const [exchanges, setExchanges] = useState<AdminOrderExchange[]>([]);
+  const exchangeLoadRequestId = useRef(0);
   const [exchangeLoading, setExchangeLoading] = useState(false);
   const [exchangeError, setExchangeError] = useState("");
   const [showExchangePanel, setShowExchangePanel] = useState(false);
@@ -491,6 +492,7 @@ export default function OrderDetailPage() {
   const [exchangeReplacementVariant, setExchangeReplacementVariant] = useState<ProductVariant | null>(null);
   const [exchangeNotes, setExchangeNotes] = useState("");
   const [exchangeSubmitting, setExchangeSubmitting] = useState(false);
+  const [exchangeSuccess, setExchangeSuccess] = useState("");
   const [exchangeLabelTarget, setExchangeLabelTarget] = useState<{ exchange: AdminOrderExchange; direction: "return" | "replacement" } | null>(null);
   const [exchangeLabelQuotes, setExchangeLabelQuotes] = useState<LogisticsCarrierQuote[]>([]);
   const [exchangeLabelQuoteId, setExchangeLabelQuoteId] = useState("");
@@ -499,12 +501,15 @@ export default function OrderDetailPage() {
 
   const loadExchanges = async () => {
     if (!id) return;
+    const requestId = ++exchangeLoadRequestId.current;
     const result = await getAdminOrderExchanges(id);
-    setExchanges(result.exchanges);
+    // Une réponse antérieure peut arriver après la création d’un échange et ne
+    // doit jamais effacer le dossier tout juste confirmé par le backend.
+    if (requestId === exchangeLoadRequestId.current) setExchanges(result.exchanges);
   };
 
   const refreshExchangeData = async () => {
-    await Promise.all([loadOrder(), loadExchanges()]);
+    await Promise.all([loadOrder(false), loadExchanges()]);
   };
 
   const openExchangePanel = () => {
@@ -518,21 +523,32 @@ export default function OrderDetailPage() {
     setExchangeReplacementVariant(null);
     setExchangeNotes("");
     setExchangeError("");
+    setExchangeSuccess("");
     setShowExchangePanel(true);
   };
 
   const searchExchangeReplacement = async (query: string) => {
     setExchangeReplacementSearch(query);
+    setExchangeError("");
     if (query.trim().length < 2) {
       setExchangeReplacementResults([]);
       return;
     }
     try {
       const result = await getAdminProducts({ search: query.trim(), limit: 8, includeVariants: true });
-      setExchangeReplacementResults(result.products);
+      setExchangeReplacementResults(result.products.filter((product) => product.status === "active"));
     } catch (error) {
       setExchangeError(error instanceof Error ? error.message : "Recherche produit impossible.");
     }
+  };
+
+  const selectExchangeReplacement = (product: Product) => {
+    setExchangeReplacementProduct(product);
+    setExchangeReplacementVariant(null);
+    setExchangeReplacementResults([]);
+    // La valeur rend le choix visible dans le champ, y compris sur un petit écran.
+    setExchangeReplacementSearch(product.name);
+    setExchangeError("");
   };
 
   const submitExchange = async () => {
@@ -547,15 +563,20 @@ export default function OrderDetailPage() {
     setExchangeSubmitting(true);
     setExchangeError("");
     try {
-      await createAdminOrderExchange(order.id, {
+      const { exchange } = await createAdminOrderExchange(order.id, {
         returnedOrderItemId: exchangeReturnedItemId,
         quantity: Number.parseInt(exchangeQuantity, 10) || 0,
         replacementProductId: exchangeReplacementProduct.id,
         replacementVariantId: exchangeReplacementVariant?.id || null,
         notes: exchangeNotes || null,
       });
+      // La réponse de création contient déjà le dossier complet : l’échange est
+      // donc immédiatement visible, même si la requête d’actualisation suivante
+      // est momentanément indisponible.
+      setExchanges((current) => [exchange, ...current.filter((item) => item.id !== exchange.id)]);
+      setExchangeSuccess(`Échange créé : ${exchange.replacementName} est réservé. ${exchange.differenceAmount > 0 ? `Complément à encaisser après réception : ${formatPrice(exchange.differenceAmount, exchange.currency)}.` : exchange.differenceAmount < 0 ? `Montant à rembourser après réception : ${formatPrice(Math.abs(exchange.differenceAmount), exchange.currency)}.` : "Aucune différence à régler."}`);
       setShowExchangePanel(false);
-      await refreshExchangeData();
+      void refreshExchangeData().catch((error) => console.error("Actualisation de l’échange impossible après création :", error));
     } catch (error) {
       setExchangeError(error instanceof Error ? error.message : "Création de l’échange impossible.");
     } finally {
@@ -614,8 +635,13 @@ export default function OrderDetailPage() {
     setExchangeLoading(true);
     setExchangeError("");
     try {
-      await action();
-      await refreshExchangeData();
+      const result = await action() as { exchange?: AdminOrderExchange };
+      if (result?.exchange) {
+        setExchanges((current) => current.map((item) => item.id === result.exchange?.id ? result.exchange : item));
+      }
+      // L’action est déjà confirmée par le backend. Une actualisation en arrière-plan
+      // ne doit pas faire croire qu’elle a échoué si le réseau est instable ensuite.
+      void refreshExchangeData().catch((error) => console.error("Actualisation de l’échange impossible après action :", error));
     } catch (error) {
       setExchangeError(error instanceof Error ? error.message : "Action d’échange impossible.");
     } finally {
@@ -623,7 +649,7 @@ export default function OrderDetailPage() {
     }
   };
 
-  const loadOrder = async () => {
+  const loadOrder = async (withExchanges = true) => {
     if (!id) return;
     setLoading(true);
     try {
@@ -632,7 +658,9 @@ export default function OrderDetailPage() {
       setShipment((data.shipment as ShipmentRecord | null) || null);
       setNotes(data.notes || "");
       setEditForm(buildEditForm(data));
-      getAdminOrderExchanges(data.id).then((result) => setExchanges(result.exchanges)).catch(() => setExchanges([]));
+      if (withExchanges) {
+        void loadExchanges().catch((error) => console.error("Chargement des échanges impossible :", error));
+      }
       // Charger les emails secondaires du client si disponible
       if (data.customerId) {
         getCustomerExtraEmails(data.customerId)
@@ -1649,6 +1677,44 @@ export default function OrderDetailPage() {
       return lines.map((line, index) => index === lines.length - 1 ? { ...line, amount: remaining.toFixed(2) } : line);
     });
   };
+  const exchangeReturnedItem = order.items.find((item) => item.id === exchangeReturnedItemId) || null;
+  const exchangeQuantityNumber = Number.parseInt(exchangeQuantity, 10);
+  const exchangeReplacementRequiresVariant = Boolean((exchangeReplacementProduct?.variants?.length || 0) > 0);
+  const exchangeReplacementHasAvailableVariant = !exchangeReplacementRequiresVariant || Boolean(
+    exchangeReplacementProduct?.variants?.some((variant) => variant.inStock && variant.stock >= exchangeQuantityNumber)
+  );
+  const exchangeReplacementHasStock = exchangeReplacementVariant
+    ? exchangeReplacementVariant.inStock && exchangeReplacementVariant.stock >= exchangeQuantityNumber
+    : Boolean(exchangeReplacementProduct?.inStock && exchangeReplacementProduct.stockCount >= exchangeQuantityNumber);
+  const exchangeSelectionIsComplete = Boolean(
+    exchangeReturnedItem
+    && exchangeReplacementProduct
+    && Number.isInteger(exchangeQuantityNumber)
+    && exchangeQuantityNumber > 0
+    && exchangeQuantityNumber <= exchangeReturnedItem.quantity
+    && (!exchangeReplacementRequiresVariant || exchangeReplacementVariant)
+    && exchangeReplacementHasStock
+  );
+  const exchangePreview = exchangeSelectionIsComplete && exchangeReturnedItem && exchangeReplacementProduct
+    ? (() => {
+        const money = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+        const quantity = exchangeQuantityNumber;
+        const allocatedReturnDiscount = money(((exchangeReturnedItem.discountAmount || 0) * quantity) / exchangeReturnedItem.quantity);
+        const returnValue = money(exchangeReturnedItem.price * quantity - allocatedReturnDiscount);
+        const publicReplacementUnitPrice = exchangeReplacementVariant?.price ?? exchangeReplacementProduct.price;
+        const replacementUnitPrice = order.isB2B
+          ? money(exchangeReplacementVariant?.priceProEur ?? exchangeReplacementProduct.priceProEur ?? publicReplacementUnitPrice / (1 + (order.vatRate ?? 20) / 100))
+          : money(publicReplacementUnitPrice);
+        const replacementValue = money(replacementUnitPrice * quantity);
+        return {
+          returnedName: `${exchangeReturnedItem.name}${exchangeReturnedItem.variantLabel ? ` — ${exchangeReturnedItem.variantLabel}` : ""}`,
+          replacementName: `${exchangeReplacementProduct.name}${exchangeReplacementVariant ? ` — ${exchangeReplacementVariant.name}` : ""}`,
+          returnValue,
+          replacementValue,
+          differenceAmount: money(replacementValue - returnValue),
+        };
+      })()
+    : null;
   // Une vente POS payée est remise immédiatement : son échange se déroule en boutique, sans étiquette.
   const isExchangeEligible = ["shipped", "delivered"].includes(order.status) || (isPosOrder && ["paid", "processing"].includes(order.status));
   const isInStoreExchange = isPosOrder && isExchangeEligible;
@@ -1771,6 +1837,7 @@ export default function OrderDetailPage() {
                   )}
                 </div>
                 {exchangeError && <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{exchangeError}</div>}
+                {exchangeSuccess && <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{exchangeSuccess}</div>}
                 {exchanges.length === 0 ? (
                   <div className="rounded-xl bg-violet-50 px-4 py-3 text-sm text-violet-800">Aucun échange ouvert sur cette commande.</div>
                 ) : (
@@ -1806,8 +1873,10 @@ export default function OrderDetailPage() {
                             {isInStoreExchange && exchange.status === "initiated" && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReturnReceived(exchange.id))} className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-800">Confirmer retour reçu et inspecté en boutique</button>}
                             {!isInStoreExchange && (["initiated", "return_in_transit"].includes(exchange.status) && !returnShipment) && <button disabled={exchangeLoading} onClick={() => openExchangeLabelDrawer(exchange, "return")} className="rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-xs font-semibold text-violet-800 hover:bg-violet-50">Créer l’étiquette retour</button>}
                             {!isInStoreExchange && exchange.status === "return_in_transit" && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReturnReceived(exchange.id))} className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-800">Confirmer retour reçu et inspecté</button>}
-                            {exchange.status === "settlement_pending" && <>
-                              <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => settleAdminExchange(exchange.id, "real"))} className="rounded-lg bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800">{exchange.differenceAmount >= 0 ? "Règlement réel" : "Remboursement réel"}</button>
+                            {exchange.status === "settlement_pending" && exchange.differenceAmount > 0 && exchange.settlementStatus === "pending" ? (
+                              <span className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800">Lien de règlement de {formatPrice(exchange.differenceAmount, exchange.currency)} envoyé au client — en attente de confirmation</span>
+                            ) : exchange.status === "settlement_pending" && <>
+                              <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => settleAdminExchange(exchange.id, "real"))} className="rounded-lg bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800">{exchange.differenceAmount > 0 ? `Envoyer le lien de règlement (${formatPrice(exchange.differenceAmount, exchange.currency)})` : `Rembourser le client (${formatPrice(Math.abs(exchange.differenceAmount), exchange.currency)})`}</button>
                               <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => settleAdminExchange(exchange.id, "internal"))} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50">Ajustement interne</button>
                               <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => settleAdminExchange(exchange.id, "gift"))} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50">Geste commercial</button>
                             </>}
@@ -2558,15 +2627,73 @@ export default function OrderDetailPage() {
               </div>
               <div className="rounded-xl border border-gray-200 p-4">
                 <label className="block text-sm font-medium text-gray-800">Article de remplacement
-                  <input value={exchangeReplacementSearch} onChange={(event) => searchExchangeReplacement(event.target.value)} placeholder="Rechercher par nom, marque ou référence" className="mt-1.5 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm" />
+                  <input
+                    value={exchangeReplacementSearch}
+                    readOnly={Boolean(exchangeReplacementProduct)}
+                    onChange={(event) => searchExchangeReplacement(event.target.value)}
+                    placeholder="Rechercher par nom, marque ou référence"
+                    className="mt-1.5 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm read-only:bg-gray-50"
+                  />
                 </label>
-                {exchangeReplacementResults.length > 0 && !exchangeReplacementProduct && <div className="mt-3 max-h-52 overflow-y-auto rounded-xl border border-gray-200 divide-y divide-gray-100">{exchangeReplacementResults.map((product) => <button key={product.id} onClick={() => { setExchangeReplacementProduct(product); setExchangeReplacementVariant(null); setExchangeReplacementResults([]); }} className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-gray-50">{getVariantImage(product) && <img src={getVariantImage(product)} alt="" className="h-9 w-9 shrink-0 rounded-md border border-gray-100 object-cover" />}<span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{product.name}</span><span className="text-xs text-gray-500">{formatPrice(order.isB2B ? (product.priceProEur ?? product.price / 1.2) : product.price, order.currency)}</span></button>)}</div>}
-                {exchangeReplacementProduct && <div className="mt-3 rounded-xl bg-violet-50 p-3"><div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-3">{getVariantImage(exchangeReplacementProduct, exchangeReplacementVariant) && <img src={getVariantImage(exchangeReplacementProduct, exchangeReplacementVariant)} alt="" className="h-12 w-12 shrink-0 rounded-lg border border-violet-200 object-cover" />}<p className="truncate text-sm font-semibold text-violet-950">{exchangeReplacementProduct.name}</p></div><button onClick={() => { setExchangeReplacementProduct(null); setExchangeReplacementVariant(null); }} className="text-xs font-semibold text-violet-700">Changer</button></div>{(exchangeReplacementProduct.variants?.length || 0) > 0 && <label className="mt-3 block text-xs font-semibold text-violet-900">Variante obligatoire<select value={exchangeReplacementVariant?.id || ""} onChange={(event) => setExchangeReplacementVariant(exchangeReplacementProduct.variants?.find((variant) => variant.id === event.target.value) || null)} className="mt-1 w-full rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm"><option value="">Choisir une variante disponible</option>{exchangeReplacementProduct.variants?.filter((variant) => variant.inStock && variant.stock > 0).map((variant) => <option key={variant.id} value={variant.id}>{variant.name} · {formatPrice(order.isB2B ? (variant.priceProEur ?? (variant.price ?? 0) / 1.2) : (variant.price ?? 0), order.currency)} · stock {variant.stock}</option>)}</select></label>}</div>}
+                {exchangeReplacementResults.length > 0 && !exchangeReplacementProduct && (
+                  <div className="mt-3 max-h-52 divide-y divide-gray-100 overflow-y-auto rounded-xl border border-gray-200">
+                    {exchangeReplacementResults.filter((product) => product.status === "active").map((product) => (
+                      <button key={product.id} type="button" onClick={() => selectExchangeReplacement(product)} className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-gray-50">
+                        {getVariantImage(product) && <img src={getVariantImage(product)} alt="" className="h-9 w-9 shrink-0 rounded-md border border-gray-100 object-cover" />}
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{product.name}</span>
+                        <span className="text-xs text-gray-500">{formatPrice(order.isB2B ? (product.priceProEur ?? product.price / (1 + (order.vatRate ?? 20) / 100)) : product.price, order.currency)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {exchangeReplacementSearch.trim().length >= 2 && exchangeReplacementResults.length === 0 && !exchangeReplacementProduct && (
+                  <p className="mt-3 text-xs text-gray-500">Aucun article de remplacement disponible pour cette recherche.</p>
+                )}
+                {exchangeReplacementProduct && (
+                  <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 p-3" aria-live="polite">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        {getVariantImage(exchangeReplacementProduct, exchangeReplacementVariant) && <img src={getVariantImage(exchangeReplacementProduct, exchangeReplacementVariant)} alt="" className="h-12 w-12 shrink-0 rounded-lg border border-violet-200 object-cover" />}
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-violet-950">{exchangeReplacementProduct.name}</p>
+                          <p className="mt-0.5 text-xs text-violet-800">Article de remplacement sélectionné</p>
+                        </div>
+                      </div>
+                      <button type="button" onClick={() => { setExchangeReplacementProduct(null); setExchangeReplacementVariant(null); setExchangeReplacementSearch(""); setExchangeReplacementResults([]); }} className="text-xs font-semibold text-violet-700">Changer</button>
+                    </div>
+                    {exchangeReplacementRequiresVariant && (
+                      <label className="mt-3 block text-xs font-semibold text-violet-900">Variante obligatoire
+                        <select value={exchangeReplacementVariant?.id || ""} onChange={(event) => { setExchangeReplacementVariant(exchangeReplacementProduct.variants?.find((variant) => variant.id === event.target.value) || null); setExchangeError(""); }} className="mt-1 w-full rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm">
+                          <option value="">Choisir une variante disponible</option>
+                          {exchangeReplacementProduct.variants?.filter((variant) => variant.inStock && variant.stock >= Math.max(1, exchangeQuantityNumber || 1)).map((variant) => <option key={variant.id} value={variant.id}>{variant.name} · {formatPrice(order.isB2B ? (variant.priceProEur ?? (variant.price ?? 0) / (1 + (order.vatRate ?? 20) / 100)) : (variant.price ?? 0), order.currency)} · stock {variant.stock}</option>)}
+                        </select>
+                      </label>
+                    )}
+                    {!exchangeReplacementHasAvailableVariant && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">Aucune variante ne dispose du stock requis pour cette quantité.</p>}
+                  </div>
+                )}
               </div>
+              {exchangePreview && (
+                <section className={`rounded-xl border p-4 ${exchangePreview.differenceAmount > 0 ? "border-amber-200 bg-amber-50" : exchangePreview.differenceAmount < 0 ? "border-emerald-200 bg-emerald-50" : "border-gray-200 bg-gray-50"}`} aria-live="polite">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-950">Différence d’échange</h3>
+                      <p className="mt-1 text-xs text-gray-600">Calculée sur le prix réellement facturé de l’article retourné, remise de ligne comprise.</p>
+                    </div>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 ring-1 ring-black/5">{order.isB2B ? "Montants HT" : "Montants TTC"}</span>
+                  </div>
+                  <dl className="mt-3 space-y-2 text-sm">
+                    <div className="flex justify-between gap-4"><dt className="min-w-0 text-gray-600">Retour — {exchangePreview.returnedName} × {exchangeQuantityNumber}</dt><dd className="whitespace-nowrap font-medium text-gray-950">-{formatPrice(exchangePreview.returnValue, order.currency)}</dd></div>
+                    <div className="flex justify-between gap-4"><dt className="min-w-0 text-gray-600">Remplacement — {exchangePreview.replacementName} × {exchangeQuantityNumber}</dt><dd className="whitespace-nowrap font-medium text-gray-950">+{formatPrice(exchangePreview.replacementValue, order.currency)}</dd></div>
+                    <div className="flex justify-between gap-4 border-t border-black/10 pt-2"><dt className="font-semibold text-gray-950">{exchangePreview.differenceAmount > 0 ? "À encaisser auprès du client" : exchangePreview.differenceAmount < 0 ? "À rembourser au client" : "Aucun règlement nécessaire"}</dt><dd className={`whitespace-nowrap font-bold ${exchangePreview.differenceAmount > 0 ? "text-amber-800" : exchangePreview.differenceAmount < 0 ? "text-emerald-800" : "text-gray-800"}`}>{exchangePreview.differenceAmount > 0 ? "+" : exchangePreview.differenceAmount < 0 ? "-" : ""}{formatPrice(Math.abs(exchangePreview.differenceAmount), order.currency)}</dd></div>
+                  </dl>
+                  {exchangePreview.differenceAmount > 0 && <p className="mt-3 text-xs text-amber-900">Après réception et inspection du retour, un bouton permettra d’envoyer ce lien de règlement au client. Le renvoi reste bloqué jusqu’à confirmation du paiement.</p>}
+                </section>
+              )}
               <label className="block text-sm font-medium text-gray-800">Note interne (facultative)<textarea value={exchangeNotes} onChange={(event) => setExchangeNotes(event.target.value)} rows={3} className="mt-1.5 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm" placeholder="Motif, état du produit, accord client…" /></label>
               <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">À la création, l’article de remplacement est <strong>réservé</strong>. L’article retourné ne sera remis en stock qu’après réception et inspection physique.</div>
             </div>
-            <div className="flex justify-end gap-2 border-t border-gray-200 px-6 py-4"><button onClick={() => setShowExchangePanel(false)} className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700">Annuler</button><button disabled={exchangeSubmitting} onClick={submitExchange} className="inline-flex items-center gap-2 rounded-xl bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-800 disabled:opacity-50">{exchangeSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}Créer l’échange</button></div>
+            <div className="flex justify-end gap-2 border-t border-gray-200 px-6 py-4"><button onClick={() => setShowExchangePanel(false)} className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700">Annuler</button><button disabled={exchangeSubmitting || !exchangeSelectionIsComplete} onClick={submitExchange} className="inline-flex items-center gap-2 rounded-xl bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50">{exchangeSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}Créer l’échange</button></div>
           </div>
         </div>
       )}

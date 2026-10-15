@@ -333,6 +333,12 @@ orderExchangesRouter.post("/:exchangeId/settlement", requireAdmin, async (req: A
     }
 
     if (exchange.differenceAmount > 0) {
+      // Un lien déjà actif est réutilisé : un double clic ou une requête répétée
+      // ne doit ni créer un second encaissement ni envoyer un second email.
+      if (exchange.settlementPaymentUrl) {
+        res.json({ success: true, exchange, paymentUrl: exchange.settlementPaymentUrl, alreadySent: true });
+        return;
+      }
       // Le complément est une nouvelle opération sécurisée, indépendante du moyen de paiement initial.
       const frontendUrl = process.env.FRONTEND_URL || "https://barberparadise.fr";
       const backendUrl = process.env.BACKEND_URL || "https://api.barberparadise.fr";

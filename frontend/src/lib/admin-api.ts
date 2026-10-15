@@ -529,7 +529,7 @@ export function markAdminExchangeReturnReceived(exchangeId: string) {
 }
 
 export function settleAdminExchange(exchangeId: string, mode: "real" | "internal" | "gift") {
-  return adminFetch<{ success: boolean; exchange: AdminOrderExchange; paymentUrl?: string }>(`/api/admin/exchanges/${exchangeId}/settlement`, {
+  return adminFetch<{ success: boolean; exchange: AdminOrderExchange; paymentUrl?: string; alreadySent?: boolean }>(`/api/admin/exchanges/${exchangeId}/settlement`, {
     method: "POST",
     body: JSON.stringify({ mode }),
   });

@@ -62,8 +62,25 @@ function testB2BFallbackPublicTtcToHt() {
   assert.equal(result.differenceAmount, -10);
 }
 
+function testHigherPricedReplacementRequiresExactComplement() {
+  const result = calculateOrderExchangeFinancials({
+    returnedUnitPrice: 259,
+    returnedLineDiscount: 0,
+    returnedLineQuantity: 1,
+    exchangeQuantity: 1,
+    replacementPublicUnitPrice: 299,
+    isB2B: false,
+    vatRate: 20,
+  });
+
+  assert.equal(result.returnValue, 259);
+  assert.equal(result.replacementValue, 299);
+  assert.equal(result.differenceAmount, 40);
+}
+
 testB2CWithLineDiscount();
 testB2BUsesProfessionalHtPrice();
 testB2BFallbackPublicTtcToHt();
+testHigherPricedReplacementRequiresExactComplement();
 testPosExchangeEligibility();
 console.log("✓ Calculs financiers et éligibilité POS d’échange validés");
