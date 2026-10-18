@@ -71,6 +71,7 @@ async function loadInvoiceOrder(orderId: string) {
     where: { id: orderId },
     include: {
       items: true,
+      exchanges: true,
       customer: {
         include: {
           proAccount: true,
@@ -80,6 +81,67 @@ async function loadInvoiceOrder(orderId: string) {
       shippingAddress: true,
     },
   });
+}
+
+const FINANCIAL_EXCHANGE_STATUSES = new Set(["not_required", "paid", "refunded", "internal", "gift"]);
+const PROJECTED_EXCHANGE_STATUSES = new Set(["ready_to_ship", "replacement_shipped", "completed"]);
+
+type ProjectedInvoiceItem = {
+  id: string;
+  name: string;
+  variantLabel: string | null;
+  quantity: number;
+  price: number;
+  discountAmount: number;
+};
+
+function finalizedExchanges(order: LoadedOrder) {
+  return order.exchanges.filter((exchange) =>
+    PROJECTED_EXCHANGE_STATUSES.has(exchange.status)
+    && FINANCIAL_EXCHANGE_STATUSES.has(exchange.settlementStatus),
+  );
+}
+
+/** Projects completed exchange snapshots without deleting the original audit rows. */
+function buildProjectedInvoiceItems(order: LoadedOrder): ProjectedInvoiceItem[] {
+  const exchangedByItem = new Map<string, { quantity: number; discountAmount: number }>();
+  const finalized = finalizedExchanges(order);
+  for (const exchange of finalized) {
+    const existing = exchangedByItem.get(exchange.returnedOrderItemId) || { quantity: 0, discountAmount: 0 };
+    existing.quantity += exchange.returnQuantity;
+    existing.discountAmount = money(existing.discountAmount + exchange.returnDiscountAmount);
+    exchangedByItem.set(exchange.returnedOrderItemId, existing);
+  }
+
+  const originalRemainder = order.items.flatMap((item): ProjectedInvoiceItem[] => {
+    const exchanged = exchangedByItem.get(item.id);
+    const quantity = item.quantity - (exchanged?.quantity || 0);
+    if (quantity <= 0) return [];
+    return [{
+      id: item.id,
+      name: item.name,
+      variantLabel: item.variantLabel,
+      quantity,
+      price: item.price,
+      discountAmount: money(Math.max(0, item.discountAmount - (exchanged?.discountAmount || 0))),
+    }];
+  });
+
+  return [
+    ...originalRemainder,
+    ...finalized.map((exchange): ProjectedInvoiceItem => ({
+      id: `exchange-${exchange.id}`,
+      name: exchange.replacementName,
+      variantLabel: exchange.replacementVariantLabel,
+      quantity: exchange.replacementQuantity,
+      price: exchange.replacementUnitPrice,
+      discountAmount: 0,
+    })),
+  ];
+}
+
+function exchangeNetAdjustment(order: LoadedOrder): number {
+  return money(finalizedExchanges(order).reduce((sum, exchange) => sum + exchange.differenceAmount, 0));
 }
 
 /**
@@ -168,14 +230,17 @@ async function getClientIdentity(order: LoadedOrder) {
 }
 
 function buildInvoiceLines(order: LoadedOrder): InvoiceLine[] {
-  const lines = order.items.map((item: { name: string; variantLabel?: string | null; quantity: number; price: number; discountAmount?: number | null }) => {
-    // item.price est le prix unitaire HT (backend stocke HT en B2B).
-    // discountAmount est la remise totale sur la ligne (HT pour B2B).
+  const isPosSale = order.channel === "pos";
+  const lines = buildProjectedInvoiceItems(order).map((item) => {
+    // item.price est HT pour une commande web B2B, mais TTC pour les ventes POS.
+    // discountAmount est la remise totale sur la ligne, dans la même unité que le prix.
     // On calcule le prix unitaire HT net après remise pour l'afficher sur la facture.
     const grossLineHT = item.price * item.quantity;
     const discountHT = Math.max(0, Number(item.discountAmount) || 0);
     const netLineHT = Math.max(0, grossLineHT - discountHT);
-    const unitHTNet = item.quantity > 0 ? money(netLineHT / item.quantity) : item.price;
+    const unitHTNet = item.quantity > 0
+      ? money((isPosSale ? netLineHT / (1 + order.vatRate / 100) : netLineHT) / item.quantity)
+      : item.price;
     return {
       designation: item.variantLabel ? `${item.name} — ${item.variantLabel}` : item.name,
       quantity: item.quantity,
@@ -292,6 +357,15 @@ async function generateInvoicePdf(order: LoadedOrder, invoiceNumber: string): Pr
   const client = await getClientIdentity(order);
   const lines = buildInvoiceLines(order);
   const issuedAt = new Date();
+  const isPosSale = order.channel === "pos";
+  const adjustment = exchangeNetAdjustment(order);
+  const totalTTC = isPosSale
+    ? money((order.totalTTC || order.total) + adjustment)
+    : money((order.totalTTC || order.total) + adjustment * (1 + order.vatRate / 100));
+  const totalHT = isPosSale
+    ? money(totalTTC / (1 + order.vatRate / 100))
+    : money(order.totalHT + adjustment);
+  const vatAmount = money(totalTTC - totalHT);
 
   // ── En-tête ──────────────────────────────────────────────────────────────
   const firstPage = currentPage(ctx);
@@ -427,10 +501,10 @@ async function generateInvoicePdf(order: LoadedOrder, invoiceNumber: string): Pr
   const paymentFeeVatAmount = order.paymentFeeTTC > 0
     ? money(order.paymentFeeTTC - money(order.paymentFeeTTC / (1 + B2B_PAYMENT_FEE_VAT_RATE / 100)))
     : 0;
-  const orderVatAmountExcludingPaymentFee = money(Math.max(0, order.vatAmount - paymentFeeVatAmount));
+  const orderVatAmountExcludingPaymentFee = money(Math.max(0, vatAmount - paymentFeeVatAmount));
 
   drawText(ctx, "Montant HT", totalsX, 10, bold);
-  currentPage(ctx).drawText(euro(order.totalHT), { x: totalsValX, y: ctx.y, size: 10, font: regular, color: accent });
+  currentPage(ctx).drawText(euro(totalHT), { x: totalsValX, y: ctx.y, size: 10, font: regular, color: accent });
   ctx.y -= 18;
 
   drawText(ctx, `TVA (${order.vatRate}%)`, totalsX, 10, bold);
@@ -456,7 +530,7 @@ async function generateInvoicePdf(order: LoadedOrder, invoiceNumber: string): Pr
   // Ligne de total
   currentPage(ctx).drawRectangle({ x: totalsX - 5, y: ctx.y - 6, width: PAGE_WIDTH - MARGIN - totalsX + 5, height: 22, color: rgb(0.06, 0.06, 0.06) });
   currentPage(ctx).drawText("Montant TTC", { x: totalsX, y: ctx.y + 2, size: 11, font: bold, color: rgb(1, 1, 1) });
-  currentPage(ctx).drawText(euro(order.totalTTC || order.total), { x: totalsValX, y: ctx.y + 2, size: 11, font: bold, color: rgb(1, 1, 1) });
+  currentPage(ctx).drawText(euro(totalTTC), { x: totalsValX, y: ctx.y + 2, size: 11, font: bold, color: rgb(1, 1, 1) });
   ctx.y -= 30;
 
   // ── Mentions légales ──────────────────────────────────────────────────────
@@ -538,16 +612,19 @@ async function sendInvoiceEmail(order: LoadedOrder, invoiceNumber: string, invoi
 
 export async function ensureProInvoiceForOrder(
   orderId: string,
-  options?: { sendInvoiceEmail?: boolean }
+  options?: { sendInvoiceEmail?: boolean; force?: boolean }
 ): Promise<{ invoiceNumber: string; invoiceUrl: string; pdfBuffer?: Buffer } | null> {
   const shouldSendEmail = options?.sendInvoiceEmail !== false;
   const order = await loadInvoiceOrder(orderId);
   if (!order || !order.isB2B) return null;
-  if (order.proInvoiceNumber && order.proInvoiceUrl) {
+  if (!options?.force && order.proInvoiceNumber && order.proInvoiceUrl) {
     return { invoiceNumber: order.proInvoiceNumber, invoiceUrl: order.proInvoiceUrl };
   }
 
-  const invoiceNumber = order.proInvoiceNumber || await nextInvoiceNumber(new Date().getFullYear());
+  // Do not clear the current references before the new PDF upload succeeded.
+  const invoiceNumber = options?.force
+    ? await nextInvoiceNumber(new Date().getFullYear())
+    : order.proInvoiceNumber || await nextInvoiceNumber(new Date().getFullYear());
   const pdfBuffer = await generateInvoicePdf(order, invoiceNumber);
   const invoiceUrl = await uploadInvoicePdf(pdfBuffer, invoiceNumber);
 

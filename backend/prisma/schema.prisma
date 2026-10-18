@@ -465,6 +465,14 @@ model OrderExchange {
   settlementPaymentId      String?   @unique
   settlementPaymentUrl     String?
   settlementRefundedAmount Float     @default(0)
+  // Snapshot de destination choisi au moment de l'échange. Ne dépend jamais
+  // d'une adresse client qui pourrait ensuite être modifiée.
+  fulfillmentMode          String    @default("shipment") // in_store, shipment
+  deliveryMode             String?   // home, relay (shipment uniquement)
+  shippingAddressSnapshot  Json?
+  relayPointSnapshot       Json?
+  // Preuve métier immuable d'un complément encaissé hors lien de paiement.
+  settlementManualPayment  Json?
   replacementStockReserved Boolean   @default(false)
   replacementStockReleased Boolean   @default(false)
   returnedStockRestored    Boolean   @default(false)
@@ -509,6 +517,7 @@ model OrderExchangeShipment {
   serviceCode         String?
   deliveryMode        String?
   relayPointId        String?
+  relayPointSnapshot  Json?
   labelPriceCents     Int?
   labelCurrency       String?   @default("EUR")
   insuranceValueCents Int?

@@ -110,6 +110,7 @@ async function loadInvoiceOrder(orderId: string) {
     where: { id: orderId },
     include: {
       items: true,
+      exchanges: true,
       customer: {
         include: {
           addresses: { orderBy: { isDefault: "desc" } },
@@ -118,6 +119,70 @@ async function loadInvoiceOrder(orderId: string) {
       shippingAddress: true,
     },
   });
+}
+
+const FINANCIAL_EXCHANGE_STATUSES = new Set(["not_required", "paid", "refunded", "internal", "gift"]);
+const PROJECTED_EXCHANGE_STATUSES = new Set(["ready_to_ship", "replacement_shipped", "completed"]);
+
+type ProjectedInvoiceItem = {
+  id: string;
+  name: string;
+  variantLabel: string | null;
+  quantity: number;
+  price: number;
+  discountAmount: number;
+};
+
+function finalizedExchanges(order: LoadedOrder) {
+  return order.exchanges.filter((exchange) =>
+    PROJECTED_EXCHANGE_STATUSES.has(exchange.status)
+    && FINANCIAL_EXCHANGE_STATUSES.has(exchange.settlementStatus),
+  );
+}
+
+/**
+ * Original order rows remain untouched for audit and foreign-key integrity.
+ * The invoice applies only a read-time projection for finalized exchanges.
+ */
+function buildProjectedInvoiceItems(order: LoadedOrder): ProjectedInvoiceItem[] {
+  const exchangedByItem = new Map<string, { quantity: number; discountAmount: number }>();
+  const finalized = finalizedExchanges(order);
+  for (const exchange of finalized) {
+    const existing = exchangedByItem.get(exchange.returnedOrderItemId) || { quantity: 0, discountAmount: 0 };
+    existing.quantity += exchange.returnQuantity;
+    existing.discountAmount = money(existing.discountAmount + exchange.returnDiscountAmount);
+    exchangedByItem.set(exchange.returnedOrderItemId, existing);
+  }
+
+  const originalRemainder = order.items.flatMap((item): ProjectedInvoiceItem[] => {
+    const exchanged = exchangedByItem.get(item.id);
+    const quantity = item.quantity - (exchanged?.quantity || 0);
+    if (quantity <= 0) return [];
+    return [{
+      id: item.id,
+      name: item.name,
+      variantLabel: item.variantLabel,
+      quantity,
+      price: item.price,
+      discountAmount: money(Math.max(0, item.discountAmount - (exchanged?.discountAmount || 0))),
+    }];
+  });
+
+  return [
+    ...originalRemainder,
+    ...finalized.map((exchange): ProjectedInvoiceItem => ({
+      id: `exchange-${exchange.id}`,
+      name: exchange.replacementName,
+      variantLabel: exchange.replacementVariantLabel,
+      quantity: exchange.replacementQuantity,
+      price: exchange.replacementUnitPrice,
+      discountAmount: 0,
+    })),
+  ];
+}
+
+function exchangeTtcAdjustment(order: LoadedOrder): number {
+  return money(finalizedExchanges(order).reduce((sum, exchange) => sum + exchange.differenceAmount, 0));
 }
 
 async function loadCustomerByEmail(email: string) {
@@ -193,7 +258,7 @@ async function getClientIdentity(order: LoadedOrder) {
 
 function buildInvoiceLines(order: LoadedOrder): InvoiceLine[] {
   const vatRate = order.vatRate || 20;
-  const lines = order.items.map((item) => ({
+  const lines = buildProjectedInvoiceItems(order).map((item) => ({
     designation: item.variantLabel ? `${item.name} — ${item.variantLabel}` : item.name,
     quantity: item.quantity,
     unitTTC: money(item.price),
@@ -258,9 +323,9 @@ async function generateInvoicePdf(order: LoadedOrder, invoiceNumber: string): Pr
   const lines = buildInvoiceLines(order);
   const issuedAt = new Date();
   const vatRate = order.vatRate || 20;
-  const totalTTC = money(order.totalTTC || order.total);
-  const totalHT = money(order.totalHT || totalTTC / (1 + vatRate / 100));
-  const vatAmount = money(order.vatAmount || totalTTC - totalHT);
+  const totalTTC = money((order.totalTTC || order.total) + exchangeTtcAdjustment(order));
+  const totalHT = money(totalTTC / (1 + vatRate / 100));
+  const vatAmount = money(totalTTC - totalHT);
   const subtotalHT = money(order.shipping > 0 ? totalHT - order.shipping / (1 + vatRate / 100) : totalHT);
 
   // ── En-tête ──────────────────────────────────────────────────────────────
@@ -441,14 +506,18 @@ async function uploadInvoicePdf(pdfBuffer: Buffer, invoiceNumber: string): Promi
   });
 }
 
-export async function ensureB2CInvoiceForOrder(orderId: string): Promise<B2CInvoiceResult | null> {
+export async function ensureB2CInvoiceForOrder(orderId: string, options?: { force?: boolean }): Promise<B2CInvoiceResult | null> {
   const order = await loadInvoiceOrder(orderId);
   if (!order || order.isB2B) return null;
-  if (order.invoiceNumber && order.invoiceUrl) {
+  if (!options?.force && order.invoiceNumber && order.invoiceUrl) {
     return { invoiceNumber: order.invoiceNumber, invoiceUrl: order.invoiceUrl };
   }
 
-  const invoiceNumber = order.invoiceNumber || await nextInvoiceNumber(new Date().getFullYear());
+  // The old document is preserved in storage until this new document has been
+  // uploaded successfully; only then do its references move to the new version.
+  const invoiceNumber = options?.force
+    ? await nextInvoiceNumber(new Date().getFullYear())
+    : order.invoiceNumber || await nextInvoiceNumber(new Date().getFullYear());
   const pdfBuffer = await generateInvoicePdf(order, invoiceNumber);
   const invoiceUrl = await uploadInvoicePdf(pdfBuffer, invoiceNumber);
 

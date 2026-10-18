@@ -8166,21 +8166,18 @@ adminRouter.post(
         return;
       }
 
-      // Si force=true, effacer TOUTES les références existantes (B2C et B2B)
-      // Nécessaire quand la commande a changé de type (ex. POS B2C → B2B via toggle)
+      // A forced regeneration now lets the invoice service issue a new document
+      // before changing database references. This keeps the existing invoice
+      // reachable if PDF rendering or upload fails midway through the operation.
       if (force) {
-        await prisma.order.update({
-          where: { id },
-          data: { invoiceNumber: null, invoiceUrl: null, proInvoiceNumber: null, proInvoiceUrl: null },
-        });
-        console.log(`[admin][generate-invoice] Régénération forcée (reset complet) — ${order.orderNumber} (${order.isB2B ? "B2B" : "B2C"}) par ${req.user?.email || "admin"}`);
+        console.log(`[admin][generate-invoice] Régénération forcée demandée — ${order.orderNumber} (${order.isB2B ? "B2B" : "B2C"}) par ${req.user?.email || "admin"}`);
       }
 
       let invoiceNumber: string | null = null;
       let invoiceUrl: string | null = null;
 
       if (order.isB2B) {
-        const result = await ensureProInvoiceForOrder(id, { sendInvoiceEmail: false });
+        const result = await ensureProInvoiceForOrder(id, { sendInvoiceEmail: false, force });
         if (!result) {
           res.status(400).json({ error: "Impossible de générer la facture B2B" });
           return;
@@ -8188,7 +8185,7 @@ adminRouter.post(
         invoiceNumber = result.invoiceNumber;
         invoiceUrl = result.invoiceUrl;
       } else {
-        const result = await ensureB2CInvoiceForOrder(id);
+        const result = await ensureB2CInvoiceForOrder(id, { force });
         if (!result) {
           res.status(400).json({ error: "Impossible de générer la facture B2C" });
           return;

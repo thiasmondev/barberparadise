@@ -1,5 +1,11 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../utils/prisma";
+import {
+  getManualPaymentMethodLabel,
+  isManualPaymentMethod,
+  type ManualPaymentMethod,
+} from "../utils/manualPaymentBreakdown";
+import { normalizeShippingAddressContact } from "../utils/shippingAddressNormalization";
 
 const EXCHANGE_ELIGIBLE_STATUSES = new Set(["processing", "shipped", "delivered"]);
 const ACTIVE_EXCHANGE_STATUSES = [
@@ -19,14 +25,166 @@ export type ExchangeInitiationInput = {
   quantity: number;
   replacementProductId: string;
   replacementVariantId?: string | null;
+  fulfillmentMode?: ExchangeFulfillmentMode | null;
+  deliveryMode?: ExchangeDeliveryMode | null;
+  shippingAddress?: ExchangeShippingAddressInput | null;
+  relayPoint?: ExchangeRelayPointInput | null;
   actorEmail?: string | null;
   notes?: string | null;
 };
 
-export type ExchangeSettlementMode = "real" | "internal" | "gift";
+export type ExchangeSettlementMode = "real" | "manual" | "internal" | "gift";
+export type ExchangeFulfillmentMode = "in_store" | "shipment";
+export type ExchangeDeliveryMode = "home" | "relay";
+
+export type ExchangeShippingAddressInput = {
+  firstName?: unknown;
+  lastName?: unknown;
+  address?: unknown;
+  extension?: unknown;
+  postalCode?: unknown;
+  city?: unknown;
+  country?: unknown;
+  phone?: unknown;
+};
+
+export type ExchangeRelayPointInput = {
+  id?: unknown;
+  relayPointId?: unknown;
+  name?: unknown;
+  relayPointName?: unknown;
+  address?: unknown;
+  relayPointAddress?: unknown;
+  postalCode?: unknown;
+  city?: unknown;
+  country?: unknown;
+};
+
+type ExchangeShippingAddressSnapshot = {
+  firstName: string;
+  lastName: string;
+  address: string;
+  extension: string;
+  postalCode: string;
+  city: string;
+  country: string;
+  phone: string;
+};
+
+type ExchangeRelayPointSnapshot = {
+  id: string;
+  name: string | null;
+  address: string | null;
+  postalCode: string | null;
+  city: string | null;
+  country: string | null;
+};
 
 function money(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function trimmedString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function sourceShippingAddressSnapshot(address: {
+  firstName: string;
+  lastName: string;
+  address: string;
+  extension: string | null;
+  postalCode: string;
+  city: string;
+  country: string;
+  phone: string | null;
+} | null): ExchangeShippingAddressSnapshot | null {
+  if (!address) return null;
+  return {
+    firstName: address.firstName,
+    lastName: address.lastName,
+    address: address.address,
+    extension: address.extension || "",
+    postalCode: address.postalCode,
+    city: address.city,
+    country: address.country || "France",
+    phone: address.phone || "",
+  };
+}
+
+/** Normalizes a selected shipment address into an immutable exchange snapshot. */
+export function normalizeExchangeShippingAddress(input: ExchangeShippingAddressInput | null | undefined): ExchangeShippingAddressSnapshot | null {
+  if (!input || typeof input !== "object") return null;
+  const normalized = normalizeShippingAddressContact({
+    firstName: trimmedString(input.firstName),
+    lastName: trimmedString(input.lastName),
+    address: trimmedString(input.address),
+    extension: trimmedString(input.extension),
+    postalCode: input.postalCode,
+    city: trimmedString(input.city),
+    country: trimmedString(input.country) || "France",
+    phone: input.phone,
+  });
+  const snapshot: ExchangeShippingAddressSnapshot = {
+    firstName: normalized.firstName,
+    lastName: normalized.lastName,
+    address: normalized.address,
+    extension: normalized.extension,
+    postalCode: normalized.postalCode,
+    city: normalized.city,
+    country: normalized.country,
+    phone: normalized.phone,
+  };
+  return snapshot.firstName && snapshot.lastName && snapshot.address && snapshot.postalCode && snapshot.city && snapshot.country
+    ? snapshot
+    : null;
+}
+
+/** Normalizes a selected relay without inventing a relay identifier. */
+export function normalizeExchangeRelayPoint(input: ExchangeRelayPointInput | null | undefined): ExchangeRelayPointSnapshot | null {
+  if (!input || typeof input !== "object") return null;
+  const id = trimmedString(input.id) || trimmedString(input.relayPointId);
+  if (!id) return null;
+  return {
+    id,
+    name: trimmedString(input.name) || trimmedString(input.relayPointName) || null,
+    address: trimmedString(input.address) || trimmedString(input.relayPointAddress) || null,
+    postalCode: trimmedString(input.postalCode) || null,
+    city: trimmedString(input.city) || null,
+    country: trimmedString(input.country) || null,
+  };
+}
+
+function resolveExchangeFulfillment(input: ExchangeInitiationInput, order: { channel: string; shippingAddress: {
+  firstName: string; lastName: string; address: string; extension: string | null; postalCode: string; city: string; country: string; phone: string | null;
+} | null }) {
+  const requestedMode = input.fulfillmentMode || (order.channel === "pos" ? "in_store" : "shipment");
+  if (requestedMode !== "in_store" && requestedMode !== "shipment") {
+    throw new Error("Mode de remise invalide. Choisissez in_store ou shipment.");
+  }
+  if (requestedMode === "in_store") {
+    if (input.deliveryMode && input.deliveryMode !== "home" && input.deliveryMode !== "relay") {
+      throw new Error("Mode de livraison invalide.");
+    }
+    return { fulfillmentMode: requestedMode, deliveryMode: null, shippingAddress: null, relayPoint: null } as const;
+  }
+
+  const deliveryMode = input.deliveryMode || "home";
+  if (deliveryMode !== "home" && deliveryMode !== "relay") {
+    throw new Error("Mode de livraison invalide. Choisissez home ou relay.");
+  }
+  // Existing web exchanges may omit the field: retain their existing selected
+  // destination while saving a snapshot at creation time. POS shipment must
+  // explicitly provide the address selected at the exchange desk.
+  const shippingAddress = normalizeExchangeShippingAddress(input.shippingAddress)
+    || (order.channel !== "pos" ? sourceShippingAddressSnapshot(order.shippingAddress) : null);
+  if (!shippingAddress) {
+    throw new Error("Une adresse de livraison complète (prénom, nom, adresse, code postal, ville et pays) est obligatoire pour un échange expédié.");
+  }
+  const relayPoint = normalizeExchangeRelayPoint(input.relayPoint);
+  if (deliveryMode === "relay" && !relayPoint) {
+    throw new Error("Un point relais sélectionné est obligatoire pour un échange expédié en point relais.");
+  }
+  return { fulfillmentMode: requestedMode, deliveryMode, shippingAddress, relayPoint } as const;
 }
 
 export function calculateOrderExchangeFinancials(input: {
@@ -194,6 +352,8 @@ export async function initiateOrderExchange(input: ExchangeInitiationInput) {
       where: { id: input.orderId },
       include: {
         shipment: true,
+        shippingAddress: true,
+        customer: { select: { phone: true } },
         items: { include: { product: true, variant: true } },
       },
     });
@@ -201,6 +361,12 @@ export async function initiateOrderExchange(input: ExchangeInitiationInput) {
     assertEligibleOrderStatus({ status: order.status, channel: order.channel, noShipping: order.noShipping });
     if (order.channel !== "pos" && !order.shipment?.shippedAt && !["shipped", "delivered"].includes(order.status)) {
       throw new Error("La commande doit avoir une expédition confirmée avant de créer un échange.");
+    }
+    const fulfillment = resolveExchangeFulfillment(input, order);
+    // A POS customer may already be known by email even when the sale did not
+    // carry an address. Keep that contact detail on the exchange destination.
+    if (fulfillment.shippingAddress && !fulfillment.shippingAddress.phone && order.customer?.phone) {
+      fulfillment.shippingAddress.phone = order.customer.phone;
     }
 
     const returnedItem = order.items.find(item => item.id === input.returnedOrderItemId);
@@ -255,6 +421,23 @@ export async function initiateOrderExchange(input: ExchangeInitiationInput) {
       vatRate: order.vatRate,
     });
 
+    if (fulfillment.fulfillmentMode === "shipment" && fulfillment.shippingAddress) {
+      await tx.shippingAddress.upsert({
+        where: { orderId: order.id },
+        create: { orderId: order.id, ...fulfillment.shippingAddress },
+        update: fulfillment.shippingAddress,
+      });
+      await tx.order.update({
+        where: { id: order.id },
+        data: {
+          noShipping: false,
+          relayPointId: fulfillment.relayPoint?.id || null,
+          relayPointName: fulfillment.relayPoint?.name || null,
+          relayPointAddress: fulfillment.relayPoint?.address || null,
+        },
+      });
+    }
+
     await reserveReplacementStock(tx, replacementProduct.id, replacementVariant?.id || null, input.quantity);
 
     const exchange = await tx.orderExchange.create({
@@ -284,6 +467,14 @@ export async function initiateOrderExchange(input: ExchangeInitiationInput) {
         priceTaxLabel: useProfessionalPricing ? "HT" : "TTC",
         currency: order.currency,
         settlementStatus: differenceAmount === 0 ? "not_required" : "pending",
+        fulfillmentMode: fulfillment.fulfillmentMode,
+        deliveryMode: fulfillment.deliveryMode,
+        shippingAddressSnapshot: fulfillment.shippingAddress
+          ? fulfillment.shippingAddress as Prisma.InputJsonValue
+          : Prisma.DbNull,
+        relayPointSnapshot: fulfillment.relayPoint
+          ? fulfillment.relayPoint as Prisma.InputJsonValue
+          : Prisma.DbNull,
         replacementStockReserved: true,
         initiatedBy: input.actorEmail || null,
         notes: input.notes?.trim() || null,
@@ -295,11 +486,14 @@ export async function initiateOrderExchange(input: ExchangeInitiationInput) {
       retour: `${input.quantity} × ${returnedItem.name}`,
       remplacement: `${input.quantity} × ${replacementProduct.name}${replacementVariant ? ` — ${replacementVariant.name}` : ""}`,
       différence: `${differenceAmount.toFixed(2)} ${order.currency}`,
+      remise: fulfillment.fulfillmentMode === "shipment" ? "expédition" : "boutique",
     });
     await addExchangeEvent(tx, exchange.id, "initiated", message, input.actorEmail, {
       returnValue,
       replacementValue,
       differenceAmount,
+      fulfillmentMode: fulfillment.fulfillmentMode,
+      deliveryMode: fulfillment.deliveryMode,
     });
     await appendOrderExchangeNote(tx, order.id, message);
 
@@ -330,6 +524,9 @@ export async function markOrderExchangeReturnReceived(exchangeId: string, actorE
         returnReceivedAt: exchange.returnReceivedAt || new Date(),
       },
     });
+    if (nextStatus === "ready_to_ship") {
+      await tx.order.update({ where: { id: exchange.orderId }, data: { itemsLastModifiedAt: new Date() } });
+    }
 
     const message = exchangeEventMessage("Retour reçu et inspecté", {
       article: `${exchange.returnQuantity} × ${exchange.returnName}`,
@@ -361,11 +558,93 @@ export async function settleOrderExchangeInternally(exchangeId: string, mode: Ex
         settlementHandledAt: new Date(),
       },
     });
+    await tx.order.update({ where: { id: exchange.orderId }, data: { itemsLastModifiedAt: new Date() } });
     const message = exchangeEventMessage("Différence d’échange validée", {
       mode: mode === "gift" ? "geste commercial" : "règlement interne",
       montant: `${exchange.differenceAmount.toFixed(2)} ${exchange.currency}`,
     });
     await addExchangeEvent(tx, exchange.id, "settlement_recorded", message, actorEmail);
+    await appendOrderExchangeNote(tx, exchange.orderId, message);
+    return updated;
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
+/**
+ * Records a real-world desk settlement for the exchange only.  It is purposely
+ * distinct from order manual payment: the original Order.paidAmount must remain
+ * the amount received for the original sale.
+ */
+export async function settleOrderExchangeManually(input: {
+  exchangeId: string;
+  /** Optional display echo only; the expected amount always comes from the exchange record. */
+  amount?: number;
+  paymentMethod: ManualPaymentMethod;
+  receivedAt?: Date | null;
+  reference?: string | null;
+  note?: string | null;
+  actorEmail?: string | null;
+}) {
+  return prisma.$transaction(async (tx) => {
+    const exchange = await tx.orderExchange.findUnique({ where: { id: input.exchangeId } });
+    if (!exchange) throw new Error("Dossier d’échange introuvable.");
+    if (exchange.status !== "settlement_pending") {
+      throw new Error("Le règlement de cet échange n’est pas en attente.");
+    }
+    if (!exchange.returnedStockRestored) {
+      throw new Error("Le retour doit être reçu et inspecté avant de confirmer le règlement.");
+    }
+    const expectedAmount = money(exchange.differenceAmount);
+    const receivedAmount = input.amount === undefined ? expectedAmount : money(input.amount);
+    if (expectedAmount <= 0) {
+      throw new Error("Seul un complément positif peut être confirmé par paiement manuel.");
+    }
+    if (input.amount !== undefined && !Number.isFinite(input.amount)) {
+      throw new Error("Le montant reçu est invalide.");
+    }
+    if (receivedAmount <= 0) {
+      throw new Error("Le montant reçu doit être strictement positif.");
+    }
+    if (Math.abs(receivedAmount - expectedAmount) > 0.01) {
+      throw new Error(`Le montant reçu (${receivedAmount.toFixed(2)} ${exchange.currency}) doit correspondre exactement au complément attendu (${expectedAmount.toFixed(2)} ${exchange.currency}).`);
+    }
+    if (!isManualPaymentMethod(input.paymentMethod)) {
+      throw new Error("Moyen de paiement manuel invalide.");
+    }
+    // A checkout link can still complete asynchronously. Reject rather than
+    // racing it or silently losing traceability of a duplicate settlement.
+    if (exchange.settlementPaymentUrl) {
+      throw new Error("Un lien de règlement est encore actif pour cet échange. Annulez ou laissez expirer ce lien avant de confirmer un paiement manuel.");
+    }
+    if (exchange.settlementManualPayment) {
+      throw new Error("Un paiement manuel a déjà été enregistré pour cet échange.");
+    }
+
+    const recordedAt = new Date();
+    const receivedAt = input.receivedAt || recordedAt;
+    const audit = {
+      method: input.paymentMethod,
+      methodLabel: getManualPaymentMethodLabel(input.paymentMethod),
+      amount: expectedAmount,
+      currency: exchange.currency,
+      receivedAt: receivedAt.toISOString(),
+      reference: input.reference?.trim() || null,
+      note: input.note?.trim() || null,
+      recordedAt: recordedAt.toISOString(),
+      recordedBy: input.actorEmail || null,
+    };
+    const updated = await tx.orderExchange.update({
+      where: { id: exchange.id },
+      data: {
+        status: "ready_to_ship",
+        settlementMode: "manual",
+        settlementStatus: "paid",
+        settlementHandledAt: recordedAt,
+        settlementManualPayment: audit as Prisma.InputJsonValue,
+      },
+    });
+    await tx.order.update({ where: { id: exchange.orderId }, data: { itemsLastModifiedAt: recordedAt } });
+    const message = `Complément d’échange encaissé manuellement : +${expectedAmount.toFixed(2)} ${exchange.currency} — ${audit.methodLabel}.`;
+    await addExchangeEvent(tx, exchange.id, "settlement_manual_paid", message, input.actorEmail, audit as Prisma.InputJsonValue);
     await appendOrderExchangeNote(tx, exchange.orderId, message);
     return updated;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
@@ -410,11 +689,24 @@ export async function markOrderExchangeReplacementShipped(
     if (exchange.status !== "ready_to_ship") {
       throw new Error("Le remplacement ne peut être expédié qu’une fois le retour reçu et le règlement validé.");
     }
+    if (exchange.fulfillmentMode !== fulfillment) {
+      throw new Error(exchange.fulfillmentMode === "shipment"
+        ? "Ce remplacement doit être expédié à l’adresse choisie pour l’échange."
+        : "Ce remplacement doit être remis en boutique.");
+    }
 
     const updated = await tx.orderExchange.update({
       where: { id: exchange.id },
       data: { status: "replacement_shipped", replacementShippedAt: new Date() },
     });
+    if (fulfillment === "shipment") {
+      // A POS sale may normally be no-shipping, but its exchange explicitly opted
+      // into delivery. Surface the real replacement dispatch on the source order.
+      await tx.order.update({
+        where: { id: exchange.orderId },
+        data: { status: "shipped", noShipping: false },
+      });
+    }
     const message = fulfillment === "in_store"
       ? `Remplacement remis en boutique : ${exchange.replacementQuantity} × ${exchange.replacementName}.`
       : `Remplacement expédié : ${exchange.replacementQuantity} × ${exchange.replacementName}.`;
@@ -463,6 +755,7 @@ export async function confirmOrderExchangeRealSettlement(exchangeId: string, pay
         settlementHandledAt: new Date(),
       },
     });
+    await tx.order.update({ where: { id: exchange.orderId }, data: { itemsLastModifiedAt: new Date() } });
     const message = `Complément de paiement d’échange confirmé : +${exchange.differenceAmount.toFixed(2)} ${exchange.currency}.`;
     await addExchangeEvent(tx, exchange.id, "settlement_paid", message, null, { paymentId });
     await appendOrderExchangeNote(tx, exchange.orderId, message);
@@ -534,6 +827,7 @@ export async function recordOrderExchangeRealRefund(exchangeId: string, refunded
         settlementHandledAt: new Date(),
       },
     });
+    await tx.order.update({ where: { id: exchange.orderId }, data: { itemsLastModifiedAt: new Date() } });
     const message = `Remboursement d’échange confirmé : -${expected.toFixed(2)} ${exchange.currency}.`;
     await addExchangeEvent(tx, exchange.id, "settlement_refunded", message, actorEmail, { refundedAmount: expected });
     await appendOrderExchangeNote(tx, exchange.orderId, message);

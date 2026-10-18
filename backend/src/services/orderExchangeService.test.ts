@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { calculateOrderExchangeFinancials, isOrderExchangeEligible, usesProfessionalExchangePricing } from "./orderExchangeService";
+import {
+  calculateOrderExchangeFinancials,
+  isOrderExchangeEligible,
+  normalizeExchangeRelayPoint,
+  normalizeExchangeShippingAddress,
+  usesProfessionalExchangePricing,
+} from "./orderExchangeService";
 
 function testB2CWithLineDiscount() {
   const result = calculateOrderExchangeFinancials({
@@ -101,10 +107,49 @@ function testHigherPricedReplacementRequiresExactComplement() {
   assert.equal(result.differenceAmount, 40);
 }
 
+function testShipmentDestinationSnapshotsAreNormalized() {
+  assert.deepEqual(normalizeExchangeShippingAddress({
+    firstName: " Ana ",
+    lastName: " Martin ",
+    address: "12 rue des Lilas",
+    extension: "Bâtiment B",
+    postalCode: " 75010 ",
+    city: "Paris",
+    country: "France",
+    phone: "06 00 00 00 00",
+  }), {
+    firstName: "Ana",
+    lastName: "Martin",
+    address: "12 rue des Lilas",
+    extension: "Bâtiment B",
+    postalCode: "75010",
+    city: "Paris",
+    country: "France",
+    phone: "06 00 00 00 00",
+  });
+  assert.deepEqual(normalizeExchangeRelayPoint({
+    relayPointId: " 025775 ",
+    relayPointName: "Intermarché",
+    relayPointAddress: "4 avenue du Commerce",
+    postalCode: "59000",
+    city: "Lille",
+    country: "FR",
+  }), {
+    id: "025775",
+    name: "Intermarché",
+    address: "4 avenue du Commerce",
+    postalCode: "59000",
+    city: "Lille",
+    country: "FR",
+  });
+  assert.equal(normalizeExchangeRelayPoint({ name: "Sans identifiant" }), null);
+}
+
 testB2CWithLineDiscount();
 testB2BUsesProfessionalHtPrice();
 testB2BFallbackPublicTtcToHt();
 testHigherPricedReplacementRequiresExactComplement();
 testPosExchangeEligibility();
 testPosOrderUsesTtcEvenForProfessionalCustomer();
+testShipmentDestinationSnapshotsAreNormalized();
 console.log("✓ Calculs financiers et éligibilité POS d’échange validés");

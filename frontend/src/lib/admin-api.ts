@@ -441,6 +441,47 @@ export function markShippedManual(
   );
 }
 
+export type AdminOrderExchangeFulfillmentMode = "in_store" | "shipment";
+export type AdminOrderExchangeDeliveryMode = "home" | "relay";
+export type AdminOrderExchangeManualPaymentMethod = "external_card" | "indy" | "mollie_manual" | "cash" | "virement" | "other";
+
+export type AdminOrderExchangeShippingAddress = {
+  firstName: string;
+  lastName: string;
+  address: string;
+  extension?: string | null;
+  city: string;
+  postalCode: string;
+  country: string;
+  phone?: string | null;
+};
+
+export type AdminOrderExchangeRelayPoint = {
+  id: string;
+  name: string;
+  address: string;
+  city: string;
+  postalCode: string;
+  country: string;
+  fullAddress: string;
+};
+
+/** Existing public Mondial Relay lookup response, reused by admin exchanges. */
+export type MondialRelayPoint = AdminOrderExchangeRelayPoint & {
+  latitude: number | null;
+  longitude: number | null;
+  distance: number | null;
+  openingHours: {
+    monday: string;
+    tuesday: string;
+    wednesday: string;
+    thursday: string;
+    friday: string;
+    saturday: string;
+    sunday: string;
+  };
+};
+
 export type AdminOrderExchangeShipment = {
   id: string;
   direction: "return" | "replacement";
@@ -463,6 +504,7 @@ export type AdminOrderExchangeEvent = {
 export type AdminOrderExchange = {
   id: string;
   orderId: string;
+  returnedOrderItemId?: string | null;
   status: string;
   returnName: string;
   returnImage: string;
@@ -477,9 +519,23 @@ export type AdminOrderExchange = {
   differenceAmount: number;
   currency: string;
   priceTaxLabel: "HT" | "TTC";
-  settlementMode?: "real" | "internal" | "gift" | null;
+  /** Present for exchanges created after fulfillment selection was introduced. */
+  fulfillmentMode?: AdminOrderExchangeFulfillmentMode | null;
+  /** Present only when the replacement is shipped. */
+  deliveryMode?: AdminOrderExchangeDeliveryMode | null;
+  /** Recipient snapshot selected at initiation. */
+  shippingAddress?: AdminOrderExchangeShippingAddress | null;
+  /** Relay snapshot selected at initiation when deliveryMode is relay. */
+  relayPoint?: AdminOrderExchangeRelayPoint | null;
+  settlementMode?: "real" | "internal" | "gift" | "manual" | null;
   settlementStatus: string;
   settlementPaymentUrl?: string | null;
+  settlementPaymentMethod?: AdminOrderExchangeManualPaymentMethod | null;
+  settlementReceivedAt?: string | null;
+  settlementReference?: string | null;
+  settlementNote?: string | null;
+  financialStatus?: string | null;
+  financialFinalizedAt?: string | null;
   returnedStockRestored: boolean;
   replacementStockReserved: boolean;
   replacementStockReleased: boolean;
@@ -501,6 +557,10 @@ export function createAdminOrderExchange(orderId: string, payload: {
   quantity: number;
   replacementProductId: string;
   replacementVariantId?: string | null;
+  fulfillmentMode: AdminOrderExchangeFulfillmentMode;
+  deliveryMode?: AdminOrderExchangeDeliveryMode | null;
+  shippingAddress?: AdminOrderExchangeShippingAddress | null;
+  relayPoint?: AdminOrderExchangeRelayPoint | null;
   notes?: string | null;
 }) {
   return adminFetch<{ exchange: AdminOrderExchange }>(`/api/admin/exchanges/orders/${orderId}`, {
@@ -533,6 +593,33 @@ export function settleAdminExchange(exchangeId: string, mode: "real" | "internal
     method: "POST",
     body: JSON.stringify({ mode }),
   });
+}
+
+/** Records an already received exchange supplement; the backend owns the exact amount. */
+export function settleAdminExchangeManually(exchangeId: string, payload: {
+  paymentMethod: AdminOrderExchangeManualPaymentMethod;
+  receivedAt: string;
+  reference?: string | null;
+  note?: string | null;
+  confirmed: true;
+}) {
+  return adminFetch<{ success: boolean; exchange: AdminOrderExchange }>(`/api/admin/exchanges/${exchangeId}/settlement/manual`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Reuses the established checkout lookup rather than inventing an exchange endpoint. */
+export async function getMondialRelayPoints(params: { postalCode: string; country?: string; limit?: number }) {
+  const search = new URLSearchParams({
+    cp: params.postalCode.trim(),
+    country: (params.country || "FR").trim().toUpperCase(),
+    nb: String(params.limit || 10),
+  });
+  const response = await fetch(`${API_URL}/api/mondialrelay/points?${search.toString()}`);
+  const data = await response.json().catch(() => ({})) as { points?: MondialRelayPoint[]; error?: string };
+  if (!response.ok) throw new Error(data.error || "Impossible de récupérer les points relais.");
+  return data.points || [];
 }
 
 export function createAdminExchangeReplacementLabel(exchangeId: string, payload: { carrier: "colissimo" | "mondial_relay" | "colissimo_international"; offerId: string; relayPointId?: string | null }) {

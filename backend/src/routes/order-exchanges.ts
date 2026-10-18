@@ -9,7 +9,7 @@ import {
   LogisticsCarrier,
   ShipmentAddress,
 } from "../services/logisticsCarrierService";
-import { sendEmail } from "../services/emailService";
+import { getCustomerName, sendEmail, sendOrderShippedEmail } from "../services/emailService";
 import {
   cancelOrderExchange,
   completeOrderExchange,
@@ -18,8 +18,10 @@ import {
   markOrderExchangeReturnReceived,
   recordOrderExchangeRealRefund,
   registerOrderExchangeSettlementPayment,
+  settleOrderExchangeManually,
   settleOrderExchangeInternally,
 } from "../services/orderExchangeService";
+import { isManualPaymentMethod } from "../utils/manualPaymentBreakdown";
 
 export const orderExchangesRouter = Router();
 
@@ -47,16 +49,18 @@ function companyAddress(): ShipmentAddress {
   };
 }
 
-function shippingAddressToLabel(address: {
+type LabelAddress = {
   firstName: string;
   lastName: string;
   address: string;
-  extension: string | null;
+  extension?: string | null;
   postalCode: string;
   city: string;
   country: string;
-  phone: string | null;
-}, email: string): ShipmentAddress {
+  phone?: string | null;
+};
+
+function shippingAddressToLabel(address: LabelAddress, email: string): ShipmentAddress {
   return {
     firstName: address.firstName,
     lastName: address.lastName,
@@ -68,6 +72,60 @@ function shippingAddressToLabel(address: {
     phone: address.phone,
     email,
   };
+}
+
+function snapshotLabelAddress(value: unknown): LabelAddress | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const address = value as Partial<LabelAddress>;
+  return typeof address.firstName === "string" && typeof address.lastName === "string"
+    && typeof address.address === "string" && typeof address.postalCode === "string"
+    && typeof address.city === "string" && typeof address.country === "string"
+    ? address as LabelAddress
+    : null;
+}
+
+function exchangeShippingAddress(exchange: Awaited<ReturnType<typeof getExchange>>): LabelAddress | null {
+  if (!exchange) return null;
+  return snapshotLabelAddress(exchange.shippingAddressSnapshot) || exchange.order.shippingAddress;
+}
+
+function snapshotRelayPointId(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const id = (value as { id?: unknown }).id;
+  return typeof id === "string" && id.trim() ? id.trim() : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function snapshotRelayPoint(value: unknown) {
+  if (!isRecord(value)) return null;
+  const id = typeof value.id === "string" ? value.id.trim() : "";
+  if (!id) return null;
+  const name = typeof value.name === "string" && value.name.trim() ? value.name.trim() : "Point relais";
+  const address = typeof value.address === "string" ? value.address.trim() : "";
+  const postalCode = typeof value.postalCode === "string" ? value.postalCode.trim() : "";
+  const city = typeof value.city === "string" ? value.city.trim() : "";
+  const country = typeof value.country === "string" && value.country.trim() ? value.country.trim() : "France";
+  return {
+    id,
+    name,
+    address,
+    postalCode,
+    city,
+    country,
+    fullAddress: [address, `${postalCode} ${city}`.trim(), country].filter(Boolean).join(", "),
+  };
+}
+
+function assertShipmentWorkflow(exchange: NonNullable<Awaited<ReturnType<typeof getExchange>>>) {
+  if (exchange.fulfillmentMode !== "shipment") {
+    throw new Error("Cet échange est traité en boutique : aucune opération de transport n’est nécessaire.");
+  }
+  if (exchange.order.channel === "pos" && exchange.fulfillmentMode !== "shipment") {
+    throw new Error("Une vente POS ne peut utiliser le transport que lorsque l’échange a été créé en mode shipment.");
+  }
 }
 
 function exchangeHtml(title: string, content: string) {
@@ -89,12 +147,39 @@ async function getExchange(id: string) {
   });
 }
 
+/**
+ * Keeps the public admin contract independent from the persisted JSON snapshot
+ * names, while returning the immutable destination selected for the exchange.
+ */
+function serializeExchange<T extends {
+  shippingAddressSnapshot: Prisma.JsonValue | null;
+  relayPointSnapshot: Prisma.JsonValue | null;
+  settlementManualPayment: Prisma.JsonValue | null;
+  settlementStatus: string;
+  settlementHandledAt: Date | null;
+}>(exchange: T) {
+  const manualSettlement = isRecord(exchange.settlementManualPayment) ? exchange.settlementManualPayment : null;
+  const isFinanciallyFinal = ["not_required", "paid", "refunded", "internal", "gift"].includes(exchange.settlementStatus);
+  return {
+    ...exchange,
+    shippingAddress: snapshotLabelAddress(exchange.shippingAddressSnapshot),
+    relayPoint: snapshotRelayPoint(exchange.relayPointSnapshot),
+    settlementPaymentMethod: typeof manualSettlement?.method === "string" ? manualSettlement.method : null,
+    settlementReceivedAt: typeof manualSettlement?.receivedAt === "string" ? manualSettlement.receivedAt : null,
+    settlementReference: typeof manualSettlement?.reference === "string" ? manualSettlement.reference : null,
+    settlementNote: typeof manualSettlement?.note === "string" ? manualSettlement.note : null,
+    financialStatus: exchange.settlementStatus,
+    financialFinalizedAt: isFinanciallyFinal ? exchange.settlementHandledAt : null,
+  };
+}
+
 async function createExchangeShipmentLabel(params: {
   exchangeId: string;
   direction: "return" | "replacement";
   carrier: LogisticsCarrier;
   offerId: string;
   relayPointId?: string | null;
+  relayPointSnapshot?: Prisma.InputJsonValue | null;
   insuranceValueCents?: number;
   totalWeightG: number;
   orderValue: number;
@@ -131,6 +216,7 @@ async function createExchangeShipmentLabel(params: {
       serviceCode: result.serviceCode,
       deliveryMode: result.deliveryMode,
       relayPointId: result.relayPointId,
+      relayPointSnapshot: params.relayPointSnapshot || Prisma.DbNull,
       labelPriceCents: result.priceCents,
       labelCurrency: result.currency,
       insuranceValueCents: result.insuranceValueCents,
@@ -153,6 +239,7 @@ async function createExchangeShipmentLabel(params: {
       serviceCode: result.serviceCode,
       deliveryMode: result.deliveryMode,
       relayPointId: result.relayPointId,
+      relayPointSnapshot: params.relayPointSnapshot || Prisma.DbNull,
       labelPriceCents: result.priceCents,
       labelCurrency: result.currency,
       insuranceValueCents: result.insuranceValueCents,
@@ -187,7 +274,7 @@ orderExchangesRouter.get("/orders/:orderId", requireAdmin, async (req: Request, 
     include: { shipments: true, events: { orderBy: { createdAt: "asc" } } },
     orderBy: { createdAt: "desc" },
   });
-  res.json({ exchanges });
+  res.json({ exchanges: exchanges.map(serializeExchange) });
 });
 
 // POST /api/admin/exchanges/orders/:orderId
@@ -199,10 +286,15 @@ orderExchangesRouter.post("/orders/:orderId", requireAdmin, async (req: AuthRequ
       quantity: Number(req.body?.quantity || 0),
       replacementProductId: String(req.body?.replacementProductId || ""),
       replacementVariantId: req.body?.replacementVariantId ? String(req.body.replacementVariantId) : null,
+      fulfillmentMode: typeof req.body?.fulfillmentMode === "string" ? req.body.fulfillmentMode : null,
+      deliveryMode: typeof req.body?.deliveryMode === "string" ? req.body.deliveryMode : null,
+      shippingAddress: req.body?.shippingAddress || null,
+      relayPoint: req.body?.relayPoint || req.body?.relayData || null,
       notes: typeof req.body?.notes === "string" ? req.body.notes : null,
       actorEmail: req.user?.email || null,
     });
-    res.status(201).json({ exchange });
+    const fullExchange = await getExchange(exchange.id);
+    res.status(201).json({ exchange: fullExchange ? serializeExchange(fullExchange) : exchange });
   } catch (error) {
     sendError(res, error);
   }
@@ -215,7 +307,7 @@ orderExchangesRouter.get("/:exchangeId", requireAdmin, async (req: Request, res:
     res.status(404).json({ error: "Dossier d’échange introuvable." });
     return;
   }
-  res.json({ exchange });
+  res.json({ exchange: serializeExchange(exchange) });
 });
 
 // GET /api/admin/exchanges/:exchangeId/:direction/quotes
@@ -224,8 +316,10 @@ orderExchangesRouter.get("/:exchangeId/:direction/quotes", requireAdmin, async (
     const direction = req.params.direction;
     if (direction !== "return" && direction !== "replacement") throw new Error("Direction d’étiquette invalide.");
     const exchange = await getExchange(req.params.exchangeId);
-    if (exchange?.order.channel === "pos") throw new Error("Cet échange est traité en boutique : aucune offre de transport n’est nécessaire.");
-    if (!exchange?.order.shippingAddress) throw new Error("Adresse d’expédition introuvable.");
+    if (!exchange) throw new Error("Dossier d’échange introuvable.");
+    assertShipmentWorkflow(exchange);
+    const destination = exchangeShippingAddress(exchange);
+    if (!destination) throw new Error("Adresse d’expédition introuvable pour cet échange.");
     if (direction === "return" && !["initiated", "return_in_transit"].includes(exchange.status)) {
       throw new Error("Les offres de retour ne sont plus disponibles à cette étape.");
     }
@@ -236,7 +330,7 @@ orderExchangesRouter.get("/:exchangeId/:direction/quotes", requireAdmin, async (
     const isReturn = direction === "return";
     const recipient = isReturn
       ? companyAddress()
-      : shippingAddressToLabel(exchange.order.shippingAddress, exchange.order.email);
+      : shippingAddressToLabel(destination, exchange.order.email);
     const product = isReturn ? exchange.returnProduct : exchange.replacementProduct;
     const quantity = isReturn ? exchange.returnQuantity : exchange.replacementQuantity;
     const value = isReturn ? exchange.returnValue : exchange.replacementValue;
@@ -248,7 +342,10 @@ orderExchangesRouter.get("/:exchangeId/:direction/quotes", requireAdmin, async (
       totalWeightG,
       orderValueCents: Math.max(0, Math.round(value * 100)),
     });
-    res.json({ quotes, totalWeightG, direction });
+    const eligibleQuotes = !isReturn && exchange.deliveryMode
+      ? quotes.filter((quote) => quote.deliveryMode === exchange.deliveryMode)
+      : quotes;
+    res.json({ quotes: eligibleQuotes, totalWeightG, direction });
   } catch (error) {
     sendError(res, error);
   }
@@ -262,11 +359,13 @@ orderExchangesRouter.post("/:exchangeId/return-label", requireAdmin, async (req:
     if (!activeCarrier(carrier) || !offerId) throw new Error("Transporteur et offre de retour obligatoires.");
 
     const exchange = await getExchange(req.params.exchangeId);
-    if (exchange?.order.channel === "pos") throw new Error("Cet échange est traité en boutique : aucune étiquette de retour n’est nécessaire.");
-    if (!exchange?.order.shippingAddress) throw new Error("Adresse client introuvable pour l’étiquette de retour.");
+    if (!exchange) throw new Error("Dossier d’échange introuvable.");
+    assertShipmentWorkflow(exchange);
+    const destination = exchangeShippingAddress(exchange);
+    if (!destination) throw new Error("Adresse client introuvable pour l’étiquette de retour.");
     if (!["initiated", "return_in_transit"].includes(exchange.status)) throw new Error("L’étiquette de retour ne peut être créée qu’au début de l’échange.");
 
-    const customerAddress = shippingAddressToLabel(exchange.order.shippingAddress, exchange.order.email);
+    const customerAddress = shippingAddressToLabel(destination, exchange.order.email);
     const returnWeight = exchange.returnVariant?.productId === exchange.returnProductId
       ? exchange.returnProduct?.weightG || 100
       : exchange.returnProduct?.weightG || 100;
@@ -311,7 +410,8 @@ orderExchangesRouter.post("/:exchangeId/return-received", requireAdmin, async (r
         html: exchangeHtml("Votre retour a été reçu", `<p>Nous avons reçu et inspecté <strong>${fullExchange.returnName}</strong>.</p><p>${exchange.status === "ready_to_ship" ? "Votre article de remplacement est en préparation." : "Nous vous contacterons pour finaliser la différence éventuelle avant l’envoi du remplacement."}</p>`),
       });
     }
-    res.json({ success: true, exchange });
+    const refreshed = await getExchange(exchange.id);
+    res.json({ success: true, exchange: refreshed ? serializeExchange(refreshed) : exchange });
   } catch (error) {
     sendError(res, error);
   }
@@ -328,7 +428,8 @@ orderExchangesRouter.post("/:exchangeId/settlement", requireAdmin, async (req: A
 
     if (mode === "internal" || mode === "gift") {
       const updated = await settleOrderExchangeInternally(exchange.id, mode, req.user?.email || null);
-      res.json({ success: true, exchange: updated });
+      const refreshed = await getExchange(updated.id);
+      res.json({ success: true, exchange: refreshed ? serializeExchange(refreshed) : updated });
       return;
     }
 
@@ -336,7 +437,7 @@ orderExchangesRouter.post("/:exchangeId/settlement", requireAdmin, async (req: A
       // Un lien déjà actif est réutilisé : un double clic ou une requête répétée
       // ne doit ni créer un second encaissement ni envoyer un second email.
       if (exchange.settlementPaymentUrl) {
-        res.json({ success: true, exchange, paymentUrl: exchange.settlementPaymentUrl, alreadySent: true });
+        res.json({ success: true, exchange: serializeExchange(exchange), paymentUrl: exchange.settlementPaymentUrl, alreadySent: true });
         return;
       }
       // Le complément est une nouvelle opération sécurisée, indépendante du moyen de paiement initial.
@@ -363,13 +464,14 @@ orderExchangesRouter.post("/:exchangeId/settlement", requireAdmin, async (req: A
         subject: `Règlement nécessaire — échange ${exchange.order.orderNumber}`,
         html: exchangeHtml("Finaliser votre échange", `<p>Un complément de <strong>${exchange.differenceAmount.toFixed(2)} ${exchange.currency}</strong> est nécessaire avant l’envoi de votre article de remplacement.</p><p><a href="${paymentUrl}">Régler le complément en toute sécurité</a></p>`),
       });
-      res.json({ success: true, exchange: updated, paymentUrl });
+      const refreshed = await getExchange(updated.id);
+      res.json({ success: true, exchange: refreshed ? serializeExchange(refreshed) : updated, paymentUrl });
       return;
     }
 
     // Différence négative : remboursement réel séparé de la commande mais sur le paiement d’origine.
     if (exchange.order.paymentProvider !== "mollie" || !exchange.order.providerPaymentId) {
-      throw new Error("Le remboursement réel automatisé n’est pas disponible pour ce moyen de paiement initial. Utilisez un règlement interne ou un geste commercial.");
+      throw new Error("Le remboursement réel automatisé n’est pas disponible pour le moyen de paiement initial. Utilisez un ajustement interne ou un geste commercial.");
     }
     const amount = money(Math.abs(exchange.differenceAmount));
     const refundResponse = await fetch(`https://api.mollie.com/v2/payments/${exchange.order.providerPaymentId}/refunds`, {
@@ -379,11 +481,56 @@ orderExchangesRouter.post("/:exchangeId/settlement", requireAdmin, async (req: A
     });
     if (!refundResponse.ok) throw new Error("Le remboursement réel de l’échange a été refusé.");
     const updated = await recordOrderExchangeRealRefund(exchange.id, amount, req.user?.email || null);
-    res.json({ success: true, exchange: updated });
+    const refreshed = await getExchange(updated.id);
+    res.json({ success: true, exchange: refreshed ? serializeExchange(refreshed) : updated });
   } catch (error) {
     sendError(res, error);
   }
 });
+
+// POST /api/admin/exchanges/:exchangeId/settlement/manual
+// Deliberately distinct from /orders/:id/mark-paid-manual: it settles the
+// exchange difference and never changes the source Order.paidAmount.
+async function handleManualSettlement(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    if (req.body?.confirmed !== true) {
+      throw new Error("Confirmez avoir constaté l’encaissement réel avant de valider le règlement manuel.");
+    }
+    const paymentMethod = typeof req.body?.paymentMethod === "string" ? req.body.paymentMethod.trim().toLowerCase() : "";
+    if (!isManualPaymentMethod(paymentMethod)) {
+      throw new Error("Moyen de paiement manuel invalide.");
+    }
+    const rawReceivedAt = req.body?.receivedAt;
+    let receivedAt: Date | null = null;
+    if (rawReceivedAt !== undefined && rawReceivedAt !== null && rawReceivedAt !== "") {
+      receivedAt = new Date(String(rawReceivedAt));
+      if (Number.isNaN(receivedAt.getTime())) throw new Error("Date de réception du paiement invalide.");
+    }
+    const exchange = await settleOrderExchangeManually({
+      exchangeId: req.params.exchangeId,
+      amount: req.body?.amount === undefined || req.body?.amount === null || req.body?.amount === ""
+        ? undefined
+        : Number(req.body.amount),
+      paymentMethod,
+      receivedAt,
+      reference: typeof req.body?.reference === "string" ? req.body.reference.trim().slice(0, 250) || null : null,
+      note: typeof req.body?.note === "string" ? req.body.note.trim().slice(0, 2000) || null : null,
+      actorEmail: req.user?.email || null,
+    });
+    const refreshed = await getExchange(exchange.id);
+    res.json({
+      success: true,
+      exchange: refreshed ? serializeExchange(refreshed) : exchange,
+      settlement: exchange.settlementManualPayment,
+    });
+  } catch (error) {
+    sendError(res, error);
+  }
+}
+
+orderExchangesRouter.post("/:exchangeId/settlement/manual", requireAdmin, handleManualSettlement);
+// Compatibility alias for any admin tab using the endpoint released during the first rollout.
+orderExchangesRouter.post("/:exchangeId/manual-settlement", requireAdmin, handleManualSettlement);
 
 // POST /api/admin/exchanges/:exchangeId/replacement-label
 orderExchangesRouter.post("/:exchangeId/replacement-label", requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
@@ -392,9 +539,23 @@ orderExchangesRouter.post("/:exchangeId/replacement-label", requireAdmin, async 
     const offerId = String(req.body?.offerId || "").trim();
     if (!activeCarrier(carrier) || !offerId) throw new Error("Transporteur et offre de remplacement obligatoires.");
     const exchange = await getExchange(req.params.exchangeId);
-    if (exchange?.order.channel === "pos") throw new Error("Cet échange est traité en boutique : aucune étiquette de renvoi n’est nécessaire.");
-    if (!exchange?.order.shippingAddress) throw new Error("Adresse client introuvable.");
+    if (!exchange) throw new Error("Dossier d’échange introuvable.");
+    assertShipmentWorkflow(exchange);
+    const destination = exchangeShippingAddress(exchange);
+    if (!destination) throw new Error("Adresse client introuvable pour cet échange.");
     if (exchange.status !== "ready_to_ship") throw new Error("Le remplacement n’est pas encore prêt à être expédié.");
+    const relayPointId = exchange.deliveryMode === "relay"
+      ? snapshotRelayPointId(exchange.relayPointSnapshot)
+      : null;
+    if (exchange.deliveryMode === "relay" && !relayPointId) {
+      throw new Error("Le point relais sélectionné pour cet échange est introuvable.");
+    }
+    if (exchange.deliveryMode === "home" && carrier === "mondial_relay") {
+      throw new Error("Choisissez une offre de livraison à domicile pour cette destination.");
+    }
+    if (exchange.deliveryMode === "relay" && carrier !== "mondial_relay") {
+      throw new Error("Choisissez une offre point relais pour cette destination.");
+    }
 
     const replacementWeight = exchange.replacementVariant?.productId === exchange.replacementProductId
       ? exchange.replacementProduct.weightG || 100
@@ -404,11 +565,16 @@ orderExchangesRouter.post("/:exchangeId/replacement-label", requireAdmin, async 
       direction: "replacement",
       carrier,
       offerId,
-      relayPointId: req.body?.relayPointId ? String(req.body.relayPointId) : null,
+      // The relay is selected and frozen at exchange creation. Do not let a later
+      // label request silently redirect the replacement to a different location.
+      relayPointId,
+      relayPointSnapshot: exchange.relayPointSnapshot === null
+        ? null
+        : exchange.relayPointSnapshot as Prisma.InputJsonValue,
       insuranceValueCents: Math.max(0, Math.round(exchange.replacementValue * 100)),
       totalWeightG: replacementWeight,
       orderValue: exchange.replacementValue,
-      recipient: shippingAddressToLabel(exchange.order.shippingAddress, exchange.order.email),
+      recipient: shippingAddressToLabel(destination, exchange.order.email),
       orderNumber: `${exchange.order.orderNumber}-ECH-${exchange.id.slice(-6)}`,
       customerEmail: exchange.order.email,
       actorEmail: req.user?.email || null,
@@ -424,11 +590,14 @@ orderExchangesRouter.post("/:exchangeId/replacement-shipped", requireAdmin, asyn
   try {
     const fullExchange = await getExchange(req.params.exchangeId);
     if (!fullExchange) throw new Error("Dossier d’échange introuvable.");
-    if (fullExchange.order.channel === "pos") {
+    if (fullExchange.fulfillmentMode === "in_store") {
       const exchange = await markOrderExchangeReplacementShipped(fullExchange.id, req.user?.email || null, "in_store");
-      res.json({ success: true, exchange });
+      const refreshed = await getExchange(exchange.id);
+      res.json({ success: true, exchange: refreshed ? serializeExchange(refreshed) : exchange });
       return;
     }
+
+    assertShipmentWorkflow(fullExchange);
     const replacementShipment = fullExchange.shipments.find(shipment => shipment.direction === "replacement");
     if (!replacementShipment?.trackingNumber) throw new Error("Créez d’abord l’étiquette de remplacement.");
     const exchange = await markOrderExchangeReplacementShipped(fullExchange.id, req.user?.email || null);
@@ -436,12 +605,15 @@ orderExchangesRouter.post("/:exchangeId/replacement-shipped", requireAdmin, asyn
       where: { id: replacementShipment.id },
       data: { shippedAt: new Date(), shippedBy: req.user?.email || null, lastTrackingStatus: "Remplacement expédié" },
     });
-    await sendEmail({
+    await sendOrderShippedEmail({
       to: fullExchange.order.email,
-      subject: `Votre remplacement est expédié — échange ${fullExchange.order.orderNumber}`,
-      html: exchangeHtml("Votre article de remplacement est expédié", `<p>Votre remplacement <strong>${fullExchange.replacementName}</strong> a été expédié via ${LOGISTICS_CARRIERS[replacementShipment.carrier as LogisticsCarrier]}.</p><p>Numéro de suivi : <strong>${replacementShipment.trackingNumber}</strong></p>${replacementShipment.trackingUrl ? `<p><a href="${replacementShipment.trackingUrl}">Suivre mon colis</a></p>` : ""}`),
+      orderNumber: fullExchange.order.orderNumber,
+      customerName: getCustomerName(fullExchange.order.customer, fullExchange.order.email),
+      carrier: LOGISTICS_CARRIERS[replacementShipment.carrier as LogisticsCarrier],
+      trackingNumber: replacementShipment.trackingNumber,
     });
-    res.json({ success: true, exchange });
+    const refreshed = await getExchange(exchange.id);
+    res.json({ success: true, exchange: refreshed ? serializeExchange(refreshed) : exchange });
   } catch (error) {
     sendError(res, error);
   }

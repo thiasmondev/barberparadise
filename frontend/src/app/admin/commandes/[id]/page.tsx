@@ -80,7 +80,14 @@ import {
   getAdminExchangeQuotes,
   createAdminExchangeReturnLabel,
   createAdminExchangeReplacementLabel,
+  getMondialRelayPoints,
+  settleAdminExchangeManually,
   type AdminOrderExchange,
+  type AdminOrderExchangeFulfillmentMode,
+  type AdminOrderExchangeDeliveryMode,
+  type AdminOrderExchangeManualPaymentMethod,
+  type AdminOrderExchangeRelayPoint,
+  type MondialRelayPoint,
 } from "@/lib/admin-api";
 import type { Order, Packaging, ShippingAddress, Product, ProductVariant, Customer } from "@/types";
 import { getVariantImage } from "@/lib/product-images";
@@ -206,6 +213,22 @@ function carrierLabel(carrier?: string | null) {
   if (carrier === "livraison_standard") return "Livraison standard";
   if (!carrier || carrier === "non_defini") return "Transporteur à vérifier";
   return carrier;
+}
+
+function relayCountryCode(country?: string | null) {
+  const normalized = (country || "France").trim().toLowerCase();
+  const names: Record<string, string> = {
+    france: "FR",
+    belgique: "BE",
+    suisse: "CH",
+    luxembourg: "LU",
+    "pays-bas": "NL",
+    allemagne: "DE",
+    espagne: "ES",
+    italie: "IT",
+    portugal: "PT",
+  };
+  return names[normalized] || (country && country.trim().length === 2 ? country.trim().toUpperCase() : "FR");
 }
 
 function shipmentSummary(order: Order) {
@@ -491,6 +514,15 @@ export default function OrderDetailPage() {
   const [exchangeReplacementProduct, setExchangeReplacementProduct] = useState<Product | null>(null);
   const [exchangeReplacementVariant, setExchangeReplacementVariant] = useState<ProductVariant | null>(null);
   const [exchangeNotes, setExchangeNotes] = useState("");
+  const [exchangeFulfillmentMode, setExchangeFulfillmentMode] = useState<AdminOrderExchangeFulfillmentMode | "">("");
+  const [exchangeDeliveryMode, setExchangeDeliveryMode] = useState<AdminOrderExchangeDeliveryMode>("home");
+  const [exchangeShippingAddress, setExchangeShippingAddress] = useState<EditableAddress>({ ...EMPTY_ADDRESS_FORM });
+  const [exchangeAddressSource, setExchangeAddressSource] = useState<"order" | "customer" | "new">("order");
+  const [exchangeRelaySearchPostalCode, setExchangeRelaySearchPostalCode] = useState("");
+  const [exchangeRelayPoints, setExchangeRelayPoints] = useState<MondialRelayPoint[]>([]);
+  const [exchangeRelayPoint, setExchangeRelayPoint] = useState<AdminOrderExchangeRelayPoint | null>(null);
+  const [exchangeRelayLoading, setExchangeRelayLoading] = useState(false);
+  const [exchangeRelayError, setExchangeRelayError] = useState("");
   const [exchangeSubmitting, setExchangeSubmitting] = useState(false);
   const [exchangeSuccess, setExchangeSuccess] = useState("");
   const [exchangeLabelTarget, setExchangeLabelTarget] = useState<{ exchange: AdminOrderExchange; direction: "return" | "replacement" } | null>(null);
@@ -498,6 +530,14 @@ export default function OrderDetailPage() {
   const [exchangeLabelQuoteId, setExchangeLabelQuoteId] = useState("");
   const [exchangeRelayPointId, setExchangeRelayPointId] = useState("");
   const [exchangeLabelLoading, setExchangeLabelLoading] = useState(false);
+  const [manualExchangeSettlement, setManualExchangeSettlement] = useState<Record<string, {
+    paymentMethod: AdminOrderExchangeManualPaymentMethod;
+    receivedAt: string;
+    reference: string;
+    note: string;
+    confirmed: boolean;
+  }>>({});
+  const [manualExchangeSettlementLoading, setManualExchangeSettlementLoading] = useState<string | null>(null);
 
   const loadExchanges = async () => {
     if (!id) return;
@@ -522,9 +562,57 @@ export default function OrderDetailPage() {
     setExchangeReplacementProduct(null);
     setExchangeReplacementVariant(null);
     setExchangeNotes("");
+    // A fulfillment decision must be explicit for every new exchange, including POS.
+    setExchangeFulfillmentMode("");
+    setExchangeDeliveryMode("home");
+    setExchangeShippingAddress(normalizeEditableAddress(order.shippingAddress));
+    setExchangeAddressSource("order");
+    setExchangeRelaySearchPostalCode(order.shippingAddress?.postalCode || "");
+    setExchangeRelayPoints([]);
+    setExchangeRelayPoint(null);
+    setExchangeRelayError("");
     setExchangeError("");
     setExchangeSuccess("");
     setShowExchangePanel(true);
+  };
+
+  const selectExchangeShippingAddress = (source: "order" | "customer" | "new", address?: Partial<ShippingAddress>) => {
+    setExchangeAddressSource(source);
+    const nextAddress = source === "new" ? { ...EMPTY_ADDRESS_FORM } : normalizeEditableAddress(address);
+    setExchangeShippingAddress(nextAddress);
+    setExchangeRelaySearchPostalCode(nextAddress.postalCode);
+    setExchangeRelayPoints([]);
+    setExchangeRelayPoint(null);
+    setExchangeRelayError("");
+  };
+
+  const updateExchangeShippingAddress = (field: keyof EditableAddress, value: string) => {
+    setExchangeShippingAddress((current) => ({ ...current, [field]: value }));
+    if (field === "postalCode") {
+      setExchangeRelaySearchPostalCode(value);
+      setExchangeRelayPoints([]);
+      setExchangeRelayPoint(null);
+    }
+  };
+
+  const searchExchangeRelayPoints = async () => {
+    const postalCode = exchangeRelaySearchPostalCode.trim() || exchangeShippingAddress.postalCode.trim();
+    if (postalCode.length < 4) {
+      setExchangeRelayError("Saisissez un code postal valide (au moins 4 caractères) pour rechercher un point relais.");
+      return;
+    }
+    setExchangeRelayLoading(true);
+    setExchangeRelayError("");
+    try {
+      const points = await getMondialRelayPoints({ postalCode, country: relayCountryCode(exchangeShippingAddress.country), limit: 10 });
+      setExchangeRelayPoints(points);
+      if (points.length === 0) setExchangeRelayError("Aucun point relais trouvé pour ce code postal.");
+    } catch (error) {
+      setExchangeRelayPoints([]);
+      setExchangeRelayError(error instanceof Error ? error.message : "Recherche des points relais impossible.");
+    } finally {
+      setExchangeRelayLoading(false);
+    }
   };
 
   const searchExchangeReplacement = async (query: string) => {
@@ -556,9 +644,25 @@ export default function OrderDetailPage() {
       setExchangeError("Sélectionnez l’article retourné et l’article de remplacement.");
       return;
     }
+    if (!exchangeFulfillmentMode) {
+      setExchangeError("Choisissez si le remplacement est remis en boutique ou expédié.");
+      return;
+    }
     if ((exchangeReplacementProduct.variants?.length || 0) > 0 && !exchangeReplacementVariant) {
       setExchangeError("Sélectionnez une variante disponible pour l’article de remplacement.");
       return;
+    }
+    const shippingAddress = sanitizeEditableAddress(exchangeShippingAddress);
+    if (exchangeFulfillmentMode === "shipment") {
+      const missingAddressField = !shippingAddress.firstName || !shippingAddress.lastName || !shippingAddress.address || !shippingAddress.postalCode || !shippingAddress.city || !shippingAddress.country;
+      if (missingAddressField) {
+        setExchangeError("Renseignez les coordonnées complètes du destinataire du remplacement.");
+        return;
+      }
+      if (exchangeDeliveryMode === "relay" && !exchangeRelayPoint) {
+        setExchangeError("Recherchez puis sélectionnez le point relais de destination.");
+        return;
+      }
     }
     setExchangeSubmitting(true);
     setExchangeError("");
@@ -568,6 +672,10 @@ export default function OrderDetailPage() {
         quantity: Number.parseInt(exchangeQuantity, 10) || 0,
         replacementProductId: exchangeReplacementProduct.id,
         replacementVariantId: exchangeReplacementVariant?.id || null,
+        fulfillmentMode: exchangeFulfillmentMode,
+        deliveryMode: exchangeFulfillmentMode === "shipment" ? exchangeDeliveryMode : null,
+        shippingAddress: exchangeFulfillmentMode === "shipment" ? shippingAddress : null,
+        relayPoint: exchangeFulfillmentMode === "shipment" && exchangeDeliveryMode === "relay" ? exchangeRelayPoint : null,
         notes: exchangeNotes || null,
       });
       // La réponse de création contient déjà le dossier complet : l’échange est
@@ -588,7 +696,7 @@ export default function OrderDetailPage() {
     setExchangeLabelTarget({ exchange, direction });
     setExchangeLabelQuotes([]);
     setExchangeLabelQuoteId("");
-    setExchangeRelayPointId("");
+    setExchangeRelayPointId(direction === "replacement" ? exchange.relayPoint?.id || "" : "");
     setExchangeError("");
     setExchangeLabelLoading(true);
     try {
@@ -646,6 +754,65 @@ export default function OrderDetailPage() {
       setExchangeError(error instanceof Error ? error.message : "Action d’échange impossible.");
     } finally {
       setExchangeLoading(false);
+    }
+  };
+
+  const updateManualExchangeSettlement = (
+    exchangeId: string,
+    patch: Partial<{
+      paymentMethod: AdminOrderExchangeManualPaymentMethod;
+      receivedAt: string;
+      reference: string;
+      note: string;
+      confirmed: boolean;
+    }>,
+  ) => {
+    setManualExchangeSettlement((current) => ({
+      ...current,
+      [exchangeId]: {
+        ...(current[exchangeId] || {
+          paymentMethod: "external_card" as AdminOrderExchangeManualPaymentMethod,
+          receivedAt: new Date().toISOString().slice(0, 10),
+          reference: "",
+          note: "",
+          confirmed: false,
+        }),
+        ...patch,
+      },
+    }));
+  };
+
+  const handleManualExchangeSettlement = async (exchange: AdminOrderExchange) => {
+    const settlement = manualExchangeSettlement[exchange.id] || {
+      paymentMethod: "external_card" as const,
+      receivedAt: new Date().toISOString().slice(0, 10),
+      reference: "",
+      note: "",
+      confirmed: false,
+    };
+    if (!settlement.receivedAt || !settlement.confirmed) {
+      setExchangeError("Indiquez la date d’encaissement et confirmez que le complément exact a été reçu.");
+      return;
+    }
+    setManualExchangeSettlementLoading(exchange.id);
+    setExchangeError("");
+    try {
+      // Do not use the order-level manual payment API and never mutate paidAmount
+      // locally: the exchange settlement endpoint validates its own exact amount.
+      const result = await settleAdminExchangeManually(exchange.id, {
+        paymentMethod: settlement.paymentMethod,
+        receivedAt: settlement.receivedAt,
+        reference: settlement.reference.trim() || null,
+        note: settlement.note.trim() || null,
+        confirmed: true,
+      });
+      setExchanges((current) => current.map((item) => item.id === result.exchange.id ? result.exchange : item));
+      updateManualExchangeSettlement(exchange.id, { confirmed: false, reference: "", note: "" });
+      await refreshExchangeData();
+    } catch (error) {
+      setExchangeError(error instanceof Error ? error.message : "Impossible d’enregistrer le règlement manuel de l’échange.");
+    } finally {
+      setManualExchangeSettlementLoading(null);
     }
   };
 
@@ -1044,9 +1211,9 @@ export default function OrderDetailPage() {
       setOrder((prev) => {
         if (!prev) return prev;
         if (result.isB2B) {
-          return { ...prev, proInvoiceNumber: result.invoiceNumber, proInvoiceUrl: result.invoiceUrl };
+          return { ...prev, proInvoiceNumber: result.invoiceNumber, proInvoiceUrl: result.invoiceUrl, itemsLastModifiedAt: null };
         }
-        return { ...prev, invoiceNumber: result.invoiceNumber, invoiceUrl: result.invoiceUrl };
+        return { ...prev, invoiceNumber: result.invoiceNumber, invoiceUrl: result.invoiceUrl, itemsLastModifiedAt: null };
       });
     } catch (err: any) {
       alert(err.message || "Impossible de générer la facture.");
@@ -1698,6 +1865,20 @@ export default function OrderDetailPage() {
     && (!exchangeReplacementRequiresVariant || exchangeReplacementVariant)
     && exchangeReplacementHasStock
   );
+  const exchangeRecipientIsComplete = Boolean(
+    exchangeShippingAddress.firstName.trim()
+    && exchangeShippingAddress.lastName.trim()
+    && exchangeShippingAddress.address.trim()
+    && exchangeShippingAddress.postalCode.trim()
+    && exchangeShippingAddress.city.trim()
+    && exchangeShippingAddress.country.trim(),
+  );
+  const exchangeDestinationIsComplete = exchangeFulfillmentMode === "in_store" || (
+    exchangeFulfillmentMode === "shipment"
+    && exchangeRecipientIsComplete
+    && (exchangeDeliveryMode === "home" || Boolean(exchangeRelayPoint))
+  );
+  const exchangeCreationIsComplete = exchangeSelectionIsComplete && Boolean(exchangeFulfillmentMode) && exchangeDestinationIsComplete;
   const exchangePreview = exchangeSelectionIsComplete && exchangeReturnedItem && exchangeReplacementProduct
     ? (() => {
         const money = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
@@ -1721,6 +1902,12 @@ export default function OrderDetailPage() {
   // Une vente POS payée est remise immédiatement : son échange se déroule en boutique, sans étiquette.
   const isExchangeEligible = ["shipped", "delivered"].includes(order.status) || (isPosOrder && ["paid", "processing"].includes(order.status));
   const isInStoreExchange = isPosOrder && isExchangeEligible;
+  const hasExchangeFinancialFinalStatus = exchanges.some((exchange) => (
+    Boolean(exchange.financialFinalizedAt)
+    || ["settled", "paid", "refunded", "internal", "gift", "manual", "not_required"].includes(exchange.financialStatus || "")
+    || ["paid", "refunded", "internal", "gift", "manual", "not_required"].includes(exchange.settlementStatus)
+  ));
+  const invoiceNeedsRegeneration = Boolean(order.itemsLastModifiedAt && (order.isB2B ? order.proInvoiceUrl : order.invoiceUrl));
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 text-gray-900 sm:p-6 lg:p-8">
@@ -1736,16 +1923,15 @@ export default function OrderDetailPage() {
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${pay.className}`}>{pay.label}</span>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${fulfillment.className}`}>{fulfillment.label}</span>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${channelInfo.className}`}>{channelInfo.label}</span>
-                {/* Badge "Facture à régénérer" :
-                     - itemsLastModifiedAt est mis à jour à chaque modification des articles
-                     - Il est réinitialisé à null lors de la génération de facture
-                     - Donc si itemsLastModifiedAt est non-null ET qu'une facture existe → badge */}
-                {order.itemsLastModifiedAt && (order.isB2B ? Boolean(order.proInvoiceUrl) : Boolean(order.invoiceUrl)) && (
+                {/* A financial exchange needs an accounting document refresh, without changing accounting client-side. */}
+                {invoiceNeedsRegeneration && (
                   <span
-                    title={`Articles modifiés le ${new Date(order.itemsLastModifiedAt).toLocaleDateString("fr-FR")}. Régénérez la facture depuis la section Facture ci-dessous.`}
+                    title={hasExchangeFinancialFinalStatus
+                      ? "Un échange a atteint son état financier final. Régénérez la facture depuis la section Facture ci-dessous."
+                      : `Articles modifiés le ${new Date(order.itemsLastModifiedAt!).toLocaleDateString("fr-FR")}. Régénérez la facture depuis la section Facture ci-dessous.`}
                     className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-300"
                   >
-                    ⚠️ Facture à régénérer
+                    <AlertCircle className="h-3.5 w-3.5" /> Facture à régénérer
                   </span>
                 )}
               </div>
@@ -1779,23 +1965,44 @@ export default function OrderDetailPage() {
                 </div>
               </div>
               <div className="divide-y divide-gray-100">
-                {order.items.map((item) => (
-                  <div key={item.id} className="flex gap-4 px-5 py-4">
-                    <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
-                      {item.image ? <img src={item.image} alt="" className="h-full w-full object-cover" /> : <Package className="h-5 w-5 text-gray-300" />}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-gray-950">{item.name}</p>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
-                        <span>{formatPrice(item.price, order.currency)} × {item.quantity}</span>
-                        {item.variantLabel && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{item.variantLabel}</span>}
-                        {item.isCustomSale && <span className="rounded-full bg-fuchsia-50 px-2 py-0.5 text-xs font-semibold text-fuchsia-700">Vente rapide</span>}
-                        {item.discountAmount ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Remise {formatPrice(item.discountAmount, order.currency)}</span> : null}
+                {order.items.map((item) => {
+                  const settledReplacement = exchanges.find((exchange) => (
+                    exchange.returnedOrderItemId === item.id
+                    && ["ready_to_ship", "replacement_shipped", "completed"].includes(exchange.status)
+                    && ["not_required", "paid", "internal", "gift", "manual", "refunded"].includes(exchange.settlementStatus)
+                  ));
+                  return (
+                    <div key={item.id}>
+                      <div className="flex gap-4 px-5 py-4">
+                        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
+                          {item.image ? <img src={item.image} alt="" className="h-full w-full object-cover" /> : <Package className="h-5 w-5 text-gray-300" />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className={settledReplacement ? "font-medium text-gray-500 line-through" : "font-medium text-gray-950"}>{item.name}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
+                            <span>{formatPrice(item.price, order.currency)} × {item.quantity}</span>
+                            {item.variantLabel && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{item.variantLabel}</span>}
+                            {item.isCustomSale && <span className="rounded-full bg-fuchsia-50 px-2 py-0.5 text-xs font-semibold text-fuchsia-700">Vente rapide</span>}
+                            {item.discountAmount ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Remise {formatPrice(item.discountAmount, order.currency)}</span> : null}
+                            {settledReplacement && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-800">Remplacé via échange</span>}
+                          </div>
+                        </div>
+                        <div className={settledReplacement ? "font-semibold text-gray-500" : "font-semibold text-gray-950"}>{formatPrice(item.price * item.quantity, order.currency)}</div>
                       </div>
+                      {settledReplacement && (
+                        <div className="mx-5 mb-4 flex gap-3 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-violet-200 bg-white">
+                            {settledReplacement.replacementImage ? <img src={settledReplacement.replacementImage} alt="" className="h-full w-full object-cover" /> : <Package className="h-4 w-4 text-violet-300" />}
+                          </div>
+                          <div className="min-w-0 text-sm">
+                            <p className="font-semibold text-violet-950">Remplacement : {settledReplacement.replacementName} × {settledReplacement.replacementQuantity}</p>
+                            <p className="mt-0.5 text-xs text-violet-800">{settledReplacement.replacementVariantLabel ? `${settledReplacement.replacementVariantLabel} · ` : ""}{formatPrice(settledReplacement.replacementValue, settledReplacement.currency)} {settledReplacement.priceTaxLabel} · échange {settledReplacement.status === "completed" ? "terminé" : "réglé"}</p>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="font-semibold text-gray-950">{formatPrice(item.price * item.quantity, order.currency)}</div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <div className="flex flex-col gap-2 border-t border-gray-200 px-5 py-4 sm:flex-row">
                 {isPosOrder ? (
@@ -1830,8 +2037,8 @@ export default function OrderDetailPage() {
               <section className="rounded-2xl border border-violet-200 bg-white p-5 shadow-sm">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 className="font-semibold text-gray-950">{isInStoreExchange ? "Échanges en boutique" : "Échanges après expédition"}</h2>
-                    <p className="mt-1 text-sm text-gray-500">{isInStoreExchange ? "Le retour et la remise du remplacement sont confirmés en boutique ; aucun transport n’est créé." : "Le retour, le règlement et le renvoi sont suivis séparément ; la commande initiale reste inchangée."}</p>
+                    <h2 className="font-semibold text-gray-950">Échanges</h2>
+                    <p className="mt-1 text-sm text-gray-500">Le retour, le règlement et la remise du remplacement sont suivis dans chaque dossier ; la commande initiale reste inchangée.</p>
                   </div>
                   {isExchangeEligible && (
                     <button onClick={openExchangePanel} className="inline-flex items-center gap-2 rounded-xl bg-violet-700 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-800">
@@ -1848,6 +2055,26 @@ export default function OrderDetailPage() {
                     {exchanges.map((exchange) => {
                       const returnShipment = exchange.shipments.find((shipment) => shipment.direction === "return");
                       const replacementShipment = exchange.shipments.find((shipment) => shipment.direction === "replacement");
+                      const fulfillmentMode = exchange.fulfillmentMode || (isPosOrder ? "in_store" : "shipment");
+                      const isInStoreFulfillment = fulfillmentMode === "in_store";
+                      const isShipmentFulfillment = fulfillmentMode === "shipment";
+                      const exchangeIsFinanciallyFinal = Boolean(exchange.financialFinalizedAt)
+                        || ["not_required", "paid", "refunded", "internal", "gift", "manual"].includes(exchange.settlementStatus)
+                        || ["settled", "paid", "refunded", "internal", "gift", "manual", "not_required"].includes(exchange.financialStatus || "");
+                      const manualSettlement = manualExchangeSettlement[exchange.id] || {
+                        paymentMethod: "external_card" as AdminOrderExchangeManualPaymentMethod,
+                        receivedAt: new Date().toISOString().slice(0, 10),
+                        reference: "",
+                        note: "",
+                        confirmed: false,
+                      };
+                      const shipmentDestination = exchange.deliveryMode === "relay"
+                        ? exchange.relayPoint
+                          ? `Point relais — ${exchange.relayPoint.name}, ${exchange.relayPoint.fullAddress}`
+                          : "Point relais sélectionné"
+                        : exchange.shippingAddress
+                          ? `À domicile — ${exchange.shippingAddress.firstName} ${exchange.shippingAddress.lastName}, ${exchange.shippingAddress.address}, ${exchange.shippingAddress.postalCode} ${exchange.shippingAddress.city}`
+                          : "Adresse de livraison enregistrée";
                       const statusLabels: Record<string, string> = {
                         initiated: "En attente de retour",
                         return_in_transit: "Retour en attente de réception",
@@ -1861,21 +2088,43 @@ export default function OrderDetailPage() {
                         <article key={exchange.id} className="rounded-xl border border-violet-100 bg-violet-50/30 p-4">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
+                              <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Échange {isInStoreFulfillment ? "en boutique" : "avec expédition"}</p>
                               <p className="text-sm font-semibold text-gray-950">{exchange.returnName} × {exchange.returnQuantity} <span className="text-gray-400">→</span> {exchange.replacementName} × {exchange.replacementQuantity}</p>
                               <p className="mt-1 text-xs text-gray-600">Statut : <strong>{statusLabels[exchange.status] || exchange.status}</strong> · Différence : <strong className={exchange.differenceAmount > 0 ? "text-amber-700" : exchange.differenceAmount < 0 ? "text-emerald-700" : "text-gray-700"}>{exchange.differenceAmount > 0 ? "+" : ""}{formatPrice(exchange.differenceAmount, exchange.currency)}</strong> ({exchange.priceTaxLabel})</p>
                             </div>
                             <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-violet-800 ring-1 ring-violet-200">{statusLabels[exchange.status] || exchange.status}</span>
                           </div>
-                          <div className="mt-3 grid gap-2 text-xs text-gray-600 sm:grid-cols-2">
-                            <p>Retour : {isInStoreExchange ? (exchange.returnedStockRestored ? "reçu et inspecté en boutique" : "à rapporter en boutique") : returnShipment?.trackingNumber ? `étiquette ${returnShipment.trackingNumber}` : "étiquette à créer"}</p>
-                            <p>Renvoi : {isInStoreExchange ? (exchange.status === "replacement_shipped" || exchange.status === "completed" ? "remis en boutique" : "à remettre en boutique") : replacementShipment?.trackingNumber ? `étiquette ${replacementShipment.trackingNumber}` : "non créé"}</p>
-                            <p>Stock retour : {exchange.returnedStockRestored ? "réintégré après inspection" : "non réintégré"}</p>
-                            <p>Stock remplacement : {exchange.replacementStockReserved ? "réservé" : "non réservé"}</p>
+                          <div className="mt-4 grid gap-3 md:grid-cols-2">
+                            <div className="flex gap-3 rounded-xl border border-gray-200 bg-white p-3">
+                              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-100 bg-gray-50">{exchange.returnImage ? <img src={exchange.returnImage} alt="" className="h-full w-full object-cover" /> : <Package className="h-4 w-4 text-gray-300" />}</div>
+                              <div className="min-w-0 text-xs"><p className="font-semibold text-gray-950">Retour — {exchange.returnName}</p><p className="mt-1 text-gray-500">{exchange.returnVariantLabel ? `${exchange.returnVariantLabel} · ` : ""}{exchange.returnQuantity} × {formatPrice(exchange.returnValue, exchange.currency)} {exchange.priceTaxLabel}</p></div>
+                            </div>
+                            <div className="flex gap-3 rounded-xl border border-violet-200 bg-violet-50 p-3">
+                              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-violet-200 bg-white">{exchange.replacementImage ? <img src={exchange.replacementImage} alt="" className="h-full w-full object-cover" /> : <Package className="h-4 w-4 text-violet-300" />}</div>
+                              <div className="min-w-0 text-xs"><p className="font-semibold text-violet-950">Remplacement — {exchange.replacementName}</p><p className="mt-1 text-violet-800">{exchange.replacementVariantLabel ? `${exchange.replacementVariantLabel} · ` : ""}{exchange.replacementQuantity} × {formatPrice(exchange.replacementValue, exchange.currency)} {exchange.priceTaxLabel}</p></div>
+                            </div>
                           </div>
+                          <div className="mt-3 grid gap-2 text-xs text-gray-600 sm:grid-cols-2">
+                            <p>Retour : {isInStoreFulfillment || isPosOrder ? (exchange.returnedStockRestored ? "reçu et inspecté en boutique" : "à rapporter en boutique") : returnShipment?.trackingNumber ? `étiquette ${carrierLabel(returnShipment.carrier)} · ${returnShipment.trackingNumber}` : "étiquette à créer"}</p>
+                            <p>Remplacement : {isInStoreFulfillment ? (exchange.status === "replacement_shipped" || exchange.status === "completed" ? "remis en boutique" : "à remettre en boutique") : replacementShipment?.trackingNumber ? `étiquette ${carrierLabel(replacementShipment.carrier)} · ${replacementShipment.trackingNumber}` : shipmentDestination}</p>
+                            <p>Stock retour : {exchange.returnedStockRestored ? "réintégré après inspection" : "non réintégré"}</p>
+                            <p>Stock remplacement : {exchange.replacementStockReserved ? "réservé" : exchange.replacementStockReleased ? "réservation libérée" : "non réservé"}</p>
+                          </div>
+                          <ol className="mt-4 grid gap-2 text-xs sm:grid-cols-4">
+                            {[
+                              { label: "1. Retour", done: exchange.returnedStockRestored || Boolean(returnShipment) },
+                              { label: "2. Contrôle", done: exchange.returnedStockRestored },
+                              { label: "3. Règlement", done: exchangeIsFinanciallyFinal },
+                              { label: isInStoreFulfillment ? "4. Remise" : "4. Expédition", done: ["replacement_shipped", "completed"].includes(exchange.status) },
+                            ].map((step) => <li key={step.label} className={`rounded-lg px-2.5 py-2 font-medium ${step.done ? "bg-emerald-100 text-emerald-800" : "bg-gray-100 text-gray-600"}`}>{step.done ? "✓ " : ""}{step.label}</li>)}
+                          </ol>
+                          {isShipmentFulfillment && exchange.status === "settlement_pending" && exchange.differenceAmount > 0 && !exchangeIsFinanciallyFinal && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">L’étiquette et l’expédition du remplacement sont bloquées jusqu’à la confirmation du règlement de <strong>{formatPrice(exchange.differenceAmount, exchange.currency)} {exchange.priceTaxLabel}</strong>.</div>}
+                          {isShipmentFulfillment && exchange.status === "ready_to_ship" && !replacementShipment && <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">Destination du remplacement : <strong>{shipmentDestination}</strong>. Créez l’étiquette pour poursuivre l’expédition.</div>}
                           <div className="mt-4 flex flex-wrap gap-2">
-                            {isInStoreExchange && exchange.status === "initiated" && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReturnReceived(exchange.id))} className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-800">Confirmer retour reçu et inspecté en boutique</button>}
-                            {!isInStoreExchange && (["initiated", "return_in_transit"].includes(exchange.status) && !returnShipment) && <button disabled={exchangeLoading} onClick={() => openExchangeLabelDrawer(exchange, "return")} className="rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-xs font-semibold text-violet-800 hover:bg-violet-50">Créer l’étiquette retour</button>}
-                            {!isInStoreExchange && exchange.status === "return_in_transit" && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReturnReceived(exchange.id))} className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-800">Confirmer retour reçu et inspecté</button>}
+                            {isInStoreFulfillment && exchange.status === "initiated" && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReturnReceived(exchange.id))} className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-800">Confirmer retour reçu et inspecté en boutique</button>}
+                            {isShipmentFulfillment && isPosOrder && exchange.status === "initiated" && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReturnReceived(exchange.id))} className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-800">Confirmer retour reçu et inspecté en boutique</button>}
+                            {isShipmentFulfillment && !isPosOrder && (["initiated", "return_in_transit"].includes(exchange.status) && !returnShipment) && <button disabled={exchangeLoading} onClick={() => openExchangeLabelDrawer(exchange, "return")} className="rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-xs font-semibold text-violet-800 hover:bg-violet-50">Créer l’étiquette retour</button>}
+                            {isShipmentFulfillment && exchange.status === "return_in_transit" && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReturnReceived(exchange.id))} className="rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-800">Confirmer retour reçu et inspecté</button>}
                             {exchange.status === "settlement_pending" && exchange.differenceAmount > 0 && exchange.settlementStatus === "pending" ? (
                               <span className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800">Lien de règlement de {formatPrice(exchange.differenceAmount, exchange.currency)} envoyé au client — en attente de confirmation</span>
                             ) : exchange.status === "settlement_pending" && <>
@@ -1883,12 +2132,34 @@ export default function OrderDetailPage() {
                               <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => settleAdminExchange(exchange.id, "internal"))} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50">Ajustement interne</button>
                               <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => settleAdminExchange(exchange.id, "gift"))} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50">Geste commercial</button>
                             </>}
-                            {isInStoreExchange && exchange.status === "ready_to_ship" && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReplacementShipped(exchange.id))} className="rounded-lg bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800">Confirmer remise du remplacement en boutique</button>}
-                            {!isInStoreExchange && exchange.status === "ready_to_ship" && !replacementShipment && <button disabled={exchangeLoading} onClick={() => openExchangeLabelDrawer(exchange, "replacement")} className="rounded-lg bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800">Créer l’étiquette de renvoi</button>}
-                            {!isInStoreExchange && exchange.status === "ready_to_ship" && replacementShipment && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReplacementShipped(exchange.id))} className="rounded-lg bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800">Marquer le remplacement expédié</button>}
+                            {isInStoreFulfillment && exchange.status === "ready_to_ship" && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReplacementShipped(exchange.id))} className="rounded-lg bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800">Confirmer remise du remplacement en boutique</button>}
+                            {isShipmentFulfillment && exchange.status === "ready_to_ship" && !replacementShipment && <button disabled={exchangeLoading} onClick={() => openExchangeLabelDrawer(exchange, "replacement")} className="rounded-lg bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800"><Truck className="mr-1 inline h-3.5 w-3.5" /> Préparer l’expédition du remplacement</button>}
+                            {isShipmentFulfillment && exchange.status === "ready_to_ship" && replacementShipment && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => markAdminExchangeReplacementShipped(exchange.id))} className="rounded-lg bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800"><Truck className="mr-1 inline h-3.5 w-3.5" /> Confirmer l’expédition du remplacement</button>}
                             {exchange.status === "replacement_shipped" && <button disabled={exchangeLoading} onClick={() => runExchangeAction(() => completeAdminExchange(exchange.id))} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800">Clôturer l’échange</button>}
-                            {!(["completed", "cancelled", "replacement_shipped"].includes(exchange.status)) && <button disabled={exchangeLoading} onClick={() => { if (window.confirm("Annuler cet échange ? Le stock réservé sera libéré.")) runExchangeAction(() => cancelAdminExchange(exchange.id)); }} className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">Annuler l’échange</button>}
+                            {!( ["completed", "cancelled", "replacement_shipped"].includes(exchange.status)) && <button disabled={exchangeLoading} onClick={() => { if (window.confirm("Annuler cet échange ? Le stock réservé sera libéré.")) runExchangeAction(() => cancelAdminExchange(exchange.id)); }} className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">Annuler l’échange</button>}
                           </div>
+                          {exchange.status === "settlement_pending" && exchange.differenceAmount > 0 && !exchangeIsFinanciallyFinal && exchange.settlementPaymentUrl && (
+                            <p className="mt-3 text-xs text-amber-800">Un lien de règlement est actif. Le règlement manuel est verrouillé pour éviter tout double encaissement.</p>
+                          )}
+                          {exchange.status === "settlement_pending" && exchange.differenceAmount > 0 && !exchangeIsFinanciallyFinal && !exchange.settlementPaymentUrl && (
+                            <section className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                              <div className="flex items-start gap-2">
+                                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
+                                <div>
+                                  <h3 className="text-sm font-semibold text-emerald-950">Encaisser le complément manuellement</h3>
+                                  <p className="mt-1 text-xs text-emerald-800">Montant exact attendu (serveur) : <strong>{formatPrice(exchange.differenceAmount, exchange.currency)} {exchange.priceTaxLabel}</strong>. Réservé à un encaissement réellement constaté.</p>
+                                </div>
+                              </div>
+                              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                                <label><span className="mb-1 block text-xs font-medium text-emerald-900">Moyen réellement utilisé</span><select value={manualSettlement.paymentMethod} onChange={(event) => updateManualExchangeSettlement(exchange.id, { paymentMethod: event.target.value as AdminOrderExchangeManualPaymentMethod })} className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm"><option value="external_card">Carte via lien externe</option><option value="indy">Indy</option><option value="mollie_manual">Carte manuelle</option><option value="cash">Espèces</option><option value="virement">Virement bancaire</option><option value="other">Autre moyen</option></select></label>
+                                <label><span className="mb-1 block text-xs font-medium text-emerald-900">Date de réception</span><input type="date" value={manualSettlement.receivedAt} onChange={(event) => updateManualExchangeSettlement(exchange.id, { receivedAt: event.target.value })} className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm" /></label>
+                                <label><span className="mb-1 block text-xs font-medium text-emerald-900">Référence (facultative)</span><input value={manualSettlement.reference} onChange={(event) => updateManualExchangeSettlement(exchange.id, { reference: event.target.value })} placeholder="N° reçu, virement…" className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm" /></label>
+                                <label><span className="mb-1 block text-xs font-medium text-emerald-900">Note (facultative)</span><input value={manualSettlement.note} onChange={(event) => updateManualExchangeSettlement(exchange.id, { note: event.target.value })} placeholder="Précision interne" className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm" /></label>
+                              </div>
+                              <label className="mt-3 flex items-start gap-2 text-xs text-emerald-900"><input type="checkbox" checked={manualSettlement.confirmed} onChange={(event) => updateManualExchangeSettlement(exchange.id, { confirmed: event.target.checked })} className="mt-0.5 rounded border-emerald-400" />Je confirme avoir vérifié la réception du complément exact. Cette confirmation fait avancer l’échange ; elle ne modifie pas le montant payé de la commande d’origine.</label>
+                              <button type="button" disabled={manualExchangeSettlementLoading === exchange.id || !manualSettlement.confirmed || !manualSettlement.receivedAt} onClick={() => handleManualExchangeSettlement(exchange)} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">{manualExchangeSettlementLoading === exchange.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Confirmer l’encaissement manuel exact</button>
+                            </section>
+                          )}
                           {exchange.events.length > 0 && <details className="mt-3 text-xs text-gray-500"><summary className="cursor-pointer font-medium text-gray-700">Historique de l’échange ({exchange.events.length})</summary><div className="mt-2 space-y-1">{exchange.events.map((event) => <p key={event.id}>• {formatDate(event.createdAt)} — {event.message}</p>)}</div></details>}
                         </article>
                       );
@@ -2443,6 +2714,12 @@ export default function OrderDetailPage() {
 
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <div className="mb-3 flex items-center gap-2"><FileText className="h-4 w-4 text-gray-500" /><h2 className="font-semibold text-gray-950">Facture</h2></div>
+              {invoiceNeedsRegeneration && hasExchangeFinancialFinalStatus && (
+                <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                  <p className="font-semibold">Facture à régénérer</p>
+                  <p className="mt-1">Un échange a atteint son état financier final. Utilisez l’action de régénération ci-dessous afin que le document comptable soit produit par le backend.</p>
+                </div>
+              )}
               {(order.invoiceNumber && order.invoiceUrl) || (order.proInvoiceNumber && order.proInvoiceUrl) ? (
                 (() => {
                   const isB2B = order.isB2B && order.proInvoiceNumber && order.proInvoiceUrl;
@@ -2609,13 +2886,13 @@ export default function OrderDetailPage() {
       </div>
 
       {showExchangePanel && order && (
-        <div className="fixed inset-0 z-[70] overflow-y-auto bg-black/50 p-4">
-          <div className="mx-auto my-6 w-full max-w-3xl rounded-2xl bg-white shadow-2xl">
+        <div className="fixed inset-0 z-[70] overflow-y-auto bg-black/50 p-0 sm:p-4">
+          <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col bg-white shadow-2xl sm:my-6 sm:min-h-0 sm:rounded-2xl">
             <div className="flex items-start justify-between border-b border-gray-200 px-6 py-5">
               <div><h2 className="text-lg font-semibold text-gray-950">Échanger un article</h2><p className="mt-1 text-sm text-gray-500">La commande initiale, ses prix et son stock ne seront pas modifiés.</p></div>
               <button onClick={() => setShowExchangePanel(false)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100"><X className="h-5 w-5" /></button>
             </div>
-            <div className="space-y-5 p-6">
+            <div className="flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
               {exchangeError && <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{exchangeError}</div>}
               <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_120px]">
                 <label className="block text-sm font-medium text-gray-800">Article reçu à retourner
@@ -2676,6 +2953,49 @@ export default function OrderDetailPage() {
                   </div>
                 )}
               </div>
+              <section className="rounded-xl border border-violet-200 bg-violet-50/40 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-semibold text-violet-950">Remise du remplacement *</h3>
+                    <p className="mt-1 text-xs text-violet-800">Choisissez explicitement le parcours de cet échange.</p>
+                  </div>
+                  {exchangeFulfillmentMode && <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-violet-800 ring-1 ring-violet-200">{exchangeFulfillmentMode === "in_store" ? "Remise en boutique" : "Expédition"}</span>}
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <button type="button" onClick={() => { setExchangeFulfillmentMode("in_store"); setExchangeError(""); }} className={`rounded-xl border p-3 text-left transition ${exchangeFulfillmentMode === "in_store" ? "border-violet-600 bg-white ring-2 ring-violet-200" : "border-violet-200 bg-white hover:border-violet-400"}`}>
+                    <Package className="h-5 w-5 text-violet-700" /><p className="mt-2 text-sm font-semibold text-violet-950">Remise en boutique</p><p className="mt-1 text-xs text-violet-800">Retour et remise en main propre ; aucune étiquette de remplacement.</p>
+                  </button>
+                  <button type="button" onClick={() => { setExchangeFulfillmentMode("shipment"); setExchangeError(""); }} className={`rounded-xl border p-3 text-left transition ${exchangeFulfillmentMode === "shipment" ? "border-violet-600 bg-white ring-2 ring-violet-200" : "border-violet-200 bg-white hover:border-violet-400"}`}>
+                    <Truck className="h-5 w-5 text-violet-700" /><p className="mt-2 text-sm font-semibold text-violet-950">Expédier le remplacement</p><p className="mt-1 text-xs text-violet-800">Le retour, le règlement et l’expédition seront suivis séparément.</p>
+                  </button>
+                </div>
+                {exchangeFulfillmentMode === "shipment" && (
+                  <div className="mt-4 border-t border-violet-200 pt-4">
+                    <p className="text-sm font-semibold text-violet-950">Mode de livraison</p>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      <button type="button" onClick={() => { setExchangeDeliveryMode("home"); setExchangeRelayPoint(null); setExchangeError(""); }} className={`rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition ${exchangeDeliveryMode === "home" ? "border-violet-600 bg-white text-violet-950" : "border-violet-200 bg-white text-violet-800"}`}>Livraison à domicile</button>
+                      <button type="button" onClick={() => { setExchangeDeliveryMode("relay"); setExchangeError(""); }} className={`rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition ${exchangeDeliveryMode === "relay" ? "border-violet-600 bg-white text-violet-950" : "border-violet-200 bg-white text-violet-800"}`}>Point relais</button>
+                    </div>
+                    <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Destinataire et adresse</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {order.shippingAddress && <button type="button" onClick={() => selectExchangeShippingAddress("order", order.shippingAddress || undefined)} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${exchangeAddressSource === "order" ? "border-violet-500 bg-violet-50 text-violet-800" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}>Adresse de la commande</button>}
+                        {(order.customer?.addresses || []).map((address) => <button key={address.id} type="button" onClick={() => selectExchangeShippingAddress("customer", address)} className={`rounded-lg border px-3 py-2 text-left text-xs font-semibold ${exchangeAddressSource === "customer" && exchangeShippingAddress.address === address.address && exchangeShippingAddress.postalCode === address.postalCode ? "border-violet-500 bg-violet-50 text-violet-800" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}>{address.isDefault ? "Adresse client par défaut" : `${address.address}, ${address.city}`}</button>)}
+                        <button type="button" onClick={() => selectExchangeShippingAddress("new")} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${exchangeAddressSource === "new" ? "border-violet-500 bg-violet-50 text-violet-800" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}>Nouvelle adresse</button>
+                      </div>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {ADDRESS_FIELDS.map((field) => <label key={`exchange-${field.key}`} className={field.key === "address" || field.key === "extension" ? "sm:col-span-2" : ""}><span className="mb-1 block text-xs font-medium text-gray-600">{field.label}{field.required ? " *" : ""}</span><input value={exchangeShippingAddress[field.key] || ""} onChange={(event) => updateExchangeShippingAddress(field.key, event.target.value)} placeholder={field.placeholder} className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm" /></label>)}
+                      </div>
+                    </div>
+                    {exchangeDeliveryMode === "relay" && (
+                      <div className="mt-4 rounded-xl border border-red-200 bg-red-50/60 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-semibold text-red-900">Sélectionner un point relais</p><p className="mt-1 text-xs text-red-800">La recherche réutilise le service Mondial Relay de la commande en ligne.</p></div>{exchangeRelayPoint && <button type="button" onClick={() => setExchangeRelayPoint(null)} className="text-xs font-semibold text-red-700">Changer</button>}</div>
+                        {exchangeRelayPoint ? <div className="mt-3 rounded-lg border border-red-200 bg-white p-3 text-sm"><p className="font-semibold text-gray-950">{exchangeRelayPoint.name}</p><p className="mt-1 text-xs text-gray-600">{exchangeRelayPoint.fullAddress}</p></div> : <><div className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={exchangeRelaySearchPostalCode} onChange={(event) => setExchangeRelaySearchPostalCode(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchExchangeRelayPoints(); } }} placeholder="Code postal" className="min-w-0 flex-1 rounded-xl border border-red-200 bg-white px-3 py-2 text-sm" /><button type="button" onClick={() => void searchExchangeRelayPoints()} disabled={exchangeRelayLoading} className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{exchangeRelayLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} Rechercher</button></div>{exchangeRelayError && <p className="mt-2 rounded-lg bg-rose-100 px-3 py-2 text-xs text-rose-700">{exchangeRelayError}</p>}{exchangeRelayPoints.length > 0 && <div className="mt-3 max-h-56 space-y-2 overflow-y-auto"><p className="text-xs text-red-800">Choisissez un point dans les résultats :</p>{exchangeRelayPoints.map((point) => <button key={point.id} type="button" onClick={() => { setExchangeRelayPoint({ id: point.id, name: point.name, address: point.address, city: point.city, postalCode: point.postalCode, country: point.country, fullAddress: point.fullAddress }); setExchangeRelayError(""); }} className="w-full rounded-xl border border-red-200 bg-white p-3 text-left hover:border-red-400"><div className="flex items-start gap-2"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-red-600" /><div className="min-w-0"><p className="text-sm font-semibold text-gray-950">{point.name}</p><p className="mt-1 text-xs text-gray-600">{point.fullAddress}{point.distance != null ? ` · ${point.distance < 1000 ? `${point.distance} m` : `${(point.distance / 1000).toFixed(1)} km`}` : ""}</p></div></div></button>)}</div>}</>}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
               {exchangePreview && (
                 <section className={`rounded-xl border p-4 ${exchangePreview.differenceAmount > 0 ? "border-amber-200 bg-amber-50" : exchangePreview.differenceAmount < 0 ? "border-emerald-200 bg-emerald-50" : "border-gray-200 bg-gray-50"}`} aria-live="polite">
                   <div className="flex flex-wrap items-start justify-between gap-2">
@@ -2690,27 +3010,27 @@ export default function OrderDetailPage() {
                     <div className="flex justify-between gap-4"><dt className="min-w-0 text-gray-600">Remplacement — {exchangePreview.replacementName} × {exchangeQuantityNumber}</dt><dd className="whitespace-nowrap font-medium text-gray-950">+{formatPrice(exchangePreview.replacementValue, order.currency)}</dd></div>
                     <div className="flex justify-between gap-4 border-t border-black/10 pt-2"><dt className="font-semibold text-gray-950">{exchangePreview.differenceAmount > 0 ? "À encaisser auprès du client" : exchangePreview.differenceAmount < 0 ? "À rembourser au client" : "Aucun règlement nécessaire"}</dt><dd className={`whitespace-nowrap font-bold ${exchangePreview.differenceAmount > 0 ? "text-amber-800" : exchangePreview.differenceAmount < 0 ? "text-emerald-800" : "text-gray-800"}`}>{exchangePreview.differenceAmount > 0 ? "+" : exchangePreview.differenceAmount < 0 ? "-" : ""}{formatPrice(Math.abs(exchangePreview.differenceAmount), order.currency)}</dd></div>
                   </dl>
-                  {exchangePreview.differenceAmount > 0 && <p className="mt-3 text-xs text-amber-900">Après réception et inspection du retour, un bouton permettra d’envoyer ce lien de règlement au client. Le renvoi reste bloqué jusqu’à confirmation du paiement.</p>}
+                  {exchangePreview.differenceAmount > 0 && <p className="mt-3 text-xs text-amber-900">Après réception et inspection du retour, le règlement pourra être envoyé ou enregistré manuellement après vérification. Le remplacement reste bloqué jusqu’à confirmation du paiement.</p>}
                 </section>
               )}
               <label className="block text-sm font-medium text-gray-800">Note interne (facultative)<textarea value={exchangeNotes} onChange={(event) => setExchangeNotes(event.target.value)} rows={3} className="mt-1.5 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm" placeholder="Motif, état du produit, accord client…" /></label>
               <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">À la création, l’article de remplacement est <strong>réservé</strong>. L’article retourné ne sera remis en stock qu’après réception et inspection physique.</div>
             </div>
-            <div className="flex justify-end gap-2 border-t border-gray-200 px-6 py-4"><button onClick={() => setShowExchangePanel(false)} className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700">Annuler</button><button disabled={exchangeSubmitting || !exchangeSelectionIsComplete} onClick={submitExchange} className="inline-flex items-center gap-2 rounded-xl bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50">{exchangeSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}Créer l’échange</button></div>
+            <div className="flex flex-col-reverse gap-2 border-t border-gray-200 px-4 py-4 sm:flex-row sm:justify-end sm:px-6"><button onClick={() => setShowExchangePanel(false)} className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700">Annuler</button><button disabled={exchangeSubmitting || !exchangeCreationIsComplete} onClick={submitExchange} className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50">{exchangeSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}Créer l’échange</button></div>
           </div>
         </div>
       )}
 
       {exchangeLabelTarget && (
-        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-5"><div><h2 className="text-lg font-semibold text-gray-950">{exchangeLabelTarget.direction === "return" ? "Étiquette de retour" : "Étiquette de renvoi"}</h2><p className="mt-1 text-sm text-gray-500">Sélectionnez une offre. L’étiquette sera associée uniquement à ce dossier d’échange.</p></div><button onClick={() => setExchangeLabelTarget(null)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100"><X className="h-5 w-5" /></button></div>
-            <div className="space-y-3 p-6">
+        <div className="fixed inset-0 z-[75] overflow-y-auto bg-black/50 p-0 sm:p-4">
+          <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col bg-white shadow-2xl sm:my-6 sm:min-h-0 sm:max-h-[calc(100dvh-3rem)] sm:rounded-2xl">
+            <div className="flex items-start justify-between border-b border-gray-200 px-4 py-4 sm:px-6 sm:py-5"><div><h2 className="text-lg font-semibold text-gray-950">{exchangeLabelTarget.direction === "return" ? "Étiquette de retour" : "Étiquette de renvoi"}</h2><p className="mt-1 text-sm text-gray-500">Sélectionnez une offre. L’étiquette sera associée uniquement à ce dossier d’échange.</p></div><button onClick={() => setExchangeLabelTarget(null)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100"><X className="h-5 w-5" /></button></div>
+            <div className="flex-1 space-y-3 overflow-y-auto p-4 sm:p-6">
               {exchangeError && <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{exchangeError}</div>}
               {exchangeLabelLoading ? <div className="flex items-center gap-2 py-8 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Chargement des offres…</div> : exchangeLabelQuotes.map((quote) => <label key={quote.id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 ${exchangeLabelQuoteId === quote.id ? "border-violet-500 bg-violet-50" : "border-gray-200"}`}><input type="radio" name="exchange-label-quote" checked={exchangeLabelQuoteId === quote.id} onChange={() => setExchangeLabelQuoteId(quote.id)} className="mt-1" /><span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-gray-950">{quote.carrierLabel} — {quote.serviceLabel}</span><span className="mt-1 block text-xs text-gray-500">{quote.estimatedDeliveryDays} · {quote.deliveryMode === "relay" ? "Point relais requis" : "Livraison à domicile"}</span>{quote.configurationError && <span className="mt-1 block text-xs text-rose-700">{quote.configurationError}</span>}</span><span className="text-sm font-semibold text-gray-950">{formatPrice(quote.totalWithTaxCents / 100, quote.currency)}</span></label>)}
-              {exchangeLabelQuotes.find((quote) => quote.id === exchangeLabelQuoteId)?.requiresRelayPoint && <label className="block text-sm font-medium text-gray-800">Identifiant du point relais de destination<input value={exchangeRelayPointId} onChange={(event) => setExchangeRelayPointId(event.target.value)} placeholder="Ex. 025775" className="mt-1.5 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm" /></label>}
+              {exchangeLabelQuotes.find((quote) => quote.id === exchangeLabelQuoteId)?.requiresRelayPoint && (exchangeLabelTarget.direction === "replacement" && exchangeLabelTarget.exchange.relayPoint ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm"><p className="font-semibold text-red-950">Point relais de destination</p><p className="mt-1 text-red-900">{exchangeLabelTarget.exchange.relayPoint.name}</p><p className="mt-1 text-xs text-red-800">{exchangeLabelTarget.exchange.relayPoint.fullAddress}</p></div> : <label className="block text-sm font-medium text-gray-800">Identifiant du point relais de destination<input value={exchangeRelayPointId} onChange={(event) => setExchangeRelayPointId(event.target.value)} placeholder="Ex. 025775" className="mt-1.5 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm" /></label>)}
             </div>
-            <div className="flex justify-end gap-2 border-t border-gray-200 px-6 py-4"><button onClick={() => setExchangeLabelTarget(null)} className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700">Annuler</button><button disabled={exchangeLabelLoading || !exchangeLabelQuoteId} onClick={purchaseExchangeLabel} className="inline-flex items-center gap-2 rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{exchangeLabelLoading && <Loader2 className="h-4 w-4 animate-spin" />}Créer l’étiquette</button></div>
+            <div className="flex flex-col-reverse gap-2 border-t border-gray-200 px-4 py-4 sm:flex-row sm:justify-end sm:px-6"><button onClick={() => setExchangeLabelTarget(null)} className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700">Annuler</button><button disabled={exchangeLabelLoading || !exchangeLabelQuoteId} onClick={purchaseExchangeLabel} className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{exchangeLabelLoading && <Loader2 className="h-4 w-4 animate-spin" />}Créer l’étiquette</button></div>
           </div>
         </div>
       )}
