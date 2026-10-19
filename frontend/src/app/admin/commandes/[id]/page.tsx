@@ -291,6 +291,7 @@ function renderBillingAddress(order: Order) {
 type EditableAddress = Pick<ShippingAddress, "firstName" | "lastName" | "address" | "city" | "postalCode" | "country" | "extension" | "phone">;
 
 type EditOrderForm = {
+  email: string;
   notes: string;
   shippingAddress: EditableAddress;
   billingAddress: EditableAddress;
@@ -335,6 +336,7 @@ function buildEditForm(order: Order): EditOrderForm {
   const shippingAddress = normalizeEditableAddress(order.shippingAddress || null);
   const billingAddress = normalizeEditableAddress((order.billingAddress as Partial<ShippingAddress> | null) || order.shippingAddress || null);
   return {
+    email: order.customerEmail || order.email || "",
     notes: order.notes || "",
     shippingAddress,
     billingAddress,
@@ -407,6 +409,7 @@ export default function OrderDetailPage() {
   const [editMode, setEditMode] = useState(false);
   const [notes, setNotes] = useState("");
   const [editForm, setEditForm] = useState<EditOrderForm>({
+    email: "",
     notes: "",
     shippingAddress: { ...EMPTY_ADDRESS_FORM },
     billingAddress: { ...EMPTY_ADDRESS_FORM },
@@ -1255,11 +1258,16 @@ export default function OrderDetailPage() {
 
   const handleSaveOrder = async () => {
     if (!order) return;
+    const email = editForm.email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      alert("Veuillez renseigner une adresse e-mail client valide.");
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
         customerId: order.customerId,
-        email: order.customer?.email || order.customerEmail || order.email,
+        email,
         status: order.status,
         paymentMethod: order.paymentMethod || null,
         paymentProvider: order.paymentProvider || null,
@@ -2402,7 +2410,7 @@ export default function OrderDetailPage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2"><Pencil className="h-4 w-4 text-gray-500" /><h2 className="font-semibold text-gray-950">Gestion de la commande</h2></div>
-                  <p className="mt-1 text-xs text-gray-500">{isPosOrder ? "Les ventes caisse sont pilotées depuis le module POS." : "Modifiez les notes et les adresses, puis enregistrez."}</p>
+                  <p className="mt-1 text-xs text-gray-500">{isPosOrder ? "Les ventes caisse sont pilotées depuis le module POS." : "Modifiez l’e-mail, les notes et les adresses, puis enregistrez."}</p>
                 </div>
                 {!editMode && !isPosOrder && (
                   <button onClick={startEditOrder} className="inline-flex items-center gap-2 rounded-xl border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-50">
@@ -2413,6 +2421,16 @@ export default function OrderDetailPage() {
 
               {editMode ? (
                 <div id="edit-address-section" className="mt-5 space-y-5">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Adresse e-mail du client *</label>
+                    <input
+                      type="email"
+                      value={editForm.email}
+                      onChange={(event) => setEditForm((current) => ({ ...current, email: event.target.value }))}
+                      placeholder="client@exemple.fr"
+                      className="w-full rounded-xl border border-gray-300 p-3 text-sm outline-none focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
+                    />
+                  </div>
                   <div>
                     <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Notes internes</label>
                     <textarea

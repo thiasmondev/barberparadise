@@ -23,6 +23,7 @@ import {
 import { getActiveAutomaticProductPromotions, getBestAutomaticPromotionForProduct } from "../services/productPricingService";
 import { B2B_PAYMENT_FEE_VAT_RATE, calculateB2BSurcharge, getB2BConfiguredSurcharges } from "../services/b2bPaymentSurchargeService";
 import { normalizeShippingAddressContact } from "../utils/shippingAddressNormalization";
+import { isValidEmailAddress, normalizeEmailAddress } from "../utils/emailValidation";
 
 export const checkoutRouter = Router();
 
@@ -813,7 +814,7 @@ checkoutRouter.post("/cart-session", async (req: Request, res: Response): Promis
 
     const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
     const total = money(items.reduce((sum, item) => sum + item.price * item.quantity, 0));
-    let email = typeof body.email === "string" && body.email.includes("@") ? body.email.trim().toLowerCase() : null;
+    let email = isValidEmailAddress(body.email) ? normalizeEmailAddress(body.email) : null;
 
     // Si l'email n'est pas fourni mais qu'un customerId est présent, résoudre l'email depuis le compte client
     // Cela couvre le cas d'un client connecté qui abandonne son panier avant d'atteindre l'étape contact
@@ -822,8 +823,8 @@ checkoutRouter.post("/cart-session", async (req: Request, res: Response): Promis
         where: { id: body.customerId.trim() },
         select: { email: true },
       });
-      if (customer?.email) {
-        email = customer.email.toLowerCase();
+      if (isValidEmailAddress(customer?.email)) {
+        email = normalizeEmailAddress(customer?.email);
       }
     }
 
@@ -858,10 +859,12 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
     const body = req.body as CheckoutRequestBody;
     assertSupportedPaymentMethod(body.paymentMethod);
 
-    if (!body.customerEmail || !Array.isArray(body.cartItems) || body.cartItems.length === 0) {
+    const customerEmail = normalizeEmailAddress(body.customerEmail);
+    if (!isValidEmailAddress(customerEmail) || !Array.isArray(body.cartItems) || body.cartItems.length === 0) {
       res.status(400).json({ error: "Email client et panier requis" });
       return;
     }
+    body.customerEmail = customerEmail;
 
     const shippingAddress = body.shippingAddress
       ? normalizeShippingAddressContact(body.shippingAddress)
@@ -1499,10 +1502,12 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
       return;
     }
 
-    if (!body.customerEmail || !Array.isArray(body.cartItems) || body.cartItems.length === 0) {
+    const customerEmail = normalizeEmailAddress(body.customerEmail);
+    if (!isValidEmailAddress(customerEmail) || !Array.isArray(body.cartItems) || body.cartItems.length === 0) {
       res.status(400).json({ error: "Email client et panier requis" });
       return;
     }
+    body.customerEmail = customerEmail;
 
     const shippingAddress = body.shippingAddress
       ? normalizeShippingAddressContact(body.shippingAddress)

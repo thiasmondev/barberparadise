@@ -176,6 +176,10 @@ function getCountryCode(countryName: string): string {
   return COUNTRY_CODE_BY_NAME[countryName] || countryName.toUpperCase().slice(0, 2) || "FR";
 }
 
+function isValidCustomerEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
 function getEstimatedVatRate(country: string, isB2B: boolean, vatNumber: string): number {
   const normalizedCountry = country.toUpperCase();
   if (!EU_COUNTRIES.includes(normalizedCountry)) return 0;
@@ -271,6 +275,7 @@ export default function CheckoutPage() {
   const draftPricingActive = Boolean(draftPricing && draftPricing.cartSignature === cartSignature);
   const shipping = draftPricingActive ? draftPricing?.shipping || 0 : selectedShippingOption?.price ?? 0;
   const countryCode = useMemo(() => getCountryCode(form.pays), [form.pays]);
+  const hasValidCustomerEmail = useMemo(() => isValidCustomerEmail(form.email), [form.email]);
   const effectiveIsB2B = isB2B || isApprovedPro;
   const vatRate = useMemo(() => getEstimatedVatRate(countryCode, effectiveIsB2B, vatNumber), [countryCode, effectiveIsB2B, vatNumber]);
   const subtotalHT = useMemo(() => {
@@ -640,6 +645,11 @@ export default function CheckoutPage() {
       style: { layout: "vertical", color: "black", shape: "rect", label: "pay", height: 48 },
       createOrder: async () => {
         setPaymentError("");
+        if (!isValidCustomerEmail(form.email)) {
+          const error = new Error("Veuillez renseigner une adresse e-mail valide avant de procéder au paiement.");
+          setPaymentError(error.message);
+          throw error;
+        }
         setIsSubmittingPayment(true);
         try {
           const res = await fetch(`${API_URL}/api/checkout/paypal/v2/create-order`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildPayload()) });
@@ -736,7 +746,7 @@ export default function CheckoutPage() {
   }, [draftPricingActive, effectiveIsB2B, items.length, promoCode, promotionCartItems, shipping, shippingReferenceAmount]);
 
   useEffect(() => {
-    if (!cartSessionId || !form.email.includes("@") || items.length === 0) return;
+    if (!cartSessionId || !hasValidCustomerEmail || items.length === 0) return;
     const controller = new AbortController();
 
     fetch(`${API_URL}/api/checkout/cart-session`, {
@@ -756,7 +766,7 @@ export default function CheckoutPage() {
     });
 
     return () => controller.abort();
-  }, [cartSessionId, form.email, items]);
+  }, [cartSessionId, form.email, hasValidCustomerEmail, items]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -826,6 +836,10 @@ export default function CheckoutPage() {
 
   const handleCheckout = async () => {
     setPaymentError("");
+    if (!hasValidCustomerEmail) {
+      setPaymentError("Veuillez renseigner une adresse e-mail valide avant de procéder au paiement.");
+      return;
+    }
     setIsSubmittingPayment(true);
 
     const checkoutPaymentMethod: PaymentMethod = paymentMethod;
@@ -997,12 +1011,12 @@ export default function CheckoutPage() {
                 </div>
                 {guestCheckout && (
                   <div className="space-y-6">
-                    <div><label className={labelClass}>Adresse email</label><input type="email" value={form.email} onChange={(e) => updateForm("email", e.target.value)} placeholder="votre@email.com" className={inputClass} /></div>
+                    <div><label className={labelClass}>Adresse email</label><input type="email" value={form.email} onChange={(e) => updateForm("email", e.target.value)} placeholder="votre@email.com" aria-invalid={form.email.length > 0 && !hasValidCustomerEmail} className={inputClass} />{form.email.length > 0 && !hasValidCustomerEmail && <p className="mt-2 text-xs text-red-300">Saisissez une adresse e-mail complète, par exemple client@exemple.fr.</p>}</div>
                     <p className="text-[11px] text-gray-500 leading-6">Un compte client pourra être créé automatiquement à partir de ces informations à la finalisation de la commande.</p>
                   </div>
                 )}
               </div>
-              <button onClick={() => setStep(draftNoShipping ? "paiement" : "livraison")} disabled={!guestCheckout || !form.email} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-not-allowed text-white py-5 text-xs font-black tracking-widest uppercase transition-colors">{draftNoShipping ? "CONTINUER VERS LE PAIEMENT" : "CONTINUER VERS LA LIVRAISON"}</button>
+              <button onClick={() => setStep(draftNoShipping ? "paiement" : "livraison")} disabled={!guestCheckout || !hasValidCustomerEmail} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-not-allowed text-white py-5 text-xs font-black tracking-widest uppercase transition-colors">{draftNoShipping ? "CONTINUER VERS LE PAIEMENT" : "CONTINUER VERS LA LIVRAISON"}</button>
             </div>
           )}
 
@@ -1282,7 +1296,7 @@ export default function CheckoutPage() {
                   {paypalSdkLoaded && !paypalButtonsRendered && <div className="w-full bg-white/5 text-gray-600 py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2"><Loader2 size={12} className="animate-spin" />INITIALISATION...</div>}
                 </div>
               ) : (
-                <button onClick={handleCheckout} disabled={isSubmittingPayment || displayMethods.length === 0 || methodsLoading || shippingLoading || (!draftPricingActive && !selectedShippingOption)} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-wait text-white py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 transition-colors"><Lock size={12} />{isSubmittingPayment ? "REDIRECTION EN COURS..." : `PAYER ${formatPrice(totalWithPaymentFeeTTC)}`}</button>
+                <button onClick={handleCheckout} disabled={!hasValidCustomerEmail || isSubmittingPayment || displayMethods.length === 0 || methodsLoading || shippingLoading || (!draftPricingActive && !selectedShippingOption)} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-wait text-white py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 transition-colors"><Lock size={12} />{isSubmittingPayment ? "REDIRECTION EN COURS..." : `PAYER ${formatPrice(totalWithPaymentFeeTTC)}`}</button>
               )}
               <button onClick={() => setStep("livraison")} className="w-full text-center text-xs text-gray-500 hover:text-white transition-colors uppercase tracking-widest font-black">← Retour à la livraison</button>
             </div>

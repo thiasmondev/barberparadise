@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../utils/prisma";
 import { normalizeShippingAddressContact } from "../utils/shippingAddressNormalization";
+import { isValidEmailAddress, normalizeEmailAddress } from "../utils/emailValidation";
 import { formatPaymentMethod, getCustomerName, sendOrderConfirmationEmail, sendOrderShippedEmail } from "../services/emailService";
 import { requireAuth, requireAdmin, AuthRequest } from "../middleware/auth";
 
@@ -18,12 +19,17 @@ function generateOrderNumber(): string {
 ordersRouter.post("/", async (req: Request, res: Response): Promise<void> => {
   try {
     const { items, shippingAddress: rawShippingAddress, email, customerId, notes } = req.body;
+    const customerEmail = normalizeEmailAddress(email);
     const shippingAddress = rawShippingAddress
       ? normalizeShippingAddressContact(rawShippingAddress)
       : rawShippingAddress;
 
     if (!items || items.length === 0) {
       res.status(400).json({ error: "Panier vide" });
+      return;
+    }
+    if (!isValidEmailAddress(customerEmail)) {
+      res.status(400).json({ error: "Email client invalide" });
       return;
     }
 
@@ -52,7 +58,7 @@ ordersRouter.post("/", async (req: Request, res: Response): Promise<void> => {
     const order = await prisma.order.create({
       data: {
         orderNumber: generateOrderNumber(),
-        email,
+        email: customerEmail,
         customerId: customerId || null,
         subtotal,
         shipping,
@@ -113,12 +119,30 @@ ordersRouter.get("/my", requireAuth, async (req: AuthRequest, res: Response): Pr
   }
 });
 
-// GET /api/orders/:id — Détail d'une commande
+// GET /api/orders/:id — Récapitulatif minimal pour la page de succès publique.
+// Les données d’administration, coordonnées et identifiants de paiement restent
+// exclusivement disponibles via les routes protégées.
 ordersRouter.get("/:id", async (req: Request, res: Response): Promise<void> => {
   try {
     const order = await prisma.order.findUnique({
       where: { id: req.params.id },
-      include: { items: true, shippingAddress: true },
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        total: true,
+        totalTTC: true,
+        currency: true,
+        items: {
+          select: {
+            id: true,
+            name: true,
+            quantity: true,
+            price: true,
+            image: true,
+          },
+        },
+      },
     });
     if (!order) {
       res.status(404).json({ error: "Commande non trouvée" });

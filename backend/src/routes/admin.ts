@@ -46,6 +46,7 @@ import { generateProductRecommendations } from "../services/seo-agent";
 import { notifyIfRestocked, notifySingleStockAlert } from "../services/stockAlertService";
 import { applyProductSearch } from "../utils/searchUtils";
 import { normalizeShippingAddressContact } from "../utils/shippingAddressNormalization";
+import { isValidEmailAddress, normalizeEmailAddress } from "../utils/emailValidation";
 import { isDeferredDraftPaymentMethod, resolveDraftPaymentMethod } from "../services/draftPaymentService";
 import {
   getManualPaymentMethodLabel,
@@ -6407,8 +6408,8 @@ adminRouter.patch(
       const customer = customerId
         ? await prisma.customer.findUnique({ where: { id: customerId }, include: { proAccount: true } })
         : null;
-      const email = asOptionalString(req.body?.email, customer?.email || current.email).toLowerCase();
-      if (!email || !email.includes("@")) {
+      const email = normalizeEmailAddress(asOptionalString(req.body?.email, customer?.email || current.email));
+      if (!isValidEmailAddress(email)) {
         res.status(400).json({ error: "Email client invalide" });
         return;
       }
@@ -7902,9 +7903,9 @@ adminRouter.post(
 
       const { overrideEmail: overrideEmailConf } = req.body as { overrideEmail?: string };
       const baseEmailConf = order.email || order.customerEmail || order.customer?.email || "";
-      const emailTo = (overrideEmailConf && overrideEmailConf.includes("@") ? overrideEmailConf.trim() : null) || baseEmailConf;
-      if (!emailTo) {
-        res.status(400).json({ error: "Aucune adresse email pour cette commande" });
+      const emailTo = (isValidEmailAddress(overrideEmailConf) ? normalizeEmailAddress(overrideEmailConf) : null) || normalizeEmailAddress(baseEmailConf);
+      if (!isValidEmailAddress(emailTo)) {
+        res.status(400).json({ error: "Aucune adresse email valide pour cette commande" });
         return;
       }
 
@@ -7983,9 +7984,9 @@ adminRouter.post(
 
       const { overrideEmail: overrideEmailTracking } = req.body as { overrideEmail?: string };
       const baseEmailTracking = order.email || order.customerEmail || order.customer?.email || "";
-      const emailTo = (overrideEmailTracking && overrideEmailTracking.includes("@") ? overrideEmailTracking.trim() : null) || baseEmailTracking;
-      if (!emailTo) {
-        res.status(400).json({ error: "Aucune adresse email pour cette commande" });
+      const emailTo = (isValidEmailAddress(overrideEmailTracking) ? normalizeEmailAddress(overrideEmailTracking) : null) || normalizeEmailAddress(baseEmailTracking);
+      if (!isValidEmailAddress(emailTo)) {
+        res.status(400).json({ error: "Aucune adresse email valide pour cette commande" });
         return;
       }
 
