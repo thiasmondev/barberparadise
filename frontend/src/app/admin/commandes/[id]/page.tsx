@@ -529,6 +529,8 @@ export default function OrderDetailPage() {
   const [exchangeLabelQuotes, setExchangeLabelQuotes] = useState<LogisticsCarrierQuote[]>([]);
   const [exchangeLabelQuoteId, setExchangeLabelQuoteId] = useState("");
   const [exchangeRelayPointId, setExchangeRelayPointId] = useState("");
+  const [exchangeParcelWeightKg, setExchangeParcelWeightKg] = useState("");
+  const [exchangeQuotedWeightG, setExchangeQuotedWeightG] = useState<number | null>(null);
   const [exchangeLabelLoading, setExchangeLabelLoading] = useState(false);
   const [manualExchangeSettlement, setManualExchangeSettlement] = useState<Record<string, {
     paymentMethod: AdminOrderExchangeManualPaymentMethod;
@@ -692,17 +694,36 @@ export default function OrderDetailPage() {
     }
   };
 
-  const openExchangeLabelDrawer = async (exchange: AdminOrderExchange, direction: "return" | "replacement") => {
+  const exchangeParcelWeightG = parseKgToGrams(exchangeParcelWeightKg);
+  const hasValidExchangeParcelWeight = exchangeParcelWeightG >= 100 && exchangeParcelWeightG <= 30_000;
+
+  const openExchangeLabelDrawer = (exchange: AdminOrderExchange, direction: "return" | "replacement") => {
     setExchangeLabelTarget({ exchange, direction });
     setExchangeLabelQuotes([]);
     setExchangeLabelQuoteId("");
     setExchangeRelayPointId(direction === "replacement" ? exchange.relayPoint?.id || "" : "");
+    setExchangeParcelWeightKg("");
+    setExchangeQuotedWeightG(null);
     setExchangeError("");
+  };
+
+  const calculateExchangeLabelQuotes = async () => {
+    if (!exchangeLabelTarget) return;
+    if (!hasValidExchangeParcelWeight) {
+      setExchangeError("Renseignez le poids réel du colis emballé, entre 0,100 kg et 30 kg, pour calculer les offres.");
+      return;
+    }
+    setExchangeLabelQuotes([]);
+    setExchangeLabelQuoteId("");
+    setExchangeQuotedWeightG(null);
     setExchangeLabelLoading(true);
+    setExchangeError("");
     try {
-      const result = await getAdminExchangeQuotes(exchange.id, direction);
+      const result = await getAdminExchangeQuotes(exchangeLabelTarget.exchange.id, exchangeLabelTarget.direction, exchangeParcelWeightG);
       setExchangeLabelQuotes(result.quotes);
       setExchangeLabelQuoteId(result.quotes[0]?.id || "");
+      setExchangeQuotedWeightG(result.totalWeightG);
+      if (!result.quotes.length) setExchangeError("Aucune offre de transport n’est disponible pour ce poids et cette destination.");
     } catch (error) {
       setExchangeError(error instanceof Error ? error.message : "Offres de transport indisponibles.");
     } finally {
@@ -712,6 +733,14 @@ export default function OrderDetailPage() {
 
   const purchaseExchangeLabel = async () => {
     if (!exchangeLabelTarget) return;
+    if (!hasValidExchangeParcelWeight) {
+      setExchangeError("Renseignez le poids réel du colis emballé avant de créer l’étiquette.");
+      return;
+    }
+    if (exchangeQuotedWeightG !== exchangeParcelWeightG) {
+      setExchangeError("Le poids a été modifié. Recalculez les offres avant de créer l’étiquette.");
+      return;
+    }
     const quote = exchangeLabelQuotes.find((entry) => entry.id === exchangeLabelQuoteId);
     if (!quote) {
       setExchangeError("Sélectionnez une offre de transport.");
@@ -724,7 +753,12 @@ export default function OrderDetailPage() {
     setExchangeLabelLoading(true);
     setExchangeError("");
     try {
-      const payload = { carrier: quote.carrier as "colissimo" | "mondial_relay" | "colissimo_international", offerId: quote.id, relayPointId: exchangeRelayPointId.trim() || null };
+      const payload = {
+        carrier: quote.carrier as "colissimo" | "mondial_relay" | "colissimo_international",
+        offerId: quote.id,
+        relayPointId: exchangeRelayPointId.trim() || null,
+        totalWeightG: exchangeParcelWeightG,
+      };
       if (exchangeLabelTarget.direction === "return") {
         await createAdminExchangeReturnLabel(exchangeLabelTarget.exchange.id, payload);
       } else {
@@ -2105,8 +2139,8 @@ export default function OrderDetailPage() {
                             </div>
                           </div>
                           <div className="mt-3 grid gap-2 text-xs text-gray-600 sm:grid-cols-2">
-                            <p>Retour : {isInStoreFulfillment || isPosOrder ? (exchange.returnedStockRestored ? "reçu et inspecté en boutique" : "à rapporter en boutique") : returnShipment?.trackingNumber ? `étiquette ${carrierLabel(returnShipment.carrier)} · ${returnShipment.trackingNumber}` : "étiquette à créer"}</p>
-                            <p>Remplacement : {isInStoreFulfillment ? (exchange.status === "replacement_shipped" || exchange.status === "completed" ? "remis en boutique" : "à remettre en boutique") : replacementShipment?.trackingNumber ? `étiquette ${carrierLabel(replacementShipment.carrier)} · ${replacementShipment.trackingNumber}` : shipmentDestination}</p>
+                            <p>Retour : {isInStoreFulfillment || isPosOrder ? (exchange.returnedStockRestored ? "reçu et inspecté en boutique" : "à rapporter en boutique") : returnShipment?.trackingNumber ? `étiquette ${carrierLabel(returnShipment.carrier)} · ${returnShipment.trackingNumber}${returnShipment.totalWeightG ? ` · ${formatWeight(returnShipment.totalWeightG)}` : ""}` : "étiquette à créer"}</p>
+                            <p>Remplacement : {isInStoreFulfillment ? (exchange.status === "replacement_shipped" || exchange.status === "completed" ? "remis en boutique" : "à remettre en boutique") : replacementShipment?.trackingNumber ? `étiquette ${carrierLabel(replacementShipment.carrier)} · ${replacementShipment.trackingNumber}${replacementShipment.totalWeightG ? ` · ${formatWeight(replacementShipment.totalWeightG)}` : ""}` : shipmentDestination}</p>
                             <p>Stock retour : {exchange.returnedStockRestored ? "réintégré après inspection" : "non réintégré"}</p>
                             <p>Stock remplacement : {exchange.replacementStockReserved ? "réservé" : exchange.replacementStockReleased ? "réservation libérée" : "non réservé"}</p>
                           </div>
@@ -3024,13 +3058,22 @@ export default function OrderDetailPage() {
       {exchangeLabelTarget && (
         <div className="fixed inset-0 z-[75] overflow-y-auto bg-black/50 p-0 sm:p-4">
           <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col bg-white shadow-2xl sm:my-6 sm:min-h-0 sm:max-h-[calc(100dvh-3rem)] sm:rounded-2xl">
-            <div className="flex items-start justify-between border-b border-gray-200 px-4 py-4 sm:px-6 sm:py-5"><div><h2 className="text-lg font-semibold text-gray-950">{exchangeLabelTarget.direction === "return" ? "Étiquette de retour" : "Étiquette de renvoi"}</h2><p className="mt-1 text-sm text-gray-500">Sélectionnez une offre. L’étiquette sera associée uniquement à ce dossier d’échange.</p></div><button onClick={() => setExchangeLabelTarget(null)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100"><X className="h-5 w-5" /></button></div>
+            <div className="flex items-start justify-between border-b border-gray-200 px-4 py-4 sm:px-6 sm:py-5"><div><h2 className="text-lg font-semibold text-gray-950">{exchangeLabelTarget.direction === "return" ? "Étiquette de retour" : "Étiquette de renvoi"}</h2><p className="mt-1 text-sm text-gray-500">Pesez le colis fermé avant de calculer le prix de l’étiquette.</p></div><button onClick={() => setExchangeLabelTarget(null)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100"><X className="h-5 w-5" /></button></div>
             <div className="flex-1 space-y-3 overflow-y-auto p-4 sm:p-6">
               {exchangeError && <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{exchangeError}</div>}
-              {exchangeLabelLoading ? <div className="flex items-center gap-2 py-8 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Chargement des offres…</div> : exchangeLabelQuotes.map((quote) => <label key={quote.id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 ${exchangeLabelQuoteId === quote.id ? "border-violet-500 bg-violet-50" : "border-gray-200"}`}><input type="radio" name="exchange-label-quote" checked={exchangeLabelQuoteId === quote.id} onChange={() => setExchangeLabelQuoteId(quote.id)} className="mt-1" /><span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-gray-950">{quote.carrierLabel} — {quote.serviceLabel}</span><span className="mt-1 block text-xs text-gray-500">{quote.estimatedDeliveryDays} · {quote.deliveryMode === "relay" ? "Point relais requis" : "Livraison à domicile"}</span>{quote.configurationError && <span className="mt-1 block text-xs text-rose-700">{quote.configurationError}</span>}</span><span className="text-sm font-semibold text-gray-950">{formatPrice(quote.totalWithTaxCents / 100, quote.currency)}</span></label>)}
+              <section className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+                <div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-700 text-white"><Scale className="h-4 w-4" /></span><div><h3 className="font-semibold text-violet-950">Poids réel du colis</h3><p className="mt-0.5 text-xs text-violet-800">Obligatoire, emballage compris. Ce poids détermine le prix affiché et celui envoyé au transporteur.</p></div></div>
+                <label className="mt-3 block text-sm font-medium text-violet-950" htmlFor="exchange-parcel-weight">Poids en kilogrammes</label>
+                <div className="mt-1.5 flex overflow-hidden rounded-xl border border-violet-300 bg-white focus-within:border-violet-700 focus-within:ring-2 focus-within:ring-violet-700/20"><input id="exchange-parcel-weight" value={exchangeParcelWeightKg} onChange={(event) => { setExchangeParcelWeightKg(event.target.value); setExchangeLabelQuotes([]); setExchangeLabelQuoteId(""); setExchangeQuotedWeightG(null); setExchangeError(""); }} inputMode="decimal" placeholder="Ex. 0,850" className="min-w-0 flex-1 px-3 py-2.5 text-sm outline-none" aria-describedby="exchange-parcel-weight-help" /><span className="flex items-center border-l border-violet-200 px-3 text-sm text-violet-900">kg</span></div>
+                <p id="exchange-parcel-weight-help" className="mt-2 text-xs text-violet-800">De 0,100 kg à 30 kg. Ne renseignez pas seulement le poids de l’article : pesez le colis prêt à partir.</p>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs font-medium text-violet-900">{hasValidExchangeParcelWeight ? `Poids à tarifer : ${formatWeight(exchangeParcelWeightG)}` : "Saisissez un poids valide pour afficher les offres."}</p><button type="button" disabled={exchangeLabelLoading || !hasValidExchangeParcelWeight} onClick={calculateExchangeLabelQuotes} className="inline-flex items-center justify-center gap-2 rounded-lg bg-violet-700 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50">{exchangeLabelLoading && <Loader2 className="h-4 w-4 animate-spin" />}Calculer les offres</button></div>
+              </section>
+              {exchangeQuotedWeightG !== null && <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">Offres calculées pour <strong>{formatWeight(exchangeQuotedWeightG)}</strong>, emballage inclus.</p>}
+              {exchangeLabelLoading ? <div className="flex items-center gap-2 py-5 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Calcul du prix selon le poids réel…</div> : exchangeLabelQuotes.map((quote) => <label key={quote.id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 ${exchangeLabelQuoteId === quote.id ? "border-violet-500 bg-violet-50" : "border-gray-200"}`}><input type="radio" name="exchange-label-quote" checked={exchangeLabelQuoteId === quote.id} onChange={() => setExchangeLabelQuoteId(quote.id)} className="mt-1" /><span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-gray-950">{quote.carrierLabel} — {quote.serviceLabel}</span><span className="mt-1 block text-xs text-gray-500">{quote.estimatedDeliveryDays} · {quote.deliveryMode === "relay" ? "Point relais requis" : "Livraison à domicile"}</span>{quote.insuranceValueCents > 0 && <span className="mt-1 block text-xs text-violet-800">{quote.insuranceLabel} incluse</span>}{quote.configurationError && <span className="mt-1 block text-xs text-rose-700">{quote.configurationError}</span>}</span><span className="text-sm font-semibold text-gray-950">{formatPrice(quote.totalWithTaxCents / 100, quote.currency)}</span></label>)}
+              {!exchangeLabelLoading && exchangeLabelQuotes.length === 0 && !exchangeError && <p className="rounded-xl border border-dashed border-gray-300 px-4 py-3 text-sm text-gray-600">Renseignez le poids réel du colis puis cliquez sur « Calculer les offres ».</p>}
               {exchangeLabelQuotes.find((quote) => quote.id === exchangeLabelQuoteId)?.requiresRelayPoint && (exchangeLabelTarget.direction === "replacement" && exchangeLabelTarget.exchange.relayPoint ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm"><p className="font-semibold text-red-950">Point relais de destination</p><p className="mt-1 text-red-900">{exchangeLabelTarget.exchange.relayPoint.name}</p><p className="mt-1 text-xs text-red-800">{exchangeLabelTarget.exchange.relayPoint.fullAddress}</p></div> : <label className="block text-sm font-medium text-gray-800">Identifiant du point relais de destination<input value={exchangeRelayPointId} onChange={(event) => setExchangeRelayPointId(event.target.value)} placeholder="Ex. 025775" className="mt-1.5 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm" /></label>)}
             </div>
-            <div className="flex flex-col-reverse gap-2 border-t border-gray-200 px-4 py-4 sm:flex-row sm:justify-end sm:px-6"><button onClick={() => setExchangeLabelTarget(null)} className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700">Annuler</button><button disabled={exchangeLabelLoading || !exchangeLabelQuoteId} onClick={purchaseExchangeLabel} className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{exchangeLabelLoading && <Loader2 className="h-4 w-4 animate-spin" />}Créer l’étiquette</button></div>
+            <div className="flex flex-col-reverse gap-2 border-t border-gray-200 px-4 py-4 sm:flex-row sm:justify-end sm:px-6"><button onClick={() => setExchangeLabelTarget(null)} className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700">Annuler</button><button disabled={exchangeLabelLoading || !hasValidExchangeParcelWeight || exchangeQuotedWeightG !== exchangeParcelWeightG || !exchangeLabelQuoteId} onClick={purchaseExchangeLabel} className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{exchangeLabelLoading && <Loader2 className="h-4 w-4 animate-spin" />}Créer l’étiquette au poids réel</button></div>
           </div>
         </div>
       )}

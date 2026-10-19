@@ -28,6 +28,21 @@ export const orderExchangesRouter = Router();
 const money = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 const activeCarrier = (value: unknown): value is LogisticsCarrier =>
   typeof value === "string" && Object.prototype.hasOwnProperty.call(LOGISTICS_CARRIERS, value);
+const MIN_EXCHANGE_PARCEL_WEIGHT_G = 100;
+const MAX_EXCHANGE_PARCEL_WEIGHT_G = 30_000;
+
+/**
+ * Exchange labels must never silently fall back to a catalog product weight.
+ * The admin weighs the closed parcel and sends a whole-gram value, used both
+ * to price the quote and to create the carrier label.
+ */
+function parseRequiredExchangeParcelWeightG(value: unknown): number {
+  const weightG = typeof value === "number" ? value : Number(String(value ?? "").trim());
+  if (!Number.isInteger(weightG) || weightG < MIN_EXCHANGE_PARCEL_WEIGHT_G || weightG > MAX_EXCHANGE_PARCEL_WEIGHT_G) {
+    throw new Error("Renseignez le poids réel du colis emballé, entre 0,100 kg et 30 kg.");
+  }
+  return weightG;
+}
 
 function sendError(res: Response, error: unknown) {
   const message = error instanceof Error ? error.message : "Erreur lors du traitement de l’échange.";
@@ -198,7 +213,7 @@ async function createExchangeShipmentLabel(params: {
     customerEmail: params.customerEmail,
     recipient: params.recipient,
     sender: params.sender || null,
-    totalWeightG: Math.max(100, params.totalWeightG),
+    totalWeightG: params.totalWeightG,
     orderValueCents: Math.max(0, Math.round(params.orderValue * 100)),
   });
 
@@ -211,7 +226,7 @@ async function createExchangeShipmentLabel(params: {
       carrierShipmentId: result.carrierShipmentId,
       trackingNumber: result.trackingNumber,
       trackingUrl: result.trackingUrl,
-      totalWeightG: Math.max(100, params.totalWeightG),
+      totalWeightG: params.totalWeightG,
       offerId: result.offerId,
       serviceCode: result.serviceCode,
       deliveryMode: result.deliveryMode,
@@ -234,7 +249,7 @@ async function createExchangeShipmentLabel(params: {
       carrierShipmentId: result.carrierShipmentId,
       trackingNumber: result.trackingNumber,
       trackingUrl: result.trackingUrl,
-      totalWeightG: Math.max(100, params.totalWeightG),
+      totalWeightG: params.totalWeightG,
       offerId: result.offerId,
       serviceCode: result.serviceCode,
       deliveryMode: result.deliveryMode,
@@ -331,16 +346,17 @@ orderExchangesRouter.get("/:exchangeId/:direction/quotes", requireAdmin, async (
     const recipient = isReturn
       ? companyAddress()
       : shippingAddressToLabel(destination, exchange.order.email);
-    const product = isReturn ? exchange.returnProduct : exchange.replacementProduct;
-    const quantity = isReturn ? exchange.returnQuantity : exchange.replacementQuantity;
     const value = isReturn ? exchange.returnValue : exchange.replacementValue;
-    const totalWeightG = Math.max(100, (product?.weightG || 100) * quantity);
+    const totalWeightG = parseRequiredExchangeParcelWeightG(req.query?.totalWeightG);
     const quotes = buildShipmentQuotes({
       orderNumber: `${exchange.order.orderNumber}-${isReturn ? "RET" : "ECH"}-${exchange.id.slice(-6)}`,
       customerEmail: exchange.order.email,
       recipient,
       totalWeightG,
       orderValueCents: Math.max(0, Math.round(value * 100)),
+      // The replacement label already applies this coverage when purchased;
+      // include it in the quote so the price shown remains the price charged.
+      requestedInsuranceValueCents: isReturn ? 0 : Math.max(0, Math.round(exchange.replacementValue * 100)),
     });
     const eligibleQuotes = !isReturn && exchange.deliveryMode
       ? quotes.filter((quote) => quote.deliveryMode === exchange.deliveryMode)
@@ -357,6 +373,7 @@ orderExchangesRouter.post("/:exchangeId/return-label", requireAdmin, async (req:
     const carrier = req.body?.carrier;
     const offerId = String(req.body?.offerId || "").trim();
     if (!activeCarrier(carrier) || !offerId) throw new Error("Transporteur et offre de retour obligatoires.");
+    const totalWeightG = parseRequiredExchangeParcelWeightG(req.body?.totalWeightG);
 
     const exchange = await getExchange(req.params.exchangeId);
     if (!exchange) throw new Error("Dossier d’échange introuvable.");
@@ -366,9 +383,6 @@ orderExchangesRouter.post("/:exchangeId/return-label", requireAdmin, async (req:
     if (!["initiated", "return_in_transit"].includes(exchange.status)) throw new Error("L’étiquette de retour ne peut être créée qu’au début de l’échange.");
 
     const customerAddress = shippingAddressToLabel(destination, exchange.order.email);
-    const returnWeight = exchange.returnVariant?.productId === exchange.returnProductId
-      ? exchange.returnProduct?.weightG || 100
-      : exchange.returnProduct?.weightG || 100;
     const { shipment, result } = await createExchangeShipmentLabel({
       exchangeId: exchange.id,
       direction: "return",
@@ -376,7 +390,7 @@ orderExchangesRouter.post("/:exchangeId/return-label", requireAdmin, async (req:
       offerId,
       relayPointId: req.body?.relayPointId ? String(req.body.relayPointId) : null,
       insuranceValueCents: 0,
-      totalWeightG: returnWeight,
+      totalWeightG,
       orderValue: exchange.returnValue,
       recipient: companyAddress(),
       sender: customerAddress,
@@ -538,6 +552,7 @@ orderExchangesRouter.post("/:exchangeId/replacement-label", requireAdmin, async 
     const carrier = req.body?.carrier;
     const offerId = String(req.body?.offerId || "").trim();
     if (!activeCarrier(carrier) || !offerId) throw new Error("Transporteur et offre de remplacement obligatoires.");
+    const totalWeightG = parseRequiredExchangeParcelWeightG(req.body?.totalWeightG);
     const exchange = await getExchange(req.params.exchangeId);
     if (!exchange) throw new Error("Dossier d’échange introuvable.");
     assertShipmentWorkflow(exchange);
@@ -557,9 +572,6 @@ orderExchangesRouter.post("/:exchangeId/replacement-label", requireAdmin, async 
       throw new Error("Choisissez une offre point relais pour cette destination.");
     }
 
-    const replacementWeight = exchange.replacementVariant?.productId === exchange.replacementProductId
-      ? exchange.replacementProduct.weightG || 100
-      : exchange.replacementProduct.weightG || 100;
     const { shipment } = await createExchangeShipmentLabel({
       exchangeId: exchange.id,
       direction: "replacement",
@@ -572,7 +584,7 @@ orderExchangesRouter.post("/:exchangeId/replacement-label", requireAdmin, async 
         ? null
         : exchange.relayPointSnapshot as Prisma.InputJsonValue,
       insuranceValueCents: Math.max(0, Math.round(exchange.replacementValue * 100)),
-      totalWeightG: replacementWeight,
+      totalWeightG,
       orderValue: exchange.replacementValue,
       recipient: shippingAddressToLabel(destination, exchange.order.email),
       orderNumber: `${exchange.order.orderNumber}-ECH-${exchange.id.slice(-6)}`,

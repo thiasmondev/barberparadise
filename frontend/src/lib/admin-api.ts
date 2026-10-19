@@ -491,6 +491,7 @@ export type AdminOrderExchangeShipment = {
   labelStatus?: string | null;
   labelGeneratedAt?: string | null;
   shippedAt?: string | null;
+  totalWeightG?: number | null;
 };
 
 export type AdminOrderExchangeEvent = {
@@ -573,11 +574,12 @@ export function getAdminOrderExchange(exchangeId: string) {
   return adminFetch<{ exchange: AdminOrderExchange }>(`/api/admin/exchanges/${exchangeId}`);
 }
 
-export function getAdminExchangeQuotes(exchangeId: string, direction: "return" | "replacement") {
-  return adminFetch<{ quotes: LogisticsCarrierQuote[]; totalWeightG: number; direction: "return" | "replacement" }>(`/api/admin/exchanges/${exchangeId}/${direction}/quotes`);
+export function getAdminExchangeQuotes(exchangeId: string, direction: "return" | "replacement", totalWeightG: number) {
+  const query = new URLSearchParams({ totalWeightG: String(totalWeightG) });
+  return adminFetch<{ quotes: LogisticsCarrierQuote[]; totalWeightG: number; direction: "return" | "replacement" }>(`/api/admin/exchanges/${exchangeId}/${direction}/quotes?${query.toString()}`);
 }
 
-export function createAdminExchangeReturnLabel(exchangeId: string, payload: { carrier: "colissimo" | "mondial_relay" | "colissimo_international"; offerId: string; relayPointId?: string | null }) {
+export function createAdminExchangeReturnLabel(exchangeId: string, payload: { carrier: "colissimo" | "mondial_relay" | "colissimo_international"; offerId: string; relayPointId?: string | null; totalWeightG: number }) {
   return adminFetch<{ success: boolean; shipment: AdminOrderExchangeShipment; downloadUrl: string }>(`/api/admin/exchanges/${exchangeId}/return-label`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -622,7 +624,7 @@ export async function getMondialRelayPoints(params: { postalCode: string; countr
   return data.points || [];
 }
 
-export function createAdminExchangeReplacementLabel(exchangeId: string, payload: { carrier: "colissimo" | "mondial_relay" | "colissimo_international"; offerId: string; relayPointId?: string | null }) {
+export function createAdminExchangeReplacementLabel(exchangeId: string, payload: { carrier: "colissimo" | "mondial_relay" | "colissimo_international"; offerId: string; relayPointId?: string | null; totalWeightG: number }) {
   return adminFetch<{ success: boolean; shipment: AdminOrderExchangeShipment; downloadUrl: string }>(`/api/admin/exchanges/${exchangeId}/replacement-label`, {
     method: "POST",
     body: JSON.stringify(payload),

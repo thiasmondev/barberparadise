@@ -44,6 +44,26 @@ async function run() {
   assert.ok(standardColissimo, "Le devis Colissimo standard doit être présent.");
   assert.equal(standardColissimo.serviceCode, "DOM", "Un envoi sans assurance conserve le service DOM sans signature.");
 
+  const lightParcelQuotes = buildShipmentQuotes({
+    orderNumber: "BP-TEST-POIDS-LEGER",
+    customerEmail: "client@example.test",
+    recipient: { firstName: "Client", lastName: "Test", address: "1 rue de la Paix", postalCode: "01250", city: "Ceyzériat", country: "FR" },
+    totalWeightG: 250,
+    orderValueCents: 10_000,
+  });
+  const weighedParcelQuotes = buildShipmentQuotes({
+    orderNumber: "BP-TEST-POIDS-REEL",
+    customerEmail: "client@example.test",
+    recipient: { firstName: "Client", lastName: "Test", address: "1 rue de la Paix", postalCode: "01250", city: "Ceyzériat", country: "FR" },
+    totalWeightG: 2_180,
+    orderValueCents: 10_000,
+  });
+  const lightColissimo = lightParcelQuotes.find((quote) => quote.carrier === "colissimo");
+  const weighedColissimo = weighedParcelQuotes.find((quote) => quote.carrier === "colissimo");
+  assert.ok(lightColissimo && weighedColissimo, "Les deux paliers Colissimo doivent être proposés.");
+  assert.equal(lightColissimo.amountCents, 499, "Un colis de 250 g utilise le palier 250 g.");
+  assert.equal(weighedColissimo.amountCents, 1499, "Un colis réel de 2,180 kg utilise le palier 5 kg.");
+
   const cancellation = await cancelOfficialShipmentLabel({
     carrier: "mondial_relay",
     trackingNumber: "12345678901234",
