@@ -4746,7 +4746,9 @@ adminRouter.get(
         const candidates = await prisma.order.findMany({
           where,
           include: orderInclude,
-          orderBy: { createdAt: "desc" },
+          // Une commande avec échange, règlement ou étiquette récente doit remonter
+          // dans la file de travail, même si sa vente d’origine est plus ancienne.
+          orderBy: { updatedAt: "desc" },
         });
         const matches = getOrdersForSalesPaymentCategory(candidates, selectedPaymentCategory);
 
@@ -4755,7 +4757,7 @@ adminRouter.get(
         orders = matches.slice(skip, skip + pageSize).map(({ order, amount }) => ({ ...order, dashboardPaymentAmount: amount }));
       } else {
         const [foundOrders, foundTotal] = await Promise.all([
-          prisma.order.findMany({ where, include: orderInclude, orderBy: { createdAt: "desc" }, skip, take: pageSize }),
+          prisma.order.findMany({ where, include: orderInclude, orderBy: { updatedAt: "desc" }, skip, take: pageSize }),
           prisma.order.count({ where }),
         ]);
         orders = foundOrders;

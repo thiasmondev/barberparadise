@@ -403,7 +403,7 @@ export default function AdminOrdersPage() {
                     />
                   </th>
                   <th className="px-4 py-3">Commande</th>
-                  <th className="px-4 py-3 hidden md:table-cell">Date</th>
+                  <th className="px-4 py-3 hidden md:table-cell">Dernière activité</th>
                   <th className="px-4 py-3">Client</th>
                   <th className="px-4 py-3 hidden lg:table-cell">Canal</th>
                   <th className="px-4 py-3 text-right">Total</th>
@@ -453,7 +453,7 @@ export default function AdminOrdersPage() {
                             {order.orderNumber}
                           </Link>
                         </td>
-                        <td className={`whitespace-nowrap px-4 py-3 hidden md:table-cell ${vc.subtext}`}>{formatDate(order.createdAt)}</td>
+                        <td className={`whitespace-nowrap px-4 py-3 hidden md:table-cell ${vc.subtext}`}>{formatDate(order.updatedAt || order.createdAt)}</td>
                         <td className="px-4 py-3">
                           <div className={`font-medium ${vc.text}`}>{customerName(order)}</div>
                           <div className={`text-xs hidden md:block ${vc.subtext}`}>{order.customer?.email || order.customerEmail || order.email}</div>
@@ -525,7 +525,7 @@ export default function AdminOrdersPage() {
                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                           <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${pay.className} ${vc.badge}`}>{pay.label}</span>
                           <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${fulfillment.className} ${vc.badge}`}>{fulfillment.label}</span>
-                          <span className={`text-xs ${vc.subtext}`}>{itemCount} art. · {formatDate(order.createdAt)}</span>
+                          <span className={`text-xs ${vc.subtext}`}>{itemCount} art. · activité {formatDate(order.updatedAt || order.createdAt)}</span>
                         </div>
                       </div>
                       <ChevronRight className={`h-4 w-4 shrink-0 mt-1 ${vc.subtext}`} />

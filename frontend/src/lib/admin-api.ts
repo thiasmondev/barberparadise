@@ -631,6 +631,11 @@ export function createAdminExchangeReplacementLabel(exchangeId: string, payload:
   });
 }
 
+/** PDF secured by the same admin token as the rest of the exchange workflow. */
+export function getAdminExchangeShipmentLabelPdfUrl(shipmentId: string) {
+  return `${API_URL}/api/admin/exchanges/shipments/${encodeURIComponent(shipmentId)}/label.pdf`;
+}
+
 export function markAdminExchangeReplacementShipped(exchangeId: string) {
   return adminFetch<{ success: boolean; exchange: AdminOrderExchange }>(`/api/admin/exchanges/${exchangeId}/replacement-shipped`, { method: "POST" });
 }

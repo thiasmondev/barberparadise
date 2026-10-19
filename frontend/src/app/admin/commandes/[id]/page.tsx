@@ -80,6 +80,7 @@ import {
   getAdminExchangeQuotes,
   createAdminExchangeReturnLabel,
   createAdminExchangeReplacementLabel,
+  getAdminExchangeShipmentLabelPdfUrl,
   getMondialRelayPoints,
   settleAdminExchangeManually,
   type AdminOrderExchange,
@@ -532,6 +533,7 @@ export default function OrderDetailPage() {
   const [exchangeParcelWeightKg, setExchangeParcelWeightKg] = useState("");
   const [exchangeQuotedWeightG, setExchangeQuotedWeightG] = useState<number | null>(null);
   const [exchangeLabelLoading, setExchangeLabelLoading] = useState(false);
+  const [exchangeLabelPdfLoading, setExchangeLabelPdfLoading] = useState<string | null>(null);
   const [manualExchangeSettlement, setManualExchangeSettlement] = useState<Record<string, {
     paymentMethod: AdminOrderExchangeManualPaymentMethod;
     receivedAt: string;
@@ -1157,6 +1159,52 @@ export default function OrderDetailPage() {
       window.setTimeout(triggerPrint, 2000);
     } catch (err: any) {
       setDrawerError(err.message || "Impossible d'ouvrir l'étiquette pour impression");
+    }
+  };
+
+  const openExchangeShipmentLabel = async (shipment: { id: string; direction: "return" | "replacement" }, action: "download" | "print") => {
+    if (!order) return;
+    const printWindow = action === "print" ? window.open("", "_blank") : null;
+    if (action === "print" && !printWindow) {
+      setExchangeError("Veuillez autoriser les pop-ups pour imprimer l’étiquette.");
+      return;
+    }
+
+    setExchangeLabelPdfLoading(shipment.id);
+    setExchangeError("");
+    try {
+      const token = getAdminToken();
+      const response = await fetch(getAdminExchangeShipmentLabelPdfUrl(shipment.id), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) throw new Error("L’étiquette d’échange est indisponible.");
+      const blobUrl = URL.createObjectURL(await response.blob());
+
+      if (action === "download") {
+        const link = document.createElement("a");
+        link.href = blobUrl;
+        link.download = `etiquette-${shipment.direction === "return" ? "retour" : "remplacement"}-${order.orderNumber}.pdf`;
+        link.click();
+        URL.revokeObjectURL(blobUrl);
+        return;
+      }
+
+      printWindow!.location.href = blobUrl;
+      let printTriggered = false;
+      const triggerPrint = () => {
+        if (printTriggered || printWindow!.closed) return;
+        printTriggered = true;
+        printWindow!.focus();
+        printWindow!.print();
+        window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+      };
+      printWindow!.onload = triggerPrint;
+      window.setTimeout(triggerPrint, 2_000);
+    } catch (error) {
+      if (printWindow && !printWindow.closed) printWindow.close();
+      setExchangeError(error instanceof Error ? error.message : "Impossible d’ouvrir l’étiquette d’échange.");
+    } finally {
+      setExchangeLabelPdfLoading(null);
     }
   };
 
@@ -2144,6 +2192,21 @@ export default function OrderDetailPage() {
                             <p>Stock retour : {exchange.returnedStockRestored ? "réintégré après inspection" : "non réintégré"}</p>
                             <p>Stock remplacement : {exchange.replacementStockReserved ? "réservé" : exchange.replacementStockReleased ? "réservation libérée" : "non réservé"}</p>
                           </div>
+                          {exchange.shipments.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-2 border-t border-violet-100 pt-3">
+                              {exchange.shipments.map((shipment) => {
+                                const busy = exchangeLabelPdfLoading === shipment.id;
+                                const label = shipment.direction === "return" ? "retour" : "remplacement";
+                                return (
+                                  <div key={shipment.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-violet-200 bg-white px-2 py-1.5">
+                                    <span className="px-1 text-xs font-semibold text-violet-900">Étiquette {label}</span>
+                                    <button type="button" disabled={busy} onClick={() => void openExchangeShipmentLabel(shipment, "download")} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-violet-800 hover:bg-violet-50 disabled:opacity-50"><Download className="h-3.5 w-3.5" /> Télécharger</button>
+                                    <button type="button" disabled={busy} onClick={() => void openExchangeShipmentLabel(shipment, "print")} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-violet-800 hover:bg-violet-50 disabled:opacity-50">{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="h-3.5 w-3.5" />} Imprimer</button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                           <ol className="mt-4 grid gap-2 text-xs sm:grid-cols-4">
                             {[
                               { label: "1. Retour", done: exchange.returnedStockRestored || Boolean(returnShipment) },

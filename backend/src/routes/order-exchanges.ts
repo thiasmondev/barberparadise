@@ -190,6 +190,7 @@ function serializeExchange<T extends {
 
 async function createExchangeShipmentLabel(params: {
   exchangeId: string;
+  orderId: string;
   direction: "return" | "replacement";
   carrier: LogisticsCarrier;
   offerId: string;
@@ -277,6 +278,12 @@ async function createExchangeShipmentLabel(params: {
       actorEmail: params.actorEmail || null,
       metadata: { shipmentId: shipment.id, trackingNumber: result.trackingNumber, carrier: params.carrier },
     },
+  });
+  // La liste des commandes est triée par dernière activité. L’achat d’une
+  // étiquette d’échange doit donc remettre la commande source en tête de file.
+  await prisma.order.update({
+    where: { id: params.orderId },
+    data: { updatedAt: new Date() },
   });
 
   return { shipment, result };
@@ -385,6 +392,7 @@ orderExchangesRouter.post("/:exchangeId/return-label", requireAdmin, async (req:
     const customerAddress = shippingAddressToLabel(destination, exchange.order.email);
     const { shipment, result } = await createExchangeShipmentLabel({
       exchangeId: exchange.id,
+      orderId: exchange.orderId,
       direction: "return",
       carrier,
       offerId,
@@ -574,6 +582,7 @@ orderExchangesRouter.post("/:exchangeId/replacement-label", requireAdmin, async 
 
     const { shipment } = await createExchangeShipmentLabel({
       exchangeId: exchange.id,
+      orderId: exchange.orderId,
       direction: "replacement",
       carrier,
       offerId,
