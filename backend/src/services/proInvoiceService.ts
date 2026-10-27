@@ -535,7 +535,7 @@ async function generateInvoicePdf(order: LoadedOrder, invoiceNumber: string): Pr
 
   // ── Mentions légales ──────────────────────────────────────────────────────
   const legalMentions = [
-    "Commande minimum professionnelle : 200 € HT.",
+    "Le tarif professionnel s’applique selon le seuil tarifaire en vigueur ; les articles sans prix professionnel conservent leur tarif public.",
     "Délai de paiement : paiement exigible à la commande, sauf accord écrit contraire.",
     "Pénalités de retard : taux BCE majoré de 10 points et indemnité forfaitaire de recouvrement de 40 €.",
   ];
