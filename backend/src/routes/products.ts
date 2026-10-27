@@ -237,7 +237,9 @@ function serializeProduct<T extends JsonProduct & { price: number }>(
   const productForPromotion: JsonProduct = product;
   const hasPriceProEur = typeof parsed.priceProEur === "number" && parsed.priceProEur > 0;
   const pricePublic = parsed.price;
-  const price = isApprovedPro && hasPriceProEur ? parsed.priceProEur! : pricePublic;
+  // Catalog cards stay on public TTC. The applied professional tariff is decided
+  // from the complete cart by the checkout pricing resolver.
+  const price = pricePublic;
   const automaticPromotion = getBestAutomaticPromotionForProduct(productForPromotion, pricePublic, promotions, categoryTargets, isApprovedPro);
   const variants = parsed.variants?.map((variant) => {
     const variantPublicPrice = variant.price ?? pricePublic;
@@ -246,7 +248,7 @@ function serializeProduct<T extends JsonProduct & { price: number }>(
       ? getBestAutomaticPromotionForProduct(productForPromotion, variantPublicPrice, promotions, categoryTargets, isApprovedPro)
       : null;
     const variantPrice = isApprovedPro
-      ? (variantHasPriceProEur ? variant.priceProEur! : (hasPriceProEur ? parsed.priceProEur! : variantPublicPrice))
+      ? variantPublicPrice
       : (variantAutomaticPromotion ? variantAutomaticPromotion.price : variantPublicPrice);
     const serializedVariant = {
       ...variant,
@@ -259,7 +261,7 @@ function serializeProduct<T extends JsonProduct & { price: number }>(
         automaticPromotionName: variantAutomaticPromotion.promotionName,
         automaticPromotionDiscountPercent: variantAutomaticPromotion.discountPercent,
       } : {}),
-      hasPriceProEur: variantHasPriceProEur || (isApprovedPro && hasPriceProEur),
+      hasPriceProEur: variantHasPriceProEur,
     };
     delete (serializedVariant as any).purchasePrice;
     if (!isApprovedPro) {

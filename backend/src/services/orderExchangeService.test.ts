@@ -91,6 +91,25 @@ function testB2BFallbackPublicTtcToHt() {
   assert.equal(result.differenceAmount, -10);
 }
 
+function testRetailTierB2BExchangeKeepsRetailHt() {
+  assert.equal(usesProfessionalExchangePricing({ isB2B: true, channel: "online", pricingTier: "retail" }), false);
+  const result = calculateOrderExchangeFinancials({
+    returnedUnitPrice: 100,
+    returnedLineDiscount: 0,
+    returnedLineQuantity: 1,
+    exchangeQuantity: 1,
+    replacementPublicUnitPrice: 180,
+    replacementProfessionalUnitPrice: 120,
+    // Retail-tier B2B lines remain HT, but use public TTC converted to HT.
+    isB2B: false,
+    priceBasis: "ht",
+    applyProfessionalPrice: false,
+    vatRate: 20,
+  });
+  assert.equal(result.replacementUnitPrice, 150);
+  assert.equal(result.differenceAmount, 50);
+}
+
 function testHigherPricedReplacementRequiresExactComplement() {
   const result = calculateOrderExchangeFinancials({
     returnedUnitPrice: 259,
@@ -148,6 +167,7 @@ function testShipmentDestinationSnapshotsAreNormalized() {
 testB2CWithLineDiscount();
 testB2BUsesProfessionalHtPrice();
 testB2BFallbackPublicTtcToHt();
+testRetailTierB2BExchangeKeepsRetailHt();
 testHigherPricedReplacementRequiresExactComplement();
 testPosExchangeEligibility();
 testPosOrderUsesTtcEvenForProfessionalCustomer();

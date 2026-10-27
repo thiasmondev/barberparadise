@@ -20,6 +20,7 @@
     "test:replicate-client": "ts-node src/services/replicate/replicateClient.test.ts",
     "test:logistics": "ts-node src/services/logisticsCarrierService.test.ts",
     "test:shipping-addresses": "ts-node src/utils/shippingAddressNormalization.test.ts",
+    "test:professional-pricing": "ts-node src/services/b2bPricingService.test.ts",
     "start": "npx prisma migrate deploy && node dist/index.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

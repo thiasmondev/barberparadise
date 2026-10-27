@@ -41,7 +41,7 @@ async function isApprovedProRequest(req: Request): Promise<boolean> {
 function serializeBrandProduct<T extends BrandProduct>(product: T, isApprovedPro: boolean, promotions: any[] = [], categoryTargets: any = { categoryIds: new Set(), categorySlugs: new Set() }) {
   const hasPriceProEur = typeof product.priceProEur === "number" && product.priceProEur > 0;
   const pricePublic = product.price;
-  const price = isApprovedPro && hasPriceProEur ? product.priceProEur! : pricePublic;
+  const price = pricePublic;
   
   const productForPromotion = product as any;
   const automaticPromotion = getBestAutomaticPromotionForProduct(productForPromotion, pricePublic, promotions, categoryTargets, isApprovedPro);
@@ -54,9 +54,9 @@ function serializeBrandProduct<T extends BrandProduct>(product: T, isApprovedPro
       ? getBestAutomaticPromotionForProduct(productForPromotion, variantPublicPrice, promotions, categoryTargets, isApprovedPro)
       : null;
       
-    const variantPrice = isApprovedPro
-      ? (variantHasPriceProEur ? variant.priceProEur! : (hasPriceProEur ? product.priceProEur! : variantPublicPrice))
-      : (variantAutomaticPromotion ? variantAutomaticPromotion.price : variantPublicPrice);
+    const variantPrice = !isApprovedPro && variantAutomaticPromotion
+      ? variantAutomaticPromotion.price
+      : variantPublicPrice;
       
     const serializedVariant = {
       ...variant,
@@ -69,7 +69,7 @@ function serializeBrandProduct<T extends BrandProduct>(product: T, isApprovedPro
         automaticPromotionName: variantAutomaticPromotion.promotionName,
         automaticPromotionDiscountPercent: variantAutomaticPromotion.discountPercent,
       } : {}),
-      hasPriceProEur: variantHasPriceProEur || (isApprovedPro && hasPriceProEur),
+      hasPriceProEur: variantHasPriceProEur,
     };
     if (!isApprovedPro) {
       const { priceProEur: _variantPriceProEur, ...publicVariant } = serializedVariant;

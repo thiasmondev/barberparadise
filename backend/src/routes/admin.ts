@@ -63,6 +63,10 @@ import {
   SALES_DASHBOARD_STATUSES,
   type SalesPaymentCategory,
 } from "../services/salesDashboardService";
+import {
+  resolveProfessionalPricing,
+  type PricingTier,
+} from "../services/b2bPricingService";
 
 // ─── Cloudinary Config ───────────────────────────────────────
 cloudinary.config({
@@ -158,7 +162,6 @@ function parseJsonArraySafe(value?: string | null): unknown[] {
 
 
 const STANDARD_VAT_RATE = 20;
-const PRO_MINIMUM_ORDER_HT = 200;
 const CURRENCY = "EUR";
 
 type DiscountType = "percent" | "fixed";
@@ -243,6 +246,7 @@ type DraftCalculationResult = {
   orderDiscountValue: number | null;
   orderDiscountAmount: number;
   discountTotal: number;
+  pricingTier: PricingTier;
 };
 
 function money(value: number): number {
@@ -381,7 +385,8 @@ async function calculateAdminDraftTotals(params: {
   country: string;
   vatNumber?: string | null;
   shippingOverride?: unknown;
-  enforceProMinimum?: boolean;
+  /** Existing orders preserve their recorded tier; new drafts derive it from their basket. */
+  pricingTierOverride?: PricingTier;
   allowInactiveProducts?: boolean;
   /** Utilisé pour préparer un brouillon depuis un panier abandonné sans réserver ni décrémenter le stock. */
   enforceStock?: boolean;
@@ -398,6 +403,33 @@ async function calculateAdminDraftTotals(params: {
   const orderItems: DraftCalculationResult["orderItems"] = [];
   const vatRate = getVatRate(params.country, params.isB2B, params.vatNumber);
   const vatMultiplier = 1 + vatRate / 100;
+  const pricingCandidates = params.items
+    .filter((item) => !item.isCustomItem)
+    .map((item) => {
+      const product = productById.get(item.productId);
+      if (!product) throw new Error(`Produit introuvable : ${item.productId}`);
+      const selectedVariant = item.variantId ? product.variants.find((variant) => variant.id === item.variantId) : null;
+      if (!params.allowInactiveProducts && product.variants.length > 0 && !selectedVariant) {
+        throw new Error(`Sélectionnez une variante disponible pour ${product.name}`);
+      }
+      return {
+        productId: product.id,
+        variantId: selectedVariant?.id || null,
+        quantity: item.quantity,
+        publicUnitTTC: selectedVariant?.price ?? product.price,
+        // A selected variant must have its OWN pro price; it never inherits its parent product.
+        ownProfessionalUnitHT: selectedVariant ? selectedVariant.priceProEur : product.priceProEur,
+      };
+    });
+  const pricingResolution = resolveProfessionalPricing({
+    isB2B: params.isB2B,
+    vatRate,
+    items: pricingCandidates,
+    pricingTierOverride: params.pricingTierOverride,
+  });
+  const resolvedPricingByKey = new Map(
+    pricingResolution.lines.map((line) => [`${line.productId}:${line.variantId || ""}`, line]),
+  );
   let subtotalHT = 0;
   let subtotalTTC = 0;
   let lineDiscountTotal = 0;
@@ -458,9 +490,10 @@ async function calculateAdminDraftTotals(params: {
     }
 
     const publicTtcPrice = selectedVariant?.price ?? product.price;
-    const proHtPrice = selectedVariant?.priceProEur ?? product.priceProEur ?? publicTtcPrice / (1 + STANDARD_VAT_RATE / 100);
+    const resolvedPricing = resolvedPricingByKey.get(`${product.id}:${selectedVariant?.id || ""}`);
+    if (!resolvedPricing) throw new Error(`Tarification introuvable : ${product.name}`);
     const unitHT = params.isB2B
-      ? money(proHtPrice)
+      ? resolvedPricing.appliedUnitHT
       : money(publicTtcPrice / (1 + STANDARD_VAT_RATE / 100));
     const unitTTC = params.isB2B ? money(unitHT * vatMultiplier) : publicTtcPrice;
     const lineBaseHT = money(unitHT * item.quantity);
@@ -504,10 +537,6 @@ async function calculateAdminDraftTotals(params: {
   subtotalHT = money(Math.max(0, subtotalHT - orderDiscountHT));
   subtotalTTC = money(Math.max(0, subtotalTTC - orderDiscountTTC));
 
-  if (params.enforceProMinimum !== false && params.isB2B && subtotalHT < PRO_MINIMUM_ORDER_HT) {
-    throw new Error(`Le minimum de commande professionnel est de ${PRO_MINIMUM_ORDER_HT} € HT`);
-  }
-
   const shippingOverride = Number(params.shippingOverride);
   let shipping = Number.isFinite(shippingOverride) && shippingOverride >= 0 ? money(shippingOverride) : 0;
   if (!Number.isFinite(shippingOverride)) {
@@ -536,6 +565,7 @@ async function calculateAdminDraftTotals(params: {
     orderDiscountValue: orderDiscount.type ? orderDiscount.value : null,
     orderDiscountAmount,
     discountTotal,
+    pricingTier: pricingResolution.pricingTier,
   };
 }
 
@@ -1901,6 +1931,56 @@ function validateProPriceValue(
     return `${label} : le prix pro HT doit être inférieur au prix public TTC`;
   return null;
 }
+
+// GET /api/admin/pro/prices/missing-report — Références qui resteront au tarif public
+adminRouter.get(
+  "/pro/prices/missing-report",
+  requireAdmin,
+  async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const products = await prisma.product.findMany({
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          brand: true,
+          status: true,
+          price: true,
+          priceProEur: true,
+          variants: {
+            select: { id: true, name: true, sku: true, price: true, priceProEur: true, order: true },
+            orderBy: { order: "asc" },
+          },
+        },
+        orderBy: [{ brand: "asc" }, { name: "asc" }],
+      });
+      const header = ["type", "id", "slug", "marque", "nom", "variante", "sku", "statut", "prix_public_ttc", "prix_pro_ht"];
+      const lines = [header.join(",")];
+      for (const product of products) {
+        if (product.variants.length > 0) {
+          for (const variant of product.variants) {
+            if (typeof variant.priceProEur === "number" && variant.priceProEur > 0) continue;
+            lines.push([
+              "variante", variant.id, product.slug, product.brand, product.name, variant.name,
+              variant.sku || "", product.status, variant.price ?? product.price, "",
+            ].map(csvEscape).join(","));
+          }
+        } else if (!(typeof product.priceProEur === "number" && product.priceProEur > 0)) {
+          lines.push([
+            "produit", product.id, product.slug, product.brand, product.name, "", "",
+            product.status, product.price, "",
+          ].map(csvEscape).join(","));
+        }
+      }
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", "attachment; filename=barberparadise-references-sans-prix-pro.csv");
+      res.send(`\uFEFF${lines.join("\n")}`);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur génération rapport prix professionnels manquants" });
+    }
+  },
+);
 
 // GET /api/admin/pro/prices/export — Export CSV de tous les prix professionnels
 adminRouter.get(
@@ -5018,7 +5098,6 @@ adminRouter.post(
         shippingOverride: noShipping ? 0 : req.body?.shipping,
         orderDiscountType: req.body?.orderDiscountType,
         orderDiscountValue: req.body?.orderDiscountValue,
-        enforceProMinimum: false,
       });
       const paymentMethod = resolveDraftPaymentMethod({ paymentLater: req.body?.paymentLater });
       const paymentLater = isDeferredDraftPaymentMethod(paymentMethod);
@@ -5034,6 +5113,7 @@ adminRouter.post(
           paymentMethod,
           paymentProvider: paymentLater ? "manual" : null,
           isB2B,
+          pricingTier: totals.pricingTier,
           noShipping,
           subtotal: totals.subtotal,
           shipping: totals.shipping,
@@ -5208,8 +5288,11 @@ adminRouter.patch(
         orderDiscountValue: req.body?.orderDiscountValue,
         // Un brouillon est une préparation commerciale : son édition ne réserve pas de stock.
         // Le contrôle strict reste effectué au moment du paiement réel.
-        enforceProMinimum: false,
         enforceStock: false,
+        // A legacy draft retains its historic price semantics until it is deliberately recreated.
+        pricingTierOverride: current.pricingTier
+          ? undefined
+          : (current.isB2B ? "pro" : "retail"),
       });
       const paymentMethod = resolveDraftPaymentMethod({
         paymentLater: req.body?.paymentLater,
@@ -5232,6 +5315,7 @@ adminRouter.patch(
             paymentMethod,
             paymentProvider: paymentLater ? "manual" : null,
             isB2B,
+            ...(current.pricingTier ? { pricingTier: totals.pricingTier } : {}),
             noShipping,
             subtotal: totals.subtotal,
             shipping: totals.shipping,
@@ -5286,7 +5370,7 @@ adminRouter.post(
         res.status(400).json({ error: "Adresse de livraison requise avant confirmation" });
         return;
       }
-      // Note : le minimum de commande professionnel (200€ HT) ne s'applique PAS aux commandes créées manuellement par l'admin.
+      // Le seuil professionnel détermine le tarif, jamais la possibilité de confirmer une commande.
 
       const paymentMethod = typeof req.body?.paymentMethod === "string" ? req.body.paymentMethod : draft.paymentMethod;
       const isDeferredPayment = isDeferredDraftPaymentMethod(paymentMethod);
@@ -5445,7 +5529,6 @@ adminRouter.post(
         shippingOverride: req.body?.shipping,
         orderDiscountType: req.body?.orderDiscountType,
         orderDiscountValue: req.body?.orderDiscountValue,
-        enforceProMinimum: false,
         enforceStock: false,
       });
 
@@ -5459,6 +5542,7 @@ adminRouter.post(
           paymentMethod: "card",
           paymentProvider: null,
           isB2B,
+          pricingTier: totals.pricingTier,
           subtotal: totals.subtotal,
           shipping: totals.shipping,
           total: totals.total,
@@ -5969,8 +6053,9 @@ adminRouter.patch(
         shippingOverride: order.shipping, // Conserver le même frais de port
         orderDiscountType: order.orderDiscountType,
         orderDiscountValue: order.orderDiscountValue,
-        enforceProMinimum: false,
         allowInactiveProducts: true,
+        // The existing sale must not be reclassified against today's threshold.
+        pricingTierOverride: order.pricingTier || (order.isB2B && order.channel !== "pos" ? "pro" : "retail"),
       });
 
       const oldTotal = money(order.total);
@@ -6433,8 +6518,9 @@ adminRouter.patch(
         shippingOverride: req.body?.shipping,
         orderDiscountType: req.body?.orderDiscountType,
         orderDiscountValue: req.body?.orderDiscountValue,
-        enforceProMinimum: false,
         allowInactiveProducts: true,
+        // Preserve the original order tariff, including legacy pre-rollout behavior.
+        pricingTierOverride: current.pricingTier || (current.isB2B && current.channel !== "pos" ? "pro" : "retail"),
       });
 
       const allowedStatuses = new Set([
@@ -7367,6 +7453,7 @@ adminRouter.post(
         colorHex,
         size,
         price,
+        priceProEur,
         purchasePrice,
         stock,
         inStock,
@@ -7383,6 +7470,7 @@ adminRouter.post(
           colorHex: colorHex || "",
           size: size || "",
           price: price != null ? parseFloat(price) : null,
+          priceProEur: priceProEur != null && priceProEur !== "" ? parseFloat(priceProEur) : null,
           purchasePrice: purchasePrice != null && purchasePrice !== "" ? parseFloat(purchasePrice) : null,
           stock: parseInt(stock) || 0,
           inStock: inStock !== false,
@@ -7412,6 +7500,7 @@ adminRouter.put(
         colorHex,
         size,
         price,
+        priceProEur,
         purchasePrice,
         stock,
         inStock,
@@ -7428,6 +7517,7 @@ adminRouter.put(
           colorHex: colorHex || "",
           size: size || "",
           price: price != null && price !== "" ? parseFloat(price) : null,
+          priceProEur: priceProEur != null && priceProEur !== "" ? parseFloat(priceProEur) : null,
           purchasePrice: purchasePrice != null && purchasePrice !== "" ? parseFloat(purchasePrice) : null,
           stock: parseInt(stock) || 0,
           inStock: inStock !== false,
@@ -8081,7 +8171,6 @@ adminRouter.post(
         shippingOverride: source.shipping,
         orderDiscountType: source.orderDiscountType,
         orderDiscountValue: source.orderDiscountValue,
-        enforceProMinimum: false,
         allowInactiveProducts: true,
       });
 
@@ -8117,6 +8206,7 @@ adminRouter.post(
           paymentMethod: isB2B ? "paybybank" : "card",
           paymentProvider: null,
           isB2B,
+          pricingTier: totals.pricingTier,
           subtotal: totals.subtotal,
           shipping: totals.shipping,
           total: totals.total,

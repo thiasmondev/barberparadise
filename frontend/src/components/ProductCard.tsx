@@ -12,9 +12,10 @@ export default function ProductCard({ product }: { product: Product }) {
   const images = parseImages(product.images);
   const mainImage = images[0] || "/placeholder.jpg";
   const publicPrice = typeof product.pricePublic === "number" ? product.pricePublic : product.price;
-  const proPrice = typeof product.priceProEur === "number" ? product.priceProEur : null;
-  const showsProPrice = Boolean(product.isPro && proPrice !== null);
-  const displayedPrice = showsProPrice ? proPrice! : product.price;
+  // The applied pro tariff depends on the whole basket and is calculated on the
+  // cart/checkout page. Catalogue prices therefore remain public TTC.
+  const showsProPrice = false;
+  const displayedPrice = publicPrice;
   const compareAtPrice = product.compareAtPrice ?? product.originalPrice;
   const hasDiscount = !showsProPrice && Boolean(compareAtPrice && compareAtPrice > displayedPrice);
   const discountPercent = typeof product.automaticPromotionDiscountPercent === "number"

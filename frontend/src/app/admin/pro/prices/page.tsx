@@ -248,6 +248,36 @@ export default function AdminProPricesPage() {
     }
   };
 
+  const downloadMissingPricesCsv = async () => {
+    setIsExporting(true);
+    setError(null);
+    try {
+      const token = getAdminToken();
+      if (!token) throw new Error("Session admin expirée");
+      const response = await fetch(`${API_URL}/api/admin/pro/prices/missing-report`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Erreur génération rapport CSV");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "barberparadise-references-sans-prix-pro.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setSuccess("Rapport des références sans prix professionnel téléchargé.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur génération rapport CSV");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const importCsv = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -302,6 +332,15 @@ export default function AdminProPricesPage() {
           >
             {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Télécharger tout en CSV
+          </button>
+          <button
+            type="button"
+            onClick={downloadMissingPricesCsv}
+            disabled={isExporting}
+            className="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 shadow-sm transition hover:border-amber-500 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Download className="h-4 w-4" />
+            Références sans prix pro
           </button>
           <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={importCsv} />
           <button

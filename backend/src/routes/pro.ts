@@ -45,7 +45,7 @@ async function notifyProRequest(params: {
     await sendEmail({
       to: params.customerEmail,
       subject: "Compte professionnel Barber Paradise activé",
-      html: `<p>Bonjour ${params.customerName},</p><p>Votre compte professionnel est activé. Vous pouvez maintenant accéder aux prix professionnels, sous réserve du minimum de commande de 200 € HT.</p>`,
+      html: `<p>Bonjour ${params.customerName},</p><p>Votre compte professionnel est activé. Vos commandes restent possibles quel que soit leur montant. Le tarif professionnel s’active automatiquement lorsque le panier atteint le seuil tarifaire en vigueur ; les articles sans prix professionnel restent au tarif public.</p>`,
     });
     return;
   }

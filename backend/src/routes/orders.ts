@@ -60,6 +60,8 @@ ordersRouter.post("/", async (req: Request, res: Response): Promise<void> => {
         orderNumber: generateOrderNumber(),
         email: customerEmail,
         customerId: customerId || null,
+        // Cette ancienne route crée uniquement des commandes au tarif public TTC.
+        pricingTier: "retail",
         subtotal,
         shipping,
         total,

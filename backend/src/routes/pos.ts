@@ -462,6 +462,8 @@ posRouter.post("/payments", async (req: AuthRequest, res: Response) => {
         email: customer?.email || POS_EMAIL_FALLBACK,
         customerEmail: customer?.email || null,
         isB2B,
+        // La caisse applique toujours les prix publics TTC, y compris pour un client pro.
+        pricingTier: "retail",
         channel: "pos",
         noShipping: true,
         status: "pending_payment",
@@ -552,6 +554,8 @@ posRouter.post("/quick-sale", async (req: AuthRequest, res: Response) => {
         email: customer?.email || POS_EMAIL_FALLBACK,
         customerEmail: customer?.email || null,
         isB2B: isB2BQuick,
+        // Une vente rapide caisse est toujours saisie au tarif public TTC.
+        pricingTier: "retail",
         channel: "pos",
         noShipping: true,
         status: "pending_payment",

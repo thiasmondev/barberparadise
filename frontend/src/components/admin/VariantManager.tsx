@@ -39,6 +39,7 @@ interface VariantFormData {
   colorHex: string;
   size: string;
   price: string;
+  priceProEur: string;
   purchasePrice: string;
   stock: string;
   inStock: boolean;
@@ -48,7 +49,7 @@ interface VariantFormData {
 
 const emptyForm = (): VariantFormData => ({
   name: "", type: "color", color: "", colorHex: "", size: "",
-  price: "", purchasePrice: "", stock: "0", inStock: true, sku: "", image: "",
+  price: "", priceProEur: "", purchasePrice: "", stock: "0", inStock: true, sku: "", image: "",
 });
 
 interface VariantManagerProps {
@@ -103,6 +104,7 @@ export default function VariantManager({ productId, productPrice, productImages 
       colorHex: v.colorHex,
       size: v.size,
       price: v.price != null ? String(v.price) : "",
+      priceProEur: v.priceProEur != null ? String(v.priceProEur) : "",
       purchasePrice: v.purchasePrice != null ? String(v.purchasePrice) : "",
       stock: String(v.stock),
       inStock: v.inStock,
@@ -125,6 +127,7 @@ export default function VariantManager({ productId, productPrice, productImages 
         colorHex: form.colorHex,
         size: form.size,
         price: form.price !== "" ? parseFloat(form.price) : null,
+        priceProEur: form.priceProEur !== "" ? parseFloat(form.priceProEur) : null,
         purchasePrice: form.purchasePrice !== "" ? parseFloat(form.purchasePrice) : null,
         stock: parseInt(form.stock) || 0,
         inStock: form.inStock,
@@ -258,6 +261,7 @@ export default function VariantManager({ productId, productPrice, productImages 
                     <span className="italic">Prix du produit ({productPrice.toFixed(2)} €)</span>
                   )}
                   {v.purchasePrice != null && <span className="ml-2 text-red-500">Revient : {v.purchasePrice.toFixed(2)} €</span>}
+                  {v.priceProEur != null && <span className="ml-2 text-violet-600">Pro HT : {v.priceProEur.toFixed(2)} €</span>}
                   {v.sku && <span className="ml-2 font-mono">SKU: {v.sku}</span>}
                 </div>
               </div>
@@ -447,7 +451,7 @@ export default function VariantManager({ productId, productPrice, productImages 
           </div>
 
           {/* Prix et stock */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Prix (€)
@@ -461,6 +465,21 @@ export default function VariantManager({ productId, productPrice, productImages 
                 onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
                 placeholder={productPrice.toFixed(2)}
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-300"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-violet-700 mb-1">
+                Prix professionnel HT (€)
+                <span className="text-gray-400 font-normal ml-1">— vide = tarif public</span>
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.priceProEur}
+                onChange={(e) => setForm((f) => ({ ...f, priceProEur: e.target.value }))}
+                placeholder="Optionnel"
+                className="w-full px-3 py-2 text-sm border border-violet-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-300"
               />
             </div>
             <div>

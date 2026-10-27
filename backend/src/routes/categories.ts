@@ -59,18 +59,16 @@ function serializeCategoryProduct<T extends CategoryProduct>(product: T, isAppro
   };
   const hasPriceProEur = typeof parsed.priceProEur === "number" && parsed.priceProEur > 0;
   const pricePublic = parsed.price;
-  const price = isApprovedPro && hasPriceProEur ? parsed.priceProEur! : pricePublic;
+  const price = pricePublic;
   const variants = parsed.variants?.map((variant) => {
     const variantPublicPrice = variant.price ?? pricePublic;
     const variantHasPriceProEur = typeof variant.priceProEur === "number" && variant.priceProEur > 0;
-    const variantPrice = isApprovedPro
-      ? (variantHasPriceProEur ? variant.priceProEur! : (hasPriceProEur ? parsed.priceProEur! : variantPublicPrice))
-      : variantPublicPrice;
+    const variantPrice = variantPublicPrice;
     const serializedVariant = {
       ...variant,
       price: variantPrice,
       pricePublic: variantPublicPrice,
-      hasPriceProEur: variantHasPriceProEur || (isApprovedPro && hasPriceProEur),
+      hasPriceProEur: variantHasPriceProEur,
     };
     if (!isApprovedPro) {
       const { priceProEur: _variantPriceProEur, ...publicVariant } = serializedVariant;

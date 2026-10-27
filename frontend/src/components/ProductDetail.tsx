@@ -32,10 +32,10 @@ export default function ProductDetail({ product }: { product: Product }) {
   const [stockAlertError, setStockAlertError] = useState("");
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const publicPrice = typeof product.pricePublic === "number" ? product.pricePublic : product.price;
-  const proPrice = typeof product.priceProEur === "number" ? product.priceProEur : null;
   const selectedVariantPublicPrice = typeof selectedVariant?.pricePublic === "number" ? selectedVariant.pricePublic : selectedVariant?.price ?? publicPrice;
-  const selectedVariantProPrice = selectedVariant && product.isPro && typeof selectedVariant.priceProEur === "number" ? selectedVariant.priceProEur : null;
-  const showsProPrice = Boolean(product.isPro && (selectedVariant ? selectedVariantProPrice !== null : proPrice !== null));
+  const selectedVariantProPrice = null;
+  // The cart applies an eligible professional price to the complete basket.
+  const showsProPrice = false;
   const referencePublicPrice = selectedVariant ? selectedVariantPublicPrice : publicPrice;
   const selectedVariantCompareAtPrice = selectedVariant
     ? selectedVariant.compareAtPrice ?? selectedVariant.originalPrice ?? null
@@ -47,7 +47,7 @@ export default function ProductDetail({ product }: { product: Product }) {
   const sizeVariants = variants.filter((v) => v.type === "size");
   const otherVariants = variants.filter((v) => v.type === "other");
 
-  const displayPrice = selectedVariant ? selectedVariantProPrice ?? selectedVariant.price ?? product.price : showsProPrice ? proPrice! : product.price;
+  const displayPrice = selectedVariant ? selectedVariantPublicPrice : publicPrice;
   const hasDiscount = !showsProPrice && Boolean(compareAtPrice && compareAtPrice > displayPrice);
   const discount = typeof (selectedVariant ?? product).automaticPromotionDiscountPercent === "number"
     ? (selectedVariant ?? product).automaticPromotionDiscountPercent
@@ -146,8 +146,8 @@ export default function ProductDetail({ product }: { product: Product }) {
           ...product,
           price: selectedVariant.price ?? product.price,
           pricePublic: selectedVariant.pricePublic ?? selectedVariant.price ?? product.pricePublic,
-          priceProEur: selectedVariant.priceProEur ?? product.priceProEur,
-          hasPriceProEur: selectedVariant.hasPriceProEur ?? product.hasPriceProEur,
+          priceProEur: selectedVariant.priceProEur ?? null,
+          hasPriceProEur: selectedVariant.hasPriceProEur ?? false,
           name: `${product.name} - ${selectedVariant.name}`,
           images: getVariantImages(product, selectedVariant),
           stockCount: selectedVariant.stock,

@@ -213,6 +213,7 @@ export interface Order {
   totalTTC?: number;
   currency?: string;
   isB2B?: boolean;
+  pricingTier?: "pro" | "retail" | null;
   invoiceNumber?: string | null;
   invoiceUrl?: string | null;
   proInvoiceNumber?: string | null;

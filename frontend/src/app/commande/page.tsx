@@ -11,6 +11,7 @@ import { getCustomerAddresses, type CustomerAddress } from "@/lib/customer-api";
 import { formatPrice } from "@/lib/utils";
 import { getVariantImage } from "@/lib/product-images";
 import { validatePromotionCode, type PromotionValidationResult } from "@/lib/api";
+import { getCheckoutPricingQuote, getPricingQuoteItem, type CheckoutPricingQuote } from "@/lib/checkout-pricing";
 import type { CartItem, Product } from "@/types";
 
 type Step = "contact" | "livraison" | "paiement";
@@ -208,7 +209,8 @@ function getCartSignature(items: Array<{ product: { id: string }; quantity: numb
 
 export default function CheckoutPage() {
   const searchParams = useSearchParams();
-  const { items, total, cartSessionId, replaceItems } = useCart();
+  const requestedDraftToken = searchParams.get("draftToken")?.trim() || "";
+  const { items, cartSessionId, replaceItems } = useCart();
   const { customer, isAuthenticated, isLoading: customerLoading, isApprovedPro } = useCustomerAuth();
   const [step, setStep] = useState<Step>("contact");
   const [guestCheckout, setGuestCheckout] = useState(false);
@@ -235,6 +237,9 @@ export default function CheckoutPage() {
   const [draftError, setDraftError] = useState("");
   const [draftNotice, setDraftNotice] = useState("");
   const [draftNoShipping, setDraftNoShipping] = useState(false);
+  const [pricingQuote, setPricingQuote] = useState<CheckoutPricingQuote | null>(null);
+  const [pricingQuoteLoading, setPricingQuoteLoading] = useState(false);
+  const [pricingQuoteError, setPricingQuoteError] = useState("");
 
   // États Mondial Relay
   const [relayPoints, setRelayPoints] = useState<RelayPoint[]>([]);
@@ -277,36 +282,63 @@ export default function CheckoutPage() {
   const countryCode = useMemo(() => getCountryCode(form.pays), [form.pays]);
   const hasValidCustomerEmail = useMemo(() => isValidCustomerEmail(form.email), [form.email]);
   const effectiveIsB2B = isB2B || isApprovedPro;
-  const vatRate = useMemo(() => getEstimatedVatRate(countryCode, effectiveIsB2B, vatNumber), [countryCode, effectiveIsB2B, vatNumber]);
+  const pricingQuoteCartItems = useMemo(() => items
+    .filter((item) => !item.isCustomSale)
+    .map((item) => ({
+      productId: item.product.id,
+      variantId: item.variantId || item.variant?.id || null,
+      quantity: item.quantity,
+    })), [items]);
+  const retailSubtotalTTC = useMemo(() => {
+    const rawSubtotalTTC = items.reduce((sum, item) => {
+      const publicTtcPrice = item.isCustomSale
+        ? item.customPriceTTC ?? item.product.price
+        : typeof item.product.pricePublic === "number" ? item.product.pricePublic : item.product.price;
+      return sum + publicTtcPrice * item.quantity;
+    }, 0);
+    return money(rawSubtotalTTC);
+  }, [items]);
+  const hasPricingQuote = !draftPricingActive && Boolean(pricingQuote);
+  const hasProfessionalPricing = hasPricingQuote && effectiveIsB2B && pricingQuote?.pricingTier === "pro";
+  const showProfessionalPriceBreakdown = draftPricingActive ? Boolean(draftPricing?.isB2B) : hasProfessionalPricing;
+  const vatRate = draftPricingActive && draftPricing
+    ? draftPricing.vatRate
+    : pricingQuote?.vatRate ?? getEstimatedVatRate(countryCode, effectiveIsB2B, vatNumber);
   const subtotalHT = useMemo(() => {
     if (draftPricingActive && draftPricing) return draftPricing.totalHT;
-    const rawSubtotalHT = items.reduce((sum, item) => {
-      const unitPrice = item.product.price;
-      const publicTtcPrice = typeof item.product.pricePublic === "number" ? item.product.pricePublic : unitPrice;
-      const unitHT = effectiveIsB2B && item.product.hasPriceProEur ? unitPrice : publicTtcPrice / 1.2;
-      return sum + unitHT * item.quantity;
-    }, 0);
-    return Math.round((rawSubtotalHT + Number.EPSILON) * 100) / 100;
-  }, [draftPricing, draftPricingActive, effectiveIsB2B, items]);
-  const displaySubtotalTTC = draftPricingActive && draftPricing ? draftPricing.subtotal : total;
-  const shippingReferenceAmount = effectiveIsB2B ? subtotalHT : displaySubtotalTTC;
+    if (pricingQuote) return pricingQuote.subtotalHT;
+    return money(retailSubtotalTTC / 1.2);
+  }, [draftPricing, draftPricingActive, pricingQuote, retailSubtotalTTC]);
+  const displaySubtotalTTC = draftPricingActive && draftPricing
+    ? draftPricing.subtotal
+    : pricingQuote?.subtotalTTC ?? retailSubtotalTTC;
+  const shippingReferenceAmount = showProfessionalPriceBreakdown ? subtotalHT : displaySubtotalTTC;
   const vatAmount = useMemo(() => {
     if (draftPricingActive && draftPricing) return draftPricing.vatAmount;
+    if (pricingQuote) return pricingQuote.vatAmount;
     return Math.round((subtotalHT * (vatRate / 100) + Number.EPSILON) * 100) / 100;
-  }, [draftPricing, draftPricingActive, subtotalHT, vatRate]);
-  const grandTotal = draftPricingActive && draftPricing ? draftPricing.totalTTC : subtotalHT + vatAmount + shipping;
+  }, [draftPricing, draftPricingActive, pricingQuote, subtotalHT, vatRate]);
+  const merchandiseTotalTTC = draftPricingActive && draftPricing
+    ? draftPricing.totalTTC
+    : pricingQuote?.totalTTC ?? displaySubtotalTTC;
+  const grandTotal = merchandiseTotalTTC + shipping;
   const promotionCartItems = useMemo(() => items.map((item) => {
     const publicTtcPrice = typeof item.product.pricePublic === "number" ? item.product.pricePublic : item.product.price;
-    const proUnitPrice = item.product.hasPriceProEur ? item.product.price : publicTtcPrice / 1.2;
+    const quoteItem = getPricingQuoteItem(pricingQuote, item.product.id, item.variantId || item.variant?.id || null);
     return {
       productId: item.product.id,
       categoryId: typeof item.product.category === "string" ? item.product.category : null,
       quantity: item.quantity,
-      price: effectiveIsB2B ? proUnitPrice : publicTtcPrice,
+      price: hasProfessionalPricing
+        ? quoteItem?.appliedUnitHT ?? publicTtcPrice / 1.2
+        : quoteItem?.appliedUnitTTC ?? publicTtcPrice,
     };
-  }), [effectiveIsB2B, items]);
+  }), [hasProfessionalPricing, items, pricingQuote]);
   const promoDiscount = draftPricingActive ? 0 : promoResult?.valid ? Math.min(promoResult.discount || 0, grandTotal) : 0;
   const discountedGrandTotal = draftPricingActive && draftPricing ? draftPricing.totalTTC : Math.max(0, grandTotal - promoDiscount);
+  const proThresholdHT = pricingQuote?.thresholdHT ?? 200;
+  const proRemainingHT = pricingQuote?.remainingHT ?? proThresholdHT;
+  const proProgressPercent = pricingQuote?.progressPercent ?? 0;
   const selectedPaymentSurchargePercent = effectiveIsB2B && (paymentMethod === "card" || paymentMethod === "paypal")
     ? b2bSurchargePercents[paymentMethod] || 0
     : 0;
@@ -381,7 +413,7 @@ export default function CheckoutPage() {
   };
 
   useEffect(() => {
-    const token = searchParams.get("draftToken")?.trim() || "";
+    const token = requestedDraftToken;
     if (!token) return;
 
     const controller = new AbortController();
@@ -494,7 +526,7 @@ export default function CheckoutPage() {
 
     loadSharedDraft();
     return () => controller.abort();
-  }, [replaceItems, searchParams]);
+  }, [replaceItems, requestedDraftToken]);
 
   useEffect(() => {
     if (draftPricing && draftPricing.cartSignature !== cartSignature) {
@@ -503,6 +535,44 @@ export default function CheckoutPage() {
       setDraftNotice("Le panier a été modifié : les totaux sont recalculés au tarif catalogue.");
     }
   }, [cartSignature, draftPricing]);
+
+  useEffect(() => {
+    if (
+      (requestedDraftToken && !draftError)
+      || draftLoading
+      || draftPricingActive
+      || !isApprovedPro
+      || pricingQuoteCartItems.length === 0
+      || pricingQuoteCartItems.length !== items.length
+    ) {
+      setPricingQuote(null);
+      setPricingQuoteLoading(false);
+      setPricingQuoteError("");
+      return;
+    }
+
+    const controller = new AbortController();
+    setPricingQuote(null);
+    setPricingQuoteLoading(true);
+    setPricingQuoteError("");
+
+    getCheckoutPricingQuote({
+      cartItems: pricingQuoteCartItems,
+      isB2B: true,
+      signal: controller.signal,
+    }).then((quote) => {
+      if (!controller.signal.aborted) setPricingQuote(quote);
+    }).catch((error) => {
+      if (!controller.signal.aborted) {
+        setPricingQuote(null);
+        setPricingQuoteError(error instanceof Error ? error.message : "Le tarif professionnel est momentanément indisponible.");
+      }
+    }).finally(() => {
+      if (!controller.signal.aborted) setPricingQuoteLoading(false);
+    });
+
+    return () => controller.abort();
+  }, [draftError, draftLoading, draftPricingActive, isApprovedPro, items.length, pricingQuoteCartItems, requestedDraftToken]);
 
   useEffect(() => {
     if (customerLoading) return;
@@ -941,6 +1011,28 @@ export default function CheckoutPage() {
               {draftError}
             </div>
           )}
+          {isApprovedPro && !draftPricingActive && (
+            <div className={`mb-8 border p-5 ${hasProfessionalPricing ? "border-emerald-400/30 bg-emerald-400/10" : "border-[#ff4a8d]/40 bg-[#ff4a8d]/10"}`}>
+              <div className="flex items-center justify-between gap-4">
+                <p className={`text-xs font-black uppercase tracking-[0.18em] ${hasProfessionalPricing ? "text-emerald-300" : "text-[#ff4a8d]"}`}>
+                  Tarif pro dès {formatPrice(proThresholdHT)} HT
+                </p>
+                <span className="text-[10px] font-black text-gray-300">{pricingQuote ? `${Math.min(100, Math.max(0, proProgressPercent))}%` : "Calcul..."}</span>
+              </div>
+              <div className="mt-3 h-1.5 overflow-hidden bg-white/10" aria-label={pricingQuote ? `Progression vers le tarif professionnel : ${Math.min(100, Math.max(0, proProgressPercent))}%` : "Calcul de la progression vers le tarif professionnel"}>
+                <div className={`h-full transition-all ${hasProfessionalPricing ? "bg-emerald-400" : "bg-[#ff4a8d]"}`} style={{ width: `${Math.min(100, Math.max(0, proProgressPercent))}%` }} />
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-gray-300">
+                {pricingQuote && hasProfessionalPricing
+                  ? "Les SKU éligibles sont au prix pro HT ; les SKU sans prix pro restent au tarif public TTC."
+                  : pricingQuote
+                    ? `Votre panier est payable au prix public TTC. Ajoutez encore ${formatPrice(proRemainingHT)} HT d’articles éligibles pour bénéficier des prix pro.`
+                    : "Votre panier est payable au prix public TTC. Le montant d’articles éligibles au tarif pro est en cours de vérification."}
+              </p>
+              {pricingQuoteLoading && <p className="mt-3 text-[10px] uppercase tracking-widest text-gray-500">Mise à jour de votre tarification...</p>}
+              {pricingQuoteError && <p className="mt-3 text-[10px] uppercase tracking-widest text-amber-200">Tarif public affiché temporairement · {pricingQuoteError}</p>}
+            </div>
+          )}
 
           <button onClick={() => setOrderSummaryOpen(!orderSummaryOpen)} className="lg:hidden w-full flex items-center justify-between bg-[#1c1b1b] px-5 py-4 mb-8">
             <div className="flex items-center gap-3"><ShoppingBag size={16} className="text-[#ff4a8d]" /><span className="text-xs font-black tracking-widest uppercase">{orderSummaryOpen ? "MASQUER" : "VOIR"} LE RÉCAPITULATIF</span></div>
@@ -951,16 +1043,25 @@ export default function CheckoutPage() {
             <div className="lg:hidden bg-[#1c1b1b] p-5 mb-8 space-y-4">
               {items.map((item) => {
                 const img = getVariantImage(item.product, item.variant);
+                const quoteItem = getPricingQuoteItem(pricingQuote, item.product.id, item.variantId || item.variant?.id || null);
+                const publicUnitTTC = item.isCustomSale
+                  ? item.customPriceTTC ?? item.product.price
+                  : typeof item.product.pricePublic === "number" ? item.product.pricePublic : item.product.price;
+                const usesDraftPrice = draftPricingActive;
+                const usesProfessionalPrice = hasProfessionalPricing && quoteItem?.priceSource === "pro";
+                const displayedLineTotal = (usesDraftPrice ? item.product.price : usesProfessionalPrice ? quoteItem.appliedUnitHT : quoteItem?.appliedUnitTTC ?? publicUnitTTC) * item.quantity;
+                const linePriceLabel = usesDraftPrice ? "Prix brouillon" : usesProfessionalPrice ? "Prix pro HT" : "Public TTC";
+                const lineTaxLabel = usesDraftPrice ? draftPricing?.isB2B ? "HT" : "TTC" : usesProfessionalPrice ? "HT" : "TTC";
                 return (
                   <div key={`${item.product.id}-${item.variantId || item.variant?.id || "product"}`} className="flex items-center gap-4">
                     <div className="w-14 h-14 bg-[#2a2a2a] flex-shrink-0 relative">{img && <Image src={img} alt={item.product.name} fill className="object-contain p-1" />}<span className="absolute -top-2 -right-2 w-5 h-5 bg-[#ff4a8d] text-white text-[10px] font-black flex items-center justify-center">{item.quantity}</span></div>
-                    <div className="flex-1 min-w-0"><p className="text-xs font-black truncate">{item.product.name}</p></div>
-                    <span className="text-xs font-black">{formatPrice(item.product.price * item.quantity)}</span>
+                    <div className="flex-1 min-w-0"><p className="text-xs font-black truncate">{item.product.name}</p><p className={`mt-1 text-[9px] font-black uppercase tracking-widest ${usesProfessionalPrice ? "text-emerald-300" : "text-gray-500"}`}>{linePriceLabel}</p></div>
+                    <div className="text-right"><span className="block text-xs font-black">{formatPrice(displayedLineTotal)}</span><span className="mt-1 block text-[9px] uppercase tracking-widest text-gray-500">{lineTaxLabel}</span></div>
                   </div>
                 );
               })}
               <div className="border-t border-white/5 pt-4 space-y-3">
-                {effectiveIsB2B ? (
+                {showProfessionalPriceBreakdown ? (
                   <>
                     <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Sous-total HT</span><span className="font-black">{formatPrice(subtotalHT)}</span></div>
                     <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">TVA ({vatRate}%)</span><span className="font-black">{formatPrice(vatAmount)}</span></div>
@@ -1309,17 +1410,26 @@ export default function CheckoutPage() {
             <div className="space-y-6 mb-8">
               {items.map((item) => {
                 const img = getVariantImage(item.product, item.variant);
+                const quoteItem = getPricingQuoteItem(pricingQuote, item.product.id, item.variantId || item.variant?.id || null);
+                const publicUnitTTC = item.isCustomSale
+                  ? item.customPriceTTC ?? item.product.price
+                  : typeof item.product.pricePublic === "number" ? item.product.pricePublic : item.product.price;
+                const usesDraftPrice = draftPricingActive;
+                const usesProfessionalPrice = hasProfessionalPricing && quoteItem?.priceSource === "pro";
+                const displayedLineTotal = (usesDraftPrice ? item.product.price : usesProfessionalPrice ? quoteItem.appliedUnitHT : quoteItem?.appliedUnitTTC ?? publicUnitTTC) * item.quantity;
+                const linePriceLabel = usesDraftPrice ? "Prix brouillon" : usesProfessionalPrice ? "Prix pro HT" : "Public TTC";
+                const lineTaxLabel = usesDraftPrice ? draftPricing?.isB2B ? "HT" : "TTC" : usesProfessionalPrice ? "HT" : "TTC";
                 return (
                   <div key={`${item.product.id}-${item.variantId || item.variant?.id || "product"}`} className="flex items-center gap-4">
                     <div className="w-16 h-16 bg-[#2a2a2a] flex-shrink-0 relative overflow-hidden">{img && <Image src={img} alt={item.product.name} fill className="object-contain p-2 opacity-90" />}<span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#ff4a8d] text-white text-[10px] font-black flex items-center justify-center">{item.quantity}</span></div>
-                    <div className="flex-1 min-w-0"><p className="text-[10px] font-black tracking-widest uppercase text-[#ff4a8d] mb-0.5">{item.product.brand}</p><p className="text-xs font-black truncate">{item.product.name}</p></div>
-                    <span className="text-sm font-black">{formatPrice(item.product.price * item.quantity)}</span>
+                    <div className="flex-1 min-w-0"><p className="text-[10px] font-black tracking-widest uppercase text-[#ff4a8d] mb-0.5">{item.product.brand}</p><p className="text-xs font-black truncate">{item.product.name}</p><p className={`mt-1 text-[9px] font-black uppercase tracking-widest ${usesProfessionalPrice ? "text-emerald-300" : "text-gray-500"}`}>{linePriceLabel}</p></div>
+                    <div className="text-right"><span className="block text-sm font-black">{formatPrice(displayedLineTotal)}</span><span className="mt-1 block text-[9px] uppercase tracking-widest text-gray-500">{lineTaxLabel}</span></div>
                   </div>
                 );
               })}
             </div>
             <div className="border-t border-white/5 pt-6 space-y-3">
-              {effectiveIsB2B ? (
+              {showProfessionalPriceBreakdown ? (
                 <>
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total HT</span><span className="text-sm font-black">{formatPrice(subtotalHT)}</span></div>
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">TVA ({vatRate}%)</span><span className="text-sm font-black">{formatPrice(vatAmount)}</span></div>

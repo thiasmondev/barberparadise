@@ -194,13 +194,21 @@ export function calculateOrderExchangeFinancials(input: {
   exchangeQuantity: number;
   replacementPublicUnitPrice: number;
   replacementProfessionalUnitPrice?: number | null;
+  /** Whether stored exchange values are net (online B2B) or public TTC (B2C/POS). */
+  priceBasis?: "ht" | "ttc";
+  /** Whether a replacement can use its own explicit professional price. */
+  applyProfessionalPrice?: boolean;
   isB2B: boolean;
   vatRate: number;
 }) {
   const allocatedReturnDiscount = money((input.returnedLineDiscount * input.exchangeQuantity) / input.returnedLineQuantity);
   const returnValue = money(input.returnedUnitPrice * input.exchangeQuantity - allocatedReturnDiscount);
-  const replacementUnitPrice = input.isB2B
-    ? money(input.replacementProfessionalUnitPrice ?? input.replacementPublicUnitPrice / (1 + input.vatRate / 100))
+  const priceBasis = input.priceBasis || (input.isB2B ? "ht" : "ttc");
+  const applyProfessionalPrice = input.applyProfessionalPrice ?? input.isB2B;
+  const replacementUnitPrice = priceBasis === "ht"
+    ? money(applyProfessionalPrice && input.replacementProfessionalUnitPrice != null
+      ? input.replacementProfessionalUnitPrice
+      : input.replacementPublicUnitPrice / (1 + input.vatRate / 100))
     : money(input.replacementPublicUnitPrice);
   const replacementValue = money(replacementUnitPrice * input.exchangeQuantity);
   return {
@@ -252,10 +260,15 @@ export function isOrderExchangeEligible(input: { status: string; channel?: strin
   return EXCHANGE_ELIGIBLE_STATUSES.has(input.status);
 }
 
-export function usesProfessionalExchangePricing(input: { isB2B: boolean; channel?: string | null }) {
+export function usesProfessionalExchangePricing(input: {
+  isB2B: boolean;
+  channel?: string | null;
+  pricingTier?: "pro" | "retail" | null;
+}) {
   // Les ventes caisse sont saisies sur les prix publics TTC, même lorsqu’un client
   // professionnel y est associé pour son historique ou sa facture.
-  return input.isB2B && input.channel !== "pos";
+  // Null conserves the historical pre-rollout behavior for orders that have no tier.
+  return input.isB2B && input.channel !== "pos" && input.pricingTier !== "retail";
 }
 
 function assertEligibleOrderStatus(input: { status: string; channel?: string | null; noShipping?: boolean | null }) {
@@ -408,8 +421,16 @@ export async function initiateOrderExchange(input: ExchangeInitiationInput) {
     }
 
     const publicUnitPrice = replacementVariant?.price ?? replacementProduct.price;
-    const professionalUnitPrice = replacementVariant?.priceProEur ?? replacementProduct.priceProEur;
-    const useProfessionalPricing = usesProfessionalExchangePricing({ isB2B: order.isB2B, channel: order.channel });
+    // The selected variant must define its own pro price. It never inherits the
+    // product-level amount, otherwise a retail-only variant would be underpriced.
+    const professionalUnitPrice = replacementVariant
+      ? replacementVariant.priceProEur
+      : replacementProduct.priceProEur;
+    const useProfessionalPricing = usesProfessionalExchangePricing({
+      isB2B: order.isB2B,
+      channel: order.channel,
+      pricingTier: order.pricingTier,
+    });
     const { allocatedReturnDiscount, returnValue, replacementUnitPrice, replacementValue, differenceAmount } = calculateOrderExchangeFinancials({
       returnedUnitPrice: returnedItem.price,
       returnedLineDiscount: returnedItem.discountAmount,
@@ -418,6 +439,8 @@ export async function initiateOrderExchange(input: ExchangeInitiationInput) {
       replacementPublicUnitPrice: publicUnitPrice,
       replacementProfessionalUnitPrice: professionalUnitPrice,
       isB2B: useProfessionalPricing,
+      priceBasis: order.isB2B && order.channel !== "pos" ? "ht" : "ttc",
+      applyProfessionalPrice: useProfessionalPricing,
       vatRate: order.vatRate,
     });
 

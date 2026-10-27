@@ -1938,7 +1938,8 @@ export default function OrderDetailPage() {
   const exchangeQuantityNumber = Number.parseInt(exchangeQuantity, 10);
   // Les ventes réalisées en caisse conservent les prix publics TTC, même si le
   // client associé possède un compte professionnel.
-  const usesProfessionalExchangePricing = Boolean(order.isB2B) && !isPosOrder;
+  const usesB2BNetPriceBasis = Boolean(order.isB2B) && !isPosOrder;
+  const usesProfessionalExchangePricing = usesB2BNetPriceBasis && order.pricingTier !== "retail";
   const exchangeReplacementRequiresVariant = Boolean((exchangeReplacementProduct?.variants?.length || 0) > 0);
   const exchangeReplacementHasAvailableVariant = !exchangeReplacementRequiresVariant || Boolean(
     exchangeReplacementProduct?.variants?.some((variant) => variant.inStock && variant.stock >= exchangeQuantityNumber)
@@ -1976,8 +1977,13 @@ export default function OrderDetailPage() {
         const allocatedReturnDiscount = money(((exchangeReturnedItem.discountAmount || 0) * quantity) / exchangeReturnedItem.quantity);
         const returnValue = money(exchangeReturnedItem.price * quantity - allocatedReturnDiscount);
         const publicReplacementUnitPrice = exchangeReplacementVariant?.price ?? exchangeReplacementProduct.price;
-        const replacementUnitPrice = usesProfessionalExchangePricing
-          ? money(exchangeReplacementVariant?.priceProEur ?? exchangeReplacementProduct.priceProEur ?? publicReplacementUnitPrice / (1 + (order.vatRate ?? 20) / 100))
+        const ownProfessionalPrice = exchangeReplacementVariant
+          ? exchangeReplacementVariant.priceProEur
+          : exchangeReplacementProduct.priceProEur;
+        const replacementUnitPrice = usesB2BNetPriceBasis
+          ? money(usesProfessionalExchangePricing && ownProfessionalPrice != null
+            ? ownProfessionalPrice
+            : publicReplacementUnitPrice / (1 + (order.vatRate ?? 20) / 100))
           : money(publicReplacementUnitPrice);
         const replacementValue = money(replacementUnitPrice * quantity);
         return {
@@ -3036,7 +3042,7 @@ export default function OrderDetailPage() {
                       <button key={product.id} type="button" onClick={() => selectExchangeReplacement(product)} className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-gray-50">
                         {getVariantImage(product) && <img src={getVariantImage(product)} alt="" className="h-9 w-9 shrink-0 rounded-md border border-gray-100 object-cover" />}
                         <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{product.name}</span>
-                        <span className="text-xs text-gray-500">{formatPrice(usesProfessionalExchangePricing ? (product.priceProEur ?? product.price / (1 + (order.vatRate ?? 20) / 100)) : product.price, order.currency)}</span>
+                        <span className="text-xs text-gray-500">{formatPrice(usesProfessionalExchangePricing && product.priceProEur != null ? product.priceProEur : usesB2BNetPriceBasis ? product.price / (1 + (order.vatRate ?? 20) / 100) : product.price, order.currency)}</span>
                       </button>
                     ))}
                   </div>
@@ -3060,7 +3066,7 @@ export default function OrderDetailPage() {
                       <label className="mt-3 block text-xs font-semibold text-violet-900">Variante obligatoire
                         <select value={exchangeReplacementVariant?.id || ""} onChange={(event) => { setExchangeReplacementVariant(exchangeReplacementProduct.variants?.find((variant) => variant.id === event.target.value) || null); setExchangeError(""); }} className="mt-1 w-full rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm">
                           <option value="">Choisir une variante disponible</option>
-                          {exchangeReplacementProduct.variants?.filter((variant) => variant.inStock && variant.stock >= Math.max(1, exchangeQuantityNumber || 1)).map((variant) => <option key={variant.id} value={variant.id}>{variant.name} · {formatPrice(usesProfessionalExchangePricing ? (variant.priceProEur ?? (variant.price ?? 0) / (1 + (order.vatRate ?? 20) / 100)) : (variant.price ?? 0), order.currency)} · stock {variant.stock}</option>)}
+                          {exchangeReplacementProduct.variants?.filter((variant) => variant.inStock && variant.stock >= Math.max(1, exchangeQuantityNumber || 1)).map((variant) => <option key={variant.id} value={variant.id}>{variant.name} · {formatPrice(usesProfessionalExchangePricing && variant.priceProEur != null ? variant.priceProEur : usesB2BNetPriceBasis ? (variant.price ?? 0) / (1 + (order.vatRate ?? 20) / 100) : (variant.price ?? 0), order.currency)} · stock {variant.stock}</option>)}
                         </select>
                       </label>
                     )}
@@ -3118,7 +3124,7 @@ export default function OrderDetailPage() {
                       <h3 className="text-sm font-semibold text-gray-950">Différence d’échange</h3>
                       <p className="mt-1 text-xs text-gray-600">Calculée sur le prix réellement facturé de l’article retourné, remise de ligne comprise.</p>
                     </div>
-                    <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 ring-1 ring-black/5">{usesProfessionalExchangePricing ? "Montants HT" : "Montants TTC"}</span>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 ring-1 ring-black/5">{usesB2BNetPriceBasis ? "Montants HT" : "Montants TTC"}</span>
                   </div>
                   <dl className="mt-3 space-y-2 text-sm">
                     <div className="flex justify-between gap-4"><dt className="min-w-0 text-gray-600">Retour — {exchangePreview.returnedName} × {exchangeQuantityNumber}</dt><dd className="whitespace-nowrap font-medium text-gray-950">-{formatPrice(exchangePreview.returnValue, order.currency)}</dd></div>

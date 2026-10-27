@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { prisma } from "../utils/prisma";
 import { getFrontendUrl } from "../utils/frontendUrl";
@@ -24,8 +25,28 @@ import { getActiveAutomaticProductPromotions, getBestAutomaticPromotionForProduc
 import { B2B_PAYMENT_FEE_VAT_RATE, calculateB2BSurcharge, getB2BConfiguredSurcharges } from "../services/b2bPaymentSurchargeService";
 import { normalizeShippingAddressContact } from "../utils/shippingAddressNormalization";
 import { isValidEmailAddress, normalizeEmailAddress } from "../utils/emailValidation";
+import {
+  resolveProfessionalPricing,
+  type ProfessionalPricingResolution,
+} from "../services/b2bPricingService";
 
 export const checkoutRouter = Router();
+
+async function isApprovedProPricingRequest(req: Request): Promise<boolean> {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token || !process.env.JWT_SECRET) return false;
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET) as { id?: string };
+    if (!payload.id) return false;
+    const account = await prisma.proAccount.findUnique({
+      where: { customerId: payload.id },
+      select: { status: true },
+    });
+    return account?.status === "approved";
+  } catch {
+    return false;
+  }
+}
 
 type CheckoutCartItem = {
   productId?: string;
@@ -71,7 +92,6 @@ type CheckoutRequestBody = {
 
 const CURRENCY = "EUR";
 const STANDARD_VAT_RATE = 20;
-const PRO_MINIMUM_ORDER_HT = 200;
 
 function generateOrderNumber(): string {
   const date = new Date();
@@ -248,6 +268,174 @@ function normalizeDraftItemsSignature(items: Array<{ productId: string | null; v
     .sort((a, b) => `${a.productId}:${a.variantId}`.localeCompare(`${b.productId}:${b.variantId}`))
     .map((item) => `${item.productId}:${item.variantId}:${item.quantity}`)
     .join("|");
+}
+
+type ResolvedCheckoutBasket = {
+  pricing: ProfessionalPricingResolution;
+  orderItems: Array<{
+    productId: string | null;
+    variantId: string | null;
+    variantLabel: string | null;
+    name: string;
+    price: number;
+    quantity: number;
+    image: string;
+    discountAmount: number;
+    lineDiscountType: null;
+    lineDiscountValue: null;
+    isCustomSale: boolean;
+  }>;
+  promotionCartItems: Array<{ productId: string; categoryId?: string | null; quantity: number; price: number }>;
+  subtotalHT: number;
+  subtotalTTC: number;
+};
+
+/**
+ * Single pricing boundary for both redirect and popup checkout flows. It
+ * validates live catalogue data before selecting a tariff. A selected variant
+ * only qualifies through its own professional price, never its parent’s.
+ */
+async function resolveCheckoutBasket(params: {
+  cartItems: CheckoutCartItem[];
+  isB2B: boolean;
+  country: string;
+  vatNumber?: string | null;
+}): Promise<ResolvedCheckoutBasket> {
+  const vatRate = getVatRate(params.country, params.isB2B, params.vatNumber || undefined);
+  const promotionData = await getActiveAutomaticProductPromotions();
+  const resolvedRaw: Array<{
+    item: CheckoutCartItem;
+    productId: string | null;
+    variantId: string | null;
+    variantLabel: string | null;
+    name: string;
+    image: string;
+    categoryId?: string | null;
+    publicUnitTTC: number;
+    ownProfessionalUnitHT: number | null;
+    isCustomSale: boolean;
+  }> = [];
+
+  for (const item of params.cartItems) {
+    const productId = item.productId || item.id;
+    const variantId = typeof item.variantId === "string" && item.variantId.trim() ? item.variantId.trim() : null;
+    if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
+      throw new Error("Article de panier invalide");
+    }
+
+    if (item.isCustomItem || !productId) {
+      const customPriceTTC = typeof item.customPriceTTC === "number" && Number.isFinite(item.customPriceTTC)
+        ? money(Math.max(0, item.customPriceTTC))
+        : 0;
+      if (customPriceTTC <= 0) throw new Error("Prix de l’article personnalisé invalide");
+      resolvedRaw.push({
+        item,
+        productId: null,
+        variantId: null,
+        variantLabel: null,
+        name: typeof item.customName === "string" && item.customName.trim() ? item.customName.trim() : (item.id || "Article personnalisé"),
+        image: "",
+        publicUnitTTC: customPriceTTC,
+        ownProfessionalUnitHT: null,
+        isCustomSale: true,
+      });
+      continue;
+    }
+
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      include: { variants: { orderBy: { order: "asc" } } },
+    });
+    if (!product || product.status !== "active") {
+      throw new Error(`Produit indisponible : ${productId}`);
+    }
+    const selectedVariant = variantId ? product.variants.find((variant) => variant.id === variantId) : null;
+    if (product.variants.length > 0 && !selectedVariant) {
+      const error = new Error(`L’article ${product.name} est incomplet dans votre panier. Retirez-le puis ajoutez-le à nouveau depuis sa fiche produit avec une variante.`) as Error & { code?: string; productId?: string; productName?: string };
+      error.code = "VARIANT_SELECTION_REQUIRED";
+      error.productId = product.id;
+      error.productName = product.name;
+      throw error;
+    }
+    if (selectedVariant) {
+      if (!selectedVariant.inStock || selectedVariant.stock <= 0) {
+        throw new Error(`Variante indisponible : ${product.name} - ${selectedVariant.name}`);
+      }
+      if (selectedVariant.stock < item.quantity) {
+        throw new Error(`Stock insuffisant pour ${product.name} - ${selectedVariant.name}`);
+      }
+    } else {
+      if (!product.inStock) throw new Error(`Produit indisponible : ${product.name}`);
+      if (product.stockCount !== null && product.stockCount <= 0) throw new Error(`Produit hors-stock : ${product.name}`);
+      if (product.stockCount !== null && product.stockCount < item.quantity) throw new Error(`Stock insuffisant pour ${product.name}`);
+    }
+
+    const publicUnitTTC = selectedVariant?.price ?? product.price;
+    const automaticPromotion = !params.isB2B
+      ? getBestAutomaticPromotionForProduct(product as Parameters<typeof getBestAutomaticPromotionForProduct>[0], publicUnitTTC, promotionData.promotions, promotionData.categoryTargets, false)
+      : null;
+    resolvedRaw.push({
+      item,
+      productId: product.id,
+      variantId: selectedVariant?.id || null,
+      variantLabel: selectedVariant?.name || null,
+      name: selectedVariant ? `${product.name} - ${selectedVariant.name}` : product.name,
+      image: selectedVariant?.image || parseProductImages(product.images)[0] || "",
+      categoryId: product.category || null,
+      publicUnitTTC: automaticPromotion?.price ?? publicUnitTTC,
+      ownProfessionalUnitHT: selectedVariant ? selectedVariant.priceProEur : product.priceProEur,
+      isCustomSale: false,
+    });
+  }
+
+  const pricing = resolveProfessionalPricing({
+    isB2B: params.isB2B,
+    vatRate,
+    items: resolvedRaw.map((line) => ({
+      productId: line.productId || `custom:${line.name}`,
+      variantId: line.variantId,
+      quantity: line.item.quantity,
+      publicUnitTTC: line.publicUnitTTC,
+      ownProfessionalUnitHT: line.ownProfessionalUnitHT,
+    })),
+  });
+
+  const orderItems = resolvedRaw.map((line, index) => {
+    const applied = pricing.lines[index];
+    return {
+      productId: line.productId,
+      variantId: line.variantId,
+      variantLabel: line.variantLabel,
+      name: line.name,
+      price: params.isB2B ? applied.appliedUnitHT : line.publicUnitTTC,
+      quantity: line.item.quantity,
+      image: line.image,
+      discountAmount: 0,
+      lineDiscountType: null,
+      lineDiscountValue: null,
+      isCustomSale: line.isCustomSale,
+    };
+  });
+  const subtotalHT = money(pricing.lines.reduce((sum, line) => sum + line.appliedUnitHT * line.quantity, 0));
+  const subtotalTTC = money(params.isB2B
+    ? pricing.lines.reduce((sum, line) => sum + line.appliedUnitTTC * line.quantity, 0)
+    : resolvedRaw.reduce((sum, line) => sum + line.publicUnitTTC * line.item.quantity, 0));
+
+  return {
+    pricing,
+    orderItems,
+    promotionCartItems: resolvedRaw
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => !line.isCustomSale && line.productId)
+      .map(({ line, index }) => ({
+        productId: line.productId!,
+        categoryId: line.categoryId,
+        quantity: line.item.quantity,
+        price: params.isB2B ? pricing.lines[index].appliedUnitHT : line.publicUnitTTC,
+      })),
+    subtotalHT,
+    subtotalTTC,
+  };
 }
 
 /**
@@ -523,6 +711,59 @@ checkoutRouter.get("/shipping-options", async (req: Request, res: Response): Pro
   } catch (err) {
     console.error("Erreur options livraison", err);
     res.status(500).json({ error: "Erreur calcul options livraison" });
+  }
+});
+
+/**
+ * Read-only, non-authoritative preview. Payment creation always resolves the
+ * catalogue again. The response lets the storefront show the exact current
+ * threshold progress and the per-line public/pro basis without trusting a
+ * browser-calculated amount.
+ */
+checkoutRouter.get("/pricing-quote", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const rawItems = typeof req.query.cartItems === "string" ? JSON.parse(req.query.cartItems) : null;
+    if (!Array.isArray(rawItems) || rawItems.length === 0) {
+      res.status(400).json({ error: "Panier requis pour calculer la tarification" });
+      return;
+    }
+    const requestedB2B = req.query.isB2B === "true" || req.query.isPro === "true";
+    const isB2B = requestedB2B && await isApprovedProPricingRequest(req);
+    if (requestedB2B && !isB2B) {
+      res.status(403).json({ error: "Compte professionnel non approuvé" });
+      return;
+    }
+    const country = normalizeCountry(typeof req.query.country === "string" ? req.query.country : "FR");
+    const vatNumber = typeof req.query.vatNumber === "string" ? req.query.vatNumber.trim().toUpperCase() : undefined;
+    const basket = await resolveCheckoutBasket({
+      cartItems: rawItems as CheckoutCartItem[],
+      isB2B,
+      country,
+      vatNumber,
+    });
+    const vatRate = getVatRate(country, isB2B, vatNumber);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      isB2B,
+      pricingTier: basket.pricing.pricingTier,
+      thresholdHT: basket.pricing.thresholdHT,
+      qualifyingSubtotalHT: basket.pricing.qualifyingSubtotalHT,
+      remainingHT: basket.pricing.remainingHT,
+      progressPercent: basket.pricing.progressPercent,
+      items: basket.pricing.lines,
+      subtotalHT: basket.subtotalHT,
+      subtotalTTC: basket.subtotalTTC,
+      vatRate,
+      vatAmount: money(basket.subtotalHT * (vatRate / 100)),
+      discountTotal: 0,
+      totalTTC: basket.subtotalTTC,
+    });
+  } catch (error) {
+    const typedError = error as Error & { code?: string; productId?: string; productName?: string };
+    res.status(400).json({
+      error: typedError.message || "Impossible de calculer la tarification",
+      ...(typedError.code ? { code: typedError.code, productId: typedError.productId, productName: typedError.productName } : {}),
+    });
   }
 });
 
@@ -966,6 +1207,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
           paymentMethod: body.paymentMethod,
           paymentProvider: provider,
           isB2B: checkoutDraft.isB2B,
+          pricingTier: checkoutDraft.pricingTier || (checkoutDraft.isB2B ? "pro" : "retail"),
           subtotal: checkoutDraft.subtotal,
           shipping: checkoutDraft.shipping,
           total: orderTotalTTC,
@@ -1082,133 +1324,13 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const orderItems = [];
-    const promotionCartItems: Array<{ productId: string; categoryId?: string | null; quantity: number; price: number }> = [];
-    let subtotalTTC = 0;
-    let subtotalHT = 0;
-    
-    const promotionData = await getActiveAutomaticProductPromotions();
-    
-    for (const item of body.cartItems) {
-      const productId = item.productId || item.id;
-      const variantId = typeof item.variantId === "string" && item.variantId.trim() ? item.variantId.trim() : null;
-      if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
-        res.status(400).json({ error: "Article de panier invalide" });
-        return;
-      }
-      // Articles personnalisés hors catalogue : pas de productId en base, toujours disponibles
-      if (item.isCustomItem || !productId) {
-        const customPriceTTC = typeof item.customPriceTTC === "number" ? item.customPriceTTC : 0;
-        const customVatRate = typeof item.customVatRate === "number" ? item.customVatRate : 20;
-        const unitTTC = money(customPriceTTC);
-        const unitHT = money(unitTTC / (1 + customVatRate / 100));
-        subtotalHT += unitHT * item.quantity;
-        subtotalTTC += unitTTC * item.quantity;
-        orderItems.push({
-          productId: null as unknown as string,
-          variantId: null,
-          variantLabel: null,
-          name: typeof item.customName === "string" ? item.customName.trim() : (item.id || "Article personnalisé"),
-          price: unitTTC,
-          quantity: item.quantity,
-          image: "",
-          discountAmount: 0,
-          lineDiscountType: null,
-          lineDiscountValue: null,
-          isCustomSale: true,
-        });
-        continue;
-      }
-      const product = await prisma.product.findUnique({
-        where: { id: productId },
-        include: { variants: { orderBy: { order: "asc" } } },
-      });
-      if (!product || product.status !== "active") {
-        res.status(400).json({ error: `Produit indisponible : ${productId}` });
-        return;
-      }
-
-      const hasVariants = product.variants.length > 0;
-      const selectedVariant = variantId ? product.variants.find((variant) => variant.id === variantId) : null;
-      if (hasVariants && !selectedVariant) {
-        res.status(400).json({
-          error: `L’article ${product.name} est incomplet dans votre panier. Retirez-le puis ajoutez-le à nouveau depuis sa fiche produit avec une variante.`,
-          code: "VARIANT_SELECTION_REQUIRED",
-          productId: product.id,
-          productName: product.name,
-        });
-        return;
-      }
-      if (selectedVariant) {
-        // Vérification stricte : le stock doit être > 0 ET inStock = true
-        if (!selectedVariant.inStock || selectedVariant.stock <= 0) {
-          res.status(400).json({ error: `Variante indisponible : ${product.name} - ${selectedVariant.name}` });
-          return;
-        }
-        if (selectedVariant.stock < item.quantity) {
-          res.status(400).json({ error: `Stock insuffisant pour ${product.name} - ${selectedVariant.name}` });
-          return;
-        }
-      } else {
-        if (!product.inStock) {
-          res.status(400).json({ error: `Produit indisponible : ${product.name}` });
-          return;
-        }
-        // Correction : stockCount === 0 doit aussi bloquer la commande
-        // (avant : la condition "stockCount > 0" laissait passer les stocks à 0)
-        if (product.stockCount !== null && product.stockCount <= 0) {
-          res.status(400).json({ error: `Produit hors-stock : ${product.name}` });
-          return;
-        }
-        if (product.stockCount !== null && product.stockCount < item.quantity) {
-          res.status(400).json({ error: `Stock insuffisant pour ${product.name}` });
-          return;
-        }
-      }
-
-      const publicTtcPrice = selectedVariant?.price ?? product.price;
-      
-      const automaticPromotion = !isB2B ? getBestAutomaticPromotionForProduct(
-        product as any,
-        publicTtcPrice,
-        promotionData.promotions,
-        promotionData.categoryTargets,
-        isB2B
-      ) : null;
-      
-      const effectivePublicTtcPrice = automaticPromotion ? automaticPromotion.price : publicTtcPrice;
-      
-      const proHtPrice = selectedVariant?.priceProEur ?? product.priceProEur ?? publicTtcPrice / (1 + STANDARD_VAT_RATE / 100);
-      const unitHT = isB2B ? money(proHtPrice) : money(effectivePublicTtcPrice / (1 + STANDARD_VAT_RATE / 100));
-      const unitTTC = isB2B ? money(unitHT * (1 + getVatRate(country, true, vatNumber) / 100)) : effectivePublicTtcPrice;
-      subtotalHT += unitHT * item.quantity;
-      subtotalTTC += unitTTC * item.quantity;
-
-      const productImages = JSON.parse(product.images || "[]");
-      orderItems.push({
-        productId: product.id,
-        variantId: selectedVariant?.id || null,
-        variantLabel: selectedVariant?.name || null,
-        name: selectedVariant ? `${product.name} - ${selectedVariant.name}` : product.name,
-        price: isB2B ? unitHT : effectivePublicTtcPrice,
-        quantity: item.quantity,
-        image: selectedVariant?.image || productImages[0] || "",
-      });
-      promotionCartItems.push({
-        productId: product.id,
-        categoryId: product.category || null,
-        quantity: item.quantity,
-        price: isB2B ? unitHT : effectivePublicTtcPrice,
-      });
-    }
-
-    subtotalHT = money(subtotalHT);
-    subtotalTTC = money(subtotalTTC);
-
-    if (isB2B && subtotalHT < PRO_MINIMUM_ORDER_HT) {
-      res.status(400).json({ error: `Le minimum de commande professionnel est de ${PRO_MINIMUM_ORDER_HT} € HT` });
-      return;
-    }
+    const basket = await resolveCheckoutBasket({
+      cartItems: body.cartItems,
+      isB2B,
+      country,
+      vatNumber,
+    });
+    const { orderItems, promotionCartItems, subtotalHT, subtotalTTC } = basket;
 
     const shippingOptions = await calculateShippingOptions(country, isB2B ? subtotalHT : subtotalTTC, isB2B, shippingAddress?.postalCode);
     const selectedShippingOption = shippingOptions.find((option) => option.id === body.shippingOptionId) || shippingOptions[0];
@@ -1268,6 +1390,7 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         paymentMethod: body.paymentMethod,
         paymentProvider: provider,
         isB2B,
+        pricingTier: basket.pricing.pricingTier,
         subtotal: isB2B ? subtotalHT : subtotalTTC,
         shipping: chargedShipping,
         total: totalTTC,
@@ -1381,6 +1504,16 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
         error: "Le paiement en 4 fois PayPal n'est pas disponible pour cette transaction. Veuillez choisir un autre moyen de paiement (PayPal standard, carte bancaire, etc.).",
         code: "PAYPAL_4X_INELIGIBLE",
         originalError: message,
+      });
+      return;
+    }
+    const basketError = err as Error & { code?: string; productId?: string; productName?: string };
+    if (basketError.code === "VARIANT_SELECTION_REQUIRED") {
+      res.status(400).json({
+        error: message,
+        code: basketError.code,
+        productId: basketError.productId,
+        productName: basketError.productName,
       });
       return;
     }
@@ -1601,6 +1734,7 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
             paymentMethod: body.paymentMethod,
             paymentProvider: "paypal",
             isB2B: checkoutDraft.isB2B,
+            pricingTier: checkoutDraft.pricingTier || (checkoutDraft.isB2B ? "pro" : "retail"),
             subtotal: checkoutDraft.subtotal,
             shipping: checkoutDraft.shipping,
             total: orderTotalTTC,
@@ -1638,45 +1772,14 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
       orderId = order.id;
       orderNumber = order.orderNumber;
     } else {
-      // Flux standard
-      const orderItems = [];
-      const promotionCartItems: Array<{ productId: string; categoryId?: string | null; quantity: number; price: number }> = [];
-      let subtotalTTC = 0;
-      let subtotalHT = 0;
-      const promotionData = await getActiveAutomaticProductPromotions();
-
-      for (const item of body.cartItems) {
-        const productId = item.productId || item.id;
-        const variantId = typeof item.variantId === "string" && item.variantId.trim() ? item.variantId.trim() : null;
-        if (!Number.isInteger(item.quantity) || item.quantity <= 0) { res.status(400).json({ error: "Article de panier invalide" }); return; }
-        // Articles personnalisés hors catalogue : pas de productId en base, toujours disponibles
-        if (item.isCustomItem || !productId) {
-          const customPriceTTC = typeof item.customPriceTTC === "number" ? item.customPriceTTC : 0;
-          const customVatRate = typeof item.customVatRate === "number" ? item.customVatRate : 20;
-          const unitTTC = money(customPriceTTC);
-          const unitHT = money(unitTTC / (1 + customVatRate / 100));
-          subtotalTTC = money(subtotalTTC + unitTTC * item.quantity);
-          subtotalHT = money(subtotalHT + unitHT * item.quantity);
-          orderItems.push({ productId: null as unknown as string, variantId: null, variantLabel: null, name: typeof item.customName === "string" ? item.customName.trim() : (item.id || "Article personnalisé"), price: unitTTC, quantity: item.quantity, image: undefined, discountAmount: 0, lineDiscountType: null, lineDiscountValue: null, isCustomSale: true });
-          continue;
-        }
-        const product = await prisma.product.findUnique({ where: { id: productId }, include: { variants: { orderBy: { order: "asc" } } } });
-        if (!product || product.status !== "active") { res.status(400).json({ error: `Produit indisponible : ${productId}` }); return; }
-        const hasVariants = product.variants.length > 0;
-        const selectedVariant = variantId ? product.variants.find((v) => v.id === variantId) : null;
-        if (hasVariants && !selectedVariant) { res.status(400).json({ error: `L'article ${product.name} est incomplet.`, code: "VARIANT_SELECTION_REQUIRED", productId: product.id, productName: product.name }); return; }
-        if (selectedVariant && (!selectedVariant.inStock || selectedVariant.stock <= 0)) { res.status(400).json({ error: `Variante indisponible : ${product.name} - ${selectedVariant.name}` }); return; }
-        const publicTtcPrice = selectedVariant?.price ?? product.price;
-        const bestPromo = getBestAutomaticPromotionForProduct(product as Parameters<typeof getBestAutomaticPromotionForProduct>[0], publicTtcPrice, promotionData.promotions, promotionData.categoryTargets, false);
-        const effectivePublicTtcPrice = bestPromo?.price ?? publicTtcPrice;
-        const unitHT = isB2B && product.priceProEur ? product.priceProEur : effectivePublicTtcPrice / 1.2;
-        subtotalTTC = money(subtotalTTC + effectivePublicTtcPrice * item.quantity);
-        subtotalHT = money(subtotalHT + unitHT * item.quantity);
-        orderItems.push({ productId: product.id, variantId: selectedVariant?.id || null, variantLabel: selectedVariant?.name || null, name: product.name, price: isB2B ? unitHT : effectivePublicTtcPrice, quantity: item.quantity, image: undefined, discountAmount: bestPromo ? money((publicTtcPrice - effectivePublicTtcPrice) * item.quantity) : 0, lineDiscountType: null, lineDiscountValue: null, isCustomSale: false });
-        promotionCartItems.push({ productId: product.id, categoryId: product.category || null, quantity: item.quantity, price: isB2B ? unitHT : effectivePublicTtcPrice });
-      }
-
-      if (isB2B && subtotalHT < PRO_MINIMUM_ORDER_HT) { res.status(400).json({ error: `Le minimum de commande professionnel est de ${PRO_MINIMUM_ORDER_HT} € HT` }); return; }
+      // Flux standard : même résolution autoritaire que le checkout par redirection.
+      const basket = await resolveCheckoutBasket({
+        cartItems: body.cartItems,
+        isB2B,
+        country,
+        vatNumber,
+      });
+      const { orderItems, promotionCartItems, subtotalHT, subtotalTTC } = basket;
 
       const shippingOptions = await calculateShippingOptions(country, isB2B ? subtotalHT : subtotalTTC, isB2B, shippingAddress?.postalCode);
       const selectedShippingOption = shippingOptions.find((o) => o.id === body.shippingOptionId) || shippingOptions[0];
@@ -1701,7 +1804,7 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
       if (recentPendingOrder && normalizeDraftItemsSignature(recentPendingOrder.items) === normalizeCheckoutItemsSignature(body.cartItems)) {
         order = recentPendingOrder;
       } else {
-        order = await prisma.order.create({ data: { orderNumber: generateOrderNumber(), email: body.customerEmail, customerEmail: body.customerEmail, customerId: body.customerId || null, status: "pending", paymentMethod: body.paymentMethod, paymentProvider: "paypal", isB2B, subtotal: isB2B ? subtotalHT : subtotalTTC, shipping: chargedShipping, total: totalTTC, totalHT, promoCodeId: promoResolution.promoCode?.id || null, promotionId: promoResolution.promotion?.promotionId || null, discountAmount, vatRate, vatAmount, totalTTC, paymentFeePercent: paymentFee.percent, paymentFeeHT: paymentFee.feeHT, paymentFeeVatRate: paymentFee.feeVatRate, paymentFeeVatAmount: paymentFee.feeVatAmount, paymentFeeTTC: paymentFee.feeTTC, currency: CURRENCY, vatNumber: vatNumber || null, billingAddress: (body.billingAddress || shippingAddress) as object, items: { create: orderItems }, shippingAddress: { create: { firstName: shippingAddress.firstName, lastName: shippingAddress.lastName, address: shippingAddress.address, extension: shippingAddress.extension || "", city: shippingAddress.city, postalCode: shippingAddress.postalCode, country, phone: shippingAddress.phone || "" } }, relayPointId: body.relayPointId || null, relayPointName: body.relayPointName || null, relayPointAddress: body.relayPointAddress || null, shipment: { create: { carrier: normalizeShipmentCarrier(selectedShippingOption) || "livraison_standard" } } } });
+        order = await prisma.order.create({ data: { orderNumber: generateOrderNumber(), email: body.customerEmail, customerEmail: body.customerEmail, customerId: body.customerId || null, status: "pending", paymentMethod: body.paymentMethod, paymentProvider: "paypal", isB2B, pricingTier: basket.pricing.pricingTier, subtotal: isB2B ? subtotalHT : subtotalTTC, shipping: chargedShipping, total: totalTTC, totalHT, promoCodeId: promoResolution.promoCode?.id || null, promotionId: promoResolution.promotion?.promotionId || null, discountAmount, vatRate, vatAmount, totalTTC, paymentFeePercent: paymentFee.percent, paymentFeeHT: paymentFee.feeHT, paymentFeeVatRate: paymentFee.feeVatRate, paymentFeeVatAmount: paymentFee.feeVatAmount, paymentFeeTTC: paymentFee.feeTTC, currency: CURRENCY, vatNumber: vatNumber || null, billingAddress: (body.billingAddress || shippingAddress) as object, items: { create: orderItems }, shippingAddress: { create: { firstName: shippingAddress.firstName, lastName: shippingAddress.lastName, address: shippingAddress.address, extension: shippingAddress.extension || "", city: shippingAddress.city, postalCode: shippingAddress.postalCode, country, phone: shippingAddress.phone || "" } }, relayPointId: body.relayPointId || null, relayPointName: body.relayPointName || null, relayPointAddress: body.relayPointAddress || null, shipment: { create: { carrier: normalizeShipmentCarrier(selectedShippingOption) || "livraison_standard" } } } });
       }
 
       if (body.cartSessionId) await prisma.abandonedCartSession.updateMany({ where: { id: body.cartSessionId }, data: { convertedOrderId: order.id, convertedAt: new Date(), itemCount: 0 } });
@@ -1781,6 +1884,16 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
     const isPaypal4xError = (req.body as CheckoutRequestBody)?.paymentMethod === "paypal_4x" && message.includes("Erreur paypal:");
     if (isPaypal4xError) {
       res.status(422).json({ error: "Le paiement en 4 fois PayPal n'est pas disponible pour cette transaction.", code: "PAYPAL_4X_INELIGIBLE", originalError: message });
+      return;
+    }
+    const basketError = err as Error & { code?: string; productId?: string; productName?: string };
+    if (basketError.code === "VARIANT_SELECTION_REQUIRED") {
+      res.status(400).json({
+        error: message,
+        code: basketError.code,
+        productId: basketError.productId,
+        productName: basketError.productName,
+      });
       return;
     }
     res.status(500).json({ error: message });
