@@ -14,6 +14,7 @@ import {
   confirmAdminOrderDraft,
   createAdminOrderDraft,
   getAdminCustomers,
+  getAdminOrderDraft,
   getAdminOrderDrafts,
   getAdminProducts,
   getProductVariants,
@@ -279,6 +280,22 @@ export default function AdminOrderDraftsPage() {
 
   useEffect(() => {
     loadDrafts("");
+  }, []);
+
+  useEffect(() => {
+    const draftId = new URLSearchParams(window.location.search).get("draftId");
+    if (!draftId) return;
+    let cancelled = false;
+    getAdminOrderDraft(draftId).then(({ draft }) => {
+      if (cancelled) return;
+      setEditingId(draft.id);
+      setForm(draftToForm(draft));
+      setCustomerSearch(customerName(draft.customer));
+      setMessage(`Brouillon ${draft.orderNumber} ouvert depuis la fiche client.`);
+    }).catch((err: unknown) => {
+      if (!cancelled) setError(err instanceof Error ? err.message : "Impossible d’ouvrir le brouillon");
+    });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {

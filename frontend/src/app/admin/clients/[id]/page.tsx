@@ -13,6 +13,7 @@ import {
   type CustomerExtraEmail,
 } from "@/lib/admin-api";
 import type { Customer } from "@/types";
+import CustomerCartsPanel from "@/components/admin/CustomerCartsPanel";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -552,7 +553,8 @@ export default function CustomerDetailPage() {
         </div>
 
         {/* Orders */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-6 min-w-0">
+          <CustomerCartsPanel customerId={id} />
           <div className="bg-white rounded-xl border border-gray-100">
             <div className="px-5 py-4 border-b border-gray-100">
               <h2 className="font-heading font-semibold text-sm text-dark-800">
@@ -572,23 +574,23 @@ export default function CustomerDetailPage() {
                     <Link
                       key={order.id}
                       href={`/admin/commandes/${order.id}`}
-                      className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50/50 transition-colors"
+                      className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-3.5 hover:bg-gray-50/50 transition-colors sm:flex sm:gap-4 sm:px-5"
                     >
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${cfg.color}`}>
+                      <div className={`row-span-2 w-8 h-8 shrink-0 rounded-lg flex items-center justify-center ${cfg.color}`}>
                         <cfg.icon size={14} />
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-dark-800">
+                      <div className="col-span-2 flex-1 min-w-0">
+                        <div className="break-words text-sm font-medium text-dark-800">
                           #{order.orderNumber || order.id.slice(-8)}
                         </div>
                         <div className="text-xs text-gray-400">
                           {formatDate(order.createdAt)} · {order.items?.length || 0} article{(order.items?.length || 0) !== 1 ? "s" : ""}
                         </div>
                       </div>
-                      <span className={`text-xs font-medium px-2 py-1 rounded-full ${cfg.color}`}>
+                      <span className={`col-start-2 justify-self-start text-xs font-medium px-2 py-1 rounded-full ${cfg.color}`}>
                         {cfg.label}
                       </span>
-                      <span className="text-sm font-semibold text-dark-800 tabular-nums">
+                      <span className="shrink-0 text-sm font-semibold text-dark-800 tabular-nums">
                         {formatPrice(order.total)}
                       </span>
                     </Link>

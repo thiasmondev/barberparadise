@@ -818,17 +818,19 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!cartSessionId || !hasValidCustomerEmail || items.length === 0) return;
     const controller = new AbortController();
+    const customerToken = localStorage.getItem("bp_customer_token");
 
     fetch(`${API_URL}/api/checkout/cart-session`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(customerToken ? { Authorization: `Bearer ${customerToken}` } : {}),
+      },
       body: JSON.stringify({
         sessionId: cartSessionId,
         email: form.email,
-        cartItems: items.filter((item) => !item.isCustomSale).map((item) => ({
-          productId: item.product.id,
-          quantity: item.quantity,
-        })),
+        // CartContext owns the full snapshot (including variant IDs).
+        // This request only enriches identity and must never replace those lines.
       }),
       signal: controller.signal,
     }).catch(() => {

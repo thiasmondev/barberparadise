@@ -29,6 +29,7 @@ import {
   resolveProfessionalPricing,
   type ProfessionalPricingResolution,
 } from "../services/b2bPricingService";
+import { cartHasItemSnapshot } from "../services/customerCartService";
 
 export const checkoutRouter = Router();
 
@@ -1008,7 +1009,7 @@ checkoutRouter.post("/cart-session", async (req: Request, res: Response): Promis
     const body = req.body as {
       sessionId?: string;
       email?: string;
-      customerId?: string; // Optionnel : ID du client connecté, pour résoudre l'email même si non saisi dans le formulaire
+      customerId?: string; // Legacy hint; only a verified client token can resolve identity.
       cartItems?: CheckoutCartItem[];
     };
 
@@ -1018,6 +1019,11 @@ checkoutRouter.post("/cart-session", async (req: Request, res: Response): Promis
       return;
     }
 
+    if (body.cartItems !== undefined && !Array.isArray(body.cartItems)) {
+      res.status(400).json({ error: "Articles de panier invalides" });
+      return;
+    }
+    const hasSnapshot = cartHasItemSnapshot(body);
     const normalizedItems = Array.isArray(body.cartItems)
       ? body.cartItems
           .map((item) => ({
@@ -1057,15 +1063,17 @@ checkoutRouter.post("/cart-session", async (req: Request, res: Response): Promis
     const total = money(items.reduce((sum, item) => sum + item.price * item.quantity, 0));
     let email = isValidEmailAddress(body.email) ? normalizeEmailAddress(body.email) : null;
 
-    // Si l'email n'est pas fourni mais qu'un customerId est présent, résoudre l'email depuis le compte client
-    // Cela couvre le cas d'un client connecté qui abandonne son panier avant d'atteindre l'étape contact
-    if (!email && typeof body.customerId === "string" && body.customerId.trim()) {
-      const customer = await prisma.customer.findUnique({
-        where: { id: body.customerId.trim() },
-        select: { email: true },
-      });
-      if (isValidEmailAddress(customer?.email)) {
-        email = normalizeEmailAddress(customer?.email);
+    // A caller-supplied customerId must never disclose or impersonate another customer.
+    const token = req.headers.authorization?.split(" ")[1];
+    if (token && process.env.JWT_SECRET) {
+      try {
+        const payload = jwt.verify(token, process.env.JWT_SECRET) as { id?: string };
+        if (typeof payload.id === "string") {
+          const customer = await prisma.customer.findUnique({ where: { id: payload.id }, select: { email: true } });
+          if (customer && isValidEmailAddress(customer.email)) email = normalizeEmailAddress(customer.email);
+        }
+      } catch {
+        // Guest tracking remains non-blocking if the optional customer token expired.
       }
     }
 
@@ -1074,9 +1082,7 @@ checkoutRouter.post("/cart-session", async (req: Request, res: Response): Promis
       where: { id: sessionId },
       update: {
         ...(email ? { email } : {}),
-        items,
-        itemCount,
-        total,
+        ...(hasSnapshot ? { items, itemCount, total } : {}),
         lastSeenAt: new Date(),
       },
       create: {

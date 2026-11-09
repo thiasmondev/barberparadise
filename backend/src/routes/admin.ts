@@ -67,7 +67,7 @@ import {
   resolveProfessionalPricing,
   type PricingTier,
 } from "../services/b2bPricingService";
-
+import { cartBelongsToCustomer, claimCartForDraft, customerCartWhere, serializeCustomerCartItems } from "../services/customerCartService";
 // ─── Cloudinary Config ───────────────────────────────────────
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -5465,74 +5465,84 @@ adminRouter.post(
   }
 );
 
-// POST /api/admin/orders/abandoned-carts/:id/to-draft — Exporter un panier abandonné en brouillon
-adminRouter.post(
-  "/orders/abandoned-carts/:id/to-draft",
-  requireAdmin,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const cart = await prisma.abandonedCartSession.findUnique({ where: { id: req.params.id } });
-      if (!cart || cart.convertedAt) {
-        res.status(404).json({ error: "Panier abandonné non trouvé" });
-        return;
-      }
-      const rawItems = Array.isArray(cart.items) ? cart.items : [];
-      const items = normalizeDraftItems(
-        rawItems.map((item) => {
-          if (!item || typeof item !== "object" || Array.isArray(item)) return null;
-          const line = item as { productId?: unknown; id?: unknown; variantId?: unknown; quantity?: unknown };
-          return { productId: line.productId || line.id, variantId: line.variantId, quantity: line.quantity };
-        }).filter(Boolean)
-      );
-      // Résoudre l'email : 1) depuis la session (email enregistré lors du suivi panier)
-      // 2) depuis le body (admin override — l'admin peut saisir l'email manuellement dans l'interface)
-      // Note : la résolution automatique par items de commande n'est pas utilisée car trop imprécise
-      // (un produit populaire peut correspondre à plusieurs clients différents).
-      const email = (cart.email || asOptionalString(req.body?.email) || "").toLowerCase();
-      if (!email || !email.includes("@")) {
-        res.status(400).json({ error: "Ce panier ne contient pas d'email client exploitable. Saisissez l'email du client dans le champ prévu à cet effet." });
-        return;
-      }
-      const customer = await prisma.customer.findUnique({ where: { email }, include: { proAccount: true, addresses: true } });
-      const defaultAddress = customer?.addresses.find((address) => address.isDefault) || customer?.addresses[0];
-      const shippingAddress = defaultAddress
-        ? {
-            firstName: defaultAddress.firstName,
-            lastName: defaultAddress.lastName,
-            address: defaultAddress.address,
-            extension: defaultAddress.extension || "",
-            city: defaultAddress.city,
-            postalCode: defaultAddress.postalCode,
-            country: normalizeCountry(defaultAddress.country),
-            phone: customer?.phone || "",
-          }
-        : {
-            firstName: customer?.firstName || "Client",
-            lastName: customer?.lastName || "Barber Paradise",
-            address: "Adresse à compléter",
-            extension: "",
-            city: "Ville à compléter",
-            postalCode: "00000",
-            country: "FR",
-            phone: customer?.phone || "",
-          };
-      // resolveIsB2B détecte automatiquement le statut B2B depuis le compte pro du client.
-      // Avant ce fix, isB2B était toujours false car req.body.isB2B n'était pas envoyé
-      // par le frontend lors de l'export depuis la page paniers abandonnés.
-      const isB2B = resolveIsB2B(req.body?.isB2B, customer);
-      const vatNumber = customer?.proAccount?.vatNumber || null;
-      const totals = await calculateAdminDraftTotals({
-        items,
-        isB2B,
-        country: shippingAddress.country,
-        vatNumber,
-        shippingOverride: req.body?.shipping,
-        orderDiscountType: req.body?.orderDiscountType,
-        orderDiscountValue: req.body?.orderDiscountValue,
-        enforceStock: false,
-      });
+// Shared by abandoned carts and the customer detail. No payment, email or stock mutation.
+async function convertSavedCartToDraft(req: Request, res: Response): Promise<void> {
+  try {
+    const boundCustomer = req.params.customerId
+      ? await prisma.customer.findUnique({ where: { id: req.params.customerId }, include: { proAccount: true, addresses: true } })
+      : null;
+    if (req.params.customerId && !boundCustomer) {
+      res.status(404).json({ error: "Client non trouvé" });
+      return;
+    }
+    const cart = await prisma.abandonedCartSession.findUnique({ where: { id: req.params.id } });
+    if (!cart || cart.convertedAt || cart.itemCount <= 0 || (boundCustomer && !cartBelongsToCustomer(cart.email, boundCustomer.email))) {
+      res.status(404).json({ error: "Panier disponible non trouvé pour ce client" });
+      return;
+    }
+    const rawItems = Array.isArray(cart.items) ? cart.items : [];
+    const items = normalizeDraftItems(
+      rawItems.map((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+        const line = item as { productId?: unknown; id?: unknown; variantId?: unknown; quantity?: unknown };
+        return { productId: line.productId || line.id, variantId: line.variantId, quantity: line.quantity };
+      }).filter(Boolean)
+    );
+    if (!items.length || items.length !== rawItems.length) {
+      res.status(400).json({ error: "Ce panier contient des articles incomplets. Actualisez-le avant de le transformer en brouillon." });
+      return;
+    }
+    // Résoudre l'email : 1) depuis la session (email enregistré lors du suivi panier)
+    // 2) depuis le body (admin override — l'admin peut saisir l'email manuellement dans l'interface)
+    // Note : la résolution automatique par items de commande n'est pas utilisée car trop imprécise
+    // (un produit populaire peut correspondre à plusieurs clients différents).
+    const email = normalizeEmailAddress(boundCustomer?.email || cart.email || asOptionalString(req.body?.email) || "");
+    if (!isValidEmailAddress(email)) {
+      res.status(400).json({ error: "Ce panier ne contient pas d'email client exploitable. Saisissez l'email du client dans le champ prévu à cet effet." });
+      return;
+    }
+    const customer = boundCustomer || await prisma.customer.findUnique({ where: { email }, include: { proAccount: true, addresses: true } });
+    const defaultAddress = customer?.addresses.find((address) => address.isDefault) || customer?.addresses[0];
+    const shippingAddress = defaultAddress
+      ? {
+          firstName: defaultAddress.firstName,
+          lastName: defaultAddress.lastName,
+          address: defaultAddress.address,
+          extension: defaultAddress.extension || "",
+          city: defaultAddress.city,
+          postalCode: defaultAddress.postalCode,
+          country: normalizeCountry(defaultAddress.country),
+          phone: customer?.phone || "",
+        }
+      : {
+          firstName: customer?.firstName || "Client",
+          lastName: customer?.lastName || "Barber Paradise",
+          address: "Adresse à compléter",
+          extension: "",
+          city: "Ville à compléter",
+          postalCode: "00000",
+          country: "FR",
+          phone: customer?.phone || "",
+        };
+    // resolveIsB2B détecte automatiquement le statut B2B depuis le compte pro du client.
+    // Avant ce fix, isB2B était toujours false car req.body.isB2B n'était pas envoyé
+    // par le frontend lors de l'export depuis la page paniers abandonnés.
+    const isB2B = resolveIsB2B(req.body?.isB2B, customer);
+    const vatNumber = customer?.proAccount?.vatNumber || null;
+    const totals = await calculateAdminDraftTotals({
+      items,
+      isB2B,
+      country: shippingAddress.country,
+      vatNumber,
+      shippingOverride: req.body?.shipping,
+      orderDiscountType: req.body?.orderDiscountType,
+      orderDiscountValue: req.body?.orderDiscountValue,
+      enforceStock: false,
+    });
 
-      const order = await prisma.order.create({
+    const order = await prisma.$transaction(async (tx) => {
+      await claimCartForDraft(tx, cart);
+      const created = await tx.order.create({
         data: {
           orderNumber: generateAdminDraftOrderNumber(),
           email,
@@ -5557,23 +5567,57 @@ adminRouter.post(
           currency: CURRENCY,
           vatNumber,
           billingAddress: shippingAddress as Prisma.InputJsonValue,
-          notes: `Brouillon créé depuis le panier abandonné ${cart.id}`,
+          notes: `Brouillon créé depuis ${boundCustomer ? "la fiche client — panier" : "le panier abandonné"} ${cart.id}`,
           items: { create: totals.orderItems },
           shippingAddress: { create: shippingAddress },
         },
       });
-
-      await prisma.abandonedCartSession.update({
+      await tx.abandonedCartSession.update({
         where: { id: cart.id },
-        data: { convertedOrderId: order.id, convertedAt: new Date() },
+        data: { convertedOrderId: created.id },
       });
-      const draft = await serializeAdminDraft(order.id);
-      res.status(201).json({ draft });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Erreur export panier abandonné";
-      res.status(400).json({ error: message });
-    }
+      return created;
+    });
+    const draft = await serializeAdminDraft(order.id);
+    res.status(201).json({ draft });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Erreur export panier abandonné";
+    res.status(400).json({ error: message });
   }
+}
+
+adminRouter.post("/orders/abandoned-carts/:id/to-draft", requireAdmin, convertSavedCartToDraft);
+adminRouter.post("/customers/:customerId/carts/:id/to-draft", requireAdmin, convertSavedCartToDraft);
+
+// Customer carts include recently active sessions; unlike abandoned carts no one-hour cutoff.
+adminRouter.get(
+  "/customers/:id/carts",
+  requireAdmin,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const customer = await prisma.customer.findUnique({ where: { id: req.params.id }, select: { email: true } });
+      if (!customer) {
+        res.status(404).json({ error: "Client non trouvé" });
+        return;
+      }
+      const carts = await prisma.abandonedCartSession.findMany({
+        where: customerCartWhere(customer.email),
+        orderBy: [{ lastSeenAt: "desc" }, { id: "asc" }],
+        take: 20,
+      });
+      res.json({ carts: carts.map((cart) => ({
+        id: cart.id,
+        email: cart.email || customer.email,
+        lastSeenAt: cart.lastSeenAt,
+        itemCount: cart.itemCount,
+        total: cart.total,
+        items: serializeCustomerCartItems(cart.items),
+      })) });
+    } catch (err) {
+      console.error("Erreur chargement paniers client", err);
+      res.status(500).json({ error: "Impossible de charger les paniers de ce client" });
+    }
+  },
 );
 
 // GET /api/admin/orders/invoices — Liste des factures B2C et B2B

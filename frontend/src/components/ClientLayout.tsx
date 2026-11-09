@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, Suspense, useEffect } from "react";
+import { ReactNode, Suspense, useEffect, useRef } from "react";
 import { CartProvider, useCart } from "@/contexts/CartContext";
 import { CustomerAuthProvider, useCustomerAuth } from "@/contexts/CustomerAuthContext";
 import Header from "@/components/Header";
@@ -19,14 +19,26 @@ import BarbaraChatbot from "@/components/BarbaraChatbot";
  * avec "Email non renseigné" dans l'onglet admin Paniers abandonnés.
  */
 function CartEmailBridge() {
-  const { customer } = useCustomerAuth();
-  const { updateCartEmail } = useCart();
+  const { customer, isLoading } = useCustomerAuth();
+  const { cartSessionId, updateCartEmail, rotateCartSession } = useCart();
+  const previousIdentityRef = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
+    // Le null initial de l'auth est encore inconnu, pas une déconnexion.
+    if (isLoading || !cartSessionId) return;
+    const identity = customer ? `${customer.id}:${customer.email.trim().toLowerCase()}` : null;
+    const previousIdentity = previousIdentityRef.current;
+    previousIdentityRef.current = identity;
+
+    if (previousIdentity !== undefined && previousIdentity !== identity) {
+      // Les articles restent présents, mais l'ancien client garde son ancienne session.
+      rotateCartSession();
+    }
+
     if (customer?.email) {
       updateCartEmail(customer.email);
     }
-  }, [customer?.email, updateCartEmail]);
+  }, [customer, isLoading, cartSessionId, rotateCartSession, updateCartEmail]);
 
   return null;
 }

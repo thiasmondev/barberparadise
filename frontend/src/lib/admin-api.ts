@@ -840,6 +840,34 @@ export function getAdminAbandonedCarts() {
   );
 }
 
+export interface AdminCustomerCart {
+  id: string;
+  email: string;
+  lastSeenAt: string;
+  itemCount: number;
+  total: number;
+  items: Array<{
+    productId: string;
+    variantId: string | null;
+    name: string;
+    variantLabel: string | null;
+    quantity: number;
+    price: number;
+    lineTotal: number;
+  }>;
+}
+
+export function getAdminCustomerCarts(customerId: string) {
+  return adminFetch<{ carts: AdminCustomerCart[] }>(`/api/admin/customers/${encodeURIComponent(customerId)}/carts`);
+}
+
+export function convertAdminCustomerCartToDraft(customerId: string, cartId: string) {
+  return adminFetch<{ draft: AdminOrderDraft }>(
+    `/api/admin/customers/${encodeURIComponent(customerId)}/carts/${encodeURIComponent(cartId)}/to-draft`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
 export function getAdminOrderDrafts(params?: {
   page?: number;
   limit?: number;
