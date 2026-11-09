@@ -22,6 +22,7 @@
     "test:shipping-addresses": "ts-node src/utils/shippingAddressNormalization.test.ts",
     "test:professional-pricing": "ts-node src/services/b2bPricingService.test.ts",
     "test:customer-carts": "ts-node src/services/customerCartService.test.ts && ts-node src/services/customerCartRoutes.test.ts",
+    "test:order-discounts": "ts-node src/services/orderDiscountService.test.ts",
     "start": "npx prisma migrate deploy && node dist/index.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

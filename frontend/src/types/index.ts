@@ -309,6 +309,7 @@ export interface OrderItem {
   lineDiscountType?: DiscountType | null;
   lineDiscountValue?: number | null;
   isCustomSale?: boolean;
+  customVatRate?: number | null;
 }
 
 export interface ShippingAddress {

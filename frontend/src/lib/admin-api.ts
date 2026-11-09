@@ -3718,3 +3718,61 @@ export function resendOrderTracking(orderId: string, overrideEmail?: string) {
     { method: "POST", body: JSON.stringify(overrideEmail ? { overrideEmail } : {}) }
   );
 }
+
+// ─── Remises : prix enregistrés, sans modification stock/paiement ─────────────
+export interface AdminOrderDiscountItem {
+  id: string;
+  name: string;
+  quantity: number;
+  price: number;
+  lineDiscountType: DiscountType | null;
+  lineDiscountValue: number | null;
+  priceTaxLabel: "HT" | "TTC";
+}
+
+export interface AdminOrderDiscountState {
+  orderId: string;
+  updatedAt: string;
+  oldTotal: number;
+  paidAmount: number | null;
+  priceTaxLabel: "HT" | "TTC";
+  orderDiscountType: DiscountType | null;
+  orderDiscountValue: number | null;
+  items: AdminOrderDiscountItem[];
+}
+
+export interface AdminOrderDiscountPayload {
+  expectedUpdatedAt: string;
+  orderDiscountType: DiscountType | null;
+  orderDiscountValue: number | null;
+  items: Array<{ id: string; lineDiscountType: DiscountType | null; lineDiscountValue: number | null }>;
+}
+
+export interface AdminOrderDiscountPreview {
+  oldTotal: number;
+  newTotal: number;
+  diff: number;
+  subtotal: number;
+  totalHT: number;
+  vatAmount: number;
+  totalTTC: number;
+  discountTotal: number;
+  remainingAmount: number | null;
+  overpaidAmount: number | null;
+}
+
+export function getAdminOrderDiscounts(orderId: string) {
+  return adminFetch<AdminOrderDiscountState>(`/api/admin/orders/${encodeURIComponent(orderId)}/discounts`);
+}
+
+export function previewAdminOrderDiscounts(orderId: string, payload: AdminOrderDiscountPayload) {
+  return adminFetch<AdminOrderDiscountPreview>(`/api/admin/orders/${encodeURIComponent(orderId)}/discounts/preview`, {
+    method: "POST", body: JSON.stringify(payload),
+  });
+}
+
+export function updateAdminOrderDiscounts(orderId: string, payload: AdminOrderDiscountPayload) {
+  return adminFetch<AdminOrderDiscountPreview & { order: Order }>(`/api/admin/orders/${encodeURIComponent(orderId)}/discounts`, {
+    method: "PATCH", body: JSON.stringify(payload),
+  });
+}

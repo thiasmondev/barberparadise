@@ -68,6 +68,7 @@ import {
   type PricingTier,
 } from "../services/b2bPricingService";
 import { cartBelongsToCustomer, claimCartForDraft, customerCartWhere, serializeCustomerCartItems } from "../services/customerCartService";
+import { orderDiscountsRouter } from "./order-discounts";
 // ─── Cloudinary Config ───────────────────────────────────────
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -124,6 +125,7 @@ const pdfUpload = multer({
 });
 
 export const adminRouter = Router();
+adminRouter.use(orderDiscountsRouter);
 
 const PASSWORD_RESET_TOKEN_MINUTES = 60;
 const DRAFT_SHARE_EXPIRY_DAYS = Math.max(1, parseInt(process.env.DRAFT_SHARE_EXPIRY_DAYS || "7", 10) || 7);

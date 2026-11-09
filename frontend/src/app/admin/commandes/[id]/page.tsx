@@ -93,6 +93,8 @@ import {
 import type { Order, Packaging, ShippingAddress, Product, ProductVariant, Customer } from "@/types";
 import { getVariantImage } from "@/lib/product-images";
 import { EmailPickerModal, type EmailOption } from "@/components/admin/EmailPickerModal";
+import OrderDiscountEditor from "@/components/admin/OrderDiscountEditor";
+import { lineDiscountFields, orderDiscountFields, orderItemToDraftPayload } from "@/lib/order-discounts";
 
 const PAYMENT_BADGES: Record<string, { label: string; className: string }> = {
   paid: { label: "Payée", className: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
@@ -455,6 +457,7 @@ export default function OrderDetailPage() {
     customVatRate?: string;
   };
   const [showModifyItemsPanel, setShowModifyItemsPanel] = useState(false);
+  const [showDiscountEditor, setShowDiscountEditor] = useState(false);
   const [editableItems, setEditableItems] = useState<EditableItem[]>([]);
   const [modifyItemsStep, setModifyItemsStep] = useState<"edit" | "confirm" | "adjustment" | "done">("edit");
   const [modifyItemsLoading, setModifyItemsLoading] = useState(false);
@@ -1277,7 +1280,8 @@ export default function OrderDetailPage() {
         notes: editForm.notes,
         shippingAddress: sanitizeEditableAddress(editForm.shippingAddress),
         billingAddress: sanitizeEditableAddress(editForm.billingAddress),
-        items: order.items.map((item) => ({ productId: item.productId, variantId: item.variantId ?? null, quantity: item.quantity })),
+        ...orderDiscountFields(order),
+        items: order.items.map((item) => orderItemToDraftPayload(item, order.vatRate ?? 20)),
       };
       const updated = await updateAdminOrder(order.id, payload);
       setOrder(updated);
@@ -1456,8 +1460,11 @@ export default function OrderDetailPage() {
       image: item.image || "",
       price: item.price,
       quantity: item.quantity,
-      lineDiscountType: (item.lineDiscountType as "percent" | "fixed") || "fixed",
-      lineDiscountValue: String(item.lineDiscountValue ?? item.discountAmount ?? ""),
+      lineDiscountType: lineDiscountFields(item).lineDiscountType || "fixed",
+      lineDiscountValue: lineDiscountFields(item).lineDiscountValue == null ? "" : String(lineDiscountFields(item).lineDiscountValue),
+      isCustomItem: Boolean(item.isCustomSale),
+      customPriceTTC: item.isCustomSale ? String(item.price) : undefined,
+      customVatRate: item.isCustomSale ? String(item.customVatRate ?? order.vatRate ?? 20) : undefined,
     }));
     setEditableItems(items);
     setModifyItemsStep("edit");
@@ -1572,8 +1579,10 @@ export default function OrderDetailPage() {
               isCustomItem: true,
               customName: i.name,
               customPriceTTC: Number(i.customPriceTTC) || 0,
-              customVatRate: Number(i.customVatRate) || 20,
+              customVatRate: Number(i.customVatRate ?? 20),
               quantity: i.quantity,
+              lineDiscountType: Number(i.lineDiscountValue) > 0 ? i.lineDiscountType : null,
+              lineDiscountValue: Number(i.lineDiscountValue) > 0 ? Number(i.lineDiscountValue) : null,
             };
           }
           const discountVal = Number(i.lineDiscountValue);
@@ -2281,18 +2290,25 @@ export default function OrderDetailPage() {
             )}
 
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 font-semibold text-gray-950">Récapitulatif financier</h2>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-semibold text-gray-950">Récapitulatif financier</h2>
+                <button type="button" onClick={() => setShowDiscountEditor(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"><Pencil className="h-3.5 w-3.5" /> Corriger les remises</button>
+              </div>
               <div className="space-y-3 text-sm">
-                <div className="flex justify-between"><span className="text-gray-500">Sous-total</span><span>{formatPrice(order.subtotal, order.currency)}</span></div>
-                {order.discountAmount ? <div className="flex justify-between text-emerald-700"><span>Remise caisse</span><span>-{formatPrice(order.discountAmount, order.currency)}</span></div> : null}
+                <div className="flex justify-between"><span className="text-gray-500">{isPosOrder ? "Sous-total brut TTC" : `Sous-total net après remises${order.isB2B ? " HT" : " TTC"}`}</span><span>{formatPrice(order.subtotal, order.currency)}</span></div>
+                {order.discountAmount ? <div className="flex justify-between text-emerald-700"><span>{isPosOrder ? "Total des remises" : "Remises déjà incluses dans le sous-total"}</span><span>{isPosOrder ? "-" : ""}{formatPrice(order.discountAmount, order.currency)}</span></div> : null}
                 <div className="flex justify-between"><span className="text-gray-500">{isPosOrder ? "Expédition" : isNoShipping ? "Livraison" : shipmentSummary(order)}</span><span>{isPosOrder ? "Non applicable" : isNoShipping ? "Retrait en magasin" : order.shipping === 0 ? "Gratuite" : formatPrice(order.shipping, order.currency)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Taxes</span><span>{formatPrice(totals.taxes, order.currency)}</span></div>
                 <div className="flex justify-between border-t border-gray-200 pt-3 text-base font-semibold text-gray-950"><span>Total</span><span>{formatPrice(order.total, order.currency)}</span></div>
-                {/* Payé à ce jour — utilise paidAmount si disponible, sinon fallback binaire */}
+                {/* Ne jamais déduire l’encaissement du total corrigé ou du seul statut. */}
                 <div className="flex justify-between text-sm font-medium text-emerald-700">
                   <span>Payé à ce jour</span>
-                  <span>{order.paidAmount != null ? formatPrice(order.paidAmount, order.currency) : (paymentBadge(order).label === "Payée" ? formatPrice(order.total, order.currency) : formatPrice(0, order.currency))}</span>
+                  <span>{order.paidAmount != null ? formatPrice(order.paidAmount, order.currency) : "Non renseigné — à vérifier"}</span>
                 </div>
+                {order.paidAmount != null && <div className="space-y-2 border-t border-gray-100 pt-2">
+                  <div className="flex justify-between"><span className="text-gray-500">Reste à payer après remboursements enregistrés</span><span>{formatPrice(Math.max(0, order.total - Math.max(0, order.paidAmount - (order.refundedAmount || 0))), order.currency)}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">Trop-perçu à traiter séparément</span><span>{formatPrice(Math.max(0, Math.max(0, order.paidAmount - (order.refundedAmount || 0)) - order.total), order.currency)}</span></div>
+                </div>}
                 {/* Complément en attente — affiché si un paiement complémentaire est en cours */}
                 {order.pendingComplementAmount != null && (
                   <div className="flex justify-between text-sm font-medium text-amber-600">
@@ -3344,6 +3360,7 @@ export default function OrderDetailPage() {
       )}
 
       {/* Modal sélecteur d'email — confirmation et suivi */}
+      {showDiscountEditor && order && <OrderDiscountEditor orderId={order.id} currency={order.currency} onClose={() => setShowDiscountEditor(false)} onSaved={(updated) => { setOrder(updated); setNotes(updated.notes || ""); setEditForm(buildEditForm(updated)); setShowDiscountEditor(false); }} />}
       {/* Panel de modification des articles d'une commande payée */}
       {showModifyItemsPanel && order && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={(e) => { if (e.target === e.currentTarget) setShowModifyItemsPanel(false); }}>
@@ -3361,6 +3378,7 @@ export default function OrderDetailPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto px-6 py-4">
+              {modifyItemsStep === "confirm" && <div className="space-y-3"><p className="text-sm text-gray-600">Confirmez la modification des articles. Le nouveau total sera calculé par le serveur ; un éventuel ajustement de paiement sera présenté séparément.</p>{modifyItemsError && <p role="alert" className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{modifyItemsError}</p>}</div>}
               {/* Étape 1 : Édition des articles */}
               {modifyItemsStep === "edit" && (
                 <div className="space-y-4">

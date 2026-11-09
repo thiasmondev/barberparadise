@@ -25,6 +25,7 @@ import {
 } from "@/lib/admin-api";
 import type { Customer, OrderItem, Product, ProductVariant } from "@/types";
 import { getVariantImage, getVariantImages } from "@/lib/product-images";
+import { lineDiscountFields, orderDiscountFields } from "@/lib/order-discounts";
 
 export const dynamic = "force-dynamic";
 
@@ -121,7 +122,7 @@ function discountAmount(type: DiscountType, value: string | number | null | unde
 function lineGrossTotal(line: DraftLine, isB2B: boolean) {
   if (line.isCustomItem) {
     const priceTTC = Number(line.customPriceTTC) || 0;
-    const vatRate = Number(line.customVatRate) || 20;
+    const vatRate = Number(line.customVatRate ?? 20);
     const priceHT = priceTTC / (1 + vatRate / 100);
     return (isB2B ? priceHT : priceTTC) * line.quantity;
   }
@@ -133,6 +134,7 @@ function lineDiscountAmount(line: DraftLine, isB2B: boolean) {
 }
 
 function draftToForm(draft: AdminOrderDraft): DraftForm {
+  const globalDiscount = orderDiscountFields(draft);
   const address = draft.shippingAddress
     ? {
         firstName: draft.shippingAddress.firstName || "",
@@ -154,8 +156,8 @@ function draftToForm(draft: AdminOrderDraft): DraftForm {
     vatNumber: draft.vatNumber || "",
     shipping: String(draft.shipping ?? ""),
     notes: draft.notes || "",
-    orderDiscountType: (draft.orderDiscountType as DiscountType) || (Number(draft.discountAmount || 0) > 0 ? "fixed" : "fixed"),
-    orderDiscountValue: String(draft.orderDiscountValue ?? draft.discountAmount ?? ""),
+    orderDiscountType: globalDiscount.orderDiscountType || "fixed",
+    orderDiscountValue: globalDiscount.orderDiscountValue == null ? "" : String(globalDiscount.orderDiscountValue),
     paymentDueDate: draft.paymentDueDate ? draft.paymentDueDate.slice(0, 10) : "",
     shippingAddress: address,
     items: (draft.items || []).map((item: OrderItem) => ({
@@ -166,9 +168,11 @@ function draftToForm(draft: AdminOrderDraft): DraftForm {
       quantity: item.quantity,
       image: item.image,
       fallbackPrice: item.price,
-      lineDiscountType: (item.lineDiscountType as DiscountType) || (Number(item.discountAmount || 0) > 0 ? "fixed" : "fixed"),
-      lineDiscountValue: String(item.lineDiscountValue ?? item.discountAmount ?? ""),
+      lineDiscountType: lineDiscountFields(item).lineDiscountType || "fixed",
+      lineDiscountValue: lineDiscountFields(item).lineDiscountValue == null ? "" : String(lineDiscountFields(item).lineDiscountValue),
       isCustomItem: Boolean(item.isCustomSale),
+      customPriceTTC: item.isCustomSale ? String(item.price) : undefined,
+      customVatRate: item.isCustomSale ? String(item.customVatRate ?? draft.vatRate ?? 20) : undefined,
     })),
   };
 }
@@ -402,7 +406,7 @@ export default function AdminOrderDraftsPage() {
             isCustomItem: true,
             customName: line.name,
             customPriceTTC: Number(line.customPriceTTC) || 0,
-            customVatRate: Number(line.customVatRate) || 20,
+            customVatRate: Number(line.customVatRate ?? 20),
             quantity: line.quantity,
             lineDiscountType: numericValue(line.lineDiscountValue) > 0 ? line.lineDiscountType : null,
             lineDiscountValue: numericValue(line.lineDiscountValue) > 0 ? numericValue(line.lineDiscountValue) : null,
