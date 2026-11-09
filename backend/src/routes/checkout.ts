@@ -29,7 +29,7 @@ import {
   resolveProfessionalPricing,
   type ProfessionalPricingResolution,
 } from "../services/b2bPricingService";
-import { cartHasItemSnapshot } from "../services/customerCartService";
+import { buildTrackedCartSnapshot, cartHasItemSnapshot } from "../services/customerCartService";
 
 export const checkoutRouter = Router();
 
@@ -1024,10 +1024,16 @@ checkoutRouter.post("/cart-session", async (req: Request, res: Response): Promis
       return;
     }
     const hasSnapshot = cartHasItemSnapshot(body);
+    if (hasSnapshot && body.cartItems!.some((item) => !item || typeof item !== "object" ||
+      typeof (item.productId || item.id) !== "string" || !(item.productId || item.id)?.trim() ||
+      !Number.isInteger(item.quantity) || item.quantity <= 0)) {
+      res.status(400).json({ error: "Certains articles du panier sont incomplets. Vérifiez votre panier avant de réessayer." });
+      return;
+    }
     const normalizedItems = Array.isArray(body.cartItems)
       ? body.cartItems
           .map((item) => ({
-            productId: item.productId || item.id,
+            productId: (item.productId || item.id)!.trim(),
             variantId: typeof item.variantId === "string" && item.variantId.trim() ? item.variantId.trim() : null,
             quantity: Number.isInteger(item.quantity) && item.quantity > 0 ? item.quantity : 0,
           }))
@@ -1040,27 +1046,7 @@ checkoutRouter.post("/cart-session", async (req: Request, res: Response): Promis
           select: { id: true, name: true, price: true, variants: { select: { id: true, name: true, price: true, image: true } } },
         })
       : [];
-    const productById = new Map(products.map((product) => [product.id, product]));
-    const items = normalizedItems
-      .map((item) => {
-        const product = productById.get(item.productId as string);
-        if (!product) return null;
-        const hasVariants = product.variants.length > 0;
-        const variant = item.variantId ? product.variants.find((candidate) => candidate.id === item.variantId) : null;
-        if (hasVariants && !variant) return null;
-        return {
-          productId: product.id,
-          name: product.name,
-          variantId: variant?.id || null,
-          variantLabel: variant?.name || null,
-          price: variant?.price ?? product.price,
-          quantity: item.quantity,
-        };
-      })
-      .filter(Boolean) as Array<{ productId: string; name: string; variantId: string | null; variantLabel: string | null; price: number; quantity: number }>;
-
-    const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
-    const total = money(items.reduce((sum, item) => sum + item.price * item.quantity, 0));
+    const { items, itemCount, total, validationIssues } = buildTrackedCartSnapshot(normalizedItems, products);
     let email = isValidEmailAddress(body.email) ? normalizeEmailAddress(body.email) : null;
 
     // A caller-supplied customerId must never disclose or impersonate another customer.
@@ -1077,24 +1063,44 @@ checkoutRouter.post("/cart-session", async (req: Request, res: Response): Promis
       }
     }
 
-    // Ne mettre à jour l'email que s'il est non nul (ne pas écraser un email existant avec null)
-    await prisma.abandonedCartSession.upsert({
-      where: { id: sessionId },
-      update: {
-        ...(email ? { email } : {}),
-        ...(hasSnapshot ? { items, itemCount, total } : {}),
-        lastSeenAt: new Date(),
-      },
-      create: {
-        id: sessionId,
-        email,
-        items,
-        itemCount,
-        total,
-      },
+    const savedAt = new Date();
+    const effectiveSessionId = await prisma.$transaction(async (tx) => {
+      // A conversion claim must remain immutable. Never reopen a historical cart.
+      const updated = await tx.abandonedCartSession.updateMany({
+        where: { id: sessionId, convertedAt: null },
+        data: {
+          ...(email ? { email } : {}),
+          ...(hasSnapshot ? { items, itemCount, total } : {}),
+          lastSeenAt: savedAt,
+        },
+      });
+      if (updated.count === 1) return sessionId;
+      const existing = await tx.abandonedCartSession.findUnique({ where: { id: sessionId }, select: { convertedAt: true } });
+      if (existing?.convertedAt) {
+        if (!hasSnapshot) return sessionId;
+        const nextId = crypto.randomUUID();
+        await tx.abandonedCartSession.create({
+          data: { id: nextId, email, items, itemCount, total, lastSeenAt: savedAt },
+        });
+        return nextId;
+      }
+      await tx.abandonedCartSession.upsert({
+        where: { id: sessionId },
+        // A simultaneous initial identity request may already have created the row.
+        update: {
+          ...(email ? { email } : {}),
+          ...(hasSnapshot ? { items, itemCount, total } : {}),
+          lastSeenAt: savedAt,
+        },
+        create: { id: sessionId, email, items, itemCount, total, lastSeenAt: savedAt },
+      });
+      return sessionId;
     });
 
-    res.json({ ok: true });
+    // Acknowledgement is limited to the submitted snapshot: no private identity returned.
+    res.json({ ok: true, sessionId: effectiveSessionId, hasSnapshot,
+      ...(hasSnapshot ? { itemCount, syncedAt: savedAt.toISOString(), validationIssues } : {}),
+    });
   } catch (err) {
     console.error("Erreur suivi panier abandonné", err);
     res.status(500).json({ error: "Erreur serveur" });

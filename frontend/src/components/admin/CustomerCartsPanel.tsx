@@ -7,6 +7,7 @@ import {
   convertAdminCustomerCartToDraft,
   getAdminCustomerCarts,
   type AdminCustomerCart,
+  type AdminCustomerCartDiagnostics,
 } from "@/lib/admin-api";
 
 const moneyFormatter = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
@@ -43,6 +44,7 @@ function CustomerCartsContent({ customerId }: { customerId: string }) {
   const [lineErrors, setLineErrors] = useState<Record<string, string>>({});
   const [convertingId, setConvertingId] = useState<string | null>(null);
   const [createdDrafts, setCreatedDrafts] = useState<CreatedDraft[]>([]);
+  const [diagnostics, setDiagnostics] = useState<AdminCustomerCartDiagnostics | null>(null);
   const scopeRef = useRef<RequestScope | null>(null);
   const loadRequestRef = useRef(0);
   const conversionLatchRef = useRef<object | null>(null);
@@ -59,6 +61,7 @@ function CustomerCartsContent({ customerId }: { customerId: string }) {
     try {
       const data = await getAdminCustomerCarts(customerId);
       if (!isCurrent()) return;
+      setDiagnostics(data.diagnostics || null);
       setCarts(
         data.carts
           .filter((cart) => cart.itemCount > 0 && cart.items.length > 0 && !convertedCartIdsRef.current.has(cart.id))
@@ -188,7 +191,13 @@ function CustomerCartsContent({ customerId }: { customerId: string }) {
           !error && (
             <div className="py-8 text-center text-sm text-gray-500">
               <ShoppingCart size={28} className="mx-auto mb-2 text-gray-300" aria-hidden="true" />
-              Aucun panier non converti et non vide pour ce client.
+              <p>Aucun panier disponible reçu pour ce client.</p>
+              {diagnostics && (
+                <div className="mx-auto mt-3 max-w-xl rounded-lg bg-amber-50 p-3 text-left text-xs leading-relaxed text-amber-900">
+                  <p>{diagnostics.message}</p>
+                  {diagnostics.lastSeenAt && <p className="mt-1 font-medium">Dernière réception : {formatActivity(diagnostics.lastSeenAt)}</p>}
+                </div>
+              )}
             </div>
           )
         ) : (
@@ -218,6 +227,7 @@ function CustomerCartsContent({ customerId }: { customerId: string }) {
                         <p className="break-words font-medium text-dark-800">{item.name}</p>
                         {item.variantLabel && <p className="mt-0.5 break-words text-xs text-gray-500">{item.variantLabel}</p>}
                         <p className="mt-1 text-xs text-gray-500">Quantité : {item.quantity} · {moneyFormatter.format(item.price)} / unité TTC indicatif</p>
+                        {item.validationIssue && <p className="mt-1 text-xs text-amber-700">{item.validationIssue} Le prix affiché n’est pas une offre validée.</p>}
                       </div>
                       <p className="text-sm font-medium tabular-nums text-dark-800 sm:text-right">{moneyFormatter.format(item.lineTotal)} TTC</p>
                     </li>
@@ -228,12 +238,13 @@ function CustomerCartsContent({ customerId }: { customerId: string }) {
                   <button
                     type="button"
                     onClick={() => void handleConvert(cart)}
-                    disabled={convertingId !== null || loading}
+                    disabled={convertingId !== null || loading || cart.items.some((item) => Boolean(item.validationIssue))}
                     className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-dark-800 px-4 py-2.5 text-xs font-semibold text-white hover:bg-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                   >
                     {convertingId === cart.id ? <Loader2 size={15} className="shrink-0 animate-spin" aria-hidden="true" /> : <FileText size={15} className="shrink-0" aria-hidden="true" />}
                     {convertingId === cart.id ? "Création du brouillon…" : "Transformer en brouillon"}
                   </button>
+                  {cart.items.some((item) => Boolean(item.validationIssue)) && <p className="mt-2 text-xs text-amber-700">Le client doit vérifier les articles signalés puis enregistrer son panier à nouveau, sans variante choisie automatiquement.</p>}
                   {lineErrors[cart.id] && <p role="alert" className="mt-2 break-words text-xs leading-relaxed text-red-600">{lineErrors[cart.id]}</p>}
                 </div>
               </article>

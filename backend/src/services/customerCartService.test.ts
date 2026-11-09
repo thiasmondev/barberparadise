@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { Prisma } from "@prisma/client";
-import { cartBelongsToCustomer, cartHasItemSnapshot, claimCartForDraft, customerCartWhere, serializeCustomerCartItems } from "./customerCartService";
+import { buildTrackedCartSnapshot, cartBelongsToCustomer, cartHasItemSnapshot, claimCartForDraft, customerCartWhere, serializeCustomerCartItems } from "./customerCartService";
 
 async function run() {
   assert.deepEqual(customerCartWhere(" Client@Example.com "), {
@@ -29,6 +29,26 @@ async function run() {
     { productId: "comb", name: "Peigne", variantId: null, variantLabel: null, quantity: 1, price: 0, lineTotal: 0 },
   ]);
   assert.deepEqual(serializeCustomerCartItems({}), []);
+
+  const product = { id: "clipper", name: "Tondeuse", price: 29, variants: [{ id: "white", name: "Blanche", price: 30 }] };
+  const tracked = buildTrackedCartSnapshot([
+    { productId: "clipper", variantId: null, quantity: 2 },
+    { productId: "clipper", variantId: "old-variant", quantity: 1 },
+    { productId: "deleted-product", variantId: null, quantity: 1 },
+    { productId: "clipper", variantId: "white", quantity: 3 },
+  ], [product]);
+  assert.equal(tracked.items.length, 4);
+  assert.equal(tracked.itemCount, 7);
+  assert.equal(tracked.items[0].variantId, null);
+  assert.equal(tracked.items[1].variantId, "old-variant");
+  assert.equal(tracked.items[2].productId, "deleted-product");
+  assert.ok(tracked.items.slice(0, 3).every((line) => line.validationIssue));
+  assert.equal(tracked.items[3].validationIssue, null);
+  assert.equal(tracked.items[3].price, 30);
+  assert.equal(tracked.validationIssues.length, 2);
+  assert.equal(serializeCustomerCartItems(tracked.items).length, 4);
+  assert.ok(serializeCustomerCartItems(tracked.items)[0].validationIssue);
+  assert.deepEqual(buildTrackedCartSnapshot([], []), { items: [], itemCount: 0, total: 0, validationIssues: [] });
 
   const updatedAt = new Date("2026-11-01T10:00:00Z");
   const queries: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];

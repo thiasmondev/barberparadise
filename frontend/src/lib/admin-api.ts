@@ -854,11 +854,18 @@ export interface AdminCustomerCart {
     quantity: number;
     price: number;
     lineTotal: number;
+    validationIssue?: string;
   }>;
 }
 
+export interface AdminCustomerCartDiagnostics {
+  status: "not_received" | "converted" | "empty";
+  message: string;
+  lastSeenAt: string | null;
+}
+
 export function getAdminCustomerCarts(customerId: string) {
-  return adminFetch<{ carts: AdminCustomerCart[] }>(`/api/admin/customers/${encodeURIComponent(customerId)}/carts`);
+  return adminFetch<{ carts: AdminCustomerCart[]; diagnostics?: AdminCustomerCartDiagnostics | null }>(`/api/admin/customers/${encodeURIComponent(customerId)}/carts`);
 }
 
 export function convertAdminCustomerCartToDraft(customerId: string, cartId: string) {

@@ -10,6 +10,7 @@ import { formatPrice } from "@/lib/utils";
 import { getVariantImage } from "@/lib/product-images";
 import { validatePromotionCode, type PromotionValidationResult } from "@/lib/api";
 import { getCheckoutPricingQuote, getPricingQuoteItem, type CheckoutPricingQuote } from "@/lib/checkout-pricing";
+import CartSyncStatus from "@/components/CartSyncStatus";
 
 type PaymentMethod = "card" | "paybybank" | "pay_by_bank" | "paypal" | "paypal_4x";
 
@@ -244,6 +245,7 @@ export default function CartPage() {
           </Link>
         </div>
 
+        <CartSyncStatus />
         {removedInvalidVariantLines.length > 0 && (
           <div className="mb-8 border border-amber-400/30 bg-amber-400/10 p-5">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">

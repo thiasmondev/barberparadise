@@ -25,9 +25,13 @@ async function run() {
   let failCreate = false;
   let lastCartQuery: Record<string, unknown> = {};
   let lastUpsert: { update: Record<string, unknown> } | null = null;
+  let latestOnly = false;
+  let lastNewSession: Record<string, unknown> | null = null;
   const originals = {
     customerFind: prisma.customer.findUnique,
     cartFind: prisma.abandonedCartSession.findUnique,
+    cartLatest: prisma.abandonedCartSession.findFirst,
+    cartCreate: prisma.abandonedCartSession.create,
     cartsFind: prisma.abandonedCartSession.findMany,
     cartClaim: prisma.abandonedCartSession.updateMany,
     cartUpdate: prisma.abandonedCartSession.update,
@@ -41,11 +45,14 @@ async function run() {
     Object.assign(target, { [key]: fn });
   }
   mock(prisma.customer, "findUnique", async ({ where }) => where.id === "missing" ? null : customer);
-  mock(prisma.abandonedCartSession, "findUnique", async () => cart);
-  mock(prisma.abandonedCartSession, "findMany", async (query) => { lastCartQuery = query; return [cart]; });
-  mock(prisma.abandonedCartSession, "updateMany", async () => {
+  mock(prisma.abandonedCartSession, "findUnique", async ({ where }) => where.id === cart.id ? cart : null);
+  mock(prisma.abandonedCartSession, "findFirst", async () => latestOnly ? cart : null);
+  mock(prisma.abandonedCartSession, "create", async ({ data }) => { lastNewSession = data; return data; });
+  mock(prisma.abandonedCartSession, "findMany", async (query) => { lastCartQuery = query; return latestOnly ? [] : [cart]; });
+  mock(prisma.abandonedCartSession, "updateMany", async ({ where, data }) => {
+    if (where.id !== cart.id) return { count: 0 };
     if (cart.convertedAt) return { count: 0 };
-    cart.convertedAt = new Date();
+    Object.assign(cart, data);
     return { count: 1 };
   });
   mock(prisma.abandonedCartSession, "update", async ({ data }) => { Object.assign(cart, data); return cart; });
@@ -92,11 +99,25 @@ async function run() {
     assert.deepEqual(lastCartQuery.where, { email: { equals: "client@example.com", mode: "insensitive" }, convertedAt: null, itemCount: { gt: 0 } });
     assert.deepEqual(lastCartQuery.orderBy, [{ lastSeenAt: "desc" }, { id: "asc" }]);
 
+    latestOnly = true;
+    cart.itemCount = 0;
+    assert.equal((await request("/api/admin/customers/customer-a/carts")).body.diagnostics.status, "empty");
+    cart.convertedAt = new Date();
+    assert.equal((await request("/api/admin/customers/customer-a/carts")).body.diagnostics.status, "converted");
+    cart.convertedAt = null;
+    cart.itemCount = 2;
+    latestOnly = false;
+
     const savedEmail = cart.email;
     cart.email = "another@example.com";
     assert.equal((await request("/api/admin/customers/customer-a/carts/cart-a/to-draft", {})).status, 404);
     assert.equal(createCount, 0);
     cart.email = savedEmail;
+
+    (cart.items[0] as Record<string, unknown>).validationIssue = "Variante à vérifier";
+    assert.equal((await request("/api/admin/customers/customer-a/carts/cart-a/to-draft", {})).status, 400);
+    assert.equal(createCount, 0, "Tracking warnings must not become silently priced draft lines");
+    delete (cart.items[0] as Record<string, unknown>).validationIssue;
 
     failCreate = true;
     assert.equal((await request("/api/admin/customers/customer-a/carts/cart-a/to-draft", { shipping: 0 })).status, 400);
@@ -130,11 +151,39 @@ async function run() {
     assert.equal("email" in lastUpsert!.update, false, "Unverified customerId does not resolve identity");
     assert.equal((await request("/api/checkout/cart-session", { sessionId: "tracking", email: "wrong@example.com" }, customerToken)).status, 200);
     assert.equal(lastUpsert!.update.email, "client@example.com", "Verified token resolves real customer email");
+
+    const legacy = await request("/api/checkout/cart-session", { sessionId: "tracking", cartItems: [{ productId: "clipper", quantity: 2 }] }, customerToken);
+    assert.equal(legacy.status, 200);
+    assert.equal(legacy.body.itemCount, 2, "A missing variant does not silently empty the cart");
+    assert.equal(legacy.body.hasSnapshot, true);
+    assert.ok(legacy.body.syncedAt);
+    assert.ok(legacy.body.validationIssues.length > 0);
+    assert.equal((lastUpsert!.update.items as any[])[0].variantId, null, "Never infer a replacement variant");
+    const unknown = await request("/api/checkout/cart-session", { sessionId: "tracking", cartItems: [{ productId: "deleted", quantity: 1 }] }, customerToken);
+    assert.equal(unknown.body.itemCount, 1);
+    assert.ok(unknown.body.validationIssues.length > 0);
+    assert.equal((await request("/api/checkout/cart-session", { sessionId: "tracking", cartItems: [null] }, null)).status, 400);
+
+    const historicalConvertedAt = cart.convertedAt;
+    const historicalItems = cart.items;
+    const restarted = await request("/api/checkout/cart-session", { sessionId: "cart-a", cartItems: [{ productId: "clipper", variantId: "white", quantity: 2 }] }, customerToken);
+    assert.equal(restarted.status, 200);
+    assert.notEqual(restarted.body.sessionId, "cart-a", "Converted session yields a new active session");
+    assert.equal(lastNewSession!.id, restarted.body.sessionId);
+    assert.equal(lastNewSession!.email, "client@example.com");
+    assert.equal(cart.convertedAt, historicalConvertedAt, "Historical conversion is immutable");
+    assert.equal(cart.items, historicalItems, "Historical lines are not overwritten");
+    const identityOnly = await request("/api/checkout/cart-session", { sessionId: "cart-a", email: "client@example.com" }, customerToken);
+    assert.equal(identityOnly.body.hasSnapshot, false);
+    assert.equal(identityOnly.body.itemCount, undefined, "Identity-only response exposes no stored cart count");
+    assert.equal(identityOnly.body.syncedAt, undefined, "Identity acknowledgement is not a cart acknowledgement");
     console.log("✓ HTTP local : autorisations, appartenance, brouillon recalculé, anti-duplicata, rollback et synchronisation validés");
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     mock(prisma.customer, "findUnique", originals.customerFind);
     mock(prisma.abandonedCartSession, "findUnique", originals.cartFind);
+    mock(prisma.abandonedCartSession, "findFirst", originals.cartLatest);
+    mock(prisma.abandonedCartSession, "create", originals.cartCreate);
     mock(prisma.abandonedCartSession, "findMany", originals.cartsFind);
     mock(prisma.abandonedCartSession, "updateMany", originals.cartClaim);
     mock(prisma.abandonedCartSession, "update", originals.cartUpdate);

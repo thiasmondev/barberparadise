@@ -22,6 +22,45 @@ function money(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+type TrackingProduct = {
+  id: string;
+  name: string;
+  price: number;
+  variants: Array<{ id: string; name: string; price: number | null }>;
+};
+
+/** Tracking is not checkout: unresolved references stay visible, never choose a variant. */
+export function buildTrackedCartSnapshot(
+  lines: Array<{ productId: string; variantId: string | null; quantity: number }>,
+  products: TrackingProduct[],
+) {
+  const byId = new Map(products.map((product) => [product.id, product]));
+  const items = lines.map((line) => {
+    const product = byId.get(line.productId);
+    const variant = product && line.variantId ? product.variants.find((candidate) => candidate.id === line.variantId) : null;
+    const validationIssue = !product
+      ? "Article absent du catalogue : à vérifier avant conversion."
+      : (line.variantId && !variant) || (product.variants.length > 0 && !variant)
+        ? "Variante à sélectionner ou à vérifier avant conversion."
+        : null;
+    return {
+      productId: line.productId,
+      name: product?.name || "Article à vérifier",
+      variantId: line.variantId,
+      variantLabel: variant?.name || null,
+      price: variant?.price ?? product?.price ?? 0,
+      quantity: line.quantity,
+      validationIssue,
+    };
+  });
+  return {
+    items,
+    itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
+    total: money(items.reduce((sum, item) => sum + item.price * item.quantity, 0)),
+    validationIssues: [...new Set(items.flatMap((item) => item.validationIssue ? [item.validationIssue] : []))],
+  };
+}
+
 export function serializeCustomerCartItems(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value.flatMap((raw) => {
@@ -39,6 +78,7 @@ export function serializeCustomerCartItems(value: unknown) {
       quantity,
       price,
       lineTotal: money(price * quantity),
+      ...(typeof line.validationIssue === "string" && line.validationIssue ? { validationIssue: line.validationIssue } : {}),
     }];
   });
 }

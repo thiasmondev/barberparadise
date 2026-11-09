@@ -5481,6 +5481,11 @@ async function convertSavedCartToDraft(req: Request, res: Response): Promise<voi
       return;
     }
     const rawItems = Array.isArray(cart.items) ? cart.items : [];
+    if (rawItems.some((item) => item && typeof item === "object" && !Array.isArray(item) &&
+      typeof (item as Record<string, unknown>).validationIssue === "string" && (item as Record<string, unknown>).validationIssue)) {
+      res.status(400).json({ error: "Ce panier contient des articles ou variantes à vérifier. Le client doit corriger sa sélection avant conversion." });
+      return;
+    }
     const items = normalizeDraftItems(
       rawItems.map((item) => {
         if (!item || typeof item !== "object" || Array.isArray(item)) return null;
@@ -5605,7 +5610,20 @@ adminRouter.get(
         orderBy: [{ lastSeenAt: "desc" }, { id: "asc" }],
         take: 20,
       });
-      res.json({ carts: carts.map((cart) => ({
+      let diagnostics: { status: string; message: string; lastSeenAt: Date | null } | null = null;
+      if (carts.length === 0) {
+        const latest = await prisma.abandonedCartSession.findFirst({
+          where: { email: { equals: normalizeEmailAddress(customer.email), mode: "insensitive" } },
+          orderBy: { lastSeenAt: "desc" },
+          select: { convertedAt: true, itemCount: true, lastSeenAt: true },
+        });
+        diagnostics = !latest
+          ? { status: "not_received", message: "Aucun enregistrement reçu sous cet e-mail. Si le client voit ses articles, il peut utiliser « Enregistrer mon panier » sur sa page Panier pour vérifier la synchronisation.", lastSeenAt: null }
+          : latest.convertedAt
+            ? { status: "converted", message: "La dernière session enregistrée a déjà été convertie en commande ou en brouillon. Un panier encore actif doit être enregistré dans une nouvelle session.", lastSeenAt: latest.lastSeenAt }
+            : { status: "empty", message: "La dernière session reçue a été enregistrée sans articles. Cela ne prouve pas que le panier visible dans le navigateur du client est vide : vérifiez sa sauvegarde depuis la page Panier.", lastSeenAt: latest.lastSeenAt };
+      }
+      res.json({ diagnostics, carts: carts.map((cart) => ({
         id: cart.id,
         email: cart.email || customer.email,
         lastSeenAt: cart.lastSeenAt,
