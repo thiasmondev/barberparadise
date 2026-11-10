@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { normalizeShippingAddressContact } from "../utils/shippingAddressNormalization";
+import { buildMondialRelayCreationRequest, normalizeMondialRelayParameter } from "../utils/mondialRelayRequest";
 
 export type LogisticsCarrier =
   | "colissimo"
@@ -236,70 +237,6 @@ function xmlEscape(value: string | number | null | undefined) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
-}
-
-/**
- * Normalise un champ texte pour Mondial Relay (hash MD5 + body SOAP).
- * - Décompose les caractères accentués (NFD) et supprime les diacritiques
- * - Remplace les apostrophes doubles ('') par une apostrophe simple (')
- * - Supprime les caractères hors plage ASCII 32-126
- * - En mode adresse (uppercase=true) : filtre strict selon la whitelist MR
- *   ^[0-9A-Z _\-'.,/]{2,32}$ — les parenthèses, @, #, etc. sont supprimés
- * - Tronque à la longueur maximale si spécifiée
- * DOIT être appliqué de manière identique sur les valeurs du hash MD5
- * ET sur les valeurs du body SOAP pour garantir la cohérence.
- */
-function normalizeMondialRelayText(value: string | number | null | undefined, maxLen?: number, uppercase = true): string {
-  let s = String(value ?? "");
-  // Décomposition Unicode NFD : é -> e + combining accent
-  s = s.normalize("NFD");
-  // Suppression des diacritiques (marques de combinaison Unicode U+0300–U+036F)
-  s = s.replace(/[\u0300-\u036f]/g, "");
-  // Remplacement des apostrophes doubles par une apostrophe simple
-  s = s.replace(/''/g, "'");
-  // Suppression des caractères hors ASCII 32-126
-  // eslint-disable-next-line no-control-regex
-  s = s.replace(/[^\x20-\x7E]/g, "");
-  // Normalisation des espaces multiples
-  s = s.replace(/\s+/g, " ").trim();
-  // Conversion en majuscules : Mondial Relay n'accepte que [A-Z] dans les champs adresse
-  // (regex ^[0-9A-Z\_\-'., /]{2,32}$). Sans toUpperCase, les minuscules déclenchent STAT 33.
-  // Ne pas mettre en majuscules les emails (STAT 39) ni les téléphones.
-  if (uppercase) {
-    s = s.toUpperCase();
-    // Filtrage strict : supprime les caractères hors whitelist MR pour les champs adresse.
-    // La regex MR autorise uniquement : chiffres, lettres majuscules, espace, _ - ' . , /
-    // Les parenthèses (), crochets [], @, #, &, etc. ne sont pas autorisés et causent STAT 34.
-    s = s.replace(/[^0-9A-Z _\-'.,/]/g, "");
-    // Re-normaliser les espaces multiples après suppression des caractères
-    s = s.replace(/\s+/g, " ").trim();
-  }
-  if (maxLen !== undefined && s.length > maxLen) s = s.slice(0, maxLen);
-  return s;
-}
-
-/**
- * Normalise un numéro de téléphone pour Mondial Relay.
- * Contraintes (spec v5.11) : 10 chiffres, format 0XXXXXXXXX pour la France.
- * Transformations :
- *   - Supprime espaces, tirets, points, parenthèses
- *   - Convertit +33XXXXXXXXX ou 0033XXXXXXXXX en 0XXXXXXXXX
- *   - Si le résultat n'est pas 10 chiffres commençant par 0, retourne null (tag omis)
- */
-function normalizeMondialRelayPhone(phone: string | null | undefined): string | null {
-  if (!phone) return null;
-  // Supprime tout sauf les chiffres et le signe +
-  let digits = phone.replace(/[^0-9+]/g, "");
-  // Convertit +33XXXXXXXXX → 0XXXXXXXXX
-  if (digits.startsWith("+33")) digits = "0" + digits.slice(3);
-  // Convertit 0033XXXXXXXXX → 0XXXXXXXXX
-  if (digits.startsWith("0033")) digits = "0" + digits.slice(4);
-  // Supprime le + restant si présent
-  digits = digits.replace(/\+/g, "");
-  // Vérifie le format : 10 chiffres commençant par 0
-  if (/^0[0-9]{9}$/.test(digits)) return digits;
-  // Format non reconnu : retourne null (tag omis pour éviter STAT 38)
-  return null;
 }
 
 /**
@@ -738,95 +675,31 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
   const nDossier = buildMondialRelayNDossier(input.orderNumber);
   // NClient : identifiant client alphanumérique max 9 caractères (contrainte Mondial Relay v5.11)
   const nClient = buildMondialRelayNClient(input.customerEmail);
-  // Normalisation ASCII des champs expéditeur (suppression accents, apostrophes doubles, etc.)
-  // DOIT être identique entre le tableau values (hash MD5) et l'enveloppe SOAP.
-  const expeAd1 = normalizeMondialRelayText(senderCompanyRaw, 32);
-  // Spec MR v5.11 : Expe_Ad3 est obligatoire (min 2 car.). Si l'adresse est vide, on utilise
-  // le nom de l'expéditeur comme fallback pour éviter STAT 33 (L3 invalide).
-  const expeAd3Raw = normalizeMondialRelayText(senderAddressRaw, 32);
-  const expeAd3 = expeAd3Raw.length >= 2 ? expeAd3Raw : normalizeMondialRelayText(senderCompanyRaw, 32);
-  // Spec MR v5.11 : Expe_Ad4 est optionnel. Mondial Relay rejette une chaîne vide (STAT 34) :
-  // il faut soit une valeur valide (min 2 car.), soit ne pas envoyer le tag du tout.
-  const expeAd4Raw = normalizeMondialRelayText(senderExtensionRaw, 32);
-  const expeAd4 = expeAd4Raw.length >= 2 ? expeAd4Raw : null;
-  const expeVille = normalizeMondialRelayText(senderCityRaw, 26);
-  // Spec MR v5.11 : Expe_Tel1 doit être au format 0XXXXXXXXX (10 chiffres).
-  const expeTel1 = normalizeMondialRelayPhone(senderPhoneRaw);
-  const expeMail = normalizeMondialRelayText(senderEmailRaw, 70, false);
+  // One ordered parameter object drives BOTH MD5 and SOAP, including optional
+  // one-character complements such as "3". No normalization after signing.
+  const senderStreet = normalizeMondialRelayParameter("Expe_Ad3", senderAddressRaw);
+  const { parameters, envelope } = buildMondialRelayCreationRequest({
+    Enseigne: enseigne, ModeCol: modeCol, ModeLiv: modeLiv, NDossier: nDossier, NClient: nClient,
+    Expe_Langage: "FR", Expe_Ad1: senderCompanyRaw, Expe_Ad2: "", Expe_Ad3: senderStreet.length >= 2 ? senderAddressRaw : senderCompanyRaw,
+    Expe_Ad4: senderExtensionRaw, Expe_Ville: senderCityRaw, Expe_CP: senderPostalCodeRaw, Expe_Pays: "FR",
+    Expe_Tel1: senderPhoneRaw, Expe_Tel2: "", Expe_Mail: senderEmailRaw,
+    Dest_Langage: "FR", Dest_Ad1: `${input.recipient.firstName} ${input.recipient.lastName}`.trim(), Dest_Ad2: "", Dest_Ad3: input.recipient.address,
+    Dest_Ad4: input.recipient.extension || "", Dest_Ville: input.recipient.city, Dest_CP: input.recipient.postalCode, Dest_Pays: countryCode,
+    Dest_Tel1: input.recipient.phone, Dest_Tel2: "", Dest_Mail: input.recipient.email || input.customerEmail,
+    Poids: poids, Longueur: input.packageDimensions?.lengthCm || "", Taille: "", NbColis: "1", CRT_Valeur: "0", CRT_Devise: "EUR",
+    Exp_Valeur: expValeur, Exp_Devise: "EUR", COL_Rel_Pays: "FR", COL_Rel: "", LIV_Rel_Pays: "FR", LIV_Rel: input.relayPointId,
+    TAvisage: "", TReprise: "", Montage: "", TRDV: "", Assurance: assurance, Instructions: "",
+  }, getMondialRelayPrivateKey());
 
-  // Normalisation ASCII des champs texte destinataire (suppression accents, apostrophes doubles, etc.)
-  // DOIT être identique entre le tableau values (hash MD5) et l'enveloppe SOAP.
-  const destName = normalizeMondialRelayText(`${input.recipient.firstName} ${input.recipient.lastName}`.trim(), 32);
-  const destAd3 = normalizeMondialRelayText(input.recipient.address, 32);
-  const destAd4 = normalizeMondialRelayText(input.recipient.extension || "", 32);
-  const destVille = normalizeMondialRelayText(input.recipient.city, 26);
-  // Spec MR v5.11 : Dest_Tel1 doit être au format 0XXXXXXXXX.
-  // Si le client n'a pas de téléphone ou format invalide, le tag est omis.
-  const destPhone = normalizeMondialRelayPhone(input.recipient.phone);
-  const destMail = normalizeMondialRelayText(input.recipient.email || input.customerEmail, 70, false);
-
-  const values = [
-    enseigne, modeCol, modeLiv, nDossier, nClient,
-    "FR", expeAd1, "", expeAd3,
-    // expeAd4 est null quand LOGISTICS_SENDER_ADDRESS_2 est vide : le hash doit utiliser "" dans ce cas
-    expeAd4 ?? "", expeVille, senderPostalCodeRaw, "FR",
-    // expeTel1 est null si le téléphone est absent/invalide : le hash utilise "" dans ce cas
-    expeTel1 ?? "", "", expeMail,
-    "FR", destName, "", destAd3, destAd4,
-    destVille, input.recipient.postalCode, countryCode, destPhone ?? "", "", destMail,
-    poids, input.packageDimensions?.lengthCm || "", "", "1", "0", "EUR", expValeur, "EUR",
-    // COL_Rel_Pays, COL_Rel (vide), LIV_Rel_Pays, LIV_Rel (point relais de livraison)
-    // Ordre identique à l'enveloppe SOAP : COL_Rel="", LIV_Rel=relayPointId
-    "FR", "", "FR", input.relayPointId, "", "", "", "", assurance, "",
-  ];
-  const security = mondialRelaySecurity(values);
-  // LOG DIAGNOSTIC STAT 34 — à retirer après résolution
-  console.log("[MondialRelay][DIAG-V2] ENV brutes:", JSON.stringify({
-    COMPANY: process.env.LOGISTICS_SENDER_COMPANY || "(absent)",
-    ADDRESS: process.env.LOGISTICS_SENDER_ADDRESS || "(absent)",
-    ADDRESS_2: process.env.LOGISTICS_SENDER_ADDRESS_2 || "(absent)",
-    CITY: process.env.LOGISTICS_SENDER_CITY || "(absent)",
-    POSTAL_CODE: process.env.LOGISTICS_SENDER_POSTAL_CODE || "(absent)",
-    PHONE: process.env.LOGISTICS_SENDER_PHONE || "(absent)",
-    EMAIL: process.env.LOGISTICS_SENDER_EMAIL || "(absent)",
-  }));
-  console.log("[MondialRelay][DIAG-V2] Champs normalisés expéditeur:", JSON.stringify({
-    expeAd1,
-    expeAd3,
-    expeAd4: expeAd4 !== null ? expeAd4 : "(null — tag omis)",
-    expeVille,
-    expeCP: senderPostalCodeRaw,
-    expeTel1: expeTel1 !== null ? expeTel1 : "(null — tag omis)",
-    expeMail,
-  }));
-  console.log("[MondialRelay][DIAG-V2] Champs normalisés destinataire:", JSON.stringify({
-    destName,
-    destAd3,
-    destAd4: destAd4.length >= 2 ? destAd4 : "(vide — tag omis)",
-    destVille,
-    destCP: input.recipient.postalCode,
-    countryCode,
-    destPhone: destPhone !== null ? destPhone : "(null — tag omis)",
-    destMail,
-  }));
-  console.log("[MondialRelay][DIAG-V2] Autres:", JSON.stringify({ enseigne, nDossier, nClient, poids, relayPointId: input.relayPointId, assurance }));
-  const envelope = `<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <WSI2_CreationExpedition xmlns="http://www.mondialrelay.fr/webservice/">
-      <Enseigne>${xmlEscape(enseigne)}</Enseigne><ModeCol>${xmlEscape(modeCol)}</ModeCol><ModeLiv>${xmlEscape(modeLiv)}</ModeLiv>
-      <NDossier>${xmlEscape(nDossier)}</NDossier><NClient>${xmlEscape(nClient)}</NClient><Expe_Langage>FR</Expe_Langage>
-      <Expe_Ad1>${xmlEscape(expeAd1)}</Expe_Ad1><Expe_Ad2></Expe_Ad2><Expe_Ad3>${xmlEscape(expeAd3)}</Expe_Ad3>${expeAd4 !== null ? `<Expe_Ad4>${xmlEscape(expeAd4)}</Expe_Ad4>` : ""}
-      <Expe_Ville>${xmlEscape(expeVille)}</Expe_Ville><Expe_CP>${xmlEscape(senderPostalCodeRaw)}</Expe_CP><Expe_Pays>FR</Expe_Pays>${expeTel1 !== null ? `<Expe_Tel1>${xmlEscape(expeTel1)}</Expe_Tel1>` : ""}<Expe_Tel2></Expe_Tel2><Expe_Mail>${xmlEscape(expeMail)}</Expe_Mail>
-      <Dest_Langage>FR</Dest_Langage><Dest_Ad1>${xmlEscape(destName)}</Dest_Ad1><Dest_Ad2></Dest_Ad2><Dest_Ad3>${xmlEscape(destAd3)}</Dest_Ad3>${destAd4.length >= 2 ? `<Dest_Ad4>${xmlEscape(destAd4)}</Dest_Ad4>` : ""}
-      <Dest_Ville>${xmlEscape(destVille)}</Dest_Ville><Dest_CP>${xmlEscape(input.recipient.postalCode)}</Dest_CP><Dest_Pays>${xmlEscape(countryCode)}</Dest_Pays>${destPhone !== null ? `<Dest_Tel1>${xmlEscape(destPhone)}</Dest_Tel1>` : ""}<Dest_Tel2></Dest_Tel2><Dest_Mail>${xmlEscape(destMail)}</Dest_Mail>
-      <Poids>${xmlEscape(poids)}</Poids><Longueur>${xmlEscape(input.packageDimensions?.lengthCm || "")}</Longueur><Taille></Taille><NbColis>1</NbColis>
-      <CRT_Valeur>0</CRT_Valeur><CRT_Devise>EUR</CRT_Devise><Exp_Valeur>${xmlEscape(expValeur)}</Exp_Valeur><Exp_Devise>EUR</Exp_Devise><COL_Rel_Pays>FR</COL_Rel_Pays><COL_Rel></COL_Rel><LIV_Rel_Pays>FR</LIV_Rel_Pays><LIV_Rel>${xmlEscape(input.relayPointId)}</LIV_Rel><TAvisage></TAvisage><TReprise></TReprise><Montage></Montage><TRDV></TRDV><Assurance>${xmlEscape(assurance)}</Assurance><Instructions></Instructions><Security>${security}</Security>
-    </WSI2_CreationExpedition>
-  </soap:Body>
-</soap:Envelope>`;
-
-  const xml = await postSoap("https://api.mondialrelay.com/Web_Services.asmx", "http://www.mondialrelay.fr/webservice/WSI2_CreationExpedition", envelope);
+  let xml: string;
+  try {
+    xml = await postSoap("https://api.mondialrelay.com/Web_Services.asmx", "http://www.mondialrelay.fr/webservice/WSI2_CreationExpedition", envelope);
+  } catch (error) {
+    throw new CarrierLabelCreationError(
+      error instanceof Error ? error.message : "Échec de l’appel Mondial Relay.",
+      { carrier: "mondial_relay", operation: "WSI2_CreationExpedition", orderNumber: input.orderNumber, normalizedRequestParameters: parameters },
+    );
+  }
   const status = getXmlValue(xml, "STAT");
   if (status && status !== "0") {
     const rawResponse = {
@@ -842,10 +715,13 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
       countryCode,
       totalWeightG: input.totalWeightG,
       insuranceValueCents: input.insuranceValueCents,
+      normalizedRequestParameters: parameters,
     };
     const details = status === "36"
       ? "Le code postal transmis a été refusé par Mondial Relay. Vérifiez le code postal de livraison et réessayez avec un point relais recherché pour cette adresse."
-      : "Vérifiez les coordonnées ou les options de l’expédition, puis réessayez.";
+      : status === "97"
+        ? "La signature de sécurité a été refusée. Les paramètres normalisés sont disponibles dans le diagnostic administrateur ; ne modifiez pas la clé si les autres expéditions fonctionnent."
+        : "Vérifiez les coordonnées ou les options de l’expédition, puis réessayez.";
     throw new CarrierLabelCreationError(
       `Mondial Relay a refusé la création d’expédition (STAT ${status}). ${details}`,
       rawResponse,
@@ -862,6 +738,7 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
         responseXml: xml.slice(0, 4000),
         orderNumber: input.orderNumber,
         relayPointId: input.relayPointId || null,
+        normalizedRequestParameters: parameters,
       },
     );
   }
@@ -917,7 +794,7 @@ async function createMondialRelayLabel(input: ShipmentLabelInput, quote: Shipmen
     taxAmountCents: quote.taxAmountCents,
     totalWithTaxCents: quote.totalWithTaxCents,
     signatureRequired: false,
-    rawResponse: { carrier: "mondial_relay", offer: quote, expeditionXml: xml.slice(0, 4000), labelUrl },
+    rawResponse: { carrier: "mondial_relay", offer: quote, expeditionXml: xml.slice(0, 4000), labelUrl, normalizedRequestParameters: parameters },
     notice: null,
   };
 }

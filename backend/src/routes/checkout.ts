@@ -25,6 +25,7 @@ import { getActiveAutomaticProductPromotions, getBestAutomaticPromotionForProduc
 import { B2B_PAYMENT_FEE_VAT_RATE, calculateB2BSurcharge, getB2BConfiguredSurcharges } from "../services/b2bPaymentSurchargeService";
 import { normalizeShippingAddressContact } from "../utils/shippingAddressNormalization";
 import { isValidEmailAddress, normalizeEmailAddress } from "../utils/emailValidation";
+import { cleanRelayDisplayText } from "../utils/mondialRelayDisplay";
 import {
   resolveProfessionalPricing,
   type ProfessionalPricingResolution,
@@ -1269,8 +1270,8 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
           },
           noShipping: isNoShipping,
           relayPointId: isNoShipping ? null : (body.relayPointId || null),
-          relayPointName: isNoShipping ? null : (body.relayPointName || null),
-          relayPointAddress: isNoShipping ? null : (body.relayPointAddress || null),
+          relayPointName: isNoShipping ? null : (cleanRelayDisplayText(body.relayPointName || "") || null),
+          relayPointAddress: isNoShipping ? null : (cleanRelayDisplayText(body.relayPointAddress || "") || null),
           shipment: {
             create: {
               carrier: isNoShipping ? "retrait_magasin" : (normalizeShipmentCarrier(draftShippingOption) || checkoutDraft.shipment?.carrier || "livraison_standard"),
@@ -1435,8 +1436,8 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
           },
         },
         relayPointId: body.relayPointId || null,
-        relayPointName: body.relayPointName || null,
-        relayPointAddress: body.relayPointAddress || null,
+        relayPointName: cleanRelayDisplayText(body.relayPointName || "") || null,
+        relayPointAddress: cleanRelayDisplayText(body.relayPointAddress || "") || null,
         shipment: {
           create: {
             carrier: normalizeShipmentCarrier(selectedShippingOption) || "livraison_standard",
@@ -1771,8 +1772,8 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
             items: { create: checkoutDraft.items.map((item) => ({ productId: item.productId, variantId: item.variantId, variantLabel: item.variantLabel, name: item.name, price: item.price, quantity: item.quantity, image: item.image, discountAmount: item.discountAmount, lineDiscountType: item.lineDiscountType, lineDiscountValue: item.lineDiscountValue, isCustomSale: item.isCustomSale })) },
             shippingAddress: { create: { firstName: shippingAddress?.firstName || "Client", lastName: shippingAddress?.lastName || "Barber Paradise", address: isNoShippingPaypal ? "Retrait en magasin" : (shippingAddress?.address || ""), extension: shippingAddress?.extension || "", city: isNoShippingPaypal ? "Barber Paradise" : (shippingAddress?.city || ""), postalCode: isNoShippingPaypal ? "00000" : (shippingAddress?.postalCode || ""), country: isNoShippingPaypal ? "FR" : country, phone: shippingAddress?.phone || "" } },
             relayPointId: isNoShippingPaypal ? null : (body.relayPointId || null),
-            relayPointName: isNoShippingPaypal ? null : (body.relayPointName || null),
-            relayPointAddress: isNoShippingPaypal ? null : (body.relayPointAddress || null),
+            relayPointName: isNoShippingPaypal ? null : (cleanRelayDisplayText(body.relayPointName || "") || null),
+            relayPointAddress: isNoShippingPaypal ? null : (cleanRelayDisplayText(body.relayPointAddress || "") || null),
             shipment: { create: { carrier: isNoShippingPaypal ? "retrait_magasin" : (normalizeShipmentCarrier(draftShippingOption) || checkoutDraft.shipment?.carrier || "livraison_standard"), totalWeightG: checkoutDraft.shipment?.totalWeightG || null } },
           },
         });
@@ -1816,7 +1817,7 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
       if (recentPendingOrder && normalizeDraftItemsSignature(recentPendingOrder.items) === normalizeCheckoutItemsSignature(body.cartItems)) {
         order = recentPendingOrder;
       } else {
-        order = await prisma.order.create({ data: { orderNumber: generateOrderNumber(), email: body.customerEmail, customerEmail: body.customerEmail, customerId: body.customerId || null, status: "pending", paymentMethod: body.paymentMethod, paymentProvider: "paypal", isB2B, pricingTier: basket.pricing.pricingTier, subtotal: isB2B ? subtotalHT : subtotalTTC, shipping: chargedShipping, total: totalTTC, totalHT, promoCodeId: promoResolution.promoCode?.id || null, promotionId: promoResolution.promotion?.promotionId || null, discountAmount, vatRate, vatAmount, totalTTC, paymentFeePercent: paymentFee.percent, paymentFeeHT: paymentFee.feeHT, paymentFeeVatRate: paymentFee.feeVatRate, paymentFeeVatAmount: paymentFee.feeVatAmount, paymentFeeTTC: paymentFee.feeTTC, currency: CURRENCY, vatNumber: vatNumber || null, billingAddress: (body.billingAddress || shippingAddress) as object, items: { create: orderItems }, shippingAddress: { create: { firstName: shippingAddress.firstName, lastName: shippingAddress.lastName, address: shippingAddress.address, extension: shippingAddress.extension || "", city: shippingAddress.city, postalCode: shippingAddress.postalCode, country, phone: shippingAddress.phone || "" } }, relayPointId: body.relayPointId || null, relayPointName: body.relayPointName || null, relayPointAddress: body.relayPointAddress || null, shipment: { create: { carrier: normalizeShipmentCarrier(selectedShippingOption) || "livraison_standard" } } } });
+        order = await prisma.order.create({ data: { orderNumber: generateOrderNumber(), email: body.customerEmail, customerEmail: body.customerEmail, customerId: body.customerId || null, status: "pending", paymentMethod: body.paymentMethod, paymentProvider: "paypal", isB2B, pricingTier: basket.pricing.pricingTier, subtotal: isB2B ? subtotalHT : subtotalTTC, shipping: chargedShipping, total: totalTTC, totalHT, promoCodeId: promoResolution.promoCode?.id || null, promotionId: promoResolution.promotion?.promotionId || null, discountAmount, vatRate, vatAmount, totalTTC, paymentFeePercent: paymentFee.percent, paymentFeeHT: paymentFee.feeHT, paymentFeeVatRate: paymentFee.feeVatRate, paymentFeeVatAmount: paymentFee.feeVatAmount, paymentFeeTTC: paymentFee.feeTTC, currency: CURRENCY, vatNumber: vatNumber || null, billingAddress: (body.billingAddress || shippingAddress) as object, items: { create: orderItems }, shippingAddress: { create: { firstName: shippingAddress.firstName, lastName: shippingAddress.lastName, address: shippingAddress.address, extension: shippingAddress.extension || "", city: shippingAddress.city, postalCode: shippingAddress.postalCode, country, phone: shippingAddress.phone || "" } }, relayPointId: body.relayPointId || null, relayPointName: cleanRelayDisplayText(body.relayPointName || "") || null, relayPointAddress: cleanRelayDisplayText(body.relayPointAddress || "") || null, shipment: { create: { carrier: normalizeShipmentCarrier(selectedShippingOption) || "livraison_standard" } } } });
       }
 
       if (body.cartSessionId) await prisma.abandonedCartSession.updateMany({ where: { id: body.cartSessionId }, data: { convertedOrderId: order.id, convertedAt: new Date(), itemCount: 0 } });

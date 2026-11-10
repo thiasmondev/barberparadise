@@ -22,6 +22,7 @@ import {
   settleOrderExchangeInternally,
 } from "../services/orderExchangeService";
 import { isManualPaymentMethod } from "../utils/manualPaymentBreakdown";
+import { cleanRelayDisplayText, normalizeRelayPointSnapshot } from "../utils/mondialRelayDisplay";
 
 export const orderExchangesRouter = Router();
 
@@ -118,10 +119,10 @@ function snapshotRelayPoint(value: unknown) {
   if (!isRecord(value)) return null;
   const id = typeof value.id === "string" ? value.id.trim() : "";
   if (!id) return null;
-  const name = typeof value.name === "string" && value.name.trim() ? value.name.trim() : "Point relais";
-  const address = typeof value.address === "string" ? value.address.trim() : "";
+  const name = cleanRelayDisplayText(typeof value.name === "string" && value.name.trim() ? value.name.trim() : "Point relais");
+  const address = cleanRelayDisplayText(typeof value.address === "string" ? value.address.trim() : "");
   const postalCode = typeof value.postalCode === "string" ? value.postalCode.trim() : "";
-  const city = typeof value.city === "string" ? value.city.trim() : "";
+  const city = cleanRelayDisplayText(typeof value.city === "string" ? value.city.trim() : "");
   const country = typeof value.country === "string" && value.country.trim() ? value.country.trim() : "France";
   return {
     id,
@@ -232,7 +233,7 @@ async function createExchangeShipmentLabel(params: {
       serviceCode: result.serviceCode,
       deliveryMode: result.deliveryMode,
       relayPointId: result.relayPointId,
-      relayPointSnapshot: params.relayPointSnapshot || Prisma.DbNull,
+      relayPointSnapshot: normalizeRelayPointSnapshot(params.relayPointSnapshot) || Prisma.DbNull,
       labelPriceCents: result.priceCents,
       labelCurrency: result.currency,
       insuranceValueCents: result.insuranceValueCents,
@@ -255,7 +256,7 @@ async function createExchangeShipmentLabel(params: {
       serviceCode: result.serviceCode,
       deliveryMode: result.deliveryMode,
       relayPointId: result.relayPointId,
-      relayPointSnapshot: params.relayPointSnapshot || Prisma.DbNull,
+      relayPointSnapshot: normalizeRelayPointSnapshot(params.relayPointSnapshot) || Prisma.DbNull,
       labelPriceCents: result.priceCents,
       labelCurrency: result.currency,
       insuranceValueCents: result.insuranceValueCents,

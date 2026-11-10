@@ -1,5 +1,7 @@
 import { Router, Request, Response } from "express";
 import crypto from "crypto";
+import { cleanRelayDisplayText } from "../utils/mondialRelayDisplay";
+import { decodeXmlText } from "../utils/mondialRelayXml";
 
 const mondialRelayRouter = Router();
 
@@ -24,7 +26,7 @@ function xmlEscape(value: string | number | null | undefined) {
 
 function getXmlValue(xml: string, tag: string) {
   const match = xml.match(new RegExp(`<(?:\\w+:)?${tag}[^>]*>([\\s\\S]*?)</(?:\\w+:)?${tag}>`, "i"));
-  return match?.[1]?.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim() || null;
+  return match ? decodeXmlText(match[1]).trim() || null : null;
 }
 
 /**
@@ -39,7 +41,7 @@ function getXmlArrayOfString(xml: string, tag: string): string[] {
   const results: string[] = [];
   let match;
   while ((match = regex.exec(block)) !== null) {
-    const val = match[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+    const val = decodeXmlText(match[1]).trim();
     if (val) results.push(val);
   }
   return results;
@@ -206,9 +208,9 @@ mondialRelayRouter.get("/points", async (req: Request, res: Response): Promise<v
 
     const points: RelayPoint[] = pointsXml.map((block) => {
       const id = getXmlValue(block, "Num") || "";
-      const name = getXmlValue(block, "LgAdr1") || "";
-      const address = getXmlValue(block, "LgAdr3") || "";
-      const city = getXmlValue(block, "Ville") || "";
+      const name = cleanRelayDisplayText(getXmlValue(block, "LgAdr1") || "");
+      const address = cleanRelayDisplayText(getXmlValue(block, "LgAdr3") || "");
+      const city = cleanRelayDisplayText(getXmlValue(block, "Ville") || "");
       const postalCode = getXmlValue(block, "CP") || "";
       const countryCode = getXmlValue(block, "Pays") || country;
       const latStr = getXmlValue(block, "Latitude") || "";

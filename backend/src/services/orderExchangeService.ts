@@ -6,6 +6,7 @@ import {
   type ManualPaymentMethod,
 } from "../utils/manualPaymentBreakdown";
 import { normalizeShippingAddressContact } from "../utils/shippingAddressNormalization";
+import { cleanRelayDisplayText } from "../utils/mondialRelayDisplay";
 
 const EXCHANGE_ELIGIBLE_STATUSES = new Set(["processing", "shipped", "delivered"]);
 const ACTIVE_EXCHANGE_STATUSES = [
@@ -146,10 +147,10 @@ export function normalizeExchangeRelayPoint(input: ExchangeRelayPointInput | nul
   if (!id) return null;
   return {
     id,
-    name: trimmedString(input.name) || trimmedString(input.relayPointName) || null,
-    address: trimmedString(input.address) || trimmedString(input.relayPointAddress) || null,
+    name: cleanRelayDisplayText(trimmedString(input.name) || trimmedString(input.relayPointName)) || null,
+    address: cleanRelayDisplayText(trimmedString(input.address) || trimmedString(input.relayPointAddress)) || null,
     postalCode: trimmedString(input.postalCode) || null,
-    city: trimmedString(input.city) || null,
+    city: cleanRelayDisplayText(trimmedString(input.city)) || null,
     country: trimmedString(input.country) || null,
   };
 }

@@ -19,6 +19,8 @@
     "test:blog-visuals": "ts-node src/services/blogVisualService.test.ts",
     "test:replicate-client": "ts-node src/services/replicate/replicateClient.test.ts",
     "test:logistics": "ts-node src/services/logisticsCarrierService.test.ts",
+    "test:mondial-relay-signature": "ts-node src/utils/mondialRelayRequest.test.ts",
+    "test:mondial-relay-display": "ts-node src/utils/mondialRelayDisplay.test.ts && ts-node src/routes/mondialrelay.test.ts && ts-node src/services/mondialRelayPersistence.test.ts",
     "test:shipping-addresses": "ts-node src/utils/shippingAddressNormalization.test.ts",
     "test:professional-pricing": "ts-node src/services/b2bPricingService.test.ts",
     "test:customer-carts": "ts-node src/services/customerCartService.test.ts && ts-node src/services/customerCartRoutes.test.ts",
