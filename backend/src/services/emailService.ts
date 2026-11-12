@@ -125,6 +125,12 @@ export function formatPaymentMethod(method?: string | null): string {
       return "PayPal";
     case "paypal_4x":
       return "PayPal 4x sans frais";
+    case "apple_pay":
+    case "applepay":
+      return "Apple Pay";
+    case "google_pay":
+    case "googlepay":
+      return "Google Pay";
     case "paybybank":
       return "Paiement bancaire instantané";
     case "pay_by_bank":

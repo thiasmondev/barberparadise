@@ -11,6 +11,7 @@ import { getVariantImage } from "@/lib/product-images";
 import { validatePromotionCode, type PromotionValidationResult } from "@/lib/api";
 import { getCheckoutPricingQuote, getPricingQuoteItem, type CheckoutPricingQuote } from "@/lib/checkout-pricing";
 import CartSyncStatus from "@/components/CartSyncStatus";
+import PaymentBrandLogo, { hasPaymentBrandLogo } from "@/components/PaymentBrandLogo";
 
 type PaymentMethod = "card" | "paybybank" | "pay_by_bank" | "paypal" | "paypal_4x";
 
@@ -90,10 +91,10 @@ export default function CartPage() {
   const proRemaining = pricingQuote?.remainingHT ?? proThresholdHT;
   const proProgressPercent = pricingQuote?.progressPercent ?? 0;
   const paymentMethods = ([
-    { id: "card", label: "CARTE BANCAIRE", icon: CreditCard },
-    { id: "paypal", label: "PAYPAL", icon: WalletCards },
-    ...(total >= 30 && !isApprovedPro ? [{ id: "paypal_4x" as PaymentMethod, label: "PAYPAL 4X SANS FRAIS", icon: WalletCards }] : []),
-    { id: "paybybank", label: "PAIEMENT BANCAIRE INSTANTANÉ (B2B)", icon: Landmark },
+    { id: "card", label: "Carte bancaire", icon: CreditCard },
+    { id: "paypal", label: "PayPal", icon: WalletCards },
+    ...(total >= 30 && !isApprovedPro ? [{ id: "paypal_4x" as PaymentMethod, label: "PayPal 4x sans frais", icon: WalletCards }] : []),
+    { id: "paybybank", label: "Virement instantané", icon: Landmark },
   ] satisfies Array<{ id: PaymentMethod; label: string; icon: typeof CreditCard }>).filter((method) => !isApprovedPro || method.id === "paybybank");
 
 
@@ -508,8 +509,14 @@ export default function CartPage() {
                         className={`w-full border p-3 text-left transition-colors ${active ? "border-[#ff4a8d] bg-[#ff4a8d]/10" : "border-white/10 hover:border-white/25"}`}
                       >
                         <div className="flex items-center gap-3">
-                          <Icon size={15} className={active ? "text-[#ff4a8d]" : "text-gray-500"} />
-                          <p className="text-[11px] font-black tracking-widest uppercase">{method.label}</p>
+                          {hasPaymentBrandLogo(method.id) ? <PaymentBrandLogo method={method.id} /> : <Icon size={15} className={active ? "text-[#ff4a8d]" : "text-gray-500"} />}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-[11px] font-black tracking-wide">{method.label}</p>
+                              {method.id === "paybybank" && <span className="text-[10px] font-black text-emerald-300 border border-emerald-400/30 bg-emerald-400/10 px-2 py-1">Recommandé</span>}
+                            </div>
+                            {method.id === "paybybank" && <p className="mt-2 text-xs leading-relaxed text-gray-300">Simple et rapide : validez le paiement dans l’appli de votre banque, sans saisir de carte.{isApprovedPro && " Sans frais de paiement."}</p>}
+                          </div>
                         </div>
                       </button>
                     );

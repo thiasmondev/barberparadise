@@ -12,6 +12,8 @@ import { formatPrice } from "@/lib/utils";
 import { getVariantImage } from "@/lib/product-images";
 import { validatePromotionCode, type PromotionValidationResult } from "@/lib/api";
 import { getCheckoutPricingQuote, getPricingQuoteItem, type CheckoutPricingQuote } from "@/lib/checkout-pricing";
+import { formatRelayDistance, formatShippingDisplayLabel } from "@/lib/checkout-display";
+import PaymentBrandLogo, { hasPaymentBrandLogo } from "@/components/PaymentBrandLogo";
 import type { CartItem, Product } from "@/types";
 
 type Step = "contact" | "livraison" | "paiement";
@@ -157,15 +159,15 @@ const COUNTRY_CODE_BY_NAME: Record<string, string> = {
   "Wallis-et-Futuna": "WF",
 };
 
-const METHOD_CONFIG: Record<PaymentMethod, { label: string; badge: string; icon: typeof CreditCard }> = {
-  card: { label: "CARTE BANCAIRE", badge: "CB", icon: CreditCard },
-  paybybank: { label: "PAIEMENT BANCAIRE INSTANTANÉ", badge: "BANK", icon: Landmark },
+const METHOD_CONFIG: Record<PaymentMethod, { label: string; badge?: string; icon: typeof CreditCard }> = {
+  card: { label: "Carte bancaire", icon: CreditCard },
+  paybybank: { label: "Virement instantané", badge: "Recommandé", icon: Landmark },
   pay_by_bank: { label: "VIREMENT BANCAIRE", badge: "BANK", icon: Landmark },
   sepa: { label: "PRÉLÈVEMENT SEPA", badge: "SEPA", icon: ReceiptText },
-  paypal: { label: "PAIEMENT PAR PORTEFEUILLE", badge: "PAY", icon: WalletCards },
-  paypal_4x: { label: "PAIEMENT EN 4 FOIS", badge: "4X", icon: WalletCards },
-  apple_pay: { label: "APPLE PAY", badge: "APPLE", icon: Smartphone },
-  google_pay: { label: "GOOGLE PAY", badge: "GPAY", icon: Smartphone },
+  paypal: { label: "PayPal", icon: WalletCards },
+  paypal_4x: { label: "PayPal en 4x", icon: WalletCards },
+  apple_pay: { label: "Apple Pay", icon: Smartphone },
+  google_pay: { label: "Google Pay", icon: Smartphone },
   bancontact: { label: "BANCONTACT", badge: "BE", icon: Landmark },
   ideal: { label: "IDEAL", badge: "NL", icon: Landmark },
   blik: { label: "BLIK", badge: "PL", icon: Smartphone },
@@ -254,6 +256,7 @@ export default function CheckoutPage() {
 
   // ─── PayPal Advanced Checkout v2 (popup SDK JS) ───────────────────────────
   const [paypalV2Config, setPaypalV2Config] = useState<{ v2Enabled: boolean; clientId: string; payLaterEnabled: boolean } | null>(null);
+  const [paypalPayLaterDisplayEnabled, setPaypalPayLaterDisplayEnabled] = useState(false);
   const [paypalSdkLoaded, setPaypalSdkLoaded] = useState(false);
   const [paypalButtonsRendered, setPaypalButtonsRendered] = useState(false);
   const paypalContainerRef = (typeof window !== 'undefined' ? { current: null } : { current: null }) as React.MutableRefObject<HTMLDivElement | null>;
@@ -642,6 +645,8 @@ export default function CheckoutPage() {
     fetch(`${API_URL}/api/checkout/paypal/v2/config`)
       .then((r) => r.json())
       .then((data: { v2Enabled?: boolean; clientId?: string; payLaterEnabled?: boolean }) => {
+        // Display the server flag independently, without changing the SDK/payment configuration.
+        setPaypalPayLaterDisplayEnabled(Boolean(data.payLaterEnabled));
         if (data.v2Enabled && data.clientId) {
           setPaypalV2Config({ v2Enabled: true, clientId: data.clientId, payLaterEnabled: Boolean(data.payLaterEnabled) });
         } else {
@@ -1189,8 +1194,8 @@ export default function CheckoutPage() {
                     <button key={option.id} type="button" onClick={() => setSelectedShippingOptionId(option.id)} className={`w-full border p-5 text-left transition-colors ${active ? "border-[#ff4a8d] bg-[#ff4a8d]/10" : "border-white/10 bg-[#1c1b1b] hover:border-white/25"}`}>
                       <div className="flex items-start justify-between gap-4">
                         <div>
-                          <p className="text-sm font-black uppercase tracking-widest text-white">{option.label}</p>
-                          <p className="mt-2 text-[11px] uppercase tracking-widest text-gray-500">{option.carrier} · {option.days}</p>
+                          <p className="text-sm font-black tracking-widest text-white">{formatShippingDisplayLabel(option.label)}</p>
+                          <p className="mt-2 text-[11px] tracking-widest text-gray-500">{formatShippingDisplayLabel(option.carrier)} · {option.days}</p>
                         </div>
                         {option.price === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black text-white">{formatPrice(option.price)}</span>}
                       </div>
@@ -1268,6 +1273,7 @@ export default function CheckoutPage() {
                       {relayPoints.map((point) => {
                         const isSelected = relayPointId === point.id;
                         const isExpanded = expandedRelayId === point.id;
+                        const distanceLabel = formatRelayDistance(point.distance);
                         return (
                           <div
                             key={point.id}
@@ -1288,8 +1294,8 @@ export default function CheckoutPage() {
                                   <div className="min-w-0">
                                     <p className="text-xs font-black uppercase tracking-widest text-white truncate">{point.name}</p>
                                     <p className="mt-1 text-[11px] text-gray-400 truncate">{point.address}, {point.postalCode} {point.city}</p>
-                                    {point.distance !== null && (
-                                      <p className="mt-0.5 text-[10px] text-gray-600 uppercase tracking-widest">{point.distance < 1000 ? `${point.distance} m` : `${(point.distance / 1000).toFixed(1)} km`}</p>
+                                    {distanceLabel && (
+                                      <p className="mt-0.5 text-[10px] text-gray-600 tracking-widest">{distanceLabel}</p>
                                     )}
                                   </div>
                                 </div>
@@ -1361,7 +1367,6 @@ export default function CheckoutPage() {
             <div className="space-y-8">
               <div>
                 <h2 className="text-2xl font-black tracking-tighter italic uppercase mb-2">Paiement</h2>
-                <p className="text-xs text-gray-500 uppercase tracking-widest mb-6 flex items-center gap-2"><Lock size={10} />Méthodes calculées selon {countryCode}</p>
 
                 <div className="space-y-3">
                   {methodsLoading && <div className="border border-white/10 bg-[#1c1b1b] p-5 text-xs text-gray-500 uppercase tracking-widest">Chargement des moyens de paiement...</div>}
@@ -1369,15 +1374,30 @@ export default function CheckoutPage() {
                   {!methodsLoading && displayMethods.map((method) => {
                     const config = METHOD_CONFIG[method];
                     const Icon = config.icon;
+                    const branded = hasPaymentBrandLogo(method);
+                    const showPayLater = method === "paypal_4x"
+                      && paypalPayLaterDisplayEnabled && displayMethods.includes("paypal_4x");
                     const active = paymentMethod === method;
                     const surchargePercent = effectiveIsB2B && (method === "card" || method === "paypal")
                       ? b2bSurchargePercents[method] || 0
                       : 0;
                     const surchargePreview = money(discountedGrandTotal * (surchargePercent / 100));
-                    const isRecommended = effectiveIsB2B && method === "paybybank";
+                    const isRecommended = method === "paybybank";
                     return (
                       <button key={method} type="button" onClick={() => setPaymentMethod(method)} className={`w-full text-left border p-5 transition-colors ${active ? "border-[#ff4a8d] bg-[#ff4a8d]/10" : "border-white/10 bg-[#1c1b1b] hover:border-white/25"}`}>
-                        <div className="flex items-center gap-4"><div className={`w-11 h-11 flex items-center justify-center border text-[10px] font-black ${active ? "border-[#ff4a8d] text-[#ff4a8d]" : "border-white/10 text-gray-500"}`}><Icon size={16} /></div><div className="flex-1 min-w-0"><div className="flex items-center justify-between gap-3"><span className="text-sm font-black tracking-widest uppercase">{config.label}</span><span className="text-[10px] font-black tracking-widest text-gray-500 border border-white/10 px-2 py-1">{config.badge}</span></div>{isRecommended ? <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-emerald-300">Recommandé — Sans frais</p> : surchargePercent > 0 ? <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-amber-300">Frais de paiement : +{surchargePercent}% · {formatPrice(surchargePreview)}</p> : null}</div></div>
+                        <div className="flex items-center gap-4">
+                          {branded ? <PaymentBrandLogo method={method} /> : (
+                            <div className={`w-11 h-11 shrink-0 flex items-center justify-center border text-[10px] font-black ${active ? "border-[#ff4a8d] text-[#ff4a8d]" : "border-white/10 text-gray-500"}`}><Icon size={16} /></div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-sm font-black tracking-wide">{config.label}</span>
+                              {config.badge && <span className={`shrink-0 text-[10px] font-black tracking-wide border px-2 py-1 ${isRecommended ? "text-emerald-300 border-emerald-400/30 bg-emerald-400/10" : "text-gray-500 border-white/10"}`}>{config.badge}</span>}
+                            </div>
+                            {showPayLater && <p className="mt-2 text-xs font-bold text-emerald-300">Payez en 4x sans frais<span className="block mt-1 text-[10px] font-normal text-gray-400">Sous réserve d’éligibilité et d’acceptation par PayPal.</span></p>}
+                            {isRecommended ? <p className="mt-2 text-xs leading-relaxed text-gray-300">Simple et rapide : validez le paiement dans l’appli de votre banque, sans saisir de carte.{effectiveIsB2B && " Sans frais de paiement."}</p> : surchargePercent > 0 ? <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-amber-300">Frais de paiement : +{surchargePercent}% · {formatPrice(surchargePreview)}</p> : null}
+                          </div>
+                        </div>
                       </button>
                     );
                   })}
