@@ -23,11 +23,11 @@ services:
       - key: FRONTEND_URL
         value: https://www.barberparadise.fr
       - key: FROM_EMAIL
-        value: noreply@barberparadise.fr
+        value: order@barberparadise.fr
       - key: FROM_NAME
         value: Barber Paradise
       - key: BREVO_SENDER_EMAIL
-        value: noreply@barberparadise.fr
+        value: order@barberparadise.fr
       - key: BREVO_SENDER_NAME
         value: Barber Paradise
       - key: RESEND_API_KEY
@@ -93,11 +93,11 @@ services:
       - key: FRONTEND_URL
         value: http://localhost:3000
       - key: FROM_EMAIL
-        value: noreply@barberparadise.fr
+        value: order@barberparadise.fr
       - key: FROM_NAME
         value: Barber Paradise (Staging)
       - key: BREVO_SENDER_EMAIL
-        value: noreply@barberparadise.fr
+        value: order@barberparadise.fr
       - key: BREVO_SENDER_NAME
         value: Barber Paradise (Staging)
       # ─── PayPal sandbox (garde-fous impératifs) ───────────────────────────

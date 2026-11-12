@@ -20,7 +20,7 @@ import {
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const brevo = process.env.BREVO_API_KEY ? new BrevoClient({ apiKey: process.env.BREVO_API_KEY }) : null;
-const fromEmail = process.env.FROM_EMAIL || process.env.RESEND_FROM_EMAIL || process.env.BREVO_SENDER_EMAIL || "noreply@barberparadise.fr";
+const fromEmail = process.env.FROM_EMAIL || process.env.RESEND_FROM_EMAIL || process.env.BREVO_SENDER_EMAIL || "order@barberparadise.fr";
 const fromName = process.env.FROM_NAME || process.env.BREVO_SENDER_NAME || "Barber Paradise";
 
 type SendEmailParams = {
