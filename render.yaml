@@ -35,23 +35,6 @@ services:
       - key: BREVO_API_KEY
         sync: false
 
-  # ─── Cron Job : Relances paiement quotidiennes ─────────────────────────────
-  # Déclenche POST /api/cron/payment-due-reminders tous les jours à 07:00 UTC
-  # = 09:00 heure de Paris en été (UTC+2).
-  # En hiver (UTC+1, fin octobre → fin mars), l'appel arrive à 08:00 Paris.
-  # Ajuster le schedule à "0 8 * * *" en hiver si l'heure exacte est critique.
-  - type: cron
-    name: bp-payment-reminders
-    runtime: node
-    schedule: "0 7 * * *"
-    buildCommand: echo "No build needed"
-    startCommand: node scripts/trigger-payment-reminders.js
-    envVars:
-      - key: BACKEND_URL
-        value: https://barberparadise-backend.onrender.com
-      - key: CRON_SECRET
-        sync: false
-
 # ─── Service de staging : test PayPal Advanced Checkout v2 ───────────────────
 # Ce service est isolé de la production :
 #   - Base de données séparée (bp-database-staging, tier gratuit)
