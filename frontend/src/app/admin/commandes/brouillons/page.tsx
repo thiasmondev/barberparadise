@@ -26,6 +26,7 @@ import {
 import type { Customer, OrderItem, Product, ProductVariant } from "@/types";
 import { getVariantImage, getVariantImages } from "@/lib/product-images";
 import { lineDiscountFields, orderDiscountFields } from "@/lib/order-discounts";
+import { getAdminDraftLineStockWarning } from "@/lib/admin-draft-stock";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,7 @@ type DraftLine = {
   quantity: number;
   image?: string;
   product?: Product;
+  stockProduct?: Product;
   fallbackPrice?: number;
   lineDiscountType: DiscountType;
   lineDiscountValue: string;
@@ -168,6 +170,7 @@ function draftToForm(draft: AdminOrderDraft): DraftForm {
       quantity: item.quantity,
       image: item.image,
       fallbackPrice: item.price,
+      stockProduct: (item as OrderItem & { product?: Product }).product,
       lineDiscountType: lineDiscountFields(item).lineDiscountType || "fixed",
       lineDiscountValue: lineDiscountFields(item).lineDiscountValue == null ? "" : String(lineDiscountFields(item).lineDiscountValue),
       isCustomItem: Boolean(item.isCustomSale),
@@ -219,6 +222,11 @@ export default function AdminOrderDraftsPage() {
   const [customItemPrice, setCustomItemPrice] = useState("");
   const [customItemVat, setCustomItemVat] = useState("20");
   const [customItemQty, setCustomItemQty] = useState("1");
+
+  const stockWarnings = useMemo(() => form.items.flatMap((line) => {
+    const warning = getAdminDraftLineStockWarning(line, draftVariantsByProductId[line.productId] || []);
+    return warning ? [`${line.name} : ${warning}`] : [];
+  }), [form.items, draftVariantsByProductId]);
 
   const totals = useMemo(() => {
     const subtotal = form.items.reduce((sum, line) => sum + lineGrossTotal(line, form.isB2B), 0);
@@ -424,6 +432,10 @@ export default function AdminOrderDraftsPage() {
   }
 
   async function saveDraft() {
+    if (stockWarnings.length) {
+      setError(stockWarnings.join(" "));
+      return;
+    }
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -443,6 +455,10 @@ export default function AdminOrderDraftsPage() {
 
   async function sendDraftEmail(draftId = editingId, overrideEmail?: string) {
     if (!draftId) return;
+    if (draftId === editingId && stockWarnings.length) {
+      setError(stockWarnings.join(" "));
+      return;
+    }
 
     // Si pas d'overrideEmail, vérifier si le client a des emails secondaires
     if (!overrideEmail) {
@@ -726,6 +742,7 @@ export default function AdminOrderDraftsPage() {
   {form.items.length === 0 ? <div className="p-6 text-center text-sm text-gray-500">Ajoutez au moins un produit au brouillon.</div> : form.items.map((line, index) => {
                   const lineKey = `${line.productId}:${line.variantId ?? ""}`;
                   const availableVariants = line.isCustomItem ? [] : (draftVariantsByProductId[line.productId] || []);
+                  const stockWarning = getAdminDraftLineStockWarning(line, availableVariants);
                   return (
                   <div key={`${lineKey}:${index}`} className="grid gap-3 p-3 sm:grid-cols-[1fr_95px_190px_120px_36px] sm:items-center">
                     <div className="flex min-w-0 items-center gap-3">
@@ -733,6 +750,7 @@ export default function AdminOrderDraftsPage() {
                       <div className="min-w-0">
                         <p className="truncate font-medium">{line.name}{line.isCustomItem && <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-700">Personnalisé</span>}</p>
                         <span className="text-sm text-gray-500">{form.isB2B ? "HT" : "TTC"} : {eur(lineGrossTotal(line, form.isB2B) / line.quantity)}</span>
+                        {stockWarning && <p role="alert" className="mt-2 text-xs font-semibold text-amber-800">{stockWarning}</p>}
                         {availableVariants.length > 0 && (
                           <div className="mt-2">
                             <label className="mb-1 block text-xs font-medium text-gray-600">Variante <span className="text-red-600">*</span></label>
@@ -783,6 +801,7 @@ export default function AdminOrderDraftsPage() {
 
           <aside className="h-fit rounded-xl border border-gray-100 bg-white p-4 lg:sticky lg:top-6">
             <h2 className="font-semibold text-dark-800">Résumé Shopify-like</h2>
+            {stockWarnings.length > 0 && <div role="alert" className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">Stock à vérifier : corrigez les lignes signalées avant d’enregistrer ou d’envoyer. Les prix et remises ne sont pas modifiés.</div>}
             <label className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 p-3 text-sm"><span><strong className="block">Paiement ultérieur</strong><span className="text-gray-500">La commande sera en attente de paiement.</span></span><input type="checkbox" checked={form.paymentLater} onChange={(event) => setForm({ ...form, paymentLater: event.target.checked })} className="h-5 w-5" /></label>
             <label className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm"><span><strong className="block text-amber-900">Déjà remis en main propre / Retrait en magasin</strong><span className="text-amber-700">Aucune livraison n’est nécessaire. Le client ne verra pas l’étape de livraison.</span></span><input type="checkbox" checked={form.noShipping} onChange={(event) => setForm({ ...form, noShipping: event.target.checked, shipping: event.target.checked ? "0" : form.shipping })} className="h-5 w-5 accent-amber-600" /></label>
             {!form.noShipping && (

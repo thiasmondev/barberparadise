@@ -31,6 +31,15 @@ import {
   type ProfessionalPricingResolution,
 } from "../services/b2bPricingService";
 import { buildTrackedCartSnapshot, cartHasItemSnapshot } from "../services/customerCartService";
+import {
+  assertCheckoutStockAvailable,
+  CheckoutStockError,
+  normalizeAvailableStock,
+  resolveCheckoutStock,
+  type CheckoutStockLine,
+  type CheckoutStockIssue,
+  type StockCatalogProduct,
+} from "../services/checkoutStockService";
 
 export const checkoutRouter = Router();
 
@@ -86,6 +95,9 @@ type CheckoutRequestBody = {
   promoCode?: string;
   cartSessionId?: string;
   draftToken?: string;
+  /** Optimistic quote comparison only, never an authoritative checkout amount. */
+  expectedTotalTTC?: number;
+  expectedBaseTotalTTC?: number;
   // Point relais Mondial Relay sélectionné au checkout
   relayPointId?: string;
   relayPointName?: string;
@@ -147,6 +159,30 @@ function calculateCheckoutPaymentFee(params: {
     // ne peut modifier le montant déjà calculé pour les lignes et la livraison.
     totalWithFeeTTC: money(baseTotalTTC + surcharge.feeTTC),
   };
+}
+
+class CheckoutQuoteChangedError extends Error {
+  readonly code = "PAYMENT_QUOTE_CHANGED";
+  constructor(readonly currentQuote: ReturnType<typeof checkoutAmountQuote>) {
+    super("Le montant a été mis à jour. Vérifiez le total puis confirmez à nouveau.");
+    this.name = "CheckoutQuoteChangedError";
+  }
+}
+
+function assertExpectedCheckoutAmounts(
+  body: Pick<CheckoutRequestBody, "expectedTotalTTC" | "expectedBaseTotalTTC">,
+  amounts: Parameters<typeof checkoutAmountQuote>[0],
+): void {
+  const comparisons: Array<[number | undefined, number]> = [[body.expectedTotalTTC, amounts.totalTTC], [body.expectedBaseTotalTTC, amounts.baseTotalTTC]];
+  for (const [expected, actual] of comparisons) {
+    if (expected === undefined) continue;
+    if (typeof expected !== "number" || !Number.isFinite(expected) || expected < 0) {
+      throw new CheckoutQuoteChangedError(checkoutAmountQuote(amounts));
+    }
+    if (Math.round((expected + Number.EPSILON) * 100) !== Math.round((actual + Number.EPSILON) * 100)) {
+      throw new CheckoutQuoteChangedError(checkoutAmountQuote(amounts));
+    }
+  }
 }
 
 function normalizePromoCode(code: string): string {
@@ -274,6 +310,8 @@ function normalizeDraftItemsSignature(items: Array<{ productId: string | null; v
 
 type ResolvedCheckoutBasket = {
   pricing: ProfessionalPricingResolution;
+  stockLines: CheckoutStockLine[];
+  stockIssues: CheckoutStockIssue[];
   orderItems: Array<{
     productId: string | null;
     variantId: string | null;
@@ -294,17 +332,20 @@ type ResolvedCheckoutBasket = {
 
 /**
  * Single pricing boundary for both redirect and popup checkout flows. It
- * validates live catalogue data before selecting a tariff. A selected variant
+ * prices the requested composition, independently of stock constraints. A selected variant
  * only qualifies through its own professional price, never its parent’s.
+ * Payments require stock; previews expose constraints without clamping or losing tariff.
  */
 async function resolveCheckoutBasket(params: {
   cartItems: CheckoutCartItem[];
   isB2B: boolean;
   country: string;
   vatNumber?: string | null;
+  stockMode?: "preview" | "payment";
 }): Promise<ResolvedCheckoutBasket> {
   const vatRate = getVatRate(params.country, params.isB2B, params.vatNumber || undefined);
   const promotionData = await getActiveAutomaticProductPromotions();
+  const stockProducts: StockCatalogProduct[] = [];
   const resolvedRaw: Array<{
     item: CheckoutCartItem;
     productId: string | null;
@@ -352,25 +393,14 @@ async function resolveCheckoutBasket(params: {
       throw new Error(`Produit indisponible : ${productId}`);
     }
     const selectedVariant = variantId ? product.variants.find((variant) => variant.id === variantId) : null;
-    if (product.variants.length > 0 && !selectedVariant) {
+    if ((variantId || product.variants.length > 0) && !selectedVariant) {
       const error = new Error(`L’article ${product.name} est incomplet dans votre panier. Retirez-le puis ajoutez-le à nouveau depuis sa fiche produit avec une variante.`) as Error & { code?: string; productId?: string; productName?: string };
       error.code = "VARIANT_SELECTION_REQUIRED";
       error.productId = product.id;
       error.productName = product.name;
       throw error;
     }
-    if (selectedVariant) {
-      if (!selectedVariant.inStock || selectedVariant.stock <= 0) {
-        throw new Error(`Variante indisponible : ${product.name} - ${selectedVariant.name}`);
-      }
-      if (selectedVariant.stock < item.quantity) {
-        throw new Error(`Stock insuffisant pour ${product.name} - ${selectedVariant.name}`);
-      }
-    } else {
-      if (!product.inStock) throw new Error(`Produit indisponible : ${product.name}`);
-      if (product.stockCount !== null && product.stockCount <= 0) throw new Error(`Produit hors-stock : ${product.name}`);
-      if (product.stockCount !== null && product.stockCount < item.quantity) throw new Error(`Stock insuffisant pour ${product.name}`);
-    }
+    stockProducts.push(product);
 
     const publicUnitTTC = selectedVariant?.price ?? product.price;
     const automaticPromotion = !params.isB2B
@@ -401,6 +431,13 @@ async function resolveCheckoutBasket(params: {
       ownProfessionalUnitHT: line.ownProfessionalUnitHT,
     })),
   });
+  const stock = resolveCheckoutStock(resolvedRaw.map((line) => ({
+    productId: line.productId,
+    variantId: line.variantId,
+    quantity: line.item.quantity,
+    isCustomSale: line.isCustomSale,
+  })), stockProducts);
+  if (params.stockMode !== "preview") assertCheckoutStockAvailable(stock.stockIssues);
 
   const orderItems = resolvedRaw.map((line, index) => {
     const applied = pricing.lines[index];
@@ -425,6 +462,8 @@ async function resolveCheckoutBasket(params: {
 
   return {
     pricing,
+    stockLines: stock.items,
+    stockIssues: stock.stockIssues,
     orderItems,
     promotionCartItems: resolvedRaw
       .map((line, index) => ({ line, index }))
@@ -444,48 +483,100 @@ async function resolveCheckoutBasket(params: {
  * Un brouillon peut être préparé sans stock disponible, mais le stock est vérifié
  * à nouveau juste avant la création d’un paiement afin d’éviter toute vente non livrable.
  */
-async function assertDraftItemsAvailableForPayment(items: Array<{
+async function resolveDraftStock(items: Array<{
   productId: string | null;
   variantId: string | null;
   quantity: number;
   isCustomSale?: boolean;
-}>): Promise<void> {
-  const catalogItems = items.filter((item) => !item.isCustomSale && item.productId && Number.isInteger(item.quantity) && item.quantity > 0);
-  if (catalogItems.length === 0) return;
-
-  const products = await prisma.product.findMany({
+}>): Promise<ReturnType<typeof resolveCheckoutStock>> {
+  const catalogItems = items.filter((item) => !item.isCustomSale && item.productId);
+  const products = catalogItems.length ? await prisma.product.findMany({
     where: { id: { in: [...new Set(catalogItems.map((item) => item.productId!))] } },
     include: { variants: true },
+  }) : [];
+  return resolveCheckoutStock(items, products);
+}
+
+async function assertDraftItemsAvailableForPayment(items: Parameters<typeof resolveDraftStock>[0]): Promise<void> {
+  const stock = await resolveDraftStock(items);
+  assertCheckoutStockAvailable(stock.stockIssues);
+}
+
+/** Same token/composition boundary for preview and both creation flows. */
+async function resolveCheckoutDraft(body: { draftToken?: string; cartItems?: CheckoutCartItem[] }) {
+  const token = typeof body.draftToken === "string" ? body.draftToken.trim() : "";
+  if (!token) return null;
+  const draft = await prisma.order.findFirst({
+    where: {
+      status: "draft",
+      draftShareTokenHash: hashDraftShareToken(token),
+      draftShareExpiresAt: { gt: new Date() },
+      draftShareConvertedAt: null,
+    },
+    include: { items: true, shipment: true },
   });
-  const productsById = new Map(products.map((product) => [product.id, product]));
+  // Also check in memory: no stale/converted offer can enter the preview.
+  if (!draft || !draft.draftShareExpiresAt || draft.draftShareExpiresAt <= new Date() || draft.draftShareConvertedAt) return null;
+  return draft;
+}
 
-  for (const item of catalogItems) {
-    const product = productsById.get(item.productId!);
-    if (!product || product.status !== "active" || !product.inStock) {
-      throw new Error(`Produit indisponible : ${product?.name || item.productId}`);
-    }
+function usesFrozenDraft(draft: NonNullable<Awaited<ReturnType<typeof resolveCheckoutDraft>>>, cartItems: CheckoutCartItem[]): boolean {
+  return normalizeCheckoutItemsSignature(cartItems) === normalizeDraftItemsSignature(draft.items);
+}
 
-    const selectedVariant = item.variantId ? product.variants.find((variant) => variant.id === item.variantId) : null;
-    if (product.variants.length > 0 && !selectedVariant) {
-      throw new Error(`La variante sélectionnée n’est plus disponible pour ${product.name}.`);
-    }
-    if (selectedVariant) {
-      if (!selectedVariant.inStock || selectedVariant.stock <= 0) {
-        throw new Error(`Variante indisponible : ${product.name} - ${selectedVariant.name}`);
-      }
-      if (selectedVariant.stock < item.quantity) {
-        throw new Error(`Stock insuffisant pour ${product.name} - ${selectedVariant.name}`);
-      }
-      continue;
-    }
+function resolveFrozenDraftAmounts(draft: NonNullable<Awaited<ReturnType<typeof resolveCheckoutDraft>>>, method: PaymentMethod) {
+  const baseTotalTTC = money(draft.totalTTC ?? draft.total);
+  const paymentFee = calculateCheckoutPaymentFee({ isB2B: draft.isB2B, method, totalTTC: baseTotalTTC });
+  return {
+    baseTotalTTC,
+    paymentFee,
+    totalHT: money(draft.totalHT + paymentFee.feeHT),
+    vatAmount: money(draft.vatAmount + paymentFee.feeVatAmount),
+    totalTTC: paymentFee.totalWithFeeTTC,
+  };
+}
 
-    if (product.stockCount !== null && product.stockCount <= 0) {
-      throw new Error(`Produit hors-stock : ${product.name}`);
-    }
-    if (product.stockCount !== null && product.stockCount < item.quantity) {
-      throw new Error(`Stock insuffisant pour ${product.name}`);
-    }
-  }
+/** Canonical catalogue totals: one rounding path for quote, Mollie and PayPal. */
+async function resolveCatalogCheckout(params: {
+  body: Pick<CheckoutRequestBody, "cartItems" | "paymentMethod" | "shippingOptionId" | "promoCode" | "customerId"> & { customerEmail?: string };
+  isB2B: boolean;
+  country: string;
+  vatNumber?: string;
+  postalCode?: string;
+  stockMode?: "preview" | "payment";
+}) {
+  const { body, isB2B, country, vatNumber } = params;
+  const basket = await resolveCheckoutBasket({ cartItems: body.cartItems, isB2B, country, vatNumber, stockMode: params.stockMode });
+  const { subtotalHT, subtotalTTC, promotionCartItems } = basket;
+  const shippingOptions = await calculateShippingOptions(country, isB2B ? subtotalHT : subtotalTTC, isB2B, params.postalCode);
+  const selectedShippingOption = shippingOptions.find((option) => option.id === body.shippingOptionId) || shippingOptions[0];
+  if (!selectedShippingOption) throw new Error("Aucune option de livraison disponible pour ce pays");
+  const shipping = selectedShippingOption.price;
+  const promoResolution = await resolveCheckoutPromotion({
+    code: body.promoCode,
+    baseAmount: isB2B ? subtotalHT : subtotalTTC,
+    shipping,
+    cartItems: promotionCartItems,
+    customerId: body.customerId,
+    customerEmail: body.customerEmail || "",
+    customerType: isB2B ? "b2b" : "b2c",
+  });
+  const discountAmount = promoResolution.discountAmount;
+  const shippingDiscount = promoResolution.discountType === "free_shipping" ? Math.min(shipping, discountAmount) : 0;
+  const productDiscount = promoResolution.discountType === "free_shipping" ? 0 : discountAmount;
+  const chargedShipping = money(Math.max(0, shipping - shippingDiscount));
+  const baseTotalHT = money(isB2B ? Math.max(0, subtotalHT - productDiscount) : subtotalHT);
+  const vatRate = getVatRate(country, isB2B, vatNumber);
+  const baseVatAmount = money(baseTotalHT * (vatRate / 100));
+  const baseTotalTTC = money(Math.max(0, baseTotalHT + baseVatAmount + chargedShipping - (isB2B ? 0 : productDiscount)));
+  const paymentFee = calculateCheckoutPaymentFee({ isB2B, method: body.paymentMethod, totalTTC: baseTotalTTC });
+  return {
+    basket, selectedShippingOption, promoResolution, discountAmount, chargedShipping,
+    baseTotalTTC, vatRate, paymentFee,
+    totalHT: money(baseTotalHT + paymentFee.feeHT),
+    vatAmount: money(baseVatAmount + paymentFee.feeVatAmount),
+    totalTTC: paymentFee.totalWithFeeTTC,
+  };
 }
 
 function getBackendUrl(req: Request): string {
@@ -742,6 +833,7 @@ checkoutRouter.get("/pricing-quote", async (req: Request, res: Response): Promis
       isB2B,
       country,
       vatNumber,
+      stockMode: "preview",
     });
     const vatRate = getVatRate(country, isB2B, vatNumber);
     res.setHeader("Cache-Control", "no-store");
@@ -752,7 +844,8 @@ checkoutRouter.get("/pricing-quote", async (req: Request, res: Response): Promis
       qualifyingSubtotalHT: basket.pricing.qualifyingSubtotalHT,
       remainingHT: basket.pricing.remainingHT,
       progressPercent: basket.pricing.progressPercent,
-      items: basket.pricing.lines,
+      items: basket.pricing.lines.map((line, index) => ({ ...line, ...basket.stockLines[index] })),
+      stockIssues: basket.stockIssues,
       subtotalHT: basket.subtotalHT,
       subtotalTTC: basket.subtotalTTC,
       vatRate,
@@ -784,6 +877,75 @@ checkoutRouter.post("/promo/validate", async (req: Request, res: Response): Prom
   }
 });
 
+/** Read-only quote. Never trusts a browser amount or creates/converts an order. */
+checkoutRouter.post("/payment-quote", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const body = req.body as CheckoutRequestBody;
+    assertSupportedPaymentMethod(body.paymentMethod);
+    if (body.customerEmail !== undefined) body.customerEmail = normalizeEmailAddress(body.customerEmail);
+    const shippingAddress = body.shippingAddress ? normalizeShippingAddressContact(body.shippingAddress) : undefined;
+    const country = normalizeCountry(shippingAddress?.country || "FR");
+    const draft = await resolveCheckoutDraft(body);
+    // The token grants preview of this frozen offer only, not professional catalogue access.
+    if (draft && (!body.cartItems || (Array.isArray(body.cartItems) && usesFrozenDraft(draft, body.cartItems)))) {
+      if (!getAvailableMethods(country, draft.isB2B).includes(body.paymentMethod)) {
+        res.status(400).json({ error: "Méthode non disponible pour ce pays/profil" });
+        return;
+      }
+      const amounts = resolveFrozenDraftAmounts(draft, body.paymentMethod);
+      const stock = await resolveDraftStock(draft.items);
+      res.setHeader("Cache-Control", "no-store");
+      res.json({
+        source: "draft", currency: CURRENCY, paymentMethod: body.paymentMethod,
+        isB2B: draft.isB2B, pricingTier: draft.pricingTier || (draft.isB2B ? "pro" : "retail"),
+        ...checkoutAmountQuote(amounts), items: stock.items, stockIssues: stock.stockIssues,
+      });
+      return;
+    }
+    if (!Array.isArray(body.cartItems) || !body.cartItems.length) {
+      res.status(400).json({ error: "Panier requis pour calculer le devis" });
+      return;
+    }
+    // Preserve the actual creation flow's current profile boundary (identity audit is a separate lot).
+    const proAccount = body.customerId ? await prisma.proAccount.findUnique({ where: { customerId: body.customerId } }) : null;
+    const isB2B = proAccount?.status === "approved";
+    if (body.isB2B && !isB2B) {
+      res.status(403).json({ error: "Compte professionnel non approuvé" });
+      return;
+    }
+    if (!getAvailableMethods(country, isB2B).includes(body.paymentMethod)) {
+      res.status(400).json({ error: "Méthode non disponible pour ce pays/profil" });
+      return;
+    }
+    const vatNumber = typeof body.vatNumber === "string" ? body.vatNumber.trim().toUpperCase() : proAccount?.vatNumber || undefined;
+    const amounts = await resolveCatalogCheckout({ body, isB2B, country, vatNumber, postalCode: shippingAddress?.postalCode, stockMode: "preview" });
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      source: "catalog", currency: CURRENCY, paymentMethod: body.paymentMethod,
+      isB2B, pricingTier: amounts.basket.pricing.pricingTier,
+      ...checkoutAmountQuote(amounts),
+      items: amounts.basket.pricing.lines.map((line, index) => ({ ...line, ...amounts.basket.stockLines[index] })),
+      stockIssues: amounts.basket.stockIssues,
+    });
+  } catch (err) {
+    const error = err as Error & { code?: string; productId?: string; productName?: string };
+    res.status(400).json({ error: error.message || "Impossible de calculer le devis", ...(error.code ? { code: error.code, productId: error.productId, productName: error.productName } : {}) });
+  }
+});
+
+function checkoutAmountQuote(amounts: { baseTotalTTC: number; paymentFee: CheckoutPaymentFee; totalHT: number; vatAmount: number; totalTTC: number }) {
+  return {
+    baseTotalTTC: amounts.baseTotalTTC,
+    paymentFeeTTC: amounts.paymentFee.feeTTC,
+    totalTTC: amounts.totalTTC,
+    paymentFeePercent: amounts.paymentFee.percent,
+    paymentFeeHT: amounts.paymentFee.feeHT,
+    paymentFeeVatRate: amounts.paymentFee.feeVatRate,
+    paymentFeeVatAmount: amounts.paymentFee.feeVatAmount,
+    totalHT: amounts.totalHT,
+    vatAmount: amounts.vatAmount,
+  };
+}
 
 checkoutRouter.get("/draft/:token", async (req: Request, res: Response): Promise<void> => {
   try {
@@ -794,7 +956,6 @@ checkoutRouter.get("/draft/:token", async (req: Request, res: Response): Promise
     }
 
     const tokenHash = hashDraftShareToken(token);
-    const { promotions, categoryTargets } = await getActiveAutomaticProductPromotions();
     const draft = await prisma.order.findFirst({
       where: {
         status: "draft",
@@ -816,8 +977,12 @@ checkoutRouter.get("/draft/:token", async (req: Request, res: Response): Promise
       data: { draftShareLastAccessedAt: new Date() },
     });
 
+    const stock = resolveCheckoutStock(draft.items, draft.items.flatMap((item) => item.product ? [item.product] : []));
+    res.setHeader("Cache-Control", "no-store");
     res.json({
+      stockIssues: stock.stockIssues,
       draft: {
+        stockIssues: stock.stockIssues,
         orderNumber: draft.orderNumber,
         email: draft.email || draft.customerEmail,
         expiresAt: draft.draftShareExpiresAt,
@@ -825,25 +990,26 @@ checkoutRouter.get("/draft/:token", async (req: Request, res: Response): Promise
         noShipping: draft.noShipping,
         subtotal: draft.subtotal,
         shipping: draft.shipping,
-        total: draft.totalTTC || draft.total,
+        total: draft.totalTTC ?? draft.total,
         totalHT: draft.totalHT,
         vatRate: draft.vatRate,
         vatAmount: draft.vatAmount,
-        totalTTC: draft.totalTTC || draft.total,
+        totalTTC: draft.totalTTC ?? draft.total,
         discountAmount: draft.discountAmount,
         orderDiscountType: draft.orderDiscountType,
         orderDiscountValue: draft.orderDiscountValue,
         discountTotal: draft.discountTotal,
         shippingAddress: draft.shippingAddress,
-        items: draft.items.map((item) => {
+        items: draft.items.map((item, index) => {
           const images = parseProductImages(item.product?.images);
           return {
+            ...stock.items[index],
             id: item.productId || item.id,
             productId: item.productId,
             variantId: item.variantId,
             variantLabel: item.variantLabel,
             name: item.name,
-            price: getBestAutomaticPromotionForProduct(item.product as any, item.price, promotions, categoryTargets, draft.isB2B)?.price ?? item.price,
+            price: item.price,
             quantity: item.quantity,
             discountAmount: item.discountAmount,
             lineDiscountType: item.lineDiscountType,
@@ -862,10 +1028,10 @@ checkoutRouter.get("/draft/:token", async (req: Request, res: Response): Promise
               color: variant.color || "",
               colorHex: variant.colorHex || "",
               size: variant.size || "",
-              price: getBestAutomaticPromotionForProduct(item.product as any, variant.price ?? item.product?.price ?? item.price, promotions, categoryTargets, draft.isB2B)?.price ?? variant.price,
+              price: variant.id === item.variantId ? item.price : variant.price,
               priceProEur: variant.priceProEur,
               pricePublic: variant.price ?? item.product?.price ?? item.price,
-              stock: variant.stock,
+              stock: normalizeAvailableStock(variant.inStock, variant.stock),
               inStock: variant.inStock,
               sku: variant.sku || "",
               image: variant.image || "",
@@ -1158,33 +1324,15 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const draftTokenValue = typeof body.draftToken === "string" ? body.draftToken.trim() : "";
-    const draftTokenHash = draftTokenValue ? hashDraftShareToken(draftTokenValue) : "";
-    const checkoutDraft = draftTokenHash
-      ? await prisma.order.findFirst({
-          where: {
-            status: "draft",
-            draftShareTokenHash: draftTokenHash,
-            draftShareExpiresAt: { gt: new Date() },
-            draftShareConvertedAt: null,
-          },
-          include: { items: true, shipment: true },
-        })
-      : null;
-    const shouldUseDraftPricing = Boolean(
-      checkoutDraft && normalizeCheckoutItemsSignature(body.cartItems) === normalizeDraftItemsSignature(checkoutDraft.items),
-    );
+    const checkoutDraft = await resolveCheckoutDraft(body);
+    const shouldUseDraftPricing = Boolean(checkoutDraft && usesFrozenDraft(checkoutDraft, body.cartItems));
 
     if (checkoutDraft && shouldUseDraftPricing) {
       await assertDraftItemsAvailableForPayment(checkoutDraft.items);
       const provider = getProvider(body.paymentMethod, country);
-      const draftBaseTotalTTC = money(checkoutDraft.totalTTC || checkoutDraft.total);
-      const paymentFee = calculateCheckoutPaymentFee({
-        isB2B: checkoutDraft.isB2B,
-        method: body.paymentMethod,
-        totalTTC: draftBaseTotalTTC,
-      });
-      const orderTotalTTC = paymentFee.totalWithFeeTTC;
+      const draftAmounts = resolveFrozenDraftAmounts(checkoutDraft, body.paymentMethod);
+      const { baseTotalTTC: draftBaseTotalTTC, paymentFee, totalTTC: orderTotalTTC } = draftAmounts;
+      assertExpectedCheckoutAmounts(body, draftAmounts);
       const isNoShipping = Boolean(checkoutDraft.noShipping);
       const draftPostalCode = shippingAddress?.postalCode || undefined;
       const draftShippingOptions = isNoShipping ? [] : await calculateShippingOptions(country, checkoutDraft.isB2B ? checkoutDraft.subtotal : Math.max(0, draftBaseTotalTTC - checkoutDraft.shipping), checkoutDraft.isB2B, draftPostalCode);
@@ -1224,9 +1372,9 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
           subtotal: checkoutDraft.subtotal,
           shipping: checkoutDraft.shipping,
           total: orderTotalTTC,
-          totalHT: money(checkoutDraft.totalHT + paymentFee.feeHT),
+          totalHT: draftAmounts.totalHT,
           vatRate: checkoutDraft.vatRate,
-          vatAmount: money(checkoutDraft.vatAmount + paymentFee.feeVatAmount),
+          vatAmount: draftAmounts.vatAmount,
           totalTTC: orderTotalTTC,
           paymentFeePercent: paymentFee.percent,
           paymentFeeHT: paymentFee.feeHT,
@@ -1337,42 +1485,10 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const basket = await resolveCheckoutBasket({
-      cartItems: body.cartItems,
-      isB2B,
-      country,
-      vatNumber,
-    });
-    const { orderItems, promotionCartItems, subtotalHT, subtotalTTC } = basket;
-
-    const shippingOptions = await calculateShippingOptions(country, isB2B ? subtotalHT : subtotalTTC, isB2B, shippingAddress?.postalCode);
-    const selectedShippingOption = shippingOptions.find((option) => option.id === body.shippingOptionId) || shippingOptions[0];
-    if (!selectedShippingOption) {
-      res.status(400).json({ error: "Aucune option de livraison disponible pour ce pays" });
-      return;
-    }
-    const shipping = selectedShippingOption.price;
-    const promoResolution = await resolveCheckoutPromotion({
-      code: body.promoCode,
-      baseAmount: isB2B ? subtotalHT : subtotalTTC,
-      shipping,
-      cartItems: promotionCartItems,
-      customerId: body.customerId,
-      customerEmail: body.customerEmail,
-      customerType: isB2B ? "b2b" : "b2c",
-    });
-    const discountAmount = promoResolution.discountAmount;
-    const shippingDiscount = promoResolution.discountType === "free_shipping" ? Math.min(shipping, discountAmount) : 0;
-    const productDiscount = promoResolution.discountType === "free_shipping" ? 0 : discountAmount;
-    const chargedShipping = money(Math.max(0, shipping - shippingDiscount));
-    const baseTotalHT = money(isB2B ? Math.max(0, subtotalHT - productDiscount) : subtotalHT);
-    const vatRate = getVatRate(country, isB2B, vatNumber);
-    const baseVatAmount = money(baseTotalHT * (vatRate / 100));
-    const baseTotalTTC = money(Math.max(0, baseTotalHT + baseVatAmount + chargedShipping - (isB2B ? 0 : productDiscount)));
-    const paymentFee = calculateCheckoutPaymentFee({ isB2B, method: body.paymentMethod, totalTTC: baseTotalTTC });
-    const totalHT = money(baseTotalHT + paymentFee.feeHT);
-    const vatAmount = money(baseVatAmount + paymentFee.feeVatAmount);
-    const totalTTC = paymentFee.totalWithFeeTTC;
+    const amounts = await resolveCatalogCheckout({ body, isB2B, country, vatNumber, postalCode: shippingAddress?.postalCode });
+    const { basket, selectedShippingOption, promoResolution, discountAmount, chargedShipping, vatRate, paymentFee, totalHT, vatAmount, totalTTC } = amounts;
+    assertExpectedCheckoutAmounts(body, amounts);
+    const { orderItems, subtotalHT, subtotalTTC } = basket;
     const provider = getProvider(body.paymentMethod, country);
 
     // --- DÉTECTION DE DOUBLON (FLUX STANDARD) ---
@@ -1507,6 +1623,14 @@ checkoutRouter.post("/initiate", async (req: Request, res: Response): Promise<vo
     res.status(201).json({ orderId: order.id, orderNumber: order.orderNumber, checkoutUrl: checkout.checkoutUrl, provider, discountAmount });
   } catch (err) {
     console.error("Erreur initialisation checkout", err);
+    if (err instanceof CheckoutQuoteChangedError) {
+      res.status(409).json({ error: err.message, code: err.code, ...err.currentQuote });
+      return;
+    }
+    if (err instanceof CheckoutStockError) {
+      res.status(409).json({ error: err.message, code: err.code, stockIssues: err.stockIssues });
+      return;
+    }
     const message = err instanceof Error ? err.message : "Erreur initialisation paiement";
     // Détecter les erreurs PayPal 4x liées à l'éligibilité Pay Later pour afficher un message clair au client
     // Note: body est dans le scope try, on utilise req.body directement dans le catch
@@ -1686,22 +1810,8 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
     }
 
     // Résolution du brouillon (même logique que /initiate)
-    const draftTokenValue = typeof body.draftToken === "string" ? body.draftToken.trim() : "";
-    const draftTokenHash = draftTokenValue ? hashDraftShareToken(draftTokenValue) : "";
-    const checkoutDraft = draftTokenHash
-      ? await prisma.order.findFirst({
-          where: {
-            status: "draft",
-            draftShareTokenHash: draftTokenHash,
-            draftShareExpiresAt: { gt: new Date() },
-            draftShareConvertedAt: null,
-          },
-          include: { items: true, shipment: true },
-        })
-      : null;
-    const shouldUseDraftPricing = Boolean(
-      checkoutDraft && normalizeCheckoutItemsSignature(body.cartItems) === normalizeDraftItemsSignature(checkoutDraft.items),
-    );
+    const checkoutDraft = await resolveCheckoutDraft(body);
+    const shouldUseDraftPricing = Boolean(checkoutDraft && usesFrozenDraft(checkoutDraft, body.cartItems));
 
     let orderId: string;
     let orderNumber: string;
@@ -1711,13 +1821,9 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
     if (checkoutDraft && shouldUseDraftPricing) {
       await assertDraftItemsAvailableForPayment(checkoutDraft.items);
       // Flux brouillon
-      const draftBaseTotalTTC = money(checkoutDraft.totalTTC || checkoutDraft.total);
-      const paymentFee = calculateCheckoutPaymentFee({
-        isB2B: checkoutDraft.isB2B,
-        method: body.paymentMethod,
-        totalTTC: draftBaseTotalTTC,
-      });
-      const orderTotalTTC = paymentFee.totalWithFeeTTC;
+      const draftAmounts = resolveFrozenDraftAmounts(checkoutDraft, body.paymentMethod);
+      const { baseTotalTTC: draftBaseTotalTTC, paymentFee, totalTTC: orderTotalTTC } = draftAmounts;
+      assertExpectedCheckoutAmounts(body, draftAmounts);
       totalTTC = orderTotalTTC;
       discountAmount = checkoutDraft.discountTotal || 0;
 
@@ -1751,9 +1857,9 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
             subtotal: checkoutDraft.subtotal,
             shipping: checkoutDraft.shipping,
             total: orderTotalTTC,
-            totalHT: money(checkoutDraft.totalHT + paymentFee.feeHT),
+            totalHT: draftAmounts.totalHT,
             vatRate: checkoutDraft.vatRate,
-            vatAmount: money(checkoutDraft.vatAmount + paymentFee.feeVatAmount),
+            vatAmount: draftAmounts.vatAmount,
             totalTTC: orderTotalTTC,
             paymentFeePercent: paymentFee.percent,
             paymentFeeHT: paymentFee.feeHT,
@@ -1786,31 +1892,12 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
       orderNumber = order.orderNumber;
     } else {
       // Flux standard : même résolution autoritaire que le checkout par redirection.
-      const basket = await resolveCheckoutBasket({
-        cartItems: body.cartItems,
-        isB2B,
-        country,
-        vatNumber,
-      });
-      const { orderItems, promotionCartItems, subtotalHT, subtotalTTC } = basket;
-
-      const shippingOptions = await calculateShippingOptions(country, isB2B ? subtotalHT : subtotalTTC, isB2B, shippingAddress?.postalCode);
-      const selectedShippingOption = shippingOptions.find((o) => o.id === body.shippingOptionId) || shippingOptions[0];
-      if (!selectedShippingOption) { res.status(400).json({ error: "Aucune option de livraison disponible" }); return; }
-      const shipping = selectedShippingOption.price;
-      const promoResolution = await resolveCheckoutPromotion({ code: body.promoCode, baseAmount: isB2B ? subtotalHT : subtotalTTC, shipping, cartItems: promotionCartItems, customerId: body.customerId, customerEmail: body.customerEmail, customerType: isB2B ? "b2b" : "b2c" });
-      discountAmount = promoResolution.discountAmount;
-      const shippingDiscount = promoResolution.discountType === "free_shipping" ? Math.min(shipping, discountAmount) : 0;
-      const productDiscount = promoResolution.discountType === "free_shipping" ? 0 : discountAmount;
-      const chargedShipping = money(Math.max(0, shipping - shippingDiscount));
-      const baseTotalHT = money(isB2B ? Math.max(0, subtotalHT - productDiscount) : subtotalHT);
-      const vatRate = getVatRate(country, isB2B, vatNumber);
-      const baseVatAmount = money(baseTotalHT * (vatRate / 100));
-      const baseTotalTTC = money(Math.max(0, baseTotalHT + baseVatAmount + chargedShipping - (isB2B ? 0 : productDiscount)));
-      const paymentFee = calculateCheckoutPaymentFee({ isB2B, method: body.paymentMethod, totalTTC: baseTotalTTC });
-      const totalHT = money(baseTotalHT + paymentFee.feeHT);
-      const vatAmount = money(baseVatAmount + paymentFee.feeVatAmount);
-      totalTTC = paymentFee.totalWithFeeTTC;
+      const amounts = await resolveCatalogCheckout({ body, isB2B, country, vatNumber, postalCode: shippingAddress?.postalCode });
+      const { basket, selectedShippingOption, promoResolution, chargedShipping, vatRate, paymentFee, totalHT, vatAmount } = amounts;
+      assertExpectedCheckoutAmounts(body, amounts);
+      const { orderItems, subtotalHT, subtotalTTC } = basket;
+      discountAmount = amounts.discountAmount;
+      totalTTC = amounts.totalTTC;
 
       const recentPendingOrder = await prisma.order.findFirst({ where: { customerEmail: body.customerEmail, totalTTC, status: "pending", createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) } }, include: { items: true }, orderBy: { createdAt: "desc" } });
       let order;
@@ -1893,6 +1980,14 @@ checkoutRouter.post("/paypal/v2/create-order", async (req: Request, res: Respons
     res.status(201).json({ orderId, orderNumber, paypalOrderId, discountAmount });
   } catch (err) {
     console.error("[paypal-v2][create-order] Erreur:", err);
+    if (err instanceof CheckoutQuoteChangedError) {
+      res.status(409).json({ error: err.message, code: err.code, ...err.currentQuote });
+      return;
+    }
+    if (err instanceof CheckoutStockError) {
+      res.status(409).json({ error: err.message, code: err.code, stockIssues: err.stockIssues });
+      return;
+    }
     const message = err instanceof Error ? err.message : "Erreur création commande PayPal";
     const isPaypal4xError = (req.body as CheckoutRequestBody)?.paymentMethod === "paypal_4x" && message.includes("Erreur paypal:");
     if (isPaypal4xError) {

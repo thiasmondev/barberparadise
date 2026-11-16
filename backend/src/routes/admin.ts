@@ -69,6 +69,7 @@ import {
 } from "../services/b2bPricingService";
 import { cartBelongsToCustomer, claimCartForDraft, customerCartWhere, serializeCustomerCartItems } from "../services/customerCartService";
 import { orderDiscountsRouter } from "./order-discounts";
+import { inspectAdminDraftStock } from "../services/adminDraftStockService";
 // ─── Cloudinary Config ───────────────────────────────────────
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -436,6 +437,15 @@ async function calculateAdminDraftTotals(params: {
   let subtotalTTC = 0;
   let lineDiscountTotal = 0;
 
+  if (!params.allowInactiveProducts && params.enforceStock !== false) {
+    const stockIssues = inspectAdminDraftStock(params.items.map((item) => ({
+      ...item,
+      name: productById.get(item.productId)?.name,
+      product: productById.get(item.productId),
+    })));
+    if (stockIssues.length) throw new Error(stockIssues.map(issue => issue.message).join(" "));
+  }
+
   for (const item of params.items) {
     // ── Article personnalisé (hors catalogue) ──────────────────────────────
     if (item.isCustomItem) {
@@ -572,16 +582,17 @@ async function calculateAdminDraftTotals(params: {
 }
 
 async function serializeAdminDraft(orderId: string) {
-  return prisma.order.findUnique({
+  const draft = await prisma.order.findUnique({
     where: { id: orderId },
     include: {
-      items: true,
+      items: { include: { product: { include: { variants: true } } } },
       shippingAddress: true,
       customer: {
         include: { proAccount: true, addresses: true, _count: { select: { orders: true } } },
       },
     },
   });
+  return draft ? { ...draft, stockIssues: inspectAdminDraftStock(draft.items) } : null;
 }
 
 function serializeCategoryAdminProduct(product: any) {
@@ -5155,7 +5166,7 @@ adminRouter.post(
     try {
       const draft = await prisma.order.findUnique({
         where: { id: req.params.id },
-        include: { items: true, customer: true },
+        include: { items: { include: { product: { include: { variants: true } } } }, customer: true },
       });
       if (!draft || draft.status !== "draft") {
         res.status(404).json({ error: "Brouillon non trouvé" });
@@ -5171,6 +5182,12 @@ adminRouter.post(
       }
       if (!draft.items.length) {
         res.status(400).json({ error: "Le brouillon doit contenir au moins un article" });
+        return;
+      }
+
+      const stockIssues = inspectAdminDraftStock(draft.items);
+      if (stockIssues.length) {
+        res.status(409).json({ error: stockIssues.map(issue => issue.message).join(" "), stockIssues });
         return;
       }
 

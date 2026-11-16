@@ -25,6 +25,8 @@
     "test:professional-pricing": "ts-node src/services/b2bPricingService.test.ts",
     "test:customer-carts": "ts-node src/services/customerCartService.test.ts && ts-node src/services/customerCartRoutes.test.ts",
     "test:order-discounts": "ts-node src/services/orderDiscountService.test.ts",
+    "test:admin-draft-stock": "ts-node src/services/adminDraftStockService.test.ts && ts-node src/services/adminDraftStockRoutes.test.ts",
+    "test:checkout-stock-fees": "ts-node src/services/checkoutStockService.test.ts && node src/routes/checkoutStockFees.test.cjs",
     "start": "npx prisma migrate deploy && node dist/index.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

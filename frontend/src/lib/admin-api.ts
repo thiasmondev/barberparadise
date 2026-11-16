@@ -823,6 +823,13 @@ export interface AdminOrderDraftPayload {
 export type AdminOrderDraft = Order & {
   vatNumber?: string | null;
   noShipping?: boolean;
+  stockIssues?: Array<{
+    productId: string;
+    variantId: string | null;
+    requestedQuantity: number;
+    availableStock: number;
+    message: string;
+  }>;
   draftShareUrl?: string | null;
   draftShareExpiresAt?: string | null;
   draftShareSentAt?: string | null;

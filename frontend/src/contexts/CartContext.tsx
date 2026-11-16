@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, Re
 import { Product, CartItem, ProductVariant } from "@/types";
 import { CUSTOMER_TOKEN_KEY } from "@/lib/customer-api";
 import { createCartSessionSyncQueue, type CartSessionRequest, type CartSyncResult } from "@/lib/cart-session-sync";
+import { constrainCartStock, type CartStockAdjustment, type CartStockConstraint, type CartStockOptions, type CartStockReconciliation } from "@/lib/cart-stock";
 
 export type CartSyncStatus = "idle" | "syncing" | "synced" | "error";
 
@@ -13,7 +14,10 @@ interface CartContextType {
   addItem: (product: Product, quantity?: number, variant?: ProductVariant | null) => void;
   removeItem: (productId: string, variantId?: string | null) => void;
   updateQuantity: (productId: string, quantity: number, variantId?: string | null) => void;
-  replaceItems: (items: CartItem[]) => void;
+  replaceItems: (items: CartItem[], options?: CartStockOptions) => void;
+  stockAdjustments: CartStockAdjustment[];
+  reconcileStock: (stocks: CartStockConstraint[], options?: CartStockOptions) => CartStockReconciliation;
+  applyStockConstraints: (stocks: CartStockConstraint[], options?: CartStockOptions) => CartStockReconciliation;
   clearCart: () => void;
   rotateCartSession: () => void;
   removedInvalidVariantLines: string[];
@@ -83,6 +87,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [cartSessionId, setCartSessionId] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [removedInvalidVariantLines, setRemovedInvalidVariantLines] = useState<string[]>([]);
+  const [stockAdjustments, setStockAdjustments] = useState<CartStockAdjustment[]>([]);
   const [syncStatus, setSyncStatus] = useState<CartSyncStatus>("idle");
   const [syncMessage, setSyncMessage] = useState("");
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
@@ -201,14 +206,33 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const clearRemovedInvalidVariantLines = useCallback(() => setRemovedInvalidVariantLines([]), []);
 
+  const commitItems = useCallback((nextItems: CartItem[], constraints: CartStockConstraint[] = [], options: CartStockOptions = {}, resetKeys: string[] = []) => {
+    const result = constrainCartStock(nextItems, constraints, options);
+    itemsRef.current = result.items;
+    setItems(result.items);
+    setStockAdjustments((previous) => {
+      const activeKeys = new Set(result.items.map((item) => getCartLineKey(item.product.id, getCartItemVariantId(item))));
+      const latestKeys = new Set(result.adjustments.map((notice) => getCartLineKey(notice.productId, notice.variantId)));
+      // Retain a visible reduction notice across the corrected quote, not stale blockers.
+      const retained = previous.filter((notice) => {
+        const key = getCartLineKey(notice.productId, notice.variantId);
+        return !notice.blocked && activeKeys.has(key) && !latestKeys.has(key) && !resetKeys.includes(key);
+      });
+      return [...retained, ...result.adjustments];
+    });
+    return result;
+  }, []);
+
+  const reconcileStock = useCallback((stocks: CartStockConstraint[], options: CartStockOptions = {}) =>
+    commitItems(itemsRef.current, stocks, options), [commitItems]);
+
   useEffect(() => {
     const saved = localStorage.getItem("barberparadise-cart");
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as CartItem[];
         const sanitized = sanitizeCartItems(Array.isArray(parsed) ? parsed : []);
-        setItems(sanitized.items);
-        itemsRef.current = sanitized.items;
+        commitItems(sanitized.items);
         registerRemovedLines(sanitized.removed);
       } catch { /* Keep shopping available if the local snapshot is malformed. */ }
     }
@@ -218,7 +242,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     hydratedRef.current = true;
     setCartSessionId(sessionId);
     setHydrated(true);
-  }, [registerRemovedLines]);
+  }, [commitItems, registerRemovedLines]);
 
   useEffect(() => {
     if (hydrated) localStorage.setItem("barberparadise-cart", JSON.stringify(items));
@@ -289,38 +313,40 @@ export function CartProvider({ children }: { children: ReactNode }) {
       registerRemovedLines([product.name]);
       return;
     }
-    setItems((prev) => {
-      const variantId = variant?.id ?? null;
-      const lineKey = getCartLineKey(product.id, variantId);
-      const existing = prev.find((item) => getCartLineKey(item.product.id, getCartItemVariantId(item)) === lineKey);
-      if (existing) return prev.map((item) => getCartLineKey(item.product.id, getCartItemVariantId(item)) === lineKey
-        ? { ...item, quantity: item.quantity + quantity, variantId, variant } : item);
-      return [...prev, { product, quantity, variantId, variant }];
-    });
-  }, [registerRemovedLines]);
+    const prev = itemsRef.current;
+    const variantId = variant?.id ?? null;
+    const lineKey = getCartLineKey(product.id, variantId);
+    const existing = prev.find((item) => getCartLineKey(item.product.id, getCartItemVariantId(item)) === lineKey);
+    const nextItems = existing
+      ? prev.map((item) => getCartLineKey(item.product.id, getCartItemVariantId(item)) === lineKey
+        ? { ...item, product, quantity: item.quantity + quantity, variantId, variant } : item)
+      : [...prev, { product, quantity, variantId, variant }];
+    commitItems(nextItems, [], {}, [lineKey]);
+  }, [commitItems, registerRemovedLines]);
 
   const removeItem = useCallback((productId: string, variantId: string | null = null) => {
     const lineKey = getCartLineKey(productId, variantId);
-    setItems((prev) => prev.filter((item) => getCartLineKey(item.product.id, getCartItemVariantId(item)) !== lineKey));
-  }, []);
+    commitItems(itemsRef.current.filter((item) => getCartLineKey(item.product.id, getCartItemVariantId(item)) !== lineKey));
+  }, [commitItems]);
 
   const updateQuantity = useCallback((productId: string, quantity: number, variantId: string | null = null) => {
-    if (quantity <= 0) { removeItem(productId, variantId); return; }
     const lineKey = getCartLineKey(productId, variantId);
-    setItems((prev) => prev.map((item) => getCartLineKey(item.product.id, getCartItemVariantId(item)) === lineKey ? { ...item, quantity } : item));
-  }, [removeItem]);
+    commitItems(itemsRef.current.map((item) => getCartLineKey(item.product.id, getCartItemVariantId(item)) === lineKey ? { ...item, quantity } : item), [], {}, [lineKey]);
+  }, [commitItems]);
 
-  const replaceItems = useCallback((nextItems: CartItem[]) => {
+  const replaceItems = useCallback((nextItems: CartItem[], options: CartStockOptions = { preserveDraftQuantities: true }) => {
     const sanitized = sanitizeCartItems(nextItems);
-    setItems(sanitized.items);
+    // Existing callers restore signed checkout drafts: preserve quantities by default.
+    // Ordinary cart replacement can explicitly pass { preserveDraftQuantities: false }.
+    commitItems(sanitized.items, [], options, sanitized.items.map((item) => getCartLineKey(item.product.id, getCartItemVariantId(item))));
     registerRemovedLines(sanitized.removed);
-  }, [registerRemovedLines]);
+  }, [commitItems, registerRemovedLines]);
 
   const clearCart = useCallback(() => {
-    setItems([]);
+    commitItems([]);
     setRemovedInvalidVariantLines([]);
     rotateCartSession();
-  }, [rotateCartSession]);
+  }, [commitItems, rotateCartSession]);
 
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const total = items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
@@ -328,7 +354,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   return (
     <CartContext.Provider value={{ items, cartSessionId, addItem, removeItem, updateQuantity, replaceItems, clearCart, rotateCartSession,
       removedInvalidVariantLines, clearRemovedInvalidVariantLines, itemCount, total, updateCartEmail,
-      syncStatus, syncMessage, lastSyncedAt, syncCartNow }}>
+      syncStatus, syncMessage, lastSyncedAt, syncCartNow, stockAdjustments, reconcileStock, applyStockConstraints: reconcileStock }}>
       {children}
     </CartContext.Provider>
   );

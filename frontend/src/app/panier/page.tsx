@@ -9,7 +9,8 @@ import { useCustomerAuth } from "@/contexts/CustomerAuthContext";
 import { formatPrice } from "@/lib/utils";
 import { getVariantImage } from "@/lib/product-images";
 import { validatePromotionCode, type PromotionValidationResult } from "@/lib/api";
-import { getCheckoutPricingQuote, getPricingQuoteItem, type CheckoutPricingQuote } from "@/lib/checkout-pricing";
+import { getCheckoutPricingQuote, getPricingQuoteItem, getPricingQuoteStockConstraints, pricingQuoteMatchesCart, type CheckoutPricingQuote, type PricingQuoteCartItem } from "@/lib/checkout-pricing";
+import { getAvailableStock, getCartQuantityLimit, getCartStockLineKey, isCartStockBlocked } from "@/lib/cart-stock";
 import CartSyncStatus from "@/components/CartSyncStatus";
 import PaymentBrandLogo, { hasPaymentBrandLogo } from "@/components/PaymentBrandLogo";
 
@@ -34,9 +35,9 @@ type ShippingEstimateResponse = {
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://barberparadise-backend.onrender.com";
 
 export default function CartPage() {
-  const { items, removeItem, updateQuantity, total, itemCount, removedInvalidVariantLines, clearRemovedInvalidVariantLines } = useCart();
+  const { items, removeItem, updateQuantity, itemCount, removedInvalidVariantLines, clearRemovedInvalidVariantLines, stockAdjustments, reconcileStock } = useCart();
   const { isApprovedPro } = useCustomerAuth();
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingError, setShippingError] = useState("");
@@ -48,41 +49,43 @@ export default function CartPage() {
   const [pricingQuote, setPricingQuote] = useState<CheckoutPricingQuote | null>(null);
   const [pricingQuoteLoading, setPricingQuoteLoading] = useState(false);
   const [pricingQuoteError, setPricingQuoteError] = useState("");
+  const [pricingRetry, setPricingRetry] = useState(0);
 
   const estimatedShippingOption = useMemo(() => shippingOptions[0], [shippingOptions]);
   const shipping = estimatedShippingOption?.price ?? 0;
-  const pricingQuoteCartItems = useMemo(() => items
+  // Stable across stock metadata updates; only quantities/identity require a new quote.
+  const cartPricingSignature = JSON.stringify(items
     .filter((item) => !item.isCustomSale)
     .map((item) => ({
       productId: item.product.id,
       variantId: item.variantId || item.variant?.id || null,
       quantity: item.quantity,
-    })), [items]);
-  const retailSubtotalTTC = useMemo(() => {
-    const rawSubtotalTTC = items.reduce((sum, item) => {
-      const publicTtcPrice = typeof item.product.pricePublic === "number" ? item.product.pricePublic : item.product.price;
-      return sum + publicTtcPrice * item.quantity;
-    }, 0);
-    return Math.round((rawSubtotalTTC + Number.EPSILON) * 100) / 100;
-  }, [items]);
-  const hasProfessionalPricing = isApprovedPro && pricingQuote?.pricingTier === "pro";
-  const subtotalHT = pricingQuote?.subtotalHT ?? Math.round((retailSubtotalTTC / 1.2 + Number.EPSILON) * 100) / 100;
-  const displaySubtotalTTC = pricingQuote?.subtotalTTC ?? retailSubtotalTTC;
+    })));
+  const pricingQuoteCartItems = useMemo(() => JSON.parse(cartPricingSignature) as PricingQuoteCartItem[], [cartPricingSignature]);
+  const hasUnsupportedLines = pricingQuoteCartItems.length !== items.length;
+  const pricingCurrent = !hasUnsupportedLines && pricingQuoteMatchesCart(pricingQuote, pricingQuoteCartItems, isApprovedPro);
+  const pricingReady = pricingCurrent && !pricingQuoteLoading && !pricingQuoteError;
+  const stockBlocked = items.some(isCartStockBlocked) || stockAdjustments.some((notice) => notice.blocked)
+    || !pricingQuote || pricingQuote.items.some((line) => !Object.prototype.hasOwnProperty.call(line, "availableStock"));
+  const checkoutReady = pricingReady && !stockBlocked;
+  const lastConfirmedPricing = !!pricingQuote && !pricingReady;
+  const hasProfessionalPricing = pricingQuote?.pricingTier === "pro" && pricingQuote.isB2B;
+  const subtotalHT = pricingQuote?.subtotalHT ?? 0;
+  const displaySubtotalTTC = pricingQuote?.subtotalTTC ?? 0;
   const shippingReferenceAmount = hasProfessionalPricing ? subtotalHT : displaySubtotalTTC;
   const vatRate = pricingQuote?.vatRate ?? 20;
-  const vatAmount = pricingQuote?.vatAmount ?? Math.round((subtotalHT * (vatRate / 100) + Number.EPSILON) * 100) / 100;
-  const merchandiseTotalTTC = pricingQuote?.totalTTC ?? displaySubtotalTTC;
+  const vatAmount = pricingQuote?.vatAmount ?? 0;
+  const merchandiseTotalTTC = pricingQuote?.totalTTC ?? 0;
   const grandTotal = merchandiseTotalTTC + shipping;
   const promotionCartItems = useMemo(() => items.map((item) => {
-    const publicTtcPrice = typeof item.product.pricePublic === "number" ? item.product.pricePublic : item.product.price;
     const quoteItem = getPricingQuoteItem(pricingQuote, item.product.id, item.variantId || item.variant?.id || null);
     return {
       productId: item.product.id,
       categoryId: typeof item.product.category === "string" ? item.product.category : null,
       quantity: item.quantity,
       price: hasProfessionalPricing
-        ? quoteItem?.appliedUnitHT ?? publicTtcPrice / 1.2
-        : quoteItem?.appliedUnitTTC ?? publicTtcPrice,
+        ? quoteItem?.appliedUnitHT ?? 0
+        : quoteItem?.appliedUnitTTC ?? 0,
     };
   }), [hasProfessionalPricing, items, pricingQuote]);
   const promoDiscount = promoResult?.valid ? Math.min(promoResult.discount || 0, grandTotal) : 0;
@@ -93,46 +96,47 @@ export default function CartPage() {
   const paymentMethods = ([
     { id: "card", label: "Carte bancaire", icon: CreditCard },
     { id: "paypal", label: "PayPal", icon: WalletCards },
-    ...(total >= 30 && !isApprovedPro ? [{ id: "paypal_4x" as PaymentMethod, label: "PayPal 4x sans frais", icon: WalletCards }] : []),
+    ...(merchandiseTotalTTC >= 30 && !isApprovedPro ? [{ id: "paypal_4x" as PaymentMethod, label: "PayPal 4x sans frais", icon: WalletCards }] : []),
     { id: "paybybank", label: "Virement instantané", icon: Landmark },
   ] satisfies Array<{ id: PaymentMethod; label: string; icon: typeof CreditCard }>).filter((method) => !isApprovedPro || method.id === "paybybank");
 
 
   useEffect(() => {
-    if (isApprovedPro && paymentMethod !== "paybybank") setPaymentMethod("paybybank");
-    if (!isApprovedPro && paymentMethod === "paybybank") setPaymentMethod("card");
-  }, [isApprovedPro, paymentMethod]);
+    if (isApprovedPro && paymentMethod && paymentMethod !== "paybybank") setPaymentMethod(null);
+    if (paymentMethod === "paypal_4x" && merchandiseTotalTTC < 30) setPaymentMethod(null);
+  }, [isApprovedPro, merchandiseTotalTTC, paymentMethod]);
 
   useEffect(() => {
-    if (!isApprovedPro || pricingQuoteCartItems.length === 0 || pricingQuoteCartItems.length !== items.length) {
-      setPricingQuote(null);
+    if (pricingQuoteCartItems.length === 0 || hasUnsupportedLines) {
       setPricingQuoteLoading(false);
-      setPricingQuoteError("");
+      setPricingQuoteError(hasUnsupportedLines ? "Certains articles nécessitent une vérification avant de commander." : "");
       return;
     }
 
     const controller = new AbortController();
-    setPricingQuote(null);
     setPricingQuoteLoading(true);
     setPricingQuoteError("");
 
     getCheckoutPricingQuote({
       cartItems: pricingQuoteCartItems,
-      isB2B: true,
+      isB2B: isApprovedPro,
       signal: controller.signal,
     }).then((quote) => {
-      if (!controller.signal.aborted) setPricingQuote(quote);
+      if (controller.signal.aborted) return;
+      const result = reconcileStock(getPricingQuoteStockConstraints(quote));
+      setPricingQuote(quote);
+      // A changed quantity naturally requests a fresh quote; keep the tier rule server-side.
+      if (result.quantitiesChanged) setPricingQuoteLoading(true);
     }).catch((error) => {
       if (!controller.signal.aborted) {
-        setPricingQuote(null);
-        setPricingQuoteError(error instanceof Error ? error.message : "Le tarif professionnel est momentanément indisponible.");
+        setPricingQuoteError(error instanceof Error ? error.message : "La vérification du tarif et du stock est momentanément indisponible.");
       }
     }).finally(() => {
       if (!controller.signal.aborted) setPricingQuoteLoading(false);
     });
 
     return () => controller.abort();
-  }, [isApprovedPro, items.length, pricingQuoteCartItems]);
+  }, [hasUnsupportedLines, isApprovedPro, pricingQuoteCartItems, pricingRetry, reconcileStock]);
 
   useEffect(() => {
     const storedPromo = window.localStorage.getItem("barberparadise-promo-code") || "";
@@ -148,6 +152,11 @@ export default function CartPage() {
 
     if (!normalized) {
       window.localStorage.removeItem("barberparadise-promo-code");
+      return;
+    }
+
+    if (!pricingReady) {
+      setPromoError("Attendez la confirmation du tarif avant de valider ce code.");
       return;
     }
 
@@ -176,7 +185,7 @@ export default function CartPage() {
   };
 
   useEffect(() => {
-    if (items.length === 0) return;
+    if (items.length === 0 || !pricingReady) return;
     const controller = new AbortController();
 
     async function loadEstimatedShipping() {
@@ -204,7 +213,7 @@ export default function CartPage() {
 
     loadEstimatedShipping();
     return () => controller.abort();
-  }, [items.length, shippingReferenceAmount, isApprovedPro]);
+  }, [items.length, pricingReady, shippingReferenceAmount, isApprovedPro]);
 
   if (items.length === 0) {
     return (
@@ -295,10 +304,15 @@ export default function CartPage() {
               const img = getVariantImage(item.product, item.variant);
               const selectedVariantId = item.variantId || item.variant?.id || null;
               const quoteItem = getPricingQuoteItem(pricingQuote, item.product.id, selectedVariantId);
-              const publicUnitTTC = typeof item.product.pricePublic === "number" ? item.product.pricePublic : item.product.price;
               const usesProfessionalPrice = hasProfessionalPricing && quoteItem?.priceSource === "pro";
-              const displayedUnitPrice = usesProfessionalPrice ? quoteItem.appliedUnitHT : quoteItem?.appliedUnitTTC ?? publicUnitTTC;
-              const lineTotal = displayedUnitPrice * item.quantity;
+              const displayedUnitPrice = quoteItem ? (usesProfessionalPrice ? quoteItem.appliedUnitHT : quoteItem.appliedUnitTTC) : null;
+              const lineTotal = displayedUnitPrice === null ? null : displayedUnitPrice * (quoteItem?.quantity ?? item.quantity);
+              const stock = getAvailableStock(item);
+              const quantityLimit = getCartQuantityLimit(item);
+              const stockNotice = stockAdjustments.find((notice) => getCartStockLineKey(notice.productId, notice.variantId) === getCartStockLineKey(item.product.id, selectedVariantId));
+              const stockMessage = stockNotice?.message || (stock === 0 ? "Rupture de stock · retirez cet article pour continuer." : stock === null
+                ? Object.prototype.hasOwnProperty.call(item, "availableStock") ? "Stock non suivi · disponibilité vérifiée au devis." : "Stock à vérifier avant de commander."
+                : `Disponible : ${stock} en stock`);
 
               return (
                 <div key={`${item.product.id}-${item.variantId || item.variant?.id || "product"}`} className="grid grid-cols-12 gap-4 py-6 border-b border-white/5 items-center">
@@ -325,6 +339,9 @@ export default function CartPage() {
                       <h3 className="font-black text-sm tracking-tight leading-tight mb-2">
                         {item.product.name}
                       </h3>
+                      <p role={stockNotice || stock === 0 || stock === null ? "status" : undefined} className={`mb-3 text-xs leading-relaxed ${stockNotice || stock === 0 || stock === null ? "text-amber-200" : "text-gray-500"}`}>
+                        {stockMessage}
+                      </p>
                       <div className="flex flex-wrap items-center gap-3">
                         <button
                           onClick={() => removeItem(item.product.id, selectedVariantId)}
@@ -338,9 +355,9 @@ export default function CartPage() {
                   </div>
 
                   <div className="col-span-4 md:col-span-2 text-center">
-                    <span className="block text-sm font-black">{formatPrice(displayedUnitPrice)}</span>
+                    <span className="block text-sm font-black">{displayedUnitPrice === null ? "—" : formatPrice(displayedUnitPrice)}</span>
                     <span className={`mt-1 block text-[9px] font-black uppercase tracking-widest ${usesProfessionalPrice ? "text-emerald-300" : "text-gray-500"}`}>
-                      {usesProfessionalPrice ? "Prix pro HT" : "Public TTC"}
+                      {lastConfirmedPricing ? "Dernier tarif confirmé" : !pricingReady ? "Tarif à confirmer" : usesProfessionalPrice ? "Prix pro HT" : "Public TTC"}
                     </span>
                   </div>
 
@@ -348,31 +365,38 @@ export default function CartPage() {
                     <div className="flex items-center border border-white/10">
                       <button
                         onClick={() => updateQuantity(item.product.id, item.quantity - 1, selectedVariantId)}
-                        className="px-3 py-2 text-gray-500 hover:text-white transition-colors"
+                        aria-label={`Diminuer la quantité de ${item.product.name}`}
+                        disabled={stock === 0 || item.quantity <= 1}
+                        className="px-3 py-2 text-gray-500 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <Minus size={12} />
                       </button>
                       <input
                         type="number"
                         min="1"
-                        max="999"
+                        max={Math.max(1, quantityLimit)}
+                        step="1"
+                        aria-label={`Quantité de ${item.product.name}`}
+                        disabled={stock === 0}
                         value={item.quantity}
                         onChange={(e) => {
-                          const val = parseInt(e.target.value);
-                          if (!isNaN(val) && val >= 1 && val <= 999) {
+                          const val = Number(e.target.value);
+                          if (e.target.value && Number.isInteger(val) && val >= 1) {
                             updateQuantity(item.product.id, val, selectedVariantId);
                           }
                         }}
                         onBlur={(e) => {
-                          if (!e.target.value || parseInt(e.target.value) < 1) {
+                          if (!e.target.value || !Number.isInteger(Number(e.target.value)) || Number(e.target.value) < 1) {
                             updateQuantity(item.product.id, 1, selectedVariantId);
                           }
                         }}
                         className="w-16 text-center bg-white border border-bp-border rounded text-black focus:border-bp-pink outline-none px-2 py-1"
                       />
                       <button
-                        onClick={() => updateQuantity(item.product.id, Math.min(999, item.quantity + 1), selectedVariantId)}
-                        className="px-3 py-2 text-gray-500 hover:text-white transition-colors"
+                        onClick={() => updateQuantity(item.product.id, Math.min(quantityLimit, item.quantity + 1), selectedVariantId)}
+                        aria-label={`Augmenter la quantité de ${item.product.name}`}
+                        disabled={stock === 0 || item.quantity >= quantityLimit}
+                        className="px-3 py-2 text-gray-500 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <Plus size={12} />
                       </button>
@@ -380,8 +404,8 @@ export default function CartPage() {
                   </div>
 
                   <div className="col-span-4 md:col-span-2 text-right">
-                    <span className="text-sm font-black">{formatPrice(lineTotal)}</span>
-                    <span className="mt-1 block text-[9px] uppercase tracking-widest text-gray-500">{usesProfessionalPrice ? "HT" : "TTC"}</span>
+                    <span className="text-sm font-black">{lineTotal === null ? "—" : formatPrice(lineTotal)}</span>
+                    <span className="mt-1 block text-[9px] uppercase tracking-widest text-gray-500">{quoteItem ? usesProfessionalPrice ? "HT" : "TTC" : "À confirmer"}</span>
                   </div>
                 </div>
               );
@@ -398,7 +422,7 @@ export default function CartPage() {
                   <>
                     <div className="flex justify-between items-center">
                       <span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total HT</span>
-                      <span className="text-sm font-black">{formatPrice(subtotalHT)}</span>
+                      <span className="text-sm font-black">{pricingQuote ? formatPrice(subtotalHT) : "—"}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-xs text-gray-400 uppercase tracking-widest">TVA ({vatRate}%)</span>
@@ -407,10 +431,11 @@ export default function CartPage() {
                   </>
                 ) : (
                   <div className="flex justify-between items-center">
-                    <span className="text-xs text-gray-400 uppercase tracking-widest">Sous-total public TTC</span>
-                    <span className="text-sm font-black">{formatPrice(displaySubtotalTTC)}</span>
+                    <span className="text-xs text-gray-400 uppercase tracking-widest">{pricingReady ? "Sous-total public TTC" : "Sous-total TTC à confirmer"}</span>
+                    <span className="text-sm font-black">{pricingQuote ? formatPrice(displaySubtotalTTC) : "—"}</span>
                   </div>
                 )}
+                {lastConfirmedPricing && <p role="status" className="text-xs leading-relaxed text-amber-200">Dernier tarif confirmé · ces montants correspondent à la dernière vérification et peuvent évoluer. La commande attend un devis à jour.</p>}
                 <div className="space-y-2 border border-white/10 bg-black/20 p-4">
                   <label className="text-[10px] font-black tracking-[0.25em] uppercase text-gray-500">Code promo</label>
                   <div className="flex gap-2">
@@ -420,7 +445,7 @@ export default function CartPage() {
                       placeholder="WELCOME10"
                       className="min-w-0 flex-1 bg-white px-3 py-2 text-xs font-black uppercase tracking-widest text-black outline-none"
                     />
-                    <button type="button" onClick={savePromoCode} disabled={promoLoading} className="bg-[#ff4a8d] px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-[#ff1f70] disabled:opacity-60">
+                    <button type="button" onClick={savePromoCode} disabled={promoLoading || !pricingReady} className="bg-[#ff4a8d] px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-[#ff1f70] disabled:opacity-60">
                       {promoLoading ? "..." : "OK"}
                     </button>
                   </div>
@@ -438,7 +463,9 @@ export default function CartPage() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-gray-400 uppercase tracking-widest">Livraison</span>
-                  {shippingLoading ? (
+                  {!pricingReady || shippingError || !estimatedShippingOption ? (
+                    <span className="text-sm font-black">—</span>
+                  ) : shippingLoading ? (
                     <span className="text-[10px] text-gray-500 uppercase tracking-widest">Calcul...</span>
                   ) : shipping === 0 ? (
                     <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span>
@@ -458,26 +485,30 @@ export default function CartPage() {
                   <div className={`border p-4 ${hasProfessionalPricing ? "border-emerald-500/30 bg-emerald-500/10" : "border-[#ff4a8d]/40 bg-[#ff4a8d]/10"}`}>
                     <div className="flex items-center justify-between gap-4">
                       <p className={`text-sm font-black uppercase tracking-[0.14em] ${hasProfessionalPricing ? "text-emerald-300" : "text-[#ff4a8d]"}`}>Tarif pro dès {formatPrice(proThresholdHT)} HT</p>
-                      <span className="text-[10px] font-black text-gray-300">{pricingQuote ? `${Math.min(100, Math.max(0, proProgressPercent))}%` : "Calcul..."}</span>
+                      <span className="text-[10px] font-black text-gray-300">{pricingQuote ? `${Math.min(100, Math.max(0, proProgressPercent))}%` : "—"}</span>
                     </div>
-                    <div className="mt-3 h-1.5 overflow-hidden bg-white/10" aria-label={pricingQuote ? `Progression vers le tarif professionnel : ${Math.min(100, Math.max(0, proProgressPercent))}%` : "Calcul de la progression vers le tarif professionnel"}>
+                    <div className="mt-3 h-1.5 overflow-hidden bg-white/10" aria-label={pricingQuote ? `Progression vers le tarif professionnel : ${Math.min(100, Math.max(0, proProgressPercent))}%` : "Progression vers le tarif professionnel indisponible"}>
                       <div className={`h-full transition-all ${hasProfessionalPricing ? "bg-emerald-400" : "bg-[#ff4a8d]"}`} style={{ width: `${Math.min(100, Math.max(0, proProgressPercent))}%` }} />
                     </div>
                     <p className="mt-3 text-xs leading-relaxed text-gray-300">
-                      {pricingQuote && hasProfessionalPricing
+                      {!pricingReady
+                        ? "Le tarif et le stock doivent être confirmés avant de commander. Le seuil professionnel sera recalculé après toute correction de quantité."
+                        : hasProfessionalPricing
                         ? "Seuls les articles éligibles utilisent le prix pro HT ; les autres restent au tarif public TTC."
-                        : pricingQuote
-                          ? `Votre panier reste commandable au prix public TTC. Ajoutez encore ${formatPrice(proRemaining)} HT d’articles éligibles pour accéder aux prix pro.`
-                          : "Votre panier reste commandable au prix public TTC. Le montant d’articles éligibles au tarif pro est en cours de vérification."}
+                        : `Ajoutez encore ${formatPrice(proRemaining)} HT d’articles éligibles pour accéder aux prix pro.`}
                     </p>
                   </div>
                 )}
-                {isApprovedPro && pricingQuoteLoading && (
-                  <p className="text-[10px] text-gray-500 uppercase tracking-widest">Mise à jour de votre tarification...</p>
+                {pricingQuoteLoading && (
+                  <p role="status" className="text-xs text-gray-400">Vérification du tarif et du stock…</p>
                 )}
-                {isApprovedPro && pricingQuoteError && (
-                  <p className="text-[10px] text-amber-200 uppercase tracking-widest">Tarif public affiché temporairement · {pricingQuoteError}</p>
+                {pricingQuoteError && (
+                  <div role="alert" className="space-y-3 text-xs text-amber-200">
+                    <p>Tarif et stock indisponibles · {pricingQuoteError}</p>
+                    <button type="button" onClick={() => setPricingRetry((attempt) => attempt + 1)} className="border border-amber-200/40 px-3 py-2 font-black">Réessayer la vérification</button>
+                  </div>
                 )}
+                {pricingReady && stockBlocked && <p role="alert" className="text-xs leading-relaxed text-amber-200">Vérifiez les articles signalés : un stock indisponible ou inconnu empêche de commander.</p>}
                 {shipping > 0 && freeShippingRemaining > 0 && (
                   <p className="text-[10px] text-gray-600 uppercase tracking-widest">
                     Plus que {formatPrice(freeShippingRemaining)}{hasProfessionalPricing ? " HT" : ""} pour la livraison gratuite
@@ -491,7 +522,7 @@ export default function CartPage() {
                 )}
                 <div className="border-t border-white/5 pt-4 flex justify-between items-center">
                   <span className="text-xs font-black tracking-widest uppercase">TOTAL TTC</span>
-                  <span className="text-2xl font-black">{formatPrice(discountedGrandTotal)}</span>
+                  <span className="text-2xl font-black">{pricingQuote ? formatPrice(discountedGrandTotal) : "—"}</span>
                 </div>
               </div>
 
@@ -526,10 +557,14 @@ export default function CartPage() {
 
               <Link
                 href="/commande"
-                onClick={() => {
-                  sessionStorage.setItem("barberparadise-payment-method", paymentMethod);
+                aria-disabled={!checkoutReady}
+                tabIndex={checkoutReady ? 0 : -1}
+                onClick={(event) => {
+                  if (!checkoutReady) { event.preventDefault(); return; }
+                  if (paymentMethod) sessionStorage.setItem("barberparadise-payment-method", paymentMethod);
+                  else sessionStorage.removeItem("barberparadise-payment-method");
                 }}
-                className="w-full flex items-center justify-center gap-3 bg-[#ff4a8d] hover:bg-[#ff1f70] text-white py-5 text-xs font-black tracking-widest uppercase transition-colors"
+                className={`w-full flex items-center justify-center gap-3 bg-[#ff4a8d] text-white py-5 text-xs font-black tracking-widest uppercase transition-colors ${checkoutReady ? "hover:bg-[#ff1f70]" : "opacity-40 cursor-not-allowed"}`}
               >
                 VALIDER LA COMMANDE
                 <ArrowRight size={14} />

@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import { inspectAdminDraftStock, type DraftStockLine } from './adminDraftStockService';
+
+const product = { id: 'fixture-stock', name: 'Produit fictif', status: 'active', inStock: true, stockCount: 4, variants: [] };
+const line = { productId: product.id, quantity: 5, name: 'Produit fictif', product, price: 33, discountAmount: 4 };
+const before = JSON.stringify(line);
+const issues = inspectAdminDraftStock([line]);
+assert.equal(issues.length, 1);
+assert.equal(issues[0].availableStock, 4);
+assert.ok(issues[0].message.includes('plus que 4 en stock'));
+assert.equal(JSON.stringify(line), before, 'Ni prix ni quantité modifiés');
+assert.equal(inspectAdminDraftStock([{ ...line, quantity: 4 }]).length, 0);
+assert.equal(inspectAdminDraftStock([{ ...line, product: { ...product, stockCount: 0 } }])[0].availableStock, 0);
+assert.equal(inspectAdminDraftStock([{ ...line, product: { ...product, inStock: false } }])[0].availableStock, 0);
+assert.equal(inspectAdminDraftStock([{ ...line, product: { ...product, stockCount: null } }]).length, 0);
+assert.equal(inspectAdminDraftStock([{ ...line, isCustomSale: true }]).length, 0);
+assert.equal(inspectAdminDraftStock([{ ...line, isCustomItem: true }]).length, 0);
+assert.equal(inspectAdminDraftStock([{ ...line, product: null }])[0].availableStock, 0);
+const variantProduct = { ...product, variants: [{ id: 'fixture-variant', name: 'Variante', stock: 2, inStock: true }] };
+assert.equal(inspectAdminDraftStock([{ ...line, variantId: 'fixture-variant', product: variantProduct }])[0].availableStock, 2);
+const duplicateLines: DraftStockLine[] = [{ ...line, quantity: 3 }, { ...line, quantity: 2 }];
+assert.equal(inspectAdminDraftStock(duplicateLines)[0].requestedQuantity, 5, 'Additionner les lignes du même SKU');
+console.log('Tests admin stock : quantités, variantes, stock nul/inconnu, regroupement et immutabilité réussis.');

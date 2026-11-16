@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
@@ -11,8 +11,9 @@ import { getCustomerAddresses, type CustomerAddress } from "@/lib/customer-api";
 import { formatPrice } from "@/lib/utils";
 import { getVariantImage } from "@/lib/product-images";
 import { validatePromotionCode, type PromotionValidationResult } from "@/lib/api";
-import { getCheckoutPricingQuote, getPricingQuoteItem, type CheckoutPricingQuote } from "@/lib/checkout-pricing";
+import { getCheckoutPricingQuote, getPricingQuoteItem, getPricingQuoteStockConstraints, type CheckoutPricingQuote } from "@/lib/checkout-pricing";
 import { formatRelayDistance, formatShippingDisplayLabel } from "@/lib/checkout-display";
+import { DRAFT_STOCK_NOTICE, PAYMENT_AMOUNT_UPDATED_MESSAGE, checkoutLineKey, getAvailableDisplayQuantity, getCheckoutFeeQuote, getCheckoutStockIssue, getDraftStockIssues, stockIssueMessage, withCheckoutTimeout, type CheckoutFeeQuote, type CheckoutStockIssue } from "@/lib/checkout-stockfees";
 import PaymentBrandLogo, { hasPaymentBrandLogo } from "@/components/PaymentBrandLogo";
 import type { CartItem, Product } from "@/types";
 
@@ -49,6 +50,10 @@ type DraftCheckoutItem = {
   brand?: string;
   images?: string[];
   variants?: Product["variants"];
+  availableStock?: number | null;
+  realStockCount?: number | null;
+  stockCount?: number | null;
+  inStock?: boolean;
   /** Article personnalisé hors catalogue */
   isCustomSale?: boolean;
 };
@@ -88,6 +93,7 @@ type DraftCheckoutResponse = {
     orderDiscountType?: string | null;
     orderDiscountValue?: number | null;
     discountTotal?: number;
+    stockIssues?: CheckoutStockIssue[];
     items: DraftCheckoutItem[];
   };
   error?: string;
@@ -212,12 +218,17 @@ function getCartSignature(items: Array<{ product: { id: string }; quantity: numb
 export default function CheckoutPage() {
   const searchParams = useSearchParams();
   const requestedDraftToken = searchParams.get("draftToken")?.trim() || "";
-  const { items, cartSessionId, replaceItems } = useCart();
+  const { items, cartSessionId, replaceItems, reconcileStock, stockAdjustments } = useCart();
   const { customer, isAuthenticated, isLoading: customerLoading, isApprovedPro } = useCustomerAuth();
   const [step, setStep] = useState<Step>("contact");
   const [guestCheckout, setGuestCheckout] = useState(false);
   const [orderSummaryOpen, setOrderSummaryOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
+  const [hasExplicitPaymentSelection, setHasExplicitPaymentSelection] = useState(false);
+  const [feeQuoteState, setFeeQuoteState] = useState<{ key: string; quote: CheckoutFeeQuote } | null>(null);
+  const [feeQuoteLoading, setFeeQuoteLoading] = useState(false);
+  const [feeQuoteError, setFeeQuoteError] = useState("");
+  const [feeQuoteRetry, setFeeQuoteRetry] = useState(0);
   const [availableMethods, setAvailableMethods] = useState<PaymentMethod[]>([]);
   const [b2bSurchargePercents, setB2BSurchargePercents] = useState<Partial<Record<"card" | "paypal", number>>>({});
   const [methodsLoading, setMethodsLoading] = useState(false);
@@ -235,6 +246,10 @@ export default function CheckoutPage() {
   const [promoError, setPromoError] = useState("");
   const [draftToken, setDraftToken] = useState("");
   const [draftPricing, setDraftPricing] = useState<DraftPricingSnapshot | null>(null);
+  const [draftContractItems, setDraftContractItems] = useState<CartItem[] | null>(null);
+  const [draftOriginalLines, setDraftOriginalLines] = useState<DraftCheckoutItem[]>([]);
+  const [draftStockIssues, setDraftStockIssues] = useState<CheckoutStockIssue[]>([]);
+  const [draftRetry, setDraftRetry] = useState(0);
   const [draftLoading, setDraftLoading] = useState(false);
   const [draftError, setDraftError] = useState("");
   const [draftNotice, setDraftNotice] = useState("");
@@ -242,6 +257,10 @@ export default function CheckoutPage() {
   const [pricingQuote, setPricingQuote] = useState<CheckoutPricingQuote | null>(null);
   const [pricingQuoteLoading, setPricingQuoteLoading] = useState(false);
   const [pricingQuoteError, setPricingQuoteError] = useState("");
+  const [pricingQuoteRetry, setPricingQuoteRetry] = useState(0);
+  const [pricingQuoteKey, setPricingQuoteKey] = useState("");
+  const paymentGuardRef = useRef("");
+  const paymentRequestKeyRef = useRef("");
 
   // États Mondial Relay
   const [relayPoints, setRelayPoints] = useState<RelayPoint[]>([]);
@@ -280,7 +299,10 @@ export default function CheckoutPage() {
     [selectedShippingOptionId, shippingOptions],
   );
   const cartSignature = useMemo(() => getCartSignature(items), [items]);
-  const draftPricingActive = Boolean(draftPricing && draftPricing.cartSignature === cartSignature);
+  // Availability adjustments must never invalidate an administrator’s financial offer.
+  const draftPricingActive = Boolean(draftPricing && draftContractItems && draftToken);
+  const checkoutItems = draftPricingActive && draftContractItems ? draftContractItems : items;
+  const draftCartChanged = Boolean(draftPricingActive && draftPricing?.cartSignature !== cartSignature);
   const shipping = draftPricingActive ? draftPricing?.shipping || 0 : selectedShippingOption?.price ?? 0;
   const countryCode = useMemo(() => getCountryCode(form.pays), [form.pays]);
   const hasValidCustomerEmail = useMemo(() => isValidCustomerEmail(form.email), [form.email]);
@@ -342,12 +364,63 @@ export default function CheckoutPage() {
   const proThresholdHT = pricingQuote?.thresholdHT ?? 200;
   const proRemainingHT = pricingQuote?.remainingHT ?? proThresholdHT;
   const proProgressPercent = pricingQuote?.progressPercent ?? 0;
-  const selectedPaymentSurchargePercent = effectiveIsB2B && (paymentMethod === "card" || paymentMethod === "paypal")
-    ? b2bSurchargePercents[paymentMethod] || 0
-    : 0;
-  // Aperçu uniquement : le backend recalcule toujours le frais avec le total serveur avant toute création de paiement.
-  const paymentFeeTTC = money(discountedGrandTotal * (selectedPaymentSurchargePercent / 100));
-  const totalWithPaymentFeeTTC = money(discountedGrandTotal + paymentFeeTTC);
+  const paymentPayload = useMemo(() => ({
+    cartItems: checkoutItems.map((item) => item.isCustomSale
+      ? { productId: null, variantId: null, quantity: item.quantity, isCustomItem: true, customName: item.customName || item.product.name, customPriceTTC: item.customPriceTTC ?? item.product.price, customVatRate: item.customVatRate ?? 20 }
+      : { productId: item.product.id, variantId: item.variantId || item.variant?.id || null, quantity: item.quantity }),
+    customerEmail: form.email,
+    customerId: isAuthenticated && customer ? customer.id : undefined,
+    cartSessionId,
+    draftToken: draftToken || undefined,
+    noShipping: draftNoShipping,
+    shippingAddress: draftNoShipping
+      ? { firstName: form.prenom || "Client", lastName: form.nom || "Barber Paradise", address: "Retrait en magasin", city: "Barber Paradise", postalCode: "00000", country: "FR" }
+      : { firstName: form.prenom, lastName: form.nom, address: form.adresse, extension: form.complement, city: form.ville, postalCode: form.codePostal, country: countryCode, phone: form.telephone },
+    paymentMethod,
+    shippingOptionId: draftNoShipping ? undefined : selectedShippingOption?.id,
+    isB2B: effectiveIsB2B,
+    vatNumber: vatNumber.trim() || undefined,
+    promoCode: draftPricingActive ? undefined : promoCode.trim() || undefined,
+    relayPointId: draftNoShipping ? undefined : (relayPointId || undefined),
+    relayPointName: draftNoShipping ? undefined : (relayPointName || undefined),
+    relayPointAddress: draftNoShipping ? undefined : (relayPointAddress || undefined),
+  }), [checkoutItems, form, isAuthenticated, customer, cartSessionId, draftToken, draftNoShipping, countryCode, paymentMethod, selectedShippingOption?.id, effectiveIsB2B, vatNumber, draftPricingActive, promoCode, relayPointId, relayPointName, relayPointAddress]);
+  const feeRequestKey = JSON.stringify([paymentPayload, discountedGrandTotal, shipping, promoResult]);
+  const feeQuote = hasExplicitPaymentSelection ? feeQuoteState?.quote : null;
+  const paymentFeeTTC = feeQuote?.paymentFeeTTC ?? 0;
+  const paymentBaseTTC = feeQuote?.baseTotalTTC ?? discountedGrandTotal;
+  const totalWithPaymentFeeTTC = feeQuote?.totalTTC ?? discountedGrandTotal;
+  const selectedPaymentSurchargePercent = feeQuote?.paymentFeePercent ?? 0;
+  const pricingRequestKey = JSON.stringify([pricingQuoteCartItems, isApprovedPro]);
+  const quoteStockIssues = (pricingQuote as (CheckoutPricingQuote & { stockIssues?: CheckoutStockIssue[] }) | null)?.stockIssues || [];
+  const stockIssues = draftPricingActive ? draftStockIssues : [...quoteStockIssues, ...(feeQuote?.stockIssues || [])];
+  const cartStockBlocked = !draftPricingActive && stockAdjustments.some((adjustment) => adjustment.blocked && !items.find((item) => item.product.id === adjustment.productId && (item.variantId || item.variant?.id || null) === (adjustment.variantId || null))?.isCustomSale);
+  const stockPaymentBlocked = stockIssues.length > 0 || draftCartChanged || cartStockBlocked;
+  const paymentGuardMessage = draftLoading || (requestedDraftToken && (!draftPricingActive || draftError))
+    ? "Le brouillon doit être chargé et vérifié avant paiement."
+    : stockPaymentBlocked
+    ? draftPricingActive ? DRAFT_STOCK_NOTICE : "Certains articles dépassent le stock disponible. Corrigez votre panier et revérifiez les prix avant de payer."
+    : !hasExplicitPaymentSelection ? "Choisissez votre moyen de paiement pour obtenir le total exact."
+    : feeQuoteLoading || !feeQuoteState || feeQuoteState.key !== feeRequestKey || feeQuoteError ? "Vérifiez les frais de paiement avant de payer."
+    : !draftPricingActive && (pricingQuoteLoading || pricingQuoteError || pricingQuoteKey !== pricingRequestKey) ? "Vérifiez les prix et les stocks avant de payer."
+    : methodsLoading || shippingLoading || !displayMethodAvailable() ? "Vérifiez le moyen de paiement et la livraison."
+    : "";
+  function displayMethodAvailable() {
+    return availableMethods.includes(paymentMethod) && !(effectiveIsB2B && paymentMethod === "sepa") && !(paymentMethod === "paypal_4x" && discountedGrandTotal < 30) && (draftPricingActive || Boolean(selectedShippingOption));
+  }
+  paymentGuardRef.current = paymentGuardMessage;
+  paymentRequestKeyRef.current = feeRequestKey;
+
+  function getLineStockIssue(item: CartItem) {
+    const variantId = item.variantId || item.variant?.id || null;
+    const issue = getCheckoutStockIssue(stockIssues, item.product.id, variantId);
+    const adjustment = !draftPricingActive ? stockAdjustments.find((candidate) => checkoutLineKey(candidate.productId, candidate.variantId) === checkoutLineKey(item.product.id, variantId)) : undefined;
+    return issue || (adjustment ? { productId: adjustment.productId, variantId: adjustment.variantId, requestedQuantity: adjustment.requestedQuantity, availableStock: adjustment.availableStock, message: adjustment.message } : undefined);
+  }
+  function getDraftLineTotal(item: CartItem): number {
+    const original = draftOriginalLines.find((line) => checkoutLineKey(line.productId || line.id, line.variantId) === checkoutLineKey(item.product.id, item.variantId || item.variant?.id));
+    return original?.discountedLineTotal ?? (original ? money(Math.max(0, original.price * original.quantity - (original.discountAmount || 0))) : money(item.product.price * item.quantity));
+  }
 
   const displayMethods = useMemo(
     () => availableMethods.filter((method) => {
@@ -427,11 +500,13 @@ export default function CheckoutPage() {
 
     async function loadSharedDraft() {
       try {
-        const res = await fetch(`${API_URL}/api/checkout/draft/${encodeURIComponent(token)}`, {
-          signal: controller.signal,
-        });
-        const data = (await res.json()) as DraftCheckoutResponse;
-        if (!res.ok || !data.draft) throw new Error(data.error || "Impossible de charger la commande préparée");
+        const data = await withCheckoutTimeout(async (signal) => {
+          const res = await fetch(`${API_URL}/api/checkout/draft/${encodeURIComponent(token)}`, { signal });
+          const result = (await res.json()) as DraftCheckoutResponse;
+          if (!res.ok || !result.draft) throw new Error(result.error || "Impossible de charger la commande préparée");
+          return result;
+        }, { signal: controller.signal, timeoutMessage: "Le chargement du brouillon a pris trop de temps. Réessayez ; l’offre déjà chargée est conservée." });
+        if (controller.signal.aborted || !data.draft) return;
 
         const nextItems: CartItem[] = data.draft.items.map((item) => {
           const images = item.images?.length ? item.images : item.image ? [item.image] : [];
@@ -460,8 +535,8 @@ export default function CheckoutPage() {
             description: "",
             shortDescription: "",
             features: [],
-            inStock: true,
-            stockCount: item.quantity,
+            inStock: item.inStock ?? (item.availableStock == null || item.availableStock > 0),
+            stockCount: item.availableStock ?? item.realStockCount ?? item.stockCount ?? item.quantity,
             rating: 0,
             reviewCount: 0,
             isNew: false,
@@ -482,10 +557,14 @@ export default function CheckoutPage() {
             customName: item.isCustomSale ? item.name : undefined,
             customPriceTTC: item.isCustomSale ? item.price : undefined,
             customVatRate: undefined, // non exposé par la route GET draft, on laisse le backend utiliser 20% par défaut
+            ...(Object.prototype.hasOwnProperty.call(item, "availableStock") ? { availableStock: item.availableStock } : {}),
           };
         });
 
-        replaceItems(nextItems);
+        setDraftContractItems(nextItems);
+        setDraftOriginalLines(data.draft.items);
+        setDraftStockIssues(getDraftStockIssues(data.draft.items, data.draft.stockIssues));
+        replaceItems(nextItems, { preserveDraftQuantities: true });
         const nextSignature = getCartSignature(nextItems);
         setDraftPricing({
           orderNumber: data.draft.orderNumber,
@@ -516,10 +595,9 @@ export default function CheckoutPage() {
         if (data.draft.noShipping) {
           setStep("paiement");
         }
-        setDraftNotice(`Commande préparée ${data.draft.orderNumber} chargée dans votre panier avec ses prix et remises figés. Vous pouvez la modifier avant paiement, ce qui recalculera alors les totaux au tarif catalogue.`);
+        setDraftNotice(`Commande préparée ${data.draft.orderNumber} chargée avec ses lignes, prix et remises figés. Pour modifier cette offre, demandez sa correction à Barber Paradise puis rechargez ce lien.`);
       } catch (err) {
         if ((err as Error).name !== "AbortError") {
-          setDraftToken("");
           setDraftError(err instanceof Error ? err.message : "Lien de brouillon invalide ou expiré");
         }
       } finally {
@@ -529,53 +607,62 @@ export default function CheckoutPage() {
 
     loadSharedDraft();
     return () => controller.abort();
-  }, [replaceItems, requestedDraftToken]);
+  }, [draftRetry, replaceItems, requestedDraftToken]);
 
   useEffect(() => {
-    if (draftPricing && draftPricing.cartSignature !== cartSignature) {
-      setDraftPricing(null);
-      setDraftToken("");
-      setDraftNotice("Le panier a été modifié : les totaux sont recalculés au tarif catalogue.");
-    }
-  }, [cartSignature, draftPricing]);
-
-  useEffect(() => {
-    if (
-      (requestedDraftToken && !draftError)
-      || draftLoading
-      || draftPricingActive
-      || !isApprovedPro
-      || pricingQuoteCartItems.length === 0
-      || pricingQuoteCartItems.length !== items.length
-    ) {
-      setPricingQuote(null);
+    if ((requestedDraftToken && !draftError) || draftLoading || draftPricingActive || pricingQuoteCartItems.length === 0 || pricingQuoteCartItems.length !== items.length) {
       setPricingQuoteLoading(false);
-      setPricingQuoteError("");
       return;
     }
-
     const controller = new AbortController();
-    setPricingQuote(null);
     setPricingQuoteLoading(true);
     setPricingQuoteError("");
-
-    getCheckoutPricingQuote({
-      cartItems: pricingQuoteCartItems,
-      isB2B: true,
-      signal: controller.signal,
-    }).then((quote) => {
-      if (!controller.signal.aborted) setPricingQuote(quote);
-    }).catch((error) => {
-      if (!controller.signal.aborted) {
-        setPricingQuote(null);
-        setPricingQuoteError(error instanceof Error ? error.message : "Le tarif professionnel est momentanément indisponible.");
-      }
-    }).finally(() => {
-      if (!controller.signal.aborted) setPricingQuoteLoading(false);
-    });
-
+    // Keep the last successful quote visible while updating, including on errors.
+    withCheckoutTimeout((signal) => getCheckoutPricingQuote({ cartItems: pricingQuoteCartItems, isB2B: isApprovedPro, signal }), { signal: controller.signal })
+      .then((quote) => {
+        if (!controller.signal.aborted) {
+          setPricingQuote(quote);
+          setPricingQuoteKey(pricingRequestKey);
+          reconcileStock(getPricingQuoteStockConstraints(quote));
+        }
+      }).catch((error) => {
+        if (!controller.signal.aborted) setPricingQuoteError(error instanceof Error ? error.message : "Le calcul des prix est indisponible. Réessayez.");
+      }).finally(() => {
+        if (!controller.signal.aborted) setPricingQuoteLoading(false);
+      });
     return () => controller.abort();
-  }, [draftError, draftLoading, draftPricingActive, isApprovedPro, items.length, pricingQuoteCartItems, requestedDraftToken]);
+  }, [draftError, draftLoading, draftPricingActive, isApprovedPro, items.length, pricingQuoteCartItems, pricingQuoteRetry, pricingRequestKey, reconcileStock, requestedDraftToken]);
+
+  useEffect(() => {
+    if (!hasExplicitPaymentSelection || draftLoading || (requestedDraftToken && !draftPricingActive) || (!draftNoShipping && !selectedShippingOption) || pricingQuoteLoading || promoLoading || shippingLoading) {
+      setFeeQuoteLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setFeeQuoteLoading(true);
+    setFeeQuoteError("");
+    getCheckoutFeeQuote({ apiUrl: API_URL, payload: paymentPayload, customerToken: localStorage.getItem("bp_customer_token"), signal: controller.signal })
+      .then((quote) => {
+        if (controller.signal.aborted) return;
+        setFeeQuoteState({ key: feeRequestKey, quote });
+        if (!draftPricingActive && quote.items) reconcileStock(quote.items.filter((line) => line.productId && Object.prototype.hasOwnProperty.call(line, "availableStock")).map((line) => ({ productId: line.productId!, variantId: line.variantId, availableStock: line.availableStock ?? null })));
+        // A draft shortage stays blocked until reloading an administrator-corrected offer.
+        if (draftPricingActive && quote.stockIssues?.length) setDraftStockIssues((previous) => {
+          const merged = new Map(previous.map((issue) => [checkoutLineKey(issue.productId, issue.variantId), issue]));
+          for (const issue of quote.stockIssues || []) merged.set(checkoutLineKey(issue.productId, issue.variantId), issue);
+          return Array.from(merged.values());
+        });
+      }).catch((error) => {
+        if (!controller.signal.aborted) setFeeQuoteError(error instanceof Error ? error.message : "Les frais sont indisponibles. Réessayez.");
+      }).finally(() => {
+        if (!controller.signal.aborted) setFeeQuoteLoading(false);
+      });
+    return () => controller.abort();
+  }, [hasExplicitPaymentSelection, draftLoading, requestedDraftToken, draftPricingActive, draftNoShipping, selectedShippingOption, pricingQuoteLoading, promoLoading, shippingLoading, feeRequestKey, feeQuoteRetry, paymentPayload, reconcileStock]);
+
+  useEffect(() => {
+    if (!methodsLoading && hasExplicitPaymentSelection && !availableMethods.includes(paymentMethod)) setHasExplicitPaymentSelection(false);
+  }, [methodsLoading, availableMethods, hasExplicitPaymentSelection, paymentMethod]);
 
   useEffect(() => {
     if (customerLoading) return;
@@ -658,7 +745,7 @@ export default function CheckoutPage() {
 
   // Charger le SDK PayPal JS quand la config est disponible et que la méthode est PayPal
   useEffect(() => {
-    if (!paypalV2Config?.v2Enabled || !paypalV2Config.clientId) return;
+    if (!hasExplicitPaymentSelection || (paymentMethod !== "paypal" && paymentMethod !== "paypal_4x") || !paypalV2Config?.v2Enabled || !paypalV2Config.clientId) return;
     if (paypalSdkLoaded) return;
     if (typeof window === "undefined") return;
 
@@ -676,12 +763,12 @@ export default function CheckoutPage() {
     script.onload = () => setPaypalSdkLoaded(true);
     script.onerror = () => console.error("[PayPal SDK] Échec du chargement");
     document.head.appendChild(script);
-  }, [paypalV2Config, paypalSdkLoaded]);
+  }, [hasExplicitPaymentSelection, paymentMethod, paypalV2Config, paypalSdkLoaded]);
 
   // Rendre les Smart Buttons quand le SDK est chargé et la méthode PayPal est sélectionnée
   useEffect(() => {
     const isPaypalMethod = paymentMethod === "paypal" || paymentMethod === "paypal_4x";
-    if (!paypalV2Config?.v2Enabled || !paypalSdkLoaded || !isPaypalMethod || step !== "paiement") return;
+    if (!hasExplicitPaymentSelection || paymentGuardMessage || !paypalV2Config?.v2Enabled || !paypalSdkLoaded || !isPaypalMethod || step !== "paiement") return;
 
     const container = document.getElementById("paypal-button-container");
     if (!container) return;
@@ -693,33 +780,18 @@ export default function CheckoutPage() {
     const win = window as unknown as { paypal?: { Buttons?: (opts: unknown) => { render: (el: HTMLElement) => Promise<void>; close?: () => void } } };
     if (!win.paypal?.Buttons) return;
 
-    const buildPayload = () => ({
-      cartItems: items.map((item) => item.isCustomSale
-        ? { productId: null, variantId: null, quantity: item.quantity, isCustomItem: true, customName: item.customName || item.product.name, customPriceTTC: item.customPriceTTC ?? item.product.price, customVatRate: item.customVatRate ?? 20 }
-        : { productId: item.product.id, variantId: item.variantId || item.variant?.id || null, quantity: item.quantity }),
-
-      customerEmail: form.email,
-      customerId: isAuthenticated && customer ? customer.id : undefined,
-      cartSessionId,
-      draftToken: draftToken || undefined,
-      shippingAddress: draftNoShipping
-        ? { firstName: form.prenom || "Client", lastName: form.nom || "Barber Paradise", address: "Retrait en magasin", city: "Barber Paradise", postalCode: "00000", country: "FR" }
-        : { firstName: form.prenom, lastName: form.nom, address: form.adresse, extension: form.complement, city: form.ville, postalCode: form.codePostal, country: countryCode, phone: form.telephone },
-      paymentMethod,
-      shippingOptionId: draftNoShipping ? undefined : selectedShippingOption?.id,
-      isB2B: effectiveIsB2B,
-      vatNumber: vatNumber.trim() || undefined,
-      promoCode: promoCode.trim() || undefined,
-      relayPointId: draftNoShipping ? undefined : (relayPointId || undefined),
-      relayPointName: draftNoShipping ? undefined : (relayPointName || undefined),
-      relayPointAddress: draftNoShipping ? undefined : (relayPointAddress || undefined),
-    });
+    const buildPayload = () => ({ ...paymentPayload, expectedTotalTTC: feeQuote?.totalTTC });
 
     const buttons = win.paypal.Buttons({
       fundingSource: paymentMethod === "paypal_4x" ? "paylater" : "paypal",
       style: { layout: "vertical", color: "black", shape: "rect", label: "pay", height: 48 },
       createOrder: async () => {
         setPaymentError("");
+        if (paymentGuardRef.current || paymentRequestKeyRef.current !== feeRequestKey) {
+          const message = paymentGuardRef.current || "Le devis de paiement a changé. Vérifiez à nouveau le total.";
+          setPaymentError(message);
+          throw new Error(message);
+        }
         if (!isValidCustomerEmail(form.email)) {
           const error = new Error("Veuillez renseigner une adresse e-mail valide avant de procéder au paiement.");
           setPaymentError(error.message);
@@ -728,13 +800,17 @@ export default function CheckoutPage() {
         setIsSubmittingPayment(true);
         try {
           const res = await fetch(`${API_URL}/api/checkout/paypal/v2/create-order`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildPayload()) });
-          const data = await res.json() as { paypalOrderId?: string; orderId?: string; error?: string; code?: string };
+          const data = await res.json() as { paypalOrderId?: string; orderId?: string; error?: string; code?: string; stockIssues?: CheckoutStockIssue[] };
           if (!res.ok) {
+            recordPaymentRevalidationError(data);
+            if (data.code === "PAYMENT_QUOTE_CHANGED" || data.code === "PRICE_CHANGED" || data.code === "QUOTE_CHANGED") {
+              throw new Error(PAYMENT_AMOUNT_UPDATED_MESSAGE);
+            }
             if (data.code === "PAYPAL_4X_INELIGIBLE") {
               setPaymentMethod("paypal");
               setPaymentError("Le paiement en 4 fois n'est pas disponible pour cette transaction. Vous avez été redirigé vers le paiement standard.");
               setIsSubmittingPayment(false);
-              throw new Error(data.error || "PAYPAL_4X_INELIGIBLE");
+              throw new Error("Le paiement en 4 fois n'est pas disponible pour cette transaction. Choisissez le paiement standard ou un autre moyen de paiement.");
             }
             throw new Error(data.error || "Impossible d'initialiser le paiement");
           }
@@ -780,11 +856,9 @@ export default function CheckoutPage() {
 
     return () => { container.innerHTML = ""; setPaypalButtonsRendered(false); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paypalV2Config, paypalSdkLoaded, paymentMethod, step, discountedGrandTotal]);
+  }, [paypalV2Config, paypalSdkLoaded, paymentMethod, step, hasExplicitPaymentSelection, paymentGuardMessage, paymentPayload, feeRequestKey, totalWithPaymentFeeTTC]);
 
   useEffect(() => {
-    const storedMethod = sessionStorage.getItem("barberparadise-payment-method") as PaymentMethod | null;
-    if (storedMethod && Object.keys(METHOD_CONFIG).includes(storedMethod)) setPaymentMethod(storedMethod);
     setPromoCode(window.localStorage.getItem("barberparadise-promo-code") || "");
   }, []);
 
@@ -911,44 +985,41 @@ export default function CheckoutPage() {
     if (!effectiveIsB2B || countryCode === "FR") setVatNumber("");
   }, [countryCode, effectiveIsB2B]);
 
+  function recordPaymentRevalidationError(data: { code?: string; error?: string; stockIssues?: CheckoutStockIssue[] }) {
+    if (data.stockIssues?.length) {
+      if (draftPricingActive) setDraftStockIssues((previous) => {
+        const merged = new Map(previous.map((issue) => [checkoutLineKey(issue.productId, issue.variantId), issue]));
+        for (const issue of data.stockIssues || []) merged.set(checkoutLineKey(issue.productId, issue.variantId), issue);
+        return Array.from(merged.values());
+      });
+      else reconcileStock(data.stockIssues.filter((issue) => issue.productId).map((issue) => ({ ...issue, productId: issue.productId! })));
+    }
+    // A canonical amount drift is never accepted implicitly or retried automatically.
+    if (data.code === "PAYMENT_QUOTE_CHANGED" || data.code === "PRICE_CHANGED" || data.code === "QUOTE_CHANGED") setFeeQuoteError(PAYMENT_AMOUNT_UPDATED_MESSAGE);
+  }
+
   const handleCheckout = async () => {
     setPaymentError("");
+    if (paymentGuardRef.current) { setPaymentError(paymentGuardRef.current); return; }
     if (!hasValidCustomerEmail) {
       setPaymentError("Veuillez renseigner une adresse e-mail valide avant de procéder au paiement.");
       return;
     }
     setIsSubmittingPayment(true);
 
-    const checkoutPaymentMethod: PaymentMethod = paymentMethod;
-
     try {
       const res = await fetch(`${API_URL}/api/checkout/initiate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cartItems: items.map((item) => item.isCustomSale
-            ? { productId: null, variantId: null, quantity: item.quantity, isCustomItem: true, customName: item.customName || item.product.name, customPriceTTC: item.customPriceTTC ?? item.product.price, customVatRate: item.customVatRate ?? 20 }
-            : { productId: item.product.id, variantId: item.variantId || item.variant?.id || null, quantity: item.quantity }),
-          customerEmail: form.email,
-          customerId: isAuthenticated && customer ? customer.id : undefined,
-          cartSessionId,
-          draftToken: draftToken || undefined,
-          shippingAddress: draftNoShipping
-            ? { firstName: form.prenom || "Client", lastName: form.nom || "Barber Paradise", address: "Retrait en magasin", city: "Barber Paradise", postalCode: "00000", country: "FR" }
-            : { firstName: form.prenom, lastName: form.nom, address: form.adresse, extension: form.complement, city: form.ville, postalCode: form.codePostal, country: countryCode, phone: form.telephone },
-          paymentMethod: checkoutPaymentMethod,
-          shippingOptionId: draftNoShipping ? undefined : selectedShippingOption?.id,
-          isB2B: effectiveIsB2B,
-          vatNumber: vatNumber.trim() || undefined,
-          promoCode: promoCode.trim() || undefined,
-          relayPointId: draftNoShipping ? undefined : (relayPointId || undefined),
-          relayPointName: draftNoShipping ? undefined : (relayPointName || undefined),
-          relayPointAddress: draftNoShipping ? undefined : (relayPointAddress || undefined),
-        }),
+        body: JSON.stringify({ ...paymentPayload, expectedTotalTTC: feeQuote?.totalTTC }),
       });
 
       const data = await res.json();
       if (!res.ok) {
+        recordPaymentRevalidationError(data);
+        if (data.code === "PAYMENT_QUOTE_CHANGED" || data.code === "PRICE_CHANGED" || data.code === "QUOTE_CHANGED") {
+          throw new Error(PAYMENT_AMOUNT_UPDATED_MESSAGE);
+        }
         if (data?.code === "VARIANT_SELECTION_REQUIRED") {
           setPaymentError(`${data.error || "Un article de votre panier est incomplet."} Retournez au panier pour retirer cet article puis ajoutez-le à nouveau depuis sa fiche produit avec une variante.`);
           return;
@@ -956,7 +1027,7 @@ export default function CheckoutPage() {
         if (data?.code === "PAYPAL_4X_INELIGIBLE") {
           // PayPal 4x non éligible pour cette transaction — basculer vers PayPal standard et afficher un message clair
           setPaymentMethod("paypal");
-          setPaymentError("Le paiement en 4 fois PayPal n'est pas disponible pour cette transaction (compte PayPal non éligible ou conditions non remplies). Vous avez été redirigé vers le paiement PayPal standard. Vous pouvez également choisir un autre moyen de paiement.");
+          setPaymentError("Le paiement en 4 fois n'est pas disponible pour cette transaction. Vous avez été redirigé vers le paiement standard. Vous pouvez également choisir un autre moyen de paiement.");
           setIsSubmittingPayment(false);
           return;
         }
@@ -967,6 +1038,7 @@ export default function CheckoutPage() {
       window.location.href = data.checkoutUrl;
     } catch (err) {
       setPaymentError(err instanceof Error ? err.message : "Erreur paiement inconnue");
+    } finally {
       setIsSubmittingPayment(false);
     }
   };
@@ -986,7 +1058,7 @@ export default function CheckoutPage() {
       <div className="bg-[#131313] min-h-screen text-[#e5e2e1] flex flex-col items-center justify-center px-4 py-32">
         <ShoppingBag size={48} className="text-gray-700 mb-8" />
         <h1 className="text-3xl font-black tracking-tighter italic uppercase mb-4">Votre panier est vide</h1>
-        {draftError && <p className="text-sm text-red-300 text-center max-w-md mb-6">{draftError}</p>}
+        {draftError && <div className="text-sm text-red-300 text-center max-w-md mb-6"><p>{draftError}</p><button type="button" onClick={() => setDraftRetry((value) => value + 1)} className="mt-3 underline">Réessayer le chargement</button></div>}
         <Link href="/catalogue" className="bg-[#ff4a8d] text-white px-8 py-4 text-xs font-black tracking-widest uppercase hover:bg-[#ff1f70] transition-colors">
           EXPLORER LE CATALOGUE
         </Link>
@@ -1016,6 +1088,19 @@ export default function CheckoutPage() {
           {draftError && (
             <div className="mb-8 border border-red-400/20 bg-red-400/10 px-5 py-4 text-sm text-red-100">
               {draftError}
+              <button type="button" onClick={() => setDraftRetry((value) => value + 1)} className="ml-3 underline">Réessayer le chargement</button>
+            </div>
+          )}
+          {stockPaymentBlocked && (
+            <div role="alert" className="mb-8 border border-amber-400/30 bg-amber-400/10 px-5 py-4 text-sm text-amber-100">
+              {draftPricingActive ? DRAFT_STOCK_NOTICE : "Le stock de certains articles est insuffisant : vérifiez les lignes de votre panier. Aucun paiement partiel ne sera lancé."}
+              {draftPricingActive ? <button type="button" onClick={() => setDraftRetry((value) => value + 1)} className="mt-3 block underline">Recharger l’offre corrigée</button> : <Link href="/panier" className="mt-3 block underline">Corriger le panier</Link>}
+            </div>
+          )}
+          {!draftPricingActive && pricingQuoteError && (
+            <div role="alert" className="mb-8 border border-amber-400/30 p-4 text-sm text-amber-100">
+              {pricingQuote ? "Derniers prix conservés, paiement suspendu. " : "Prix non vérifiés, paiement suspendu. "}{pricingQuoteError}
+              <button type="button" onClick={() => setPricingQuoteRetry((value) => value + 1)} className="ml-3 underline">Réessayer le calcul</button>
             </div>
           )}
           {isApprovedPro && !draftPricingActive && (
@@ -1024,31 +1109,31 @@ export default function CheckoutPage() {
                 <p className={`text-xs font-black uppercase tracking-[0.18em] ${hasProfessionalPricing ? "text-emerald-300" : "text-[#ff4a8d]"}`}>
                   Tarif pro dès {formatPrice(proThresholdHT)} HT
                 </p>
-                <span className="text-[10px] font-black text-gray-300">{pricingQuote ? `${Math.min(100, Math.max(0, proProgressPercent))}%` : "Calcul..."}</span>
+                <span className="text-[10px] font-black text-gray-300">{pricingQuote ? `${Math.min(100, Math.max(0, proProgressPercent))}%` : pricingQuoteLoading ? "Calcul..." : "À vérifier"}</span>
               </div>
               <div className="mt-3 h-1.5 overflow-hidden bg-white/10" aria-label={pricingQuote ? `Progression vers le tarif professionnel : ${Math.min(100, Math.max(0, proProgressPercent))}%` : "Calcul de la progression vers le tarif professionnel"}>
                 <div className={`h-full transition-all ${hasProfessionalPricing ? "bg-emerald-400" : "bg-[#ff4a8d]"}`} style={{ width: `${Math.min(100, Math.max(0, proProgressPercent))}%` }} />
               </div>
               <p className="mt-3 text-xs leading-relaxed text-gray-300">
                 {pricingQuote && hasProfessionalPricing
-                  ? "Les SKU éligibles sont au prix pro HT ; les SKU sans prix pro restent au tarif public TTC."
+                  ? "Les articles éligibles sont au prix pro HT ; les articles sans prix pro restent au tarif public TTC."
                   : pricingQuote
                     ? `Votre panier est payable au prix public TTC. Ajoutez encore ${formatPrice(proRemainingHT)} HT d’articles éligibles pour bénéficier des prix pro.`
-                    : "Votre panier est payable au prix public TTC. Le montant d’articles éligibles au tarif pro est en cours de vérification."}
+                    : "Les prix et le stock doivent être vérifiés avant paiement. Aucun tarif professionnel n’est abandonné en cas d’erreur de calcul."}
               </p>
               {pricingQuoteLoading && <p className="mt-3 text-[10px] uppercase tracking-widest text-gray-500">Mise à jour de votre tarification...</p>}
-              {pricingQuoteError && <p className="mt-3 text-[10px] uppercase tracking-widest text-amber-200">Tarif public affiché temporairement · {pricingQuoteError}</p>}
+
             </div>
           )}
 
           <button onClick={() => setOrderSummaryOpen(!orderSummaryOpen)} className="lg:hidden w-full flex items-center justify-between bg-[#1c1b1b] px-5 py-4 mb-8">
             <div className="flex items-center gap-3"><ShoppingBag size={16} className="text-[#ff4a8d]" /><span className="text-xs font-black tracking-widest uppercase">{orderSummaryOpen ? "MASQUER" : "VOIR"} LE RÉCAPITULATIF</span></div>
-            <div className="flex items-center gap-3"><span className="font-black">{formatPrice(discountedGrandTotal)}</span><ChevronDown size={14} className={`transition-transform ${orderSummaryOpen ? "rotate-180" : ""}`} /></div>
+            <div className="flex items-center gap-3"><span className="font-black">{formatPrice(totalWithPaymentFeeTTC)}</span><ChevronDown size={14} className={`transition-transform ${orderSummaryOpen ? "rotate-180" : ""}`} /></div>
           </button>
 
           {orderSummaryOpen && (
             <div className="lg:hidden bg-[#1c1b1b] p-5 mb-8 space-y-4">
-              {items.map((item) => {
+              {checkoutItems.map((item) => {
                 const img = getVariantImage(item.product, item.variant);
                 const quoteItem = getPricingQuoteItem(pricingQuote, item.product.id, item.variantId || item.variant?.id || null);
                 const publicUnitTTC = item.isCustomSale
@@ -1056,13 +1141,15 @@ export default function CheckoutPage() {
                   : typeof item.product.pricePublic === "number" ? item.product.pricePublic : item.product.price;
                 const usesDraftPrice = draftPricingActive;
                 const usesProfessionalPrice = hasProfessionalPricing && quoteItem?.priceSource === "pro";
-                const displayedLineTotal = (usesDraftPrice ? item.product.price : usesProfessionalPrice ? quoteItem.appliedUnitHT : quoteItem?.appliedUnitTTC ?? publicUnitTTC) * item.quantity;
+                const displayedLineTotal = usesDraftPrice ? getDraftLineTotal(item) : (usesProfessionalPrice ? quoteItem.appliedUnitHT : quoteItem?.appliedUnitTTC ?? publicUnitTTC) * item.quantity;
+                const lineStockIssue = getLineStockIssue(item);
+                const displayedQuantity = getAvailableDisplayQuantity(item.quantity, lineStockIssue);
                 const linePriceLabel = usesDraftPrice ? "Prix brouillon" : usesProfessionalPrice ? "Prix pro HT" : "Public TTC";
                 const lineTaxLabel = usesDraftPrice ? draftPricing?.isB2B ? "HT" : "TTC" : usesProfessionalPrice ? "HT" : "TTC";
                 return (
                   <div key={`${item.product.id}-${item.variantId || item.variant?.id || "product"}`} className="flex items-center gap-4">
-                    <div className="w-14 h-14 bg-[#2a2a2a] flex-shrink-0 relative">{img && <Image src={img} alt={item.product.name} fill className="object-contain p-1" />}<span className="absolute -top-2 -right-2 w-5 h-5 bg-[#ff4a8d] text-white text-[10px] font-black flex items-center justify-center">{item.quantity}</span></div>
-                    <div className="flex-1 min-w-0"><p className="text-xs font-black truncate">{item.product.name}</p><p className={`mt-1 text-[9px] font-black uppercase tracking-widest ${usesProfessionalPrice ? "text-emerald-300" : "text-gray-500"}`}>{linePriceLabel}</p></div>
+                    <div className="w-14 h-14 bg-[#2a2a2a] flex-shrink-0 relative">{img && <Image src={img} alt={item.product.name} fill className="object-contain p-1" />}<span className="absolute -top-2 -right-2 w-5 h-5 bg-[#ff4a8d] text-white text-[10px] font-black flex items-center justify-center">{displayedQuantity}</span></div>
+                    <div className="flex-1 min-w-0"><p className="text-xs font-black truncate">{item.product.name}</p><p className={`mt-1 text-[9px] font-black uppercase tracking-widest ${usesProfessionalPrice ? "text-emerald-300" : "text-gray-500"}`}>{linePriceLabel}</p>{lineStockIssue && <p role="alert" className="mt-2 text-[10px] text-amber-200">{!usesDraftPrice && lineStockIssue.message ? lineStockIssue.message : stockIssueMessage(lineStockIssue, usesDraftPrice)}</p>}</div>
                     <div className="text-right"><span className="block text-xs font-black">{formatPrice(displayedLineTotal)}</span><span className="mt-1 block text-[9px] uppercase tracking-widest text-gray-500">{lineTaxLabel}</span></div>
                   </div>
                 );
@@ -1074,13 +1161,17 @@ export default function CheckoutPage() {
                     <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">TVA ({vatRate}%)</span><span className="font-black">{formatPrice(vatAmount)}</span></div>
                     <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">{draftNoShipping ? "Retrait" : "Livraison"}</span>{draftNoShipping ? <span className="text-xs font-black text-amber-400 uppercase tracking-widest">{PICKUP_LOCATION_LABEL}</span> : (shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="font-black">{formatPrice(shipping)}</span>)}</div>
                     {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="font-black">-{formatPrice(promoDiscount)}</span></div>}
-                    <div className="border-t border-white/5 pt-3 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL TTC</span><span className="font-black">{formatPrice(discountedGrandTotal)}</span></div>
+                    {hasExplicitPaymentSelection && <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Base TTC avant frais</span><span className="font-black">{formatPrice(paymentBaseTTC)}</span></div>}
+                    {hasExplicitPaymentSelection && feeQuote && <div className="flex justify-between text-amber-300"><span className="text-xs uppercase tracking-widest">Frais de paiement ({selectedPaymentSurchargePercent}%)</span><span className="font-black">+{formatPrice(paymentFeeTTC)}</span></div>}
+                    <div className="border-t border-white/5 pt-3 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL TTC</span><span className="font-black">{formatPrice(totalWithPaymentFeeTTC)}</span></div>
                   </>
                 ) : (
                   <>
                     {draftNoShipping && <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Retrait</span><span className="text-xs font-black text-amber-400 uppercase tracking-widest">{PICKUP_LOCATION_LABEL}</span></div>}
                     {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="font-black">-{formatPrice(promoDiscount)}</span></div>}
-                    <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Total</span><span className="font-black">{formatPrice(discountedGrandTotal)}</span></div>
+                    {hasExplicitPaymentSelection && <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Base TTC avant frais</span><span className="font-black">{formatPrice(paymentBaseTTC)}</span></div>}
+                    {hasExplicitPaymentSelection && feeQuote && <div className="flex justify-between text-amber-300"><span className="text-xs uppercase tracking-widest">Frais de paiement ({selectedPaymentSurchargePercent}%)</span><span className="font-black">+{formatPrice(paymentFeeTTC)}</span></div>}
+                    <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Total</span><span className="font-black">{formatPrice(totalWithPaymentFeeTTC)}</span></div>
                   </>
                 )}
               </div>
@@ -1377,14 +1468,13 @@ export default function CheckoutPage() {
                     const branded = hasPaymentBrandLogo(method);
                     const showPayLater = method === "paypal_4x"
                       && paypalPayLaterDisplayEnabled && displayMethods.includes("paypal_4x");
-                    const active = paymentMethod === method;
+                    const active = hasExplicitPaymentSelection && paymentMethod === method;
                     const surchargePercent = effectiveIsB2B && (method === "card" || method === "paypal")
                       ? b2bSurchargePercents[method] || 0
                       : 0;
-                    const surchargePreview = money(discountedGrandTotal * (surchargePercent / 100));
                     const isRecommended = method === "paybybank";
                     return (
-                      <button key={method} type="button" onClick={() => setPaymentMethod(method)} className={`w-full text-left border p-5 transition-colors ${active ? "border-[#ff4a8d] bg-[#ff4a8d]/10" : "border-white/10 bg-[#1c1b1b] hover:border-white/25"}`}>
+                      <button key={method} type="button" onClick={() => { setPaymentMethod(method); setHasExplicitPaymentSelection(true); setPaymentError(""); }} className={`w-full text-left border p-5 transition-colors ${active ? "border-[#ff4a8d] bg-[#ff4a8d]/10" : "border-white/10 bg-[#1c1b1b] hover:border-white/25"}`}>
                         <div className="flex items-center gap-4">
                           {branded ? <PaymentBrandLogo method={method} /> : (
                             <div className={`w-11 h-11 shrink-0 flex items-center justify-center border text-[10px] font-black ${active ? "border-[#ff4a8d] text-[#ff4a8d]" : "border-white/10 text-gray-500"}`}><Icon size={16} /></div>
@@ -1395,7 +1485,7 @@ export default function CheckoutPage() {
                               {config.badge && <span className={`shrink-0 text-[10px] font-black tracking-wide border px-2 py-1 ${isRecommended ? "text-emerald-300 border-emerald-400/30 bg-emerald-400/10" : "text-gray-500 border-white/10"}`}>{config.badge}</span>}
                             </div>
                             {showPayLater && <p className="mt-2 text-xs font-bold text-emerald-300">Payez en 4x sans frais<span className="block mt-1 text-[10px] font-normal text-gray-400">Sous réserve d’éligibilité et d’acceptation par PayPal.</span></p>}
-                            {isRecommended ? <p className="mt-2 text-xs leading-relaxed text-gray-300">Simple et rapide : validez le paiement dans l’appli de votre banque, sans saisir de carte.{effectiveIsB2B && " Sans frais de paiement."}</p> : surchargePercent > 0 ? <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-amber-300">Frais de paiement : +{surchargePercent}% · {formatPrice(surchargePreview)}</p> : null}
+                            {isRecommended ? <p className="mt-2 text-xs leading-relaxed text-gray-300">Simple et rapide : validez le paiement dans l’appli de votre banque, sans saisir de carte.{effectiveIsB2B && " Sans frais de paiement."}</p> : active && surchargePercent > 0 ? <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-amber-300">Frais de paiement : +{surchargePercent}%</p> : null}
                           </div>
                         </div>
                       </button>
@@ -1411,15 +1501,18 @@ export default function CheckoutPage() {
                   {promoLoading ? "Vérification du code promo..." : promoResult?.valid ? `Code ${promoCode} appliqué · -${formatPrice(promoDiscount)}` : promoError || `Code ${promoCode} transmis pour vérification serveur.`}
                 </div>
               )}
+              {!hasExplicitPaymentSelection && <p className="text-xs text-gray-400">Choisissez votre moyen de paiement. Aucun frais n’est ajouté avant votre choix explicite dans ce checkout.</p>}
+              {feeQuoteLoading && <p role="status" className="text-xs text-gray-400">Vérification du total et des frais… Dernier devis conservé jusqu’à la réponse.</p>}
+              {feeQuoteError && <div role="alert" className="text-xs text-amber-200">{feeQuoteError} Paiement suspendu ; dernier devis conservé.<button type="button" onClick={() => setFeeQuoteRetry((value) => value + 1)} className="ml-3 underline">Réessayer les frais</button></div>}
               {/* PayPal Advanced Checkout v2 : Smart Buttons popup */}
-              {paypalV2Config?.v2Enabled && (paymentMethod === "paypal" || paymentMethod === "paypal_4x") ? (
+              {hasExplicitPaymentSelection && !paymentGuardMessage && paypalV2Config?.v2Enabled && (paymentMethod === "paypal" || paymentMethod === "paypal_4x") ? (
                 <div>
                   {!paypalSdkLoaded && <div className="w-full bg-white/5 text-gray-600 py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2"><Loader2 size={12} className="animate-spin" />CHARGEMENT...</div>}
                   <div id="paypal-button-container" className={paypalSdkLoaded ? "" : "hidden"} />
                   {paypalSdkLoaded && !paypalButtonsRendered && <div className="w-full bg-white/5 text-gray-600 py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2"><Loader2 size={12} className="animate-spin" />INITIALISATION...</div>}
                 </div>
               ) : (
-                <button onClick={handleCheckout} disabled={!hasValidCustomerEmail || isSubmittingPayment || displayMethods.length === 0 || methodsLoading || shippingLoading || (!draftPricingActive && !selectedShippingOption)} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-wait text-white py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 transition-colors"><Lock size={12} />{isSubmittingPayment ? "REDIRECTION EN COURS..." : `PAYER ${formatPrice(totalWithPaymentFeeTTC)}`}</button>
+                <button onClick={handleCheckout} disabled={Boolean(paymentGuardMessage) || !hasValidCustomerEmail || isSubmittingPayment || displayMethods.length === 0 || methodsLoading || shippingLoading || (!draftPricingActive && !selectedShippingOption)} className="w-full bg-[#ff4a8d] hover:bg-[#ff1f70] disabled:bg-white/5 disabled:text-gray-600 disabled:cursor-wait text-white py-5 text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 transition-colors"><Lock size={12} />{isSubmittingPayment ? "REDIRECTION EN COURS..." : `PAYER ${formatPrice(totalWithPaymentFeeTTC)}`}</button>
               )}
               <button onClick={() => setStep("livraison")} className="w-full text-center text-xs text-gray-500 hover:text-white transition-colors uppercase tracking-widest font-black">← Retour à la livraison</button>
             </div>
@@ -1430,7 +1523,7 @@ export default function CheckoutPage() {
           <div className="bg-[#1c1b1b] p-8 sticky top-24">
             <h2 className="text-xs font-black tracking-[0.3em] uppercase text-gray-500 mb-8">VOTRE COMMANDE</h2>
             <div className="space-y-6 mb-8">
-              {items.map((item) => {
+              {checkoutItems.map((item) => {
                 const img = getVariantImage(item.product, item.variant);
                 const quoteItem = getPricingQuoteItem(pricingQuote, item.product.id, item.variantId || item.variant?.id || null);
                 const publicUnitTTC = item.isCustomSale
@@ -1438,13 +1531,15 @@ export default function CheckoutPage() {
                   : typeof item.product.pricePublic === "number" ? item.product.pricePublic : item.product.price;
                 const usesDraftPrice = draftPricingActive;
                 const usesProfessionalPrice = hasProfessionalPricing && quoteItem?.priceSource === "pro";
-                const displayedLineTotal = (usesDraftPrice ? item.product.price : usesProfessionalPrice ? quoteItem.appliedUnitHT : quoteItem?.appliedUnitTTC ?? publicUnitTTC) * item.quantity;
+                const displayedLineTotal = usesDraftPrice ? getDraftLineTotal(item) : (usesProfessionalPrice ? quoteItem.appliedUnitHT : quoteItem?.appliedUnitTTC ?? publicUnitTTC) * item.quantity;
+                const lineStockIssue = getLineStockIssue(item);
+                const displayedQuantity = getAvailableDisplayQuantity(item.quantity, lineStockIssue);
                 const linePriceLabel = usesDraftPrice ? "Prix brouillon" : usesProfessionalPrice ? "Prix pro HT" : "Public TTC";
                 const lineTaxLabel = usesDraftPrice ? draftPricing?.isB2B ? "HT" : "TTC" : usesProfessionalPrice ? "HT" : "TTC";
                 return (
                   <div key={`${item.product.id}-${item.variantId || item.variant?.id || "product"}`} className="flex items-center gap-4">
-                    <div className="w-16 h-16 bg-[#2a2a2a] flex-shrink-0 relative overflow-hidden">{img && <Image src={img} alt={item.product.name} fill className="object-contain p-2 opacity-90" />}<span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#ff4a8d] text-white text-[10px] font-black flex items-center justify-center">{item.quantity}</span></div>
-                    <div className="flex-1 min-w-0"><p className="text-[10px] font-black tracking-widest uppercase text-[#ff4a8d] mb-0.5">{item.product.brand}</p><p className="text-xs font-black truncate">{item.product.name}</p><p className={`mt-1 text-[9px] font-black uppercase tracking-widest ${usesProfessionalPrice ? "text-emerald-300" : "text-gray-500"}`}>{linePriceLabel}</p></div>
+                    <div className="w-16 h-16 bg-[#2a2a2a] flex-shrink-0 relative overflow-hidden">{img && <Image src={img} alt={item.product.name} fill className="object-contain p-2 opacity-90" />}<span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#ff4a8d] text-white text-[10px] font-black flex items-center justify-center">{displayedQuantity}</span></div>
+                    <div className="flex-1 min-w-0"><p className="text-[10px] font-black tracking-widest uppercase text-[#ff4a8d] mb-0.5">{item.product.brand}</p><p className="text-xs font-black truncate">{item.product.name}</p><p className={`mt-1 text-[9px] font-black uppercase tracking-widest ${usesProfessionalPrice ? "text-emerald-300" : "text-gray-500"}`}>{linePriceLabel}</p>{lineStockIssue && <p role="alert" className="mt-2 text-[10px] text-amber-200">{!usesDraftPrice && lineStockIssue.message ? lineStockIssue.message : stockIssueMessage(lineStockIssue, usesDraftPrice)}</p>}</div>
                     <div className="text-right"><span className="block text-sm font-black">{formatPrice(displayedLineTotal)}</span><span className="mt-1 block text-[9px] uppercase tracking-widest text-gray-500">{lineTaxLabel}</span></div>
                   </div>
                 );
@@ -1458,7 +1553,8 @@ export default function CheckoutPage() {
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">{draftNoShipping ? "Retrait" : "Livraison"}</span>{draftNoShipping ? <span className="text-xs font-black text-amber-400 uppercase tracking-widest">{PICKUP_LOCATION_LABEL}</span> : (shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>)}</div>
                   {draftPricingActive && draftPricing && draftPricing.discountTotal > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise brouillon</span><span className="text-sm font-black">-{formatPrice(draftPricing.discountTotal)}</span></div>}
                   {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="text-sm font-black">-{formatPrice(promoDiscount)}</span></div>}
-                  {paymentFeeTTC > 0 && <div className="flex justify-between text-amber-300"><span className="text-xs uppercase tracking-widest">Frais de paiement ({selectedPaymentSurchargePercent}%)</span><span className="text-sm font-black">+{formatPrice(paymentFeeTTC)}</span></div>}
+                  {hasExplicitPaymentSelection && <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Base TTC avant frais</span><span className="text-sm font-black">{formatPrice(paymentBaseTTC)}</span></div>}
+                  {hasExplicitPaymentSelection && feeQuote && <div className="flex justify-between text-amber-300"><span className="text-xs uppercase tracking-widest">Frais de paiement ({selectedPaymentSurchargePercent}%)</span><span className="text-sm font-black">+{formatPrice(paymentFeeTTC)}</span></div>}
                   <div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL TTC</span><span className="text-2xl font-black">{formatPrice(totalWithPaymentFeeTTC)}</span></div>
                 </>
               ) : (
@@ -1467,7 +1563,9 @@ export default function CheckoutPage() {
                   <div className="flex justify-between"><span className="text-xs text-gray-400 uppercase tracking-widest">{draftNoShipping ? "Retrait" : "Livraison"}</span>{draftNoShipping ? <span className="text-xs font-black text-amber-400 uppercase tracking-widest">{PICKUP_LOCATION_LABEL}</span> : (shipping === 0 ? <span className="text-xs font-black text-green-400 uppercase tracking-widest">GRATUITE</span> : <span className="text-sm font-black">{formatPrice(shipping)}</span>)}</div>
                   {draftPricingActive && draftPricing && draftPricing.discountTotal > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise brouillon</span><span className="text-sm font-black">-{formatPrice(draftPricing.discountTotal)}</span></div>}
                   {promoDiscount > 0 && <div className="flex justify-between text-emerald-300"><span className="text-xs uppercase tracking-widest">Remise</span><span className="text-sm font-black">-{formatPrice(promoDiscount)}</span></div>}
-                  <div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL</span><span className="text-2xl font-black">{formatPrice(discountedGrandTotal)}</span></div>
+                  {hasExplicitPaymentSelection && <div className="flex justify-between"><span className="text-xs uppercase tracking-widest text-gray-400">Base TTC avant frais</span><span className="text-sm font-black">{formatPrice(paymentBaseTTC)}</span></div>}
+                  {hasExplicitPaymentSelection && feeQuote && <div className="flex justify-between text-amber-300"><span className="text-xs uppercase tracking-widest">Frais de paiement ({selectedPaymentSurchargePercent}%)</span><span className="text-sm font-black">+{formatPrice(paymentFeeTTC)}</span></div>}
+                  <div className="border-t border-white/5 pt-4 flex justify-between"><span className="text-xs font-black tracking-widest uppercase">TOTAL</span><span className="text-2xl font-black">{formatPrice(totalWithPaymentFeeTTC)}</span></div>
                 </>
               )}
             </div>

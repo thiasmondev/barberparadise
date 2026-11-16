@@ -84,7 +84,8 @@ async function hookTests() {
     ? createRequire(path.resolve(process.env.REACT_TEST_NODE_MODULES, '../package.json')) : createRequire(path.resolve(root, '../package.json'));
   const React = reactRequire('react');
   const { create, act } = reactRequire('react-test-renderer');
-  const imports = { react: React, 'react/jsx-runtime': reactRequire('react/jsx-runtime'), '@/lib/customer-api': { CUSTOMER_TOKEN_KEY: 'bp_customer_token' } };
+  const stockModule = load(fs.readFileSync(path.join(__dirname, 'cart-stock.ts'), 'utf8'), {}, { Map, Number });
+  const imports = { react: React, 'react/jsx-runtime': reactRequire('react/jsx-runtime'), '@/lib/customer-api': { CUSTOMER_TOKEN_KEY: 'bp_customer_token' }, '@/lib/cart-stock': stockModule };
   const product = { id: 'p', name: 'Produit', price: 10, variants: [] };
   let storage, calls, impl, cart, renderer;
   const browser = new EventTarget();

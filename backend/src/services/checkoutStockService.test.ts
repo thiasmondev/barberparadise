@@ -1,0 +1,30 @@
+import assert from "node:assert/strict";
+import { assertCheckoutStockAvailable, CheckoutStockError, normalizeAvailableStock, resolveCheckoutStock, StockCatalogProduct } from "./checkoutStockService";
+
+assert.equal(normalizeAvailableStock(false, 99), 0);
+assert.equal(normalizeAvailableStock(true, null), null);
+assert.equal(normalizeAvailableStock(true, undefined), null);
+assert.equal(normalizeAvailableStock(true, NaN), null);
+assert.equal(normalizeAvailableStock(true, -4), 0);
+assert.equal(normalizeAvailableStock(true, 4.9), 4);
+assert.equal(normalizeAvailableStock(true, "4"), null);
+
+const product: StockCatalogProduct = { id: "sku", name: "Fixture", status: "active", inStock: false, stockCount: 0, variants: [{ id: "variant", name: "Bleu", inStock: true, stock: 4 }] };
+const variant = resolveCheckoutStock([{ productId: "sku", variantId: "variant", quantity: 5 }], [product]);
+assert.equal(variant.items[0].availableStock, 4, "Variant stock does not inherit parent availability");
+assert.equal(variant.stockIssues[0].requestedQuantity, 5);
+assert.throws(() => assertCheckoutStockAvailable(variant.stockIssues), CheckoutStockError);
+assertCheckoutStockAvailable(resolveCheckoutStock([{ productId: "sku", variantId: "variant", quantity: 4 }], [product]).stockIssues);
+assert.equal(resolveCheckoutStock([{ productId: "sku", variantId: "deleted", quantity: 1 }], [product]).stockIssues[0].code, "VARIANT_UNAVAILABLE");
+const duplicate = resolveCheckoutStock([{ productId: "sku", variantId: "variant", quantity: 3 }, { productId: "sku", variantId: "variant", quantity: 2 }], [product]);
+assert.equal(duplicate.stockIssues.length, 1);
+assert.equal(duplicate.stockIssues[0].requestedQuantity, 5, "Aggregate duplicate SKU to avoid bypassing live stock");
+assert.equal(duplicate.items[0].requestedQuantity, 3);
+assert.equal(duplicate.items[1].requestedQuantity, 2);
+const unknown = { ...product, inStock: true, stockCount: null, variants: [] };
+assert.equal(resolveCheckoutStock([{ productId: "sku", quantity: 100 }], [unknown]).items[0].availableStock, null);
+assert.equal(resolveCheckoutStock([{ productId: "sku", quantity: 100 }], [unknown]).stockIssues.length, 0);
+assert.equal(resolveCheckoutStock([{ productId: "missing", quantity: 1 }], []).stockIssues[0].availableStock, 0);
+assert.equal(resolveCheckoutStock([{ productId: "sku", isCustomSale: true, quantity: 9 }, { productId: null, quantity: 99 }], []).stockIssues.length, 0);
+assert.throws(() => resolveCheckoutStock([{ productId: "sku", quantity: 0 }], [unknown]), /invalide/);
+console.log("checkoutStockService: normalization, own variant stock, duplicates, unknown and custom passed");
